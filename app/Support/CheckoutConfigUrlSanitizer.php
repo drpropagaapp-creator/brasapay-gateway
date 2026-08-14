@@ -37,6 +37,21 @@ final class CheckoutConfigUrlSanitizer
             }
         }
 
+        if (isset($config['landing']) && is_array($config['landing'])) {
+            if (isset($config['landing']['hero_image']) && is_string($config['landing']['hero_image'])) {
+                $safe = SafeUrl::normalizeHttpUrl($config['landing']['hero_image']);
+                $config['landing']['hero_image'] = $safe ?? '';
+            }
+            foreach (['headline' => 200, 'subheadline' => 500, 'cta_text' => 80, 'benefits_title' => 120] as $textKey => $max) {
+                if (isset($config['landing'][$textKey]) && is_string($config['landing'][$textKey])) {
+                    $config['landing'][$textKey] = HtmlSanitizer::plainText($config['landing'][$textKey], $max);
+                }
+            }
+            if (isset($config['landing']['benefits']) && is_string($config['landing']['benefits'])) {
+                $config['landing']['benefits'] = HtmlSanitizer::plainTextMultiline($config['landing']['benefits'], 4000);
+            }
+        }
+
         if (isset($config['footer']) && is_array($config['footer'])) {
             foreach (['privacy_url', 'terms_url', 'refund_url'] as $urlKey) {
                 if (! isset($config['footer'][$urlKey]) || ! is_string($config['footer'][$urlKey])) {

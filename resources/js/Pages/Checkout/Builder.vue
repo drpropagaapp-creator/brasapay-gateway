@@ -97,6 +97,15 @@ const configForm = reactive({
         coupon: props.config?.customer_fields?.coupon === true,
     },
     template: props.config?.template ?? 'original',
+    landing: {
+        headline: props.config?.landing?.headline ?? '',
+        subheadline: props.config?.landing?.subheadline ?? '',
+        cta_text: props.config?.landing?.cta_text ?? 'Quero garantir o meu',
+        hero_image: props.config?.landing?.hero_image ?? null,
+        benefits_title: props.config?.landing?.benefits_title ?? 'O que você vai receber',
+        benefits: props.config?.landing?.benefits ?? '',
+        show_reviews: props.config?.landing?.show_reviews !== false,
+    },
     youtube_url: props.config?.youtube_url ?? null,
     youtube_position: props.config?.youtube_position ?? 'top',
     redirect_after_purchase: props.config?.redirect_after_purchase ?? '',
@@ -343,6 +352,8 @@ const uploadUrl = computed(() => `/produtos/${props.produto?.id}/checkout-upload
 /** Templates de checkout disponíveis. Pode ser estendido por plugins (registro de templates). */
 const availableCheckoutTemplates = [
     { id: 'original', name: 'Original', description: 'Layout padrão do checkout (resumo, formulário e sidebar).' },
+    { id: 'focus', name: 'Focado', description: 'Coluna única centrada, sem distrações — direto ao pagamento.' },
+    { id: 'landing', name: 'Landing Page', description: 'Página de vendas completa: hero com chamada, benefícios, avaliações e o checkout no final.' },
 ];
 
 const inputClass =
@@ -1042,6 +1053,57 @@ const inputClass =
                                     Em uso
                                 </span>
                             </button>
+                        </div>
+                    </div>
+
+                    <!-- Conteúdo da Landing Page (só quando o template landing está selecionado) -->
+                    <div
+                        v-if="configForm.template === 'landing'"
+                        class="rounded-2xl border border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-800"
+                    >
+                        <div class="px-4 py-3 font-semibold text-zinc-900 dark:text-white">Conteúdo da landing page</div>
+                        <div class="space-y-4 border-t border-zinc-200 px-4 py-4 dark:border-zinc-700">
+                            <p class="text-sm text-zinc-600 dark:text-zinc-400">
+                                A página abre com esta seção de vendas e o formulário de pagamento fica no final. O botão de chamada rola até o checkout.
+                            </p>
+                            <div>
+                                <label class="mb-1.5 block text-sm font-medium text-zinc-700 dark:text-zinc-300">Título principal (headline)</label>
+                                <input v-model="configForm.landing.headline" type="text" :class="inputClass" maxlength="200" :placeholder="produto?.name || 'Ex: Domine o tráfego pago em 30 dias'" />
+                            </div>
+                            <div>
+                                <label class="mb-1.5 block text-sm font-medium text-zinc-700 dark:text-zinc-300">Subtítulo</label>
+                                <textarea v-model="configForm.landing.subheadline" rows="2" :class="inputClass" maxlength="500" placeholder="Ex: O método completo, passo a passo, para você vender todos os dias." />
+                            </div>
+                            <div>
+                                <label class="mb-1.5 block text-sm font-medium text-zinc-700 dark:text-zinc-300">Texto do botão (CTA)</label>
+                                <input v-model="configForm.landing.cta_text" type="text" :class="inputClass" maxlength="80" placeholder="Quero garantir o meu" />
+                            </div>
+                            <ImageUpload
+                                v-model="configForm.landing.hero_image"
+                                :upload-url="uploadUrl"
+                                label="Imagem de destaque (hero)"
+                                recommended-size="1200×675 px (16:9)"
+                            />
+                            <div>
+                                <label class="mb-1.5 block text-sm font-medium text-zinc-700 dark:text-zinc-300">Título da seção de benefícios</label>
+                                <input v-model="configForm.landing.benefits_title" type="text" :class="inputClass" maxlength="120" placeholder="O que você vai receber" />
+                            </div>
+                            <div>
+                                <label class="mb-1.5 block text-sm font-medium text-zinc-700 dark:text-zinc-300">Benefícios (um por linha)</label>
+                                <textarea
+                                    v-model="configForm.landing.benefits"
+                                    rows="5"
+                                    :class="inputClass"
+                                    placeholder="Acesso vitalício ao curso completo&#10;Suporte direto no WhatsApp&#10;Bônus: planilha de resultados&#10;Garantia de 7 dias"
+                                />
+                            </div>
+                            <label class="flex cursor-pointer items-center justify-between gap-3">
+                                <span class="text-sm font-medium text-zinc-700 dark:text-zinc-300">Mostrar avaliações na landing (da aba Social)</span>
+                                <Toggle v-model="configForm.landing.show_reviews" />
+                            </label>
+                            <p class="text-xs text-zinc-500 dark:text-zinc-400">
+                                Dica: o vídeo do YouTube (aba Geral) aparece logo abaixo do título, e o cronômetro/banners continuam funcionando normalmente.
+                            </p>
                         </div>
                     </div>
                 </div>

@@ -10,6 +10,7 @@ import CheckoutYoutube from '@/components/checkout/CheckoutYoutube.vue';
 import CheckoutSummary from '@/components/checkout/CheckoutSummary.vue';
 import CheckoutForm from '@/components/checkout/CheckoutForm.vue';
 import CheckoutSidebar from '@/components/checkout/CheckoutSidebar.vue';
+import CheckoutReviews from '@/components/checkout/CheckoutReviews.vue';
 import SalesNotification from '@/components/checkout/SalesNotification.vue';
 import SupportButton from '@/components/checkout/SupportButton.vue';
 import ExitPopup from '@/components/checkout/ExitPopup.vue';
@@ -158,6 +159,8 @@ const previewRemountKey = computed(() => {
             ft: effectiveConfig.value?.footer,
             ep: effectiveConfig.value?.exit_popup?.enabled,
             rv: effectiveConfig.value?.reviews,
+            tp: effectiveConfig.value?.template,
+            lp: effectiveConfig.value?.landing,
         })}`;
     } catch (_) {
         return `p-${previewEpoch.value}`;
@@ -212,6 +215,45 @@ const sideBannersFiltered = computed(() => (appearance.value.side_banners ?? [])
 const timerConfig = computed(() => effectiveConfig.value?.timer ?? {});
 const salesNotificationConfig = computed(() => effectiveConfig.value?.sales_notification ?? {});
 const storageKey = computed(() => props.product?.checkout_slug || 'default');
+
+/** Template do checkout: original (2 colunas), focus (coluna única) ou landing (página de vendas + checkout). */
+const activeTemplate = computed(() => {
+    const t = effectiveConfig.value?.template;
+    return t === 'focus' || t === 'landing' ? t : 'original';
+});
+const isLandingTemplate = computed(() => activeTemplate.value === 'landing');
+const isSingleColumn = computed(() => activeTemplate.value !== 'original');
+
+const landingConfig = computed(() => effectiveConfig.value?.landing ?? {});
+const landingHeadline = computed(() => (landingConfig.value.headline || '').trim() || props.product?.name || '');
+const landingSubheadline = computed(() => (landingConfig.value.subheadline || '').trim());
+const landingCtaText = computed(() => (landingConfig.value.cta_text || '').trim() || 'Quero garantir o meu');
+const landingHeroImage = computed(() => landingConfig.value.hero_image || null);
+const landingBenefitsTitle = computed(() => (landingConfig.value.benefits_title || '').trim() || 'O que você vai receber');
+const landingBenefits = computed(() =>
+    String(landingConfig.value.benefits || '')
+        .split('\n')
+        .map((line) => line.trim())
+        .filter(Boolean)
+);
+const showLandingReviews = computed(
+    () => isLandingTemplate.value
+        && landingConfig.value.show_reviews !== false
+        && (effectiveConfig.value?.reviews ?? []).length > 0
+);
+
+/** Na landing as avaliações ficam na seção de vendas; evita duplicar na sidebar abaixo do formulário. */
+const sidebarConfig = computed(() => {
+    if (showLandingReviews.value) {
+        return { ...effectiveConfig.value, reviews: [] };
+    }
+    return effectiveConfig.value;
+});
+
+function scrollToCheckout() {
+    if (typeof document === 'undefined') return;
+    document.getElementById('checkout-purchase-area')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
 
 const seo = computed(() => effectiveConfig.value?.seo ?? {});
 /** Título da aba do navegador e para compartilhamento (Open Graph). Vem do "Título para compartilhamento" no Builder. */
@@ -393,11 +435,90 @@ function onConversionPixelsReady() {
             </div>
 
             <CheckoutBanners v-if="banners.length" :urls="banners" />
-            <CheckoutYoutube v-if="(effectiveConfig?.youtube_position ?? 'top') !== 'bottom'" :url="effectiveConfig?.youtube_url" />
+            <CheckoutYoutube
+                v-if="!isLandingTemplate && (effectiveConfig?.youtube_position ?? 'top') !== 'bottom'"
+                :url="effectiveConfig?.youtube_url"
+            />
 
-            <div class="flex flex-col gap-8 lg:flex-row lg:gap-10" data-checkout="layout-columns">
+            <!-- Template Landing Page: seção de vendas antes do checkout -->
+            <section v-if="isLandingTemplate" class="mb-12" data-checkout="landing-hero">
+                <div class="mx-auto max-w-3xl text-center">
+                    <h1 class="text-3xl font-extrabold leading-tight tracking-tight text-gray-900 sm:text-4xl lg:text-[44px]">
+                        {{ landingHeadline }}
+                    </h1>
+                    <p v-if="landingSubheadline" class="mx-auto mt-4 max-w-2xl text-lg leading-relaxed text-gray-600">
+                        {{ landingSubheadline }}
+                    </p>
+                    <button
+                        type="button"
+                        class="mt-8 inline-flex items-center justify-center rounded-2xl px-8 py-4 text-lg font-bold text-white shadow-xl transition hover:opacity-90 focus:outline-none focus:ring-4 focus:ring-black/10"
+                        :style="{ backgroundColor: primaryColor }"
+                        data-checkout="landing-cta"
+                        @click="scrollToCheckout"
+                    >
+                        {{ landingCtaText }}
+                    </button>
+                    <p class="mt-3 text-xs text-gray-500">Pagamento 100% seguro · Acesso imediato após a confirmação</p>
+                </div>
+
+                <CheckoutYoutube
+                    v-if="effectiveConfig?.youtube_url"
+                    :url="effectiveConfig?.youtube_url"
+                    class="mx-auto mt-10 max-w-4xl"
+                />
+
+                <img
+                    v-if="landingHeroImage"
+                    :src="landingHeroImage"
+                    :alt="landingHeadline"
+                    class="mx-auto mt-10 w-full max-w-4xl rounded-3xl object-cover shadow-2xl"
+                    data-checkout="landing-hero-image"
+                    @error="(e) => e?.target && (e.target.style.display = 'none')"
+                />
+
+                <div
+                    v-if="landingBenefits.length"
+                    class="mx-auto mt-12 max-w-3xl rounded-3xl border border-white/20 bg-white/95 p-6 shadow-xl shadow-black/5 backdrop-blur sm:p-8"
+                    data-checkout="landing-benefits"
+                >
+                    <h2 class="text-xl font-bold tracking-tight text-gray-900">{{ landingBenefitsTitle }}</h2>
+                    <ul class="mt-5 grid gap-3 sm:grid-cols-2">
+                        <li
+                            v-for="(benefit, i) in landingBenefits"
+                            :key="i"
+                            class="flex items-start gap-2.5"
+                        >
+                            <CheckCircle2 class="mt-0.5 h-5 w-5 shrink-0" :style="{ color: primaryColor }" aria-hidden="true" />
+                            <span class="text-sm leading-relaxed text-gray-700">{{ benefit }}</span>
+                        </li>
+                    </ul>
+                </div>
+
+                <div v-if="showLandingReviews" class="mx-auto mt-10 max-w-3xl" data-checkout="landing-reviews">
+                    <CheckoutReviews :reviews="effectiveConfig?.reviews || []" :primary-color="primaryColor" />
+                </div>
+
+                <div class="mt-12 text-center">
+                    <button
+                        type="button"
+                        class="inline-flex items-center justify-center rounded-2xl px-8 py-4 text-lg font-bold text-white shadow-xl transition hover:opacity-90 focus:outline-none focus:ring-4 focus:ring-black/10"
+                        :style="{ backgroundColor: primaryColor }"
+                        @click="scrollToCheckout"
+                    >
+                        {{ landingCtaText }}
+                    </button>
+                </div>
+            </section>
+
+            <div
+                id="checkout-purchase-area"
+                :class="isSingleColumn
+                    ? 'mx-auto flex w-full max-w-2xl scroll-mt-8 flex-col gap-8'
+                    : 'flex flex-col gap-8 lg:flex-row lg:gap-10'"
+                data-checkout="layout-columns"
+            >
                 <!-- Coluna principal -->
-                <div class="w-full lg:w-2/3" data-checkout="column-primary">
+                <div :class="isSingleColumn ? 'w-full' : 'w-full lg:w-2/3'" data-checkout="column-primary">
                     <div
                         class="overflow-visible rounded-3xl border border-white/20 bg-white/95 p-6 shadow-xl shadow-black/5 backdrop-blur sm:p-8"
                         data-checkout="card-main"
@@ -461,21 +582,23 @@ function onConversionPixelsReady() {
                     </div>
                 </div>
 
-                <!-- Coluna lateral: resumo + banners -->
-                <CheckoutSidebar
-                    :product="product"
-                    :subscription-plan="subscription_plan"
-                    :config="effectiveConfig"
-                    :applied-coupon="appliedCoupon"
-                    :selected-order-bumps="selectedOrderBumpsList"
-                    :order-bumps-total-brl="orderBumpsTotalBrl"
-                    :requires-shipping="requiresShipping"
-                    :shipping-amount-brl="shippingAmountBrl"
-                    :t="t"
-                    :display-currency="displayCurrency"
-                    :price-in-currency="priceInCurrency"
-                    :format-price="formatPrice"
-                />
+                <!-- Coluna lateral: resumo + banners (nos templates de coluna única vira um bloco abaixo do formulário) -->
+                <div :class="isSingleColumn ? 'w-full [&>div]:lg:!static [&>div]:lg:!w-full' : 'contents'">
+                    <CheckoutSidebar
+                        :product="product"
+                        :subscription-plan="subscription_plan"
+                        :config="sidebarConfig"
+                        :applied-coupon="appliedCoupon"
+                        :selected-order-bumps="selectedOrderBumpsList"
+                        :order-bumps-total-brl="orderBumpsTotalBrl"
+                        :requires-shipping="requiresShipping"
+                        :shipping-amount-brl="shippingAmountBrl"
+                        :t="t"
+                        :display-currency="displayCurrency"
+                        :price-in-currency="priceInCurrency"
+                        :format-price="formatPrice"
+                    />
+                </div>
             </div>
 
             <!-- Banners laterais: no mobile aparecem no final da página -->
@@ -495,7 +618,11 @@ function onConversionPixelsReady() {
             </div>
 
             <!-- Vídeo YouTube em baixo da página (quando a posição for "bottom") -->
-            <CheckoutYoutube v-if="(effectiveConfig?.youtube_position ?? 'top') === 'bottom'" :url="effectiveConfig?.youtube_url" class="mt-8" />
+            <CheckoutYoutube
+                v-if="!isLandingTemplate && (effectiveConfig?.youtube_position ?? 'top') === 'bottom'"
+                :url="effectiveConfig?.youtube_url"
+                class="mt-8"
+            />
 
             <p
                 v-if="platform_checkout_notice"
