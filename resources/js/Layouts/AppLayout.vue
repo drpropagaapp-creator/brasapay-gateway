@@ -22,7 +22,7 @@ import DemoModeBanner from '@/components/layout/DemoModeBanner.vue';
 
 const { isExpanded, setExpanded } = useSidebarProvider();
 usePanelPushSubscribe();
-const { isAurora, isKawaii, isPrime, isThemedShell, templateId } = useSellerDashboardTemplate();
+const { isAurora, isKawaii, isPrime, isStudio, isThemedShell, templateId } = useSellerDashboardTemplate();
 const { clearHeading } = useThemedPageHeading();
 const page = usePage();
 
@@ -111,6 +111,9 @@ const mainOffsetClass = computed(() => {
     if (isPrime.value) {
         return isExpanded.value ? 'lg:ml-[280px]' : 'lg:ml-[88px]';
     }
+    if (isStudio.value) {
+        return 'lg:ml-[288px]';
+    }
     if (isThemedShell.value) {
         return 'lg:ml-[276px]';
     }
@@ -126,7 +129,9 @@ const contentShellClass = computed(() => {
             ? 'kawaii-content-shell'
             : isPrime.value
               ? 'prime-content-shell'
-              : 'aurora-content-shell';
+              : isStudio.value
+                ? 'studio-content-shell'
+                : 'aurora-content-shell';
         return `${prefix} flex min-h-0 flex-1 flex-col overflow-hidden rounded-none`;
     }
     return 'flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl bg-white shadow-sm dark:bg-zinc-800';
@@ -220,7 +225,7 @@ onBeforeUnmount(() => {
             <div
                 v-if="isSellerDashboard && dashboardBanners.length"
                 class="mb-4 overflow-hidden rounded-2xl border border-zinc-200 bg-zinc-50 shadow-sm dark:border-zinc-700 dark:bg-zinc-800/40"
-                :class="isThemedShell ? (isKawaii ? 'kawaii-card border' : isPrime ? 'prime-surface prime-divider border' : 'aurora-surface aurora-divider border') : ''"
+                :class="isThemedShell ? (isKawaii ? 'kawaii-card border' : isPrime ? 'prime-surface prime-divider border' : isStudio ? 'studio-surface studio-divider border' : 'aurora-surface aurora-divider border') : ''"
             >
                 <div class="relative aspect-[1200/420] w-full overflow-hidden md:aspect-[1600/320]">
                     <img

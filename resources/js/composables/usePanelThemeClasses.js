@@ -8,7 +8,7 @@ const defaultIconBtn =
     'text-zinc-500 hover:bg-zinc-100 hover:text-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200';
 
 export function usePanelThemeClasses() {
-    const { isAurora, isKawaii, isPrime, isThemedShell, themePrefix } = useSellerDashboardTemplate();
+    const { isAurora, isKawaii, isPrime, isStudio, isThemedShell, themePrefix } = useSellerDashboardTemplate();
 
     function themed(className) {
         return computed(() => {
@@ -58,7 +58,7 @@ export function usePanelThemeClasses() {
     });
 
     const filterPanelClass = computed(() => {
-        if (isAurora.value || isPrime.value) return '';
+        if (isAurora.value || isPrime.value || isStudio.value) return '';
         if (isKawaii.value) return 'kawaii-filter-panel';
         return 'rounded-xl border border-zinc-200 bg-zinc-50/80 p-4 dark:border-zinc-700 dark:bg-zinc-800/40';
     });
@@ -95,6 +95,7 @@ export function usePanelThemeClasses() {
         isAurora,
         isKawaii,
         isPrime,
+        isStudio,
         isThemedShell,
         themePrefix,
         themed,

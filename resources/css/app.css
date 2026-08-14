@@ -2,6 +2,7 @@
 @import './dashboard-templates.css';
 @import './dashboard-templates-kawaii.css';
 @import './dashboard-templates-prime.css';
+@import './dashboard-templates-studio.css';
 
 @source '../../vendor/laravel/framework/src/Illuminate/Pagination/resources/views/*.blade.php';
 @source '../../storage/framework/views/*.php';

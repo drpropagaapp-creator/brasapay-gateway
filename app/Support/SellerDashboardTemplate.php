@@ -16,12 +16,14 @@ class SellerDashboardTemplate
 
     public const PRIME = 'prime';
 
+    public const STUDIO = 'studio';
+
     /**
      * @return list<string>
      */
     public static function allowed(): array
     {
-        return [self::DEFAULT, self::AURORA, self::KAWAII, self::PRIME];
+        return [self::DEFAULT, self::AURORA, self::KAWAII, self::PRIME, self::STUDIO];
     }
 
     public static function resolve(?string $raw): string

@@ -3,7 +3,7 @@ import { usePage } from '@inertiajs/vue3';
 
 const DEMO_TEMPLATE_KEY = 'demo_template_preview';
 
-const TEMPLATE_IDS = ['default', 'aurora', 'kawaii', 'prime'];
+const TEMPLATE_IDS = ['default', 'aurora', 'kawaii', 'prime', 'studio'];
 
 /** Estado compartilhado entre todas as instâncias do composable. */
 const sharedPreviewOverride = ref(null);
@@ -72,20 +72,13 @@ export function useSellerDashboardTemplate() {
     const isAurora = computed(() => templateId.value === 'aurora');
     const isKawaii = computed(() => templateId.value === 'kawaii');
     const isPrime = computed(() => templateId.value === 'prime');
+    const isStudio = computed(() => templateId.value === 'studio');
     const isDefault = computed(() => templateId.value === 'default');
-    const isThemedShell = computed(() => isAurora.value || isKawaii.value || isPrime.value);
-    const themePrefix = computed(() => {
-        if (isAurora.value) return 'aurora';
-        if (isKawaii.value) return 'kawaii';
-        if (isPrime.value) return 'prime';
-        return null;
-    });
-    const pageWrapperClass = computed(() => {
-        if (isKawaii.value) return 'kawaii-page';
-        if (isAurora.value) return 'aurora-page';
-        if (isPrime.value) return 'prime-page';
-        return 'space-y-6';
-    });
+    const isThemedShell = computed(() => !isDefault.value);
+    const themePrefix = computed(() => (isDefault.value ? null : templateId.value));
+    const pageWrapperClass = computed(() =>
+        isDefault.value ? 'space-y-6' : `${templateId.value}-page`
+    );
 
     return {
         templateId,
@@ -93,6 +86,7 @@ export function useSellerDashboardTemplate() {
         isAurora,
         isKawaii,
         isPrime,
+        isStudio,
         isThemedShell,
         themePrefix,
         pageWrapperClass,

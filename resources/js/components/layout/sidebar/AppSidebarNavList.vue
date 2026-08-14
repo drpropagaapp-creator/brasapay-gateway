@@ -7,7 +7,7 @@ const props = defineProps({
     items: { type: Array, default: () => [] },
     showText: { type: Boolean, default: true },
     isActive: { type: Function, required: true },
-    /** default | aurora | kawaii | prime */
+    /** default | aurora | kawaii | prime | studio */
     variant: { type: String, default: 'default' },
     isMobile: { type: Boolean, default: false },
 });
@@ -51,6 +51,13 @@ function linkClasses(href, isChild = false) {
             active ? 'prime-nav-active' : '',
         ];
     }
+    if (props.variant === 'studio') {
+        return [
+            'studio-nav-link flex items-center gap-3 text-[14px] font-medium transition-colors',
+            isChild ? 'py-2.5 pl-10 pr-3' : 'px-3.5 py-3',
+            active ? 'studio-nav-active' : '',
+        ];
+    }
     return [
         'menu-item group relative',
         isChild ? 'py-2 pl-9' : '',
@@ -69,6 +76,9 @@ function iconClasses(href) {
     }
     if (props.variant === 'prime') {
         return ['prime-nav-icon h-[17px] w-[17px] shrink-0'];
+    }
+    if (props.variant === 'studio') {
+        return ['studio-nav-icon h-[18px] w-[18px] shrink-0'];
     }
     return [active ? 'menu-item-icon-active' : 'menu-item-icon-inactive', 'shrink-0'];
 }
@@ -92,7 +102,9 @@ function iconClasses(href) {
                               ? 'border-[var(--aurora-border)]'
                               : variant === 'prime'
                                 ? 'border-[var(--prime-border)]'
-                                : 'border-[var(--kawaii-border)]',
+                                : variant === 'studio'
+                                  ? 'border-[var(--studio-border)]'
+                                  : 'border-[var(--kawaii-border)]',
                     ]"
                 />
             </li>

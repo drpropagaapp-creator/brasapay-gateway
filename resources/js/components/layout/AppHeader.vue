@@ -18,7 +18,7 @@ const props = defineProps({
 });
 
 const page = usePage();
-const { isAurora, isKawaii, isPrime, isThemedShell } = useSellerDashboardTemplate();
+const { isAurora, isKawaii, isPrime, isStudio, isThemedShell } = useSellerDashboardTemplate();
 const { heading: themedPageHeading } = useThemedPageHeading();
 const customerPanel = computed(() => !!page.props.customer_panel);
 const themedShell = computed(() => isThemedShell.value && !customerPanel.value);
@@ -47,6 +47,7 @@ const titleClass = computed(() => {
     if (isKawaii.value) return 'kawaii-fg';
     if (isAurora.value) return 'aurora-fg';
     if (isPrime.value) return 'prime-fg';
+    if (isStudio.value) return 'studio-fg';
     return 'text-zinc-900 dark:text-white';
 });
 
@@ -54,6 +55,7 @@ const subtitleClass = computed(() => {
     if (isKawaii.value) return 'kawaii-fg-muted';
     if (isAurora.value) return 'aurora-fg-muted';
     if (isPrime.value) return 'prime-fg-muted';
+    if (isStudio.value) return 'studio-fg-muted';
     return 'text-zinc-500 dark:text-zinc-400';
 });
 
@@ -61,6 +63,7 @@ const iconBtnClass = computed(() => {
     if (isKawaii.value) return 'kawaii-icon-btn';
     if (isAurora.value) return 'aurora-icon-btn';
     if (isPrime.value) return 'prime-icon-btn';
+    if (isStudio.value) return 'studio-icon-btn';
     return 'text-zinc-500 hover:bg-zinc-100 hover:text-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200';
 });
 
@@ -80,6 +83,7 @@ const controlsVariant = computed(() => {
 const dashboardGreetingTitleClass = computed(() => {
     if (isAurora.value || isPrime.value) return 'text-base font-semibold tracking-tight sm:text-lg';
     if (isKawaii.value) return 'text-lg font-bold tracking-tight md:text-xl';
+    if (isStudio.value) return 'text-xl font-bold tracking-tight md:text-2xl';
     return 'text-xl font-bold tracking-tight md:text-2xl';
 });
 
@@ -139,7 +143,7 @@ const dashboardGreetingSubtitleClass = computed(() => {
         </div>
         <div class="flex shrink-0 items-center gap-2">
             <KawaiiHeaderRevenue v-if="isKawaii && isDashboard && !customerPanel" />
-            <ConquistasWidget v-if="!customerPanel && !themedShell && (!isDashboard || !isMobile)" />
+            <ConquistasWidget v-if="!customerPanel && (!themedShell || isStudio) && (!isDashboard || !isMobile)" />
             <AccountManagerCard
                 v-if="!customerPanel"
                 :variant="controlsVariant"

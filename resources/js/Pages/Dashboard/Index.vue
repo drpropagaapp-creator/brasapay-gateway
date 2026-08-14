@@ -8,7 +8,7 @@ import { useSellerDashboardTemplate } from '@/composables/useSellerDashboardTemp
 defineOptions({ layout: LayoutInfoprodutor });
 
 const page = usePage();
-const { isAurora, isKawaii, isPrime } = useSellerDashboardTemplate();
+const { isAurora, isKawaii, isPrime, isStudio } = useSellerDashboardTemplate();
 
 const dashboardView = computed(() => {
     if (isKawaii.value) {
@@ -19,6 +19,9 @@ const dashboardView = computed(() => {
     }
     if (isPrime.value) {
         return defineAsyncComponent(() => import('@/components/dashboard/DashboardViewPrime.vue'));
+    }
+    if (isStudio.value) {
+        return defineAsyncComponent(() => import('@/components/dashboard/DashboardViewStudio.vue'));
     }
 
     return defineAsyncComponent(() => import('@/components/dashboard/DashboardViewDefault.vue'));

@@ -1,7 +1,7 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue';
 import Button from '@/components/ui/Button.vue';
-import { LayoutGrid, Sparkles, Heart, Gem, Check, Sun, Moon, Monitor } from 'lucide-vue-next';
+import { LayoutGrid, Sparkles, Heart, Gem, Feather, Check, Sun, Moon, Monitor } from 'lucide-vue-next';
 
 const loading = ref(true);
 const saving = ref(false);
@@ -42,6 +42,11 @@ const options = [
         id: 'prime',
         label: 'Prime',
         description: 'Visual executivo premium: faixa de receita estilo extrato, números tabulares e sidebar recolhível.',
+    },
+    {
+        id: 'studio',
+        label: 'Studio',
+        description: 'Visual claro e arejado estilo plataforma de creators: carteira em destaque, abas de período e sidebar clean.',
     },
 ];
 
@@ -85,7 +90,7 @@ const schemeOptions = [
 ];
 
 function normalizeTemplate(value) {
-    if (value === 'aurora' || value === 'kawaii' || value === 'prime') return value;
+    if (value === 'aurora' || value === 'kawaii' || value === 'prime' || value === 'studio') return value;
     return 'default';
 }
 
@@ -276,6 +281,7 @@ onMounted(() => {
                             'bg-gradient-to-br from-zinc-900 via-zinc-800 to-zinc-900': opt.id === 'aurora',
                             'bg-gradient-to-br from-violet-50 via-pink-50 to-emerald-50 dark:from-violet-950/40 dark:via-pink-950/30 dark:to-emerald-950/30': opt.id === 'kawaii',
                             'bg-gradient-to-br from-[#0a0c10] via-[#10131a] to-[#0a0c10]': opt.id === 'prime',
+                            'bg-[#f3f5f6]': opt.id === 'studio',
                             'bg-white dark:bg-zinc-800': opt.id === 'default',
                         }"
                     >
@@ -286,6 +292,7 @@ onMounted(() => {
                                     'h-16 w-10 bg-white/10 backdrop-blur': opt.id === 'aurora',
                                     'h-16 w-10 bg-white/70 dark:bg-white/10': opt.id === 'kawaii',
                                     'h-16 w-10 border border-white/10 bg-white/5': opt.id === 'prime',
+                                    'h-16 w-10 border border-[#e8eaed] bg-white': opt.id === 'studio',
                                     'h-16 w-8 bg-zinc-200 dark:bg-zinc-700': opt.id === 'default',
                                 }"
                             />
@@ -296,6 +303,7 @@ onMounted(() => {
                                         'w-full bg-[var(--color-primary)]/40': opt.id === 'aurora',
                                         'w-full bg-violet-300/60 dark:bg-violet-400/30': opt.id === 'kawaii',
                                         'w-full bg-white/10': opt.id === 'prime',
+                                        'w-full bg-[#dfe3e6]': opt.id === 'studio',
                                         'w-full bg-zinc-200 dark:bg-zinc-600': opt.id === 'default',
                                     }"
                                 />
@@ -305,6 +313,7 @@ onMounted(() => {
                                         'aurora-card-preview w-full': opt.id === 'aurora',
                                         'kawaii-card-preview w-full': opt.id === 'kawaii',
                                         'prime-card-preview w-full': opt.id === 'prime',
+                                        'studio-card-preview w-full': opt.id === 'studio',
                                         'w-full border border-zinc-200 bg-zinc-100 dark:border-zinc-600 dark:bg-zinc-700/50': opt.id === 'default',
                                     }"
                                 />
@@ -314,6 +323,7 @@ onMounted(() => {
                                         'kawaii-card-preview': opt.id === 'kawaii',
                                         'aurora-card-preview': opt.id === 'aurora',
                                         'prime-card-preview': opt.id === 'prime',
+                                        'studio-card-preview': opt.id === 'studio',
                                         'border border-zinc-200 bg-zinc-100 dark:border-zinc-600 dark:bg-zinc-700/50': opt.id === 'default',
                                     }"
                                 />
@@ -333,6 +343,11 @@ onMounted(() => {
                     <Gem
                         v-if="opt.id === 'prime'"
                         class="pointer-events-none absolute right-3 top-3 h-4 w-4 text-[var(--color-primary)] opacity-70"
+                        aria-hidden="true"
+                    />
+                    <Feather
+                        v-if="opt.id === 'studio'"
+                        class="pointer-events-none absolute right-3 top-3 h-4 w-4 text-emerald-500 opacity-70"
                         aria-hidden="true"
                     />
                 </button>
@@ -518,5 +533,11 @@ onMounted(() => {
     border: 1px solid #2a3140;
     border-left: 2px solid var(--color-primary);
     background: #10131a;
+}
+
+.studio-card-preview {
+    border: 1px solid #e8eaed;
+    background: #ffffff;
+    box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
 }
 </style>

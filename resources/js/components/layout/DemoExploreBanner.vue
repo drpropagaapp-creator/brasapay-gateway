@@ -13,6 +13,7 @@ const templates = [
     { id: 'aurora', label: 'Aurora' },
     { id: 'kawaii', label: 'Kawaii' },
     { id: 'prime', label: 'Prime' },
+    { id: 'studio', label: 'Studio' },
 ];
 
 const selected = ref(readPreview());
@@ -20,7 +21,7 @@ const selected = ref(readPreview());
 function readPreview() {
     if (typeof window === 'undefined') return 'default';
     const raw = localStorage.getItem(DEMO_TEMPLATE_KEY);
-    if (raw === 'aurora' || raw === 'kawaii' || raw === 'prime') return raw;
+    if (raw === 'aurora' || raw === 'kawaii' || raw === 'prime' || raw === 'studio') return raw;
     return 'default';
 }
 
