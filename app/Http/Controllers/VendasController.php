@@ -831,7 +831,7 @@ class VendasController extends Controller
         $vendas = $filteredQuery
             ->with([
                 'product:id,name',
-                'user:id,name,email',
+                'user:id,name,email,phone',
                 'orderItems:id,order_id,amount',
             ])
             ->orderByDesc('created_at')
@@ -845,13 +845,14 @@ class VendasController extends Controller
                 'produto' => $this->productDisplayName($o),
                 'cliente' => $o->user?->name ?? $o->email ?? '–',
                 'email' => $o->email ?? '–',
+                'telefone' => $o->phone ?: ($o->user?->phone ?: '–'),
                 'status' => $this->statusLabel($o->status),
                 'gateway' => $o->paymentMethodDisplayLabel(),
                 'valor_liquido' => number_format($net, 2, ',', '.'),
             ];
         })->all();
 
-        $headers = ['Data', 'Produto', 'Cliente', 'E-mail', 'Status', 'Método', 'Valor líquido'];
+        $headers = ['Data', 'Produto', 'Cliente', 'E-mail', 'Telefone', 'Status', 'Método', 'Valor líquido'];
 
         if ($format === 'csv') {
             $filename = 'vendas_'.date('Y-m-d_His').'.csv';

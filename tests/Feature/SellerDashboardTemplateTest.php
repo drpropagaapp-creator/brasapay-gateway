@@ -133,6 +133,23 @@ class SellerDashboardTemplateTest extends TestCase
             );
     }
 
+    public function test_platform_admin_panel_receives_template_prop(): void
+    {
+        Setting::set(SellerDashboardTemplate::KEY, SellerDashboardTemplate::PRIME, null);
+
+        $admin = User::factory()->create([
+            'role' => User::ROLE_PLATFORM_ADMIN,
+            'tenant_id' => null,
+        ]);
+
+        $this->actingAs($admin)
+            ->get('/plataforma/dashboard')
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->where('seller_dashboard_template', 'prime')
+            );
+    }
+
     public function test_infoprodutor_dashboard_receives_template_prop(): void
     {
         Setting::set(SellerDashboardTemplate::KEY, SellerDashboardTemplate::AURORA, null);

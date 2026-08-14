@@ -17,6 +17,16 @@
     --studio-nav-active-bg: #eef1f3;
     --studio-nav-hover-bg: #f6f7f8;
     --chart-grid: #e8eaed;
+    /* Aliases genéricos consumidos pelo painel da plataforma (platform-templates.css) */
+    --tpl-bg: var(--studio-bg);
+    --tpl-sidebar: var(--studio-panel);
+    --tpl-panel: var(--studio-panel);
+    --tpl-panel-hover: var(--studio-panel-hover);
+    --tpl-border: var(--studio-border);
+    --tpl-border-strong: var(--studio-border-strong);
+    --tpl-text: var(--studio-text);
+    --tpl-muted: var(--studio-muted);
+    --tpl-subtle: var(--studio-subtle);
     color: var(--studio-text);
 }
 

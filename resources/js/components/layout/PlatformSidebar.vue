@@ -240,14 +240,14 @@ function isActive(href) {
 }
 
 const linkActive =
-    'bg-[var(--color-primary)]/10 text-zinc-900 dark:text-white';
+    'platform-nav-active bg-[var(--color-primary)]/10 text-zinc-900 dark:text-white';
 const linkInactive =
     'text-zinc-600 hover:bg-zinc-200/60 dark:text-zinc-400 dark:hover:bg-zinc-800/70';
 </script>
 
 <template>
     <aside
-        class="fixed inset-y-0 left-0 z-[99999] flex h-screen w-[260px] flex-col border-r border-zinc-200 bg-zinc-100 transition-all duration-300 ease-in-out dark:border-zinc-800 dark:bg-zinc-900"
+        class="platform-sidebar fixed inset-y-0 left-0 z-[99999] flex h-screen w-[260px] flex-col border-r border-zinc-200 bg-zinc-100 transition-all duration-300 ease-in-out dark:border-zinc-800 dark:bg-zinc-900"
         :class="[
             {
                 'translate-x-0 shadow-xl': isMobileOpen,
@@ -259,7 +259,7 @@ const linkInactive =
             },
         ]"
     >
-        <div class="flex h-14 shrink-0 items-center justify-between gap-2 border-b border-zinc-200 px-3 dark:border-zinc-800">
+        <div class="platform-sidebar-head flex h-14 shrink-0 items-center justify-between gap-2 border-b border-zinc-200 px-3 dark:border-zinc-800">
             <Link
                 href="/plataforma/dashboard"
                 :class="[
@@ -300,7 +300,7 @@ const linkInactive =
             <button
                 v-if="isMobile"
                 type="button"
-                class="flex h-9 w-9 shrink-0 touch-manipulation cursor-pointer select-none items-center justify-center text-zinc-500 hover:bg-zinc-200/80 dark:hover:bg-zinc-800"
+                class="tpl-icon-btn flex h-9 w-9 shrink-0 touch-manipulation cursor-pointer select-none items-center justify-center text-zinc-500 hover:bg-zinc-200/80 dark:hover:bg-zinc-800"
                 aria-label="Fechar menu"
                 @click="toggleSidebar"
             >
@@ -309,7 +309,7 @@ const linkInactive =
             <button
                 v-else
                 type="button"
-                class="hidden h-9 w-9 shrink-0 items-center justify-center text-zinc-500 hover:bg-zinc-200/80 lg:flex dark:hover:bg-zinc-800"
+                class="tpl-icon-btn hidden h-9 w-9 shrink-0 items-center justify-center text-zinc-500 hover:bg-zinc-200/80 lg:flex dark:hover:bg-zinc-800"
                 :title="isExpanded ? 'Recolher' : 'Expandir'"
                 aria-label="Alternar largura do menu"
                 @click="toggleSidebar"
@@ -322,13 +322,13 @@ const linkInactive =
             <div v-for="group in navGroups" :key="group.id">
                 <p
                     v-if="group.label && showText()"
-                    class="mb-1.5 px-4 text-[10px] font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500"
+                    class="platform-group-label mb-1.5 px-4 text-[10px] font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500"
                 >
                     {{ group.label }}
                 </p>
                 <div
                     v-else-if="group.label && !showText()"
-                    class="mx-auto mb-1.5 h-px w-6 bg-zinc-300 dark:bg-zinc-700"
+                    class="platform-group-divider mx-auto mb-1.5 h-px w-6 bg-zinc-300 dark:bg-zinc-700"
                     aria-hidden="true"
                 />
                 <div>
@@ -336,7 +336,7 @@ const linkInactive =
                         v-for="item in group.items"
                         :key="item.href"
                         :href="item.href"
-                        class="relative flex items-center gap-3 px-4 py-2.5 text-sm font-medium transition-colors"
+                        class="platform-nav-link relative flex items-center gap-3 px-4 py-2.5 text-sm font-medium transition-colors"
                         :class="[
                             isNavItemActive(item.href) ? linkActive : linkInactive,
                             showText() ? '' : 'justify-center px-0',
@@ -378,7 +378,7 @@ const linkInactive =
 
         <div
             v-show="showText()"
-            class="border-t border-zinc-200 px-4 py-3 text-xs text-zinc-500 dark:border-zinc-800 dark:text-zinc-500"
+            class="platform-sidebar-foot border-t border-zinc-200 px-4 py-3 text-xs text-zinc-500 dark:border-zinc-800 dark:text-zinc-500"
         >
             Operador do gateway
         </div>

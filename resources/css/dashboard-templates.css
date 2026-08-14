@@ -15,6 +15,16 @@
     --aurora-nav-hover-bg: rgba(255, 255, 255, 0.05);
     --aurora-chart-fore: #666666;
     --chart-grid: #222222;
+    /* Aliases genéricos consumidos pelo painel da plataforma (platform-templates.css) */
+    --tpl-bg: var(--aurora-bg);
+    --tpl-sidebar: var(--aurora-sidebar);
+    --tpl-panel: var(--aurora-panel);
+    --tpl-panel-hover: var(--aurora-panel-hover);
+    --tpl-border: var(--aurora-border);
+    --tpl-border-strong: var(--aurora-border-strong);
+    --tpl-text: var(--aurora-text);
+    --tpl-muted: var(--aurora-muted);
+    --tpl-subtle: var(--aurora-subtle);
     color: var(--aurora-text);
 }
 

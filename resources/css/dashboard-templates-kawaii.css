@@ -28,6 +28,16 @@
     --kawaii-chart-green: #22c55e;
     --kawaii-chart-purple: var(--color-primary);
     --chart-grid: #ebe9f2;
+    /* Aliases genéricos consumidos pelo painel da plataforma (platform-templates.css) */
+    --tpl-bg: var(--kawaii-bg);
+    --tpl-sidebar: var(--kawaii-sidebar);
+    --tpl-panel: var(--kawaii-panel);
+    --tpl-panel-hover: var(--kawaii-panel-hover);
+    --tpl-border: var(--kawaii-border);
+    --tpl-border-strong: var(--kawaii-border-strong);
+    --tpl-text: var(--kawaii-text);
+    --tpl-muted: var(--kawaii-muted);
+    --tpl-subtle: var(--kawaii-subtle);
     font-family: 'Nunito', ui-sans-serif, system-ui, sans-serif;
     color: var(--kawaii-text);
 }

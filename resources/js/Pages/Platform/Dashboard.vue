@@ -143,14 +143,14 @@ const chartOptions = computed(() => ({
     <div class="space-y-6">
         <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
-                <h2 class="text-lg font-semibold text-zinc-900 dark:text-white">Visão consolidada</h2>
-                <p class="text-sm text-zinc-500 dark:text-zinc-400">Todos os tenants · pedidos concluídos</p>
+                <h2 class="tpl-fg text-lg font-semibold text-zinc-900 dark:text-white">Visão consolidada</h2>
+                <p class="tpl-fg-muted text-sm text-zinc-500 dark:text-zinc-400">Todos os tenants · pedidos concluídos</p>
             </div>
             <div class="flex flex-wrap items-center gap-2">
                 <button
                     type="button"
                     :aria-label="valuesVisible ? 'Ocultar valores' : 'Mostrar valores'"
-                    class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-zinc-200 bg-white text-zinc-500 dark:border-zinc-600 dark:bg-zinc-800"
+                    class="tpl-surface-btn flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-zinc-200 bg-white text-zinc-500 dark:border-zinc-600 dark:bg-zinc-800"
                     @click="valuesVisible = !valuesVisible"
                 >
                     <Eye v-if="valuesVisible" class="h-5 w-5" />
@@ -168,7 +168,7 @@ const chartOptions = computed(() => ({
                 class="rounded-lg px-3 py-2 text-sm font-medium transition-colors"
                 :class="period === opt.value
                     ? 'bg-[var(--color-primary)] text-white'
-                    : 'text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200'"
+                    : 'tpl-icon-btn text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200'"
                 @click="setPeriod(opt.value)"
             >
                 {{ opt.label }}
@@ -176,34 +176,34 @@ const chartOptions = computed(() => ({
         </nav>
 
         <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
-            <div class="rounded-2xl border border-zinc-200 bg-zinc-50/50 p-4 dark:border-zinc-700 dark:bg-zinc-900/40">
-                <div class="flex items-center gap-2 text-sm font-medium text-zinc-600 dark:text-zinc-400">
+            <div class="tpl-card rounded-2xl border border-zinc-200 bg-zinc-50/50 p-4 dark:border-zinc-700 dark:bg-zinc-900/40">
+                <div class="tpl-fg-muted flex items-center gap-2 text-sm font-medium text-zinc-600 dark:text-zinc-400">
                     <Wallet class="h-4 w-4 text-[var(--color-primary)]" />
                     Saldo disponível (carteiras)
                 </div>
-                <p class="mt-2 text-2xl font-bold tabular-nums text-zinc-900 dark:text-white">
+                <p class="tpl-fg mt-2 text-2xl font-bold tabular-nums text-zinc-900 dark:text-white">
                     {{ displayCurrency(kpis.wallet_available) }}
                 </p>
             </div>
-            <div class="rounded-2xl border border-zinc-200 bg-zinc-50/50 p-4 dark:border-zinc-700 dark:bg-zinc-900/40">
-                <div class="flex items-center gap-2 text-sm font-medium text-zinc-600 dark:text-zinc-400">
+            <div class="tpl-card rounded-2xl border border-zinc-200 bg-zinc-50/50 p-4 dark:border-zinc-700 dark:bg-zinc-900/40">
+                <div class="tpl-fg-muted flex items-center gap-2 text-sm font-medium text-zinc-600 dark:text-zinc-400">
                     <CircleDollarSign class="h-4 w-4 text-[var(--color-primary)]" />
                     Vendas (período)
                 </div>
-                <p class="mt-2 text-2xl font-bold tabular-nums text-zinc-900 dark:text-white">
+                <p class="tpl-fg mt-2 text-2xl font-bold tabular-nums text-zinc-900 dark:text-white">
                     {{ displayCurrency(kpis.vendas_totais) }}
                 </p>
-                <p class="mt-1 text-xs text-zinc-500">{{ kpis.quantidade_vendas }} pedidos · TM {{ displayCurrency(kpis.ticket_medio) }}</p>
+                <p class="tpl-fg-subtle mt-1 text-xs text-zinc-500">{{ kpis.quantidade_vendas }} pedidos · TM {{ displayCurrency(kpis.ticket_medio) }}</p>
             </div>
-            <div class="rounded-2xl border border-zinc-200 bg-zinc-50/50 p-4 dark:border-zinc-700 dark:bg-zinc-900/40">
-                <div class="flex items-center gap-2 text-sm font-medium text-zinc-600 dark:text-zinc-400">
+            <div class="tpl-card rounded-2xl border border-zinc-200 bg-zinc-50/50 p-4 dark:border-zinc-700 dark:bg-zinc-900/40">
+                <div class="tpl-fg-muted flex items-center gap-2 text-sm font-medium text-zinc-600 dark:text-zinc-400">
                     <Receipt class="h-4 w-4 text-[var(--color-primary)]" />
                     Faturamento (taxas líquidas)
                 </div>
-                <p class="mt-2 text-2xl font-bold tabular-nums text-zinc-900 dark:text-white">
+                <p class="tpl-fg mt-2 text-2xl font-bold tabular-nums text-zinc-900 dark:text-white">
                     {{ displayCurrency(kpis.faturamento_liquido) }}
                 </p>
-                <p class="mt-1 text-xs leading-relaxed text-zinc-500">
+                <p class="tpl-fg-subtle mt-1 text-xs leading-relaxed text-zinc-500">
                     Taxas {{ displayCurrency(kpis.faturamento_taxas_cobradas) }}
                     <span class="hidden sm:inline"> · </span>
                     <span class="block sm:inline">Adq. vendas {{ displayCurrency(kpis.faturamento_custo_adquirente_vendas) }}</span>
@@ -211,39 +211,39 @@ const chartOptions = computed(() => ({
                     <span class="block sm:inline">Adq. saques {{ displayCurrency(kpis.faturamento_custo_adquirente_saques) }}</span>
                 </p>
             </div>
-            <div class="rounded-2xl border border-zinc-200 bg-zinc-50/50 p-4 dark:border-zinc-700 dark:bg-zinc-900/40">
-                <div class="flex items-center gap-2 text-sm font-medium text-zinc-600 dark:text-zinc-400">
+            <div class="tpl-card rounded-2xl border border-zinc-200 bg-zinc-50/50 p-4 dark:border-zinc-700 dark:bg-zinc-900/40">
+                <div class="tpl-fg-muted flex items-center gap-2 text-sm font-medium text-zinc-600 dark:text-zinc-400">
                     <ArrowDownCircle class="h-4 w-4 text-[var(--color-primary)]" />
                     Retiradas
                 </div>
-                <p class="mt-2 text-sm text-zinc-600 dark:text-zinc-300">
+                <p class="tpl-fg-muted mt-2 text-sm text-zinc-600 dark:text-zinc-300">
                     Concluídas: <span class="font-semibold">{{ displayCurrency(kpis.withdrawals_total) }}</span>
                 </p>
-                <p class="text-sm text-zinc-600 dark:text-zinc-300">
+                <p class="tpl-fg-muted text-sm text-zinc-600 dark:text-zinc-300">
                     Pendentes: <span class="font-semibold">{{ displayCurrency(kpis.withdrawals_pending) }}</span>
                 </p>
             </div>
-            <div class="rounded-2xl border border-zinc-200 bg-zinc-50/50 p-4 dark:border-zinc-700 dark:bg-zinc-900/40">
-                <div class="flex items-center gap-2 text-sm font-medium text-zinc-600 dark:text-zinc-400">
+            <div class="tpl-card rounded-2xl border border-zinc-200 bg-zinc-50/50 p-4 dark:border-zinc-700 dark:bg-zinc-900/40">
+                <div class="tpl-fg-muted flex items-center gap-2 text-sm font-medium text-zinc-600 dark:text-zinc-400">
                     <Users class="h-4 w-4 text-[var(--color-primary)]" />
                     Infoprodutores
                 </div>
-                <p class="mt-2 text-2xl font-bold tabular-nums text-zinc-900 dark:text-white">
+                <p class="tpl-fg mt-2 text-2xl font-bold tabular-nums text-zinc-900 dark:text-white">
                     {{ kpis.infoprodutores_count }}
                 </p>
-                <p class="mt-1 text-xs text-zinc-500">PIX pendente agregado: {{ displayCurrency(kpis.wallet_pending) }}</p>
+                <p class="tpl-fg-subtle mt-1 text-xs text-zinc-500">PIX pendente agregado: {{ displayCurrency(kpis.wallet_pending) }}</p>
             </div>
         </div>
 
-        <div class="rounded-2xl border border-zinc-200 bg-white p-4 dark:border-zinc-700 dark:bg-zinc-900/60">
-            <h3 class="mb-4 text-sm font-semibold text-zinc-900 dark:text-white">Vendas no período</h3>
+        <div class="tpl-card rounded-2xl border border-zinc-200 bg-white p-4 dark:border-zinc-700 dark:bg-zinc-900/60">
+            <h3 class="tpl-fg mb-4 text-sm font-semibold text-zinc-900 dark:text-white">Vendas no período</h3>
             <VueApexCharts type="area" height="280" :options="chartOptions" :series="chartSeries" />
         </div>
 
-        <div class="rounded-2xl border border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-900/60">
-            <div class="flex items-center gap-2 border-b border-zinc-200 px-4 py-3 dark:border-zinc-700">
+        <div class="tpl-card rounded-2xl border border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-900/60">
+            <div class="tpl-divider flex items-center gap-2 border-b border-zinc-200 px-4 py-3 dark:border-zinc-700">
                 <ShoppingCart class="h-4 w-4 text-zinc-500" />
-                <h3 class="text-sm font-semibold text-zinc-900 dark:text-white">Últimas transações</h3>
+                <h3 class="tpl-fg text-sm font-semibold text-zinc-900 dark:text-white">Últimas transações</h3>
             </div>
             <div class="overflow-x-auto">
                 <table class="w-full text-left text-sm">

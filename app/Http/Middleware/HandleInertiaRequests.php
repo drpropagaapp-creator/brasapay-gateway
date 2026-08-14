@@ -308,7 +308,9 @@ class HandleInertiaRequests extends Middleware
             'member_certificate' => $memberCertificate,
             'member_area_admin_preview' => $memberAreaAdminPreview,
             'customer_panel' => $customerPanel,
-            'seller_dashboard_template' => ($user && $user->canAccessSellerPanel() && ! $customerPanel)
+            // Template vale para o painel do infoprodutor E o painel da plataforma (admin);
+            // apenas a área de membros (customer_panel) fica sempre no padrão.
+            'seller_dashboard_template' => ($user && ! $customerPanel)
                 ? SellerDashboardTemplate::current()
                 : SellerDashboardTemplate::DEFAULT,
             'api_pix_enabled_effective' => $user && $user->canAccessSellerPanel()

@@ -19,6 +19,16 @@
     --prime-nav-hover-bg: rgba(255, 255, 255, 0.04);
     --prime-chart-fore: #6b7488;
     --chart-grid: #1d222d;
+    /* Aliases genéricos consumidos pelo painel da plataforma (platform-templates.css) */
+    --tpl-bg: var(--prime-bg);
+    --tpl-sidebar: var(--prime-sidebar);
+    --tpl-panel: var(--prime-panel);
+    --tpl-panel-hover: var(--prime-panel-hover);
+    --tpl-border: var(--prime-border);
+    --tpl-border-strong: var(--prime-border-strong);
+    --tpl-text: var(--prime-text);
+    --tpl-muted: var(--prime-muted);
+    --tpl-subtle: var(--prime-subtle);
     color: var(--prime-text);
 }
 

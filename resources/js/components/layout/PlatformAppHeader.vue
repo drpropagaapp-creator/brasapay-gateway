@@ -32,13 +32,13 @@ const quickLinks = [
             <button
                 v-if="isMobile && !isMobileOpen"
                 type="button"
-                class="flex h-9 w-9 shrink-0 touch-manipulation cursor-pointer select-none items-center justify-center rounded-lg text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
+                class="tpl-icon-btn flex h-9 w-9 shrink-0 touch-manipulation cursor-pointer select-none items-center justify-center rounded-lg text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
                 aria-label="Abrir menu"
                 @click="toggleSidebar"
             >
                 <PanelsTopLeft class="h-5 w-5" aria-hidden="true" />
             </button>
-            <h1 v-if="pageTitle" class="min-w-0 truncate text-xl font-semibold text-zinc-900 dark:text-white md:text-2xl">
+            <h1 v-if="pageTitle" class="tpl-fg min-w-0 truncate text-xl font-semibold text-zinc-900 dark:text-white md:text-2xl">
                 {{ pageTitle }}
             </h1>
             <nav
@@ -46,7 +46,7 @@ const quickLinks = [
                 class="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 overflow-x-auto text-sm"
                 aria-label="Atalhos da plataforma"
             >
-                <span v-if="pageTitle" class="text-zinc-300 dark:text-zinc-600" aria-hidden="true">|</span>
+                <span v-if="pageTitle" class="tpl-fg-subtle text-zinc-300 dark:text-zinc-600" aria-hidden="true">|</span>
                 <Link
                     v-for="item in quickLinks"
                     :key="item.href"
@@ -54,8 +54,8 @@ const quickLinks = [
                     class="whitespace-nowrap font-medium transition-colors"
                     :class="
                         item.match(urlPath)
-                            ? 'text-[var(--color-primary)]'
-                            : 'text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-200'
+                            ? 'platform-quicklink-active text-[var(--color-primary)]'
+                            : 'platform-quicklink text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-200'
                     "
                 >
                     {{ item.label }}

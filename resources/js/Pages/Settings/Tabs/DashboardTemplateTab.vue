@@ -238,7 +238,7 @@ onMounted(() => {
                 <div>
                     <h2 class="text-base font-semibold text-zinc-900 dark:text-white">Template da dashboard</h2>
                     <p class="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
-                        Define o visual do painel do infoprodutor (dashboard, sidebar e cards). As cores da marca continuam em
+                        Define o visual do painel do infoprodutor e do painel administrativo (dashboard, sidebar e cards). As cores da marca continuam em
                         <strong class="font-medium">Personalização</strong>.
                     </p>
                 </div>

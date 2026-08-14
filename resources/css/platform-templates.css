@@ -1,0 +1,122 @@
+/* Painel da plataforma (admin) com templates — regras genéricas via aliases --tpl-*.
+   Cada template (aurora/kawaii/prime/studio) define os aliases no seu próprio CSS;
+   estas regras só ativam quando o layout da plataforma carrega data-seller-template. */
+
+[data-seller-template].platform-shell {
+    background-color: var(--tpl-bg);
+}
+
+[data-seller-template] .platform-content-shell {
+    background: transparent;
+    border: 0;
+    box-shadow: none;
+}
+
+/* Textos e botões genéricos */
+[data-seller-template] .tpl-fg {
+    color: var(--tpl-text);
+}
+
+[data-seller-template] .tpl-fg-muted {
+    color: var(--tpl-muted);
+}
+
+[data-seller-template] .tpl-fg-subtle {
+    color: var(--tpl-subtle);
+}
+
+[data-seller-template] .tpl-divider {
+    border-color: var(--tpl-border);
+}
+
+[data-seller-template] .tpl-icon-btn {
+    color: var(--tpl-muted);
+    background-color: transparent;
+}
+
+[data-seller-template] .tpl-icon-btn:hover {
+    background-color: var(--tpl-panel-hover);
+    color: var(--tpl-text);
+}
+
+[data-seller-template] .tpl-surface-btn {
+    border-color: var(--tpl-border);
+    background-color: var(--tpl-panel);
+    color: var(--tpl-muted);
+}
+
+[data-seller-template] .tpl-surface-btn:hover {
+    background-color: var(--tpl-panel-hover);
+    color: var(--tpl-text);
+}
+
+/* Cards genéricos (dashboard admin e páginas internas) */
+[data-seller-template] .tpl-card {
+    background-color: var(--tpl-panel);
+    border-color: var(--tpl-border);
+    color: var(--tpl-text);
+}
+
+[data-seller-template] .tpl-card thead {
+    background-color: var(--tpl-panel-hover);
+    border-color: var(--tpl-border);
+    color: var(--tpl-muted);
+}
+
+[data-seller-template] .tpl-card tbody tr {
+    border-color: var(--tpl-border);
+}
+
+[data-seller-template] .tpl-card td {
+    color: var(--tpl-text);
+}
+
+/* Sidebar da plataforma */
+[data-seller-template] .platform-sidebar {
+    background-color: var(--tpl-sidebar);
+    border-color: var(--tpl-border);
+}
+
+[data-seller-template] .platform-sidebar-head {
+    border-color: var(--tpl-border);
+}
+
+[data-seller-template] .platform-nav-link {
+    color: var(--tpl-muted);
+}
+
+[data-seller-template] .platform-nav-link:hover {
+    background-color: var(--tpl-panel-hover);
+    color: var(--tpl-text);
+}
+
+[data-seller-template] .platform-nav-active {
+    background-color: color-mix(in srgb, var(--color-primary) 12%, transparent);
+    color: var(--tpl-text);
+}
+
+[data-seller-template] .platform-group-label {
+    color: var(--tpl-subtle);
+}
+
+[data-seller-template] .platform-group-divider {
+    background-color: var(--tpl-border);
+}
+
+[data-seller-template] .platform-sidebar-foot {
+    border-color: var(--tpl-border);
+    color: var(--tpl-subtle);
+}
+
+/* Quick links do header */
+[data-seller-template] .platform-quicklink {
+    color: var(--tpl-muted);
+}
+
+[data-seller-template] .platform-quicklink:hover {
+    color: var(--tpl-text);
+}
+
+[data-seller-template] .platform-quicklink-active {
+    color: var(--color-primary);
+}
