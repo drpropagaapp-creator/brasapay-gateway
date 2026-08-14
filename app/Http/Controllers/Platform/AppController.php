@@ -1,0 +1,148 @@
+<?php
+
+namespace App\Http\Controllers\Platform;
+
+use App\Http\Controllers\Controller;
+use App\Models\BrandingSetting;
+use App\Models\PanelPushSubscription;
+use App\Services\PanelPushService;
+use App\Services\StorageService;
+use App\Support\BrandingAssetUrls;
+use App\Support\PanelPushSettings;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
+use Inertia\Inertia;
+use Inertia\Response;
+
+class AppController extends Controller
+{
+    private const PWA_KEYS = [
+        'app_name',
+        'pwa_theme_color',
+        'pwa_icon_192',
+        'pwa_icon_512',
+    ];
+
+    private const UPLOAD_FIELDS = [
+        'pwa_icon_192',
+        'pwa_icon_512',
+    ];
+
+    public function index(): Response
+    {
+        $row = BrandingSetting::query()->whereNull('tenant_id')->first();
+        $data = is_array($row?->data) ? $row->data : [];
+        $app = [
+            'app_name' => (string) ($data['app_name'] ?? config('getfy.app_name', 'Getfy')),
+            'pwa_theme_color' => (string) ($data['pwa_theme_color'] ?? config('getfy.pwa_theme_color', config('getfy.theme_primary', '#0ea5e9'))),
+            'pwa_icon_192' => (string) ($data['pwa_icon_192'] ?? config('getfy.pwa_icon_192', '')),
+            'pwa_icon_512' => (string) ($data['pwa_icon_512'] ?? config('getfy.pwa_icon_512', '')),
+        ];
+        $app = BrandingAssetUrls::resolveData($app);
+
+        return Inertia::render('Platform/App/Index', [
+            'app' => $app,
+            'push_subscriptions_count' => PanelPushSubscription::query()->count(),
+        ]);
+    }
+
+    public function data(): JsonResponse
+    {
+        $row = BrandingSetting::query()->whereNull('tenant_id')->first();
+        $data = is_array($row?->data) ? $row->data : [];
+        $app = [
+            'app_name' => (string) ($data['app_name'] ?? config('getfy.app_name', 'Getfy')),
+            'pwa_theme_color' => (string) ($data['pwa_theme_color'] ?? config('getfy.pwa_theme_color', config('getfy.theme_primary', '#0ea5e9'))),
+            'pwa_icon_192' => (string) ($data['pwa_icon_192'] ?? config('getfy.pwa_icon_192', '')),
+            'pwa_icon_512' => (string) ($data['pwa_icon_512'] ?? config('getfy.pwa_icon_512', '')),
+        ];
+
+        return response()->json([
+            'app' => BrandingAssetUrls::resolveData($app),
+        ]);
+    }
+
+    public function update(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'app_name' => ['nullable', 'string', 'max:120'],
+            'pwa_theme_color' => ['nullable', 'string', 'max:20'],
+            'pwa_icon_192' => ['nullable', 'string', 'max:2048'],
+            'pwa_icon_512' => ['nullable', 'string', 'max:2048'],
+        ]);
+
+        $row = BrandingSetting::query()->firstOrCreate(
+            ['tenant_id' => null],
+            ['data' => []]
+        );
+        $data = is_array($row->data) ? $row->data : [];
+        foreach (self::PWA_KEYS as $key) {
+            if (! array_key_exists($key, $validated)) {
+                continue;
+            }
+            $v = $validated[$key];
+            if ($v === null || trim((string) $v) === '') {
+                unset($data[$key]);
+            } else {
+                $v = trim((string) $v);
+                if (in_array($key, self::UPLOAD_FIELDS, true)) {
+                    $v = app(StorageService::class)->toStoragePath($v) ?? $v;
+                }
+                $data[$key] = $v;
+            }
+        }
+        $row->update(['data' => $data]);
+
+        return response()->json(['ok' => true]);
+    }
+
+    public function upload(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'field' => ['required', 'string', Rule::in(self::UPLOAD_FIELDS)],
+            'file' => ['required', 'file', 'max:4096', 'mimes:jpg,jpeg,png,webp,gif,ico,svg'],
+        ]);
+
+        $uploaded = app(StorageService::class)->storeUploadedPublicFile(
+            $request->file('file'),
+            'white-label/global'
+        );
+        $stored = $uploaded['path'];
+        $publicUrl = $uploaded['url'];
+
+        $row = BrandingSetting::query()->firstOrCreate(
+            ['tenant_id' => null],
+            ['data' => []]
+        );
+        $data = is_array($row->data) ? $row->data : [];
+        $data[$validated['field']] = $stored;
+        $row->update(['data' => $data]);
+
+        return response()->json(['ok' => true, 'url' => $publicUrl, 'field' => $validated['field']]);
+    }
+
+    public function clearField(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'field' => ['required', 'string', Rule::in(self::PWA_KEYS)],
+        ]);
+
+        $row = BrandingSetting::query()->whereNull('tenant_id')->first();
+        if (! $row) {
+            return response()->json(['ok' => true]);
+        }
+
+        $data = is_array($row->data) ? $row->data : [];
+        unset($data[$validated['field']]);
+        $row->update(['data' => $data]);
+
+        return response()->json(['ok' => true]);
+    }
+
+    /** @deprecated Use AppPushController::sendBroadcast — rota mantida por compatibilidade */
+    public function sendPush(Request $request, PanelPushService $panelPushService): JsonResponse
+    {
+        return app(AppPushController::class)->sendBroadcast($request, $panelPushService);
+    }
+}

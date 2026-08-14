@@ -1,0 +1,96 @@
+/**
+ * Espelha App\Support\EmailCampaignTemplate para pré-visualização no painel.
+ */
+export const CAMPAIGN_BODY_MARKER = 'data-campaign-body="1"';
+
+const DEFAULT_PRIMARY = '#0ea5e9';
+
+/** @returns {string|null} Hex #RRGGBB normalizado ou null se inválido. */
+export function normalizeThemePrimary(raw, fallback = null) {
+    let value = String(raw ?? '').trim();
+    if (value === '') {
+        return fallback;
+    }
+
+    if (/^[0-9A-Fa-f]{6}$/.test(value)) {
+        value = `#${value}`;
+    }
+
+    if (/^#[0-9A-Fa-f]{3}$/i.test(value)) {
+        value = `#${value[1]}${value[1]}${value[2]}${value[2]}${value[3]}${value[3]}`;
+    }
+
+    if (/^#[0-9A-Fa-f]{6}$/i.test(value)) {
+        return value.toLowerCase();
+    }
+
+    return fallback;
+}
+
+export function defaultCampaignMessage() {
+    return (
+        'Temos uma novidade importante para compartilhar com você.\n\n'
+        + 'Escreva aqui o conteúdo da sua mensagem. Você pode usar parágrafos separando com uma linha em branco.\n\n'
+        + 'Qualquer dúvida, basta responder este e-mail.\n\n'
+        + 'Abraços!'
+    );
+}
+
+function escapeHtml(text) {
+    return text
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+}
+
+function plainTextToHtmlBlock(plainText) {
+    const parts = plainText.split(/\n\n+/).map((p) => p.trim()).filter(Boolean);
+    if (parts.length === 0) {
+        return `<p style="margin:0;font-size:16px;line-height:1.65;color:#334155;">${escapeHtml(plainText)}</p>`;
+    }
+    return parts
+        .map((part) => {
+            const line = escapeHtml(part).replace(/\n/g, '<br>');
+            return `<p style="margin:0 0 16px;font-size:16px;line-height:1.65;color:#334155;">${line}</p>`;
+        })
+        .join('');
+}
+
+function resolveThemePrimary(themePrimary) {
+    return normalizeThemePrimary(themePrimary, DEFAULT_PRIMARY) ?? DEFAULT_PRIMARY;
+}
+
+function darkenHex(hex, factor = 0.15) {
+    const normalized = String(hex || '').replace('#', '');
+    if (normalized.length !== 6) {
+        return '#0284c7';
+    }
+    const r = Math.max(0, Math.round(parseInt(normalized.slice(0, 2), 16) * (1 - factor)));
+    const g = Math.max(0, Math.round(parseInt(normalized.slice(2, 4), 16) * (1 - factor)));
+    const b = Math.max(0, Math.round(parseInt(normalized.slice(4, 6), 16) * (1 - factor)));
+    return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
+}
+
+export function wrapCampaignBodyHtml(plainText, options = {}) {
+    const inner = plainTextToHtmlBlock((plainText || '').trim() || defaultCampaignMessage());
+    const primary = resolveThemePrimary(options.themePrimary);
+    const primaryDark = darkenHex(primary);
+
+    return (
+        '<!DOCTYPE html><html lang="pt-BR"><head>'
+        + '<meta charset="utf-8"><meta name="viewport" content="width=device-width">'
+        + '</head><body style="margin:0;padding:0;background-color:#f1f5f9;">'
+        + '<table width="100%" cellpadding="0" cellspacing="0" style="background-color:#f1f5f9;padding:32px 16px;">'
+        + '<tr><td align="center">'
+        + '<table width="100%" cellpadding="0" cellspacing="0" style="max-width:600px;background:#fff;border-radius:16px;box-shadow:0 4px 24px rgba(15,23,42,0.08);">'
+        + `<tr><td style="padding:28px 32px 20px;background:linear-gradient(135deg,${primary},${primaryDark});text-align:center;">`
+        + '<p style="margin:0;font-size:13px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;color:rgba(255,255,255,0.9);">Mensagem para você</p>'
+        + '<h1 style="margin:12px 0 0;font-size:26px;font-weight:700;color:#fff;">Olá, João!</h1>'
+        + '</td></tr>'
+        + `<tr><td ${CAMPAIGN_BODY_MARKER} style="padding:32px 36px 28px;">${inner}</td></tr>`
+        + '<tr><td style="padding:20px 32px;background:#f8fafc;border-top:1px solid #e2e8f0;">'
+        + '<p style="margin:0;font-size:13px;color:#64748b;">Prévia — no envio real usamos {nome} e {email}.</p>'
+        + '</td></tr></table></td></tr></table></body></html>'
+    );
+}

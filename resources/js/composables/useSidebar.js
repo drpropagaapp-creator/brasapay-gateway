@@ -1,0 +1,106 @@
+import { ref, computed, watch, onMounted, onUnmounted, provide, inject } from 'vue';
+import { router } from '@inertiajs/vue3';
+
+const SidebarSymbol = Symbol();
+
+function applyMobileScrollLock(locked) {
+    if (typeof document === 'undefined') {
+        return;
+    }
+    document.body.style.overflow = locked ? 'hidden' : '';
+    document.body.style.touchAction = locked ? 'none' : '';
+}
+
+export function useSidebarProvider() {
+    const isExpanded = ref(true);
+    const isMobileOpen = ref(false);
+    const isMobile = ref(false);
+    const isHovered = ref(false);
+
+    const closeMobileSidebar = () => {
+        isMobileOpen.value = false;
+    };
+
+    watch([isMobileOpen, isMobile], ([open, mobile]) => {
+        applyMobileScrollLock(Boolean(mobile && open));
+    });
+
+    const handleResize = () => {
+        const mobile = window.innerWidth < 1024;
+        isMobile.value = mobile;
+        if (!mobile) {
+            isMobileOpen.value = false;
+        }
+    };
+
+    let removeNavigateListener = null;
+
+    onMounted(() => {
+        handleResize();
+        window.addEventListener('resize', handleResize);
+
+        removeNavigateListener = router.on('start', () => {
+            if (isMobile.value && isMobileOpen.value) {
+                closeMobileSidebar();
+            }
+        });
+    });
+
+    onUnmounted(() => {
+        window.removeEventListener('resize', handleResize);
+        removeNavigateListener?.();
+        applyMobileScrollLock(false);
+    });
+
+    const setExpanded = (value) => {
+        if (!isMobile.value) {
+            isExpanded.value = !!value;
+        }
+    };
+
+    const toggleSidebar = () => {
+        if (isMobile.value) {
+            isMobileOpen.value = !isMobileOpen.value;
+        } else {
+            isExpanded.value = !isExpanded.value;
+        }
+    };
+
+    const toggleMobileSidebar = () => {
+        isMobileOpen.value = !isMobileOpen.value;
+    };
+
+    const closeMobileSidebarIfOpen = () => {
+        if (isMobile.value) {
+            closeMobileSidebar();
+        }
+    };
+
+    const setIsHovered = (value) => {
+        isHovered.value = value;
+    };
+
+    const context = {
+        isExpanded: computed(() => (isMobile.value ? false : isExpanded.value)),
+        isMobileOpen,
+        isMobile,
+        isHovered,
+        setExpanded,
+        toggleSidebar,
+        toggleMobileSidebar,
+        closeMobileSidebar,
+        closeMobileSidebarIfOpen,
+        setIsHovered,
+    };
+
+    provide(SidebarSymbol, context);
+    return context;
+}
+
+export function useSidebar() {
+    const context = inject(SidebarSymbol);
+    if (!context) {
+        throw new Error('useSidebar must be used within a component that has useSidebarProvider as an ancestor');
+    }
+    return context;
+}

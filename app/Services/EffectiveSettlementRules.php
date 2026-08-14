@@ -1,0 +1,85 @@
+<?php
+
+namespace App\Services;
+
+use App\Models\Setting;
+use App\Models\User;
+
+class EffectiveSettlementRules
+{
+    /** Chaves de método com regras próprias de D+N / reserva (checkout + carteiras). */
+    public const SETTLEMENT_METHOD_KEYS = ['pix', 'open_finance', 'card', 'apple_pay', 'google_pay', 'boleto'];
+
+    /**
+     * @return array<string, array{days_to_available: int, reserve_percent: float, reserve_hold_days: int}>
+     */
+    public static function platformDefaults(): array
+    {
+        $raw = Setting::get('merchant_settlement_rules', null, null);
+        if (is_string($raw)) {
+            $raw = json_decode($raw, true);
+        }
+        $base = [];
+        foreach (self::SETTLEMENT_METHOD_KEYS as $k) {
+            $base[$k] = ['days_to_available' => 0, 'reserve_percent' => 0.0, 'reserve_hold_days' => 0];
+        }
+        if (! is_array($raw)) {
+            return $base;
+        }
+        foreach (self::SETTLEMENT_METHOD_KEYS as $k) {
+            if (! isset($raw[$k]) || ! is_array($raw[$k])) {
+                continue;
+            }
+            $base[$k]['days_to_available'] = max(0, (int) ($raw[$k]['days_to_available'] ?? 0));
+            $base[$k]['reserve_percent'] = min(100, max(0, (float) ($raw[$k]['reserve_percent'] ?? 0)));
+            $base[$k]['reserve_hold_days'] = max(0, min(365, (int) ($raw[$k]['reserve_hold_days'] ?? 0)));
+        }
+        // Legado: sem liquidação Open Finance, herda D+N/reserva do PIX.
+        if (! isset($raw['open_finance']) || ! is_array($raw['open_finance'])) {
+            $base['open_finance'] = $base['pix'];
+        }
+
+        return $base;
+    }
+
+    /**
+     * @param  'pix'|'open_finance'|'card'|'apple_pay'|'google_pay'|'boleto'  $methodKey
+     * @return array{days_to_available: int, reserve_percent: float, reserve_hold_days: int}
+     */
+    public static function forTenantMethod(int $tenantId, string $methodKey): array
+    {
+        if (! in_array($methodKey, self::SETTLEMENT_METHOD_KEYS, true)) {
+            $methodKey = 'pix';
+        }
+        $defaults = self::platformDefaults()[$methodKey];
+        $owner = User::query()
+            ->where('id', $tenantId)
+            ->where('role', User::ROLE_INFOPRODUTOR)
+            ->first();
+        if ($owner === null) {
+            $owner = User::query()
+                ->where('tenant_id', $tenantId)
+                ->where('role', User::ROLE_INFOPRODUTOR)
+                ->first();
+        }
+        if ($owner === null) {
+            return $defaults;
+        }
+        $ov = $owner->merchant_settlement_overrides;
+        if (! is_array($ov) || ! isset($ov[$methodKey]) || ! is_array($ov[$methodKey])) {
+            return $defaults;
+        }
+        $block = $ov[$methodKey];
+        if (array_key_exists('days_to_available', $block) && $block['days_to_available'] !== '' && $block['days_to_available'] !== null) {
+            $defaults['days_to_available'] = max(0, (int) $block['days_to_available']);
+        }
+        if (array_key_exists('reserve_percent', $block) && $block['reserve_percent'] !== '' && $block['reserve_percent'] !== null) {
+            $defaults['reserve_percent'] = min(100, max(0, (float) $block['reserve_percent']));
+        }
+        if (array_key_exists('reserve_hold_days', $block) && $block['reserve_hold_days'] !== '' && $block['reserve_hold_days'] !== null) {
+            $defaults['reserve_hold_days'] = max(0, min(365, (int) $block['reserve_hold_days']));
+        }
+
+        return $defaults;
+    }
+}

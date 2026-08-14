@@ -1,0 +1,13 @@
+.env
+.env.*
+!.env.example
+/node_modules
+# vendor/ e public/build/ são gerados no host antes do build
+# (docker/install-composer-deps.sh e docker/build-frontend.sh) e entram na imagem via COPY.
+/storage/logs
+/storage/framework
+/agent/node_modules
+/dist-releases
+.git
+# Symlink storage:link — no Windows o BuildKit falha com "invalid file request public/storage"
+/public/storage

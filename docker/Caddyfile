@@ -1,0 +1,15 @@
+{
+	http_port 80
+	https_port 443
+	# Sem redirect HTTP→HTTPS na origem (Flexible + Cloudflare no edge).
+	auto_https disable_redirects
+}
+
+# Cloudflare Flexible → HTTP :80
+:80 {
+	reverse_proxy app:80
+	encode zstd gzip
+}
+
+# Cloudflare Full / Full strict → HTTPS :443 (bloco com tls no domínio)
+import /etc/getfy/Caddyfile.domains

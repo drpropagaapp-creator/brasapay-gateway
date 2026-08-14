@@ -1,0 +1,216 @@
+<?php
+
+namespace Tests\Feature;
+
+use App\Models\ApiApplication;
+use App\Models\GatewayCredential;
+use App\Models\Order;
+use App\Models\Setting;
+use App\Models\User;
+use App\Services\ApiPixAccess;
+use App\Services\EffectiveMerchantFees;
+use App\Services\PaymentService;
+use App\Support\ApiScopes;
+use Illuminate\Support\Facades\Schema;
+use Mockery;
+use Tests\TestCase;
+
+class ApiPixExternalTest extends TestCase
+{
+    /**
+     * @return array{app: ApiApplication, public: string, secret: string, legacy: string}
+     */
+    private function createApiApp(int $tenantId, bool $active = true): array
+    {
+        $public = ApiApplication::generatePublicKey();
+        $secret = ApiApplication::generateSecretKey();
+        $legacy = 'getfy_test_legacy_key';
+
+        $app = ApiApplication::create([
+            'tenant_id' => $tenantId,
+            'name' => 'API App',
+            'slug' => ApiApplication::generateUniqueSlug($tenantId, 'API App'),
+            'api_key_hash' => ApiApplication::hashApiKey($legacy),
+            'legacy_api_key_sha256' => hash('sha256', $legacy),
+            'public_key' => $public,
+            'secret_key_hash' => ApiApplication::hashSecretKey($secret),
+            'payment_gateways' => ApiApplication::defaultPaymentGateways(),
+            'allowed_ips' => [],
+            'is_active' => $active,
+            'is_legacy' => true,
+            'scopes' => ApiScopes::legacyDefaults(),
+            'webhook_url' => null,
+            'default_return_url' => null,
+            'webhook_secret' => null,
+            'checkout_sidebar_bg' => null,
+        ]);
+
+        return ['app' => $app, 'public' => $public, 'secret' => $secret, 'legacy' => $legacy];
+    }
+
+    public function test_api_auth_accepts_public_and_secret_headers(): void
+    {
+        $seller = User::factory()->create(['role' => User::ROLE_INFOPRODUTOR]);
+        $seller->forceFill(['tenant_id' => $seller->id])->save();
+        $app = $this->createApiApp((int) $seller->id);
+
+        $resp = $this->withHeaders([
+            'X-Public-Key' => $app['public'],
+            'X-Secret-Key' => $app['secret'],
+        ])->get('/api/v1/payments/not-found-order');
+
+        $resp->assertStatus(404);
+    }
+
+    public function test_api_auth_fallback_legacy_bearer_kept(): void
+    {
+        $seller = User::factory()->create(['role' => User::ROLE_INFOPRODUTOR]);
+        $seller->forceFill(['tenant_id' => $seller->id])->save();
+        $app = $this->createApiApp((int) $seller->id);
+
+        $resp = $this->withHeaders([
+            'Authorization' => 'Bearer '.$app['legacy'],
+        ])->get('/api/v1/payments/not-found-order');
+
+        $resp->assertStatus(404);
+    }
+
+    public function test_api_pix_toggle_global_and_tenant_override(): void
+    {
+        $seller = User::factory()->create(['role' => User::ROLE_INFOPRODUTOR]);
+        $seller->forceFill(['tenant_id' => $seller->id])->save();
+
+        Setting::set('api_pix_enabled', false, null);
+        $this->assertFalse(ApiPixAccess::effectiveForTenant((int) $seller->id));
+
+        Setting::set('api_pix_enabled', true, (int) $seller->id);
+        $this->assertTrue(ApiPixAccess::effectiveForTenant((int) $seller->id));
+    }
+
+    public function test_api_pix_fee_uses_dedicated_rule_for_api_source(): void
+    {
+        $seller = User::factory()->create(['role' => User::ROLE_INFOPRODUTOR]);
+        $seller->forceFill([
+            'tenant_id' => $seller->id,
+            'merchant_fees' => [
+                'pix' => ['percent' => 1.0, 'fixed' => 0.50],
+                'api_pix' => ['percent' => 5.0, 'fixed' => 1.00],
+            ],
+        ])->save();
+
+        $apiCalc = EffectiveMerchantFees::calculateSaleFee((int) $seller->id, 'pix', 100.00, 'api');
+        $checkoutCalc = EffectiveMerchantFees::calculateSaleFee((int) $seller->id, 'pix', 100.00, 'checkout');
+
+        $this->assertSame(6.00, $apiCalc['fee']);
+        $this->assertSame(1.50, $checkoutCalc['fee']);
+    }
+
+    public function test_api_checkout_pro_uses_api_pix_fee_bucket(): void
+    {
+        $seller = User::factory()->create(['role' => User::ROLE_INFOPRODUTOR]);
+        $seller->forceFill([
+            'tenant_id' => $seller->id,
+            'merchant_fees' => [
+                'pix' => ['percent' => 1.0, 'fixed' => 0.0],
+                'api_pix' => ['percent' => 4.0, 'fixed' => 2.0],
+            ],
+        ])->save();
+
+        $hosted = EffectiveMerchantFees::calculateSaleFee((int) $seller->id, 'pix', 100.00, 'api_checkout_pro');
+        $this->assertSame(6.00, $hosted['fee']);
+    }
+
+    public function test_orders_table_has_api_columns_required_for_pix_api(): void
+    {
+        $this->assertTrue(Schema::hasColumn('orders', 'api_application_id'));
+        $this->assertTrue(Schema::hasColumn('orders', 'api_checkout_session_id'));
+    }
+
+    public function test_create_pix_api_persists_order_with_api_application_id(): void
+    {
+        Setting::set('api_pix_enabled', '1', null);
+        Setting::set('gateway_order', [
+            'pix' => ['efi'],
+            'card' => [],
+            'boleto' => [],
+            'pix_auto' => [],
+        ], null);
+
+        $seller = User::factory()->create(['role' => User::ROLE_INFOPRODUTOR]);
+        $seller->forceFill([
+            'tenant_id' => $seller->id,
+            'kyc_status' => User::KYC_APPROVED,
+            'account_status' => 'approved',
+        ])->save();
+
+        $cred = new GatewayCredential([
+            'tenant_id' => null,
+            'gateway_slug' => 'efi',
+            'is_connected' => true,
+        ]);
+        $cred->setEncryptedCredentials(['payee_code' => '123', 'sandbox' => true]);
+        $cred->save();
+
+        $keys = $this->createApiApp((int) $seller->id);
+        $product = $this->createTestProduct([
+            'tenant_id' => $seller->id,
+            'price' => 49.90,
+        ]);
+
+        $mock = Mockery::mock(PaymentService::class);
+        $mock->shouldReceive('createPixPayment')
+            ->once()
+            ->andReturn([
+                'transaction_id' => 'efi-tx-1',
+                'gateway' => 'efi',
+                'qrcode' => 'base64qr',
+                'copy_paste' => '00020126580014br.gov.bcb.pix',
+            ]);
+        $this->instance(PaymentService::class, $mock);
+
+        $response = $this->withHeaders([
+            'X-Public-Key' => $keys['public'],
+            'X-Secret-Key' => $keys['secret'],
+        ])->postJson('/api/v1/payments/pix', [
+            'customer' => [
+                'email' => 'integrador@example.com',
+                'name' => 'Integrador',
+                'cpf' => '52998224725',
+            ],
+            'amount' => 49.90,
+            'currency' => 'BRL',
+            'product_id' => (string) $product->id,
+            'metadata' => ['external_id' => 'ped-1001'],
+        ]);
+
+        $response->assertCreated()
+            ->assertJsonPath('status', 'pending')
+            ->assertJsonPath('copy_paste', '00020126580014br.gov.bcb.pix');
+
+        $orderId = $response->json('order_id');
+        $this->assertNotNull($orderId);
+
+        $order = Order::find($orderId);
+        $this->assertNotNull($order);
+        $this->assertSame($keys['app']->id, $order->api_application_id);
+        $this->assertSame((string) $product->id, (string) $order->product_id);
+        $this->assertSame('pix', $order->payment_method);
+    }
+
+    public function test_card_via_api_source_still_uses_checkout_card_fee(): void
+    {
+        $seller = User::factory()->create(['role' => User::ROLE_INFOPRODUTOR]);
+        $seller->forceFill([
+            'tenant_id' => $seller->id,
+            'merchant_fees' => [
+                'pix' => ['percent' => 1.0, 'fixed' => 0.0],
+                'api_pix' => ['percent' => 9.0, 'fixed' => 0.0],
+                'card' => ['percent' => 3.0, 'fixed' => 1.0],
+            ],
+        ])->save();
+
+        $apiCard = EffectiveMerchantFees::calculateSaleFee((int) $seller->id, 'card', 100.00, 'api');
+        $this->assertSame(4.00, $apiCard['fee']);
+    }
+
+}

@@ -1,0 +1,181 @@
+# Desenvolvimento local do gateway (app + agent + Postgres/Redis).
+# Uso (recomendado — um comando):
+#   docker compose -f docker-compose.local-db.yml -f docker-compose.dev.yml up --build
+#
+# Postgres no host: localhost:5433 | Redis no host: localhost:6379
+# Dentro da rede Docker use os serviços postgres:5432 e redis:6379 (mais rápido que host.docker.internal).
+#
+# Performance (Windows):
+# - OPcache CLI + realpath cache via docker/php/dev.ini
+# - vendor/ em volume Docker (FS Linux) — evita milhares de reads lentos no bind mount NTFS
+# - Melhor ainda: clone o repo dentro do WSL2 (~/...) em vez de D:\..., ou use só
+#   docker-compose.local-db.yml + PHP no Laragon/host (Vite continua com npm run dev no host)
+#
+# Logs: rotação json-file + Laravel daily/warning (evita encher disco com laravel.log único em debug).
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "20m"
+    max-file: "3"
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: getfy_app:dev
+    restart: unless-stopped
+    logging: *default-logging
+    ports:
+      - "${GETFY_HTTP_PORT:-8085}:80"
+    volumes:
+      - .:/var/www/html
+      # vendor no volume Linux (bind mount Windows/macOS mata o autoload do Composer)
+      - getfy_dev_vendor:/var/www/html/vendor
+      - ./docker/php/uploads.ini:/usr/local/etc/php/conf.d/99-uploads.ini:ro
+      - ./docker/php/dev.ini:/usr/local/etc/php/conf.d/99-dev.ini:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      APP_ENV: local
+      APP_DEBUG: "true"
+      GETFY_APP_URL: ${GETFY_APP_URL:-http://localhost:8085}
+      GETFY_DOCKER: "true"
+      GETFY_RUN_SETUP: "false"
+      DB_CONNECTION: pgsql
+      DB_HOST: ${GETFY_DEV_DB_HOST:-postgres}
+      DB_PORT: ${GETFY_DEV_DB_PORT:-5432}
+      DB_DATABASE: ${LOCALDB_POSTGRES_DB:-getfy}
+      DB_USERNAME: ${LOCALDB_POSTGRES_USER:-getfy}
+      DB_PASSWORD: ${LOCALDB_POSTGRES_PASSWORD:-getfy}
+      REDIS_HOST: ${GETFY_DEV_REDIS_HOST:-redis}
+      REDIS_PORT: ${GETFY_DEV_REDIS_PORT:-6379}
+      CACHE_STORE: redis
+      QUEUE_CONNECTION: redis
+      SESSION_DRIVER: redis
+      SESSION_ENCRYPT: "false"
+      # Overrides explícitos (não confiar só no .env se alguém deixar single/debug).
+      LOG_CHANNEL: ${LOG_CHANNEL:-stack}
+      LOG_STACK: ${LOG_STACK:-daily}
+      LOG_LEVEL: ${LOG_LEVEL:-warning}
+      LOG_DAILY_DAYS: ${LOG_DAILY_DAYS:-7}
+      STACKER_LICENSE_DISABLED: ${STACKER_LICENSE_DISABLED:-1}
+      STACKER_API_URL: ${STACKER_API_URL:-http://host.docker.internal:3000}
+      STACKER_AGENT_TOKEN: ${STACKER_AGENT_TOKEN:-dev-agent-token}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      stacker-agent:
+        condition: service_started
+
+  stacker-agent:
+    build:
+      context: ./agent
+      dockerfile: Dockerfile
+    image: stacker_agent:dev
+    restart: unless-stopped
+    logging: *default-logging
+    environment:
+      STACKER_API_URL: ${STACKER_API_URL:-http://host.docker.internal:3000}
+      STACKER_AGENT_TOKEN: ${STACKER_AGENT_TOKEN:-dev-agent-token}
+      STACKER_GATEWAY_ROOT: /gateway
+      APP_URL: ${GETFY_APP_URL:-http://localhost:8085}
+      STACKER_RELEASE_SIGNING_KEY: ${STACKER_RELEASE_SIGNING_KEY:-dev-signing-key-change-me}
+      STACKER_LICENSE_DISABLED: ${STACKER_LICENSE_DISABLED:-1}
+    volumes:
+      - .:/gateway
+      - /var/run/docker.sock:/var/run/docker.sock
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  worker:
+    image: getfy_app:dev
+    restart: unless-stopped
+    logging: *default-logging
+    command:
+      - "php"
+      - "artisan"
+      - "queue:work"
+      - "--queue=integrax-sms,utmify-tracking,metrics-tracking,webhooks-outbound,webhooks-inbound,payments,default"
+      - "--sleep=2"
+      - "--tries=3"
+      - "--timeout=120"
+    volumes:
+      - .:/var/www/html
+      - getfy_dev_vendor:/var/www/html/vendor
+      - ./docker/php/dev.ini:/usr/local/etc/php/conf.d/99-dev.ini:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      APP_ENV: local
+      GETFY_DOCKER: "true"
+      GETFY_RUN_SETUP: "false"
+      DB_CONNECTION: pgsql
+      DB_HOST: ${GETFY_DEV_DB_HOST:-postgres}
+      DB_PORT: ${GETFY_DEV_DB_PORT:-5432}
+      DB_DATABASE: ${LOCALDB_POSTGRES_DB:-getfy}
+      DB_USERNAME: ${LOCALDB_POSTGRES_USER:-getfy}
+      DB_PASSWORD: ${LOCALDB_POSTGRES_PASSWORD:-getfy}
+      REDIS_HOST: ${GETFY_DEV_REDIS_HOST:-redis}
+      REDIS_PORT: ${GETFY_DEV_REDIS_PORT:-6379}
+      CACHE_STORE: redis
+      QUEUE_CONNECTION: redis
+      SESSION_DRIVER: redis
+      SESSION_ENCRYPT: "false"
+      LOG_CHANNEL: ${LOG_CHANNEL:-stack}
+      LOG_STACK: ${LOG_STACK:-daily}
+      LOG_LEVEL: ${LOG_LEVEL:-warning}
+      LOG_DAILY_DAYS: ${LOG_DAILY_DAYS:-7}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      app:
+        condition: service_started
+
+  scheduler:
+    image: getfy_app:dev
+    restart: unless-stopped
+    logging: *default-logging
+    command: ["php", "artisan", "schedule:work"]
+    volumes:
+      - .:/var/www/html
+      - getfy_dev_vendor:/var/www/html/vendor
+      - ./docker/php/dev.ini:/usr/local/etc/php/conf.d/99-dev.ini:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      APP_ENV: local
+      GETFY_DOCKER: "true"
+      GETFY_RUN_SETUP: "false"
+      DB_CONNECTION: pgsql
+      DB_HOST: ${GETFY_DEV_DB_HOST:-postgres}
+      DB_PORT: ${GETFY_DEV_DB_PORT:-5432}
+      DB_DATABASE: ${LOCALDB_POSTGRES_DB:-getfy}
+      DB_USERNAME: ${LOCALDB_POSTGRES_USER:-getfy}
+      DB_PASSWORD: ${LOCALDB_POSTGRES_PASSWORD:-getfy}
+      REDIS_HOST: ${GETFY_DEV_REDIS_HOST:-redis}
+      REDIS_PORT: ${GETFY_DEV_REDIS_PORT:-6379}
+      CACHE_STORE: redis
+      QUEUE_CONNECTION: redis
+      SESSION_DRIVER: redis
+      SESSION_ENCRYPT: "false"
+      LOG_CHANNEL: ${LOG_CHANNEL:-stack}
+      LOG_STACK: ${LOG_STACK:-daily}
+      LOG_LEVEL: ${LOG_LEVEL:-warning}
+      LOG_DAILY_DAYS: ${LOG_DAILY_DAYS:-7}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      app:
+        condition: service_started
+
+volumes:
+  getfy_dev_vendor:
+    driver: local
