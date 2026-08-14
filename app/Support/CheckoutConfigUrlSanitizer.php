@@ -70,6 +70,9 @@ final class CheckoutConfigUrlSanitizer
             if (isset($config['landing']['benefits']) && is_string($config['landing']['benefits'])) {
                 $config['landing']['benefits'] = HtmlSanitizer::plainTextMultiline($config['landing']['benefits'], 4000);
             }
+            $config['landing']['sections'] = self::normalizeLandingSections(
+                $config['landing']['sections'] ?? null
+            );
         }
 
         if (isset($config['footer']) && is_array($config['footer'])) {
@@ -91,5 +94,44 @@ final class CheckoutConfigUrlSanitizer
         }
 
         return $config;
+    }
+
+    private const LANDING_SECTION_IDS = [
+        'headline', 'subheadline', 'cta', 'video', 'hero_image',
+        'images', 'custom_html', 'benefits', 'reviews', 'cta_final',
+    ];
+
+    /**
+     * Normaliza a ordem/visibilidade dos elementos da landing: só ids conhecidos,
+     * sem duplicatas, e ids novos (de versões futuras) anexados ao final.
+     *
+     * @return list<array{id: string, visible: bool}>
+     */
+    private static function normalizeLandingSections(mixed $sections): array
+    {
+        $normalized = [];
+        $seen = [];
+
+        if (is_array($sections)) {
+            foreach ($sections as $section) {
+                $id = is_array($section) ? ($section['id'] ?? null) : null;
+                if (! is_string($id) || ! in_array($id, self::LANDING_SECTION_IDS, true) || isset($seen[$id])) {
+                    continue;
+                }
+                $seen[$id] = true;
+                $normalized[] = [
+                    'id' => $id,
+                    'visible' => filter_var($section['visible'] ?? true, FILTER_VALIDATE_BOOLEAN),
+                ];
+            }
+        }
+
+        foreach (self::LANDING_SECTION_IDS as $id) {
+            if (! isset($seen[$id])) {
+                $normalized[] = ['id' => $id, 'visible' => true];
+            }
+        }
+
+        return $normalized;
     }
 }

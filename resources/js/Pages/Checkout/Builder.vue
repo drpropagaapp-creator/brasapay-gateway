@@ -38,6 +38,42 @@ const props = defineProps({
 
 const activeTab = ref('geral');
 
+/** Elementos da landing (ordem + visibilidade). Mesma lista do backend. */
+const LANDING_SECTION_DEFS = [
+    { id: 'headline', label: 'Título principal' },
+    { id: 'subheadline', label: 'Subtítulo' },
+    { id: 'cta', label: 'Botão de chamada (CTA)' },
+    { id: 'video', label: 'Vídeo (YouTube/VTurb)' },
+    { id: 'hero_image', label: 'Imagem de destaque' },
+    { id: 'images', label: 'Imagens em sequência' },
+    { id: 'custom_html', label: 'HTML personalizado' },
+    { id: 'benefits', label: 'Benefícios' },
+    { id: 'reviews', label: 'Avaliações' },
+    { id: 'cta_final', label: 'Botão final (CTA)' },
+];
+
+function normalizeLandingSections(raw) {
+    const validIds = new Set(LANDING_SECTION_DEFS.map((s) => s.id));
+    const seen = new Set();
+    const result = [];
+    if (Array.isArray(raw)) {
+        raw.forEach((s) => {
+            const id = s?.id;
+            if (!validIds.has(id) || seen.has(id)) return;
+            seen.add(id);
+            result.push({ id, visible: s?.visible !== false });
+        });
+    }
+    LANDING_SECTION_DEFS.forEach((def) => {
+        if (!seen.has(def.id)) result.push({ id: def.id, visible: true });
+    });
+    return result;
+}
+
+function landingSectionLabel(id) {
+    return LANDING_SECTION_DEFS.find((s) => s.id === id)?.label ?? id;
+}
+
 const sectionsOpen = ref({
     price: true,
     customer_fields: true,
@@ -109,6 +145,7 @@ const configForm = reactive({
         benefits_title: props.config?.landing?.benefits_title ?? 'O que você vai receber',
         benefits: props.config?.landing?.benefits ?? '',
         show_reviews: props.config?.landing?.show_reviews !== false,
+        sections: normalizeLandingSections(props.config?.landing?.sections),
     },
     youtube_url: props.config?.youtube_url ?? null,
     vturb_embed: props.config?.vturb_embed ?? '',
@@ -181,6 +218,14 @@ function submit() {
     form.offer_id = props.checkout_scope?.offer_id ?? null;
     form.plan_id = props.checkout_scope?.plan_id ?? null;
     form.put(`/produtos/${props.produto.id}/checkout-config`);
+}
+
+function moveLandingSection(index, direction) {
+    const target = index + direction;
+    const arr = configForm.landing.sections;
+    if (target < 0 || target >= arr.length) return;
+    const [item] = arr.splice(index, 1);
+    arr.splice(target, 0, item);
 }
 
 function addBanner(type) {
@@ -1083,6 +1128,50 @@ const inputClass =
                             <p class="text-sm text-zinc-600 dark:text-zinc-400">
                                 A página abre com esta seção de vendas e o formulário de pagamento fica no final. O botão de chamada rola até o checkout.
                             </p>
+
+                            <!-- Ordem e visibilidade dos elementos -->
+                            <div class="rounded-xl border border-zinc-200 p-3 dark:border-zinc-700">
+                                <p class="mb-1 text-sm font-medium text-zinc-700 dark:text-zinc-300">Ordem dos elementos</p>
+                                <p class="mb-3 text-xs text-zinc-500 dark:text-zinc-400">
+                                    Use as setas para posicionar cada elemento e o olho para mostrar/ocultar. O preview atualiza na hora.
+                                </p>
+                                <ul class="space-y-1.5">
+                                    <li
+                                        v-for="(sec, idx) in configForm.landing.sections"
+                                        :key="sec.id"
+                                        class="flex items-center gap-2 rounded-lg border px-2.5 py-2"
+                                        :class="sec.visible
+                                            ? 'border-zinc-200 bg-white dark:border-zinc-600 dark:bg-zinc-800'
+                                            : 'border-dashed border-zinc-200 bg-zinc-50 opacity-60 dark:border-zinc-700 dark:bg-zinc-800/40'"
+                                    >
+                                        <div class="flex flex-col">
+                                            <button
+                                                type="button"
+                                                class="flex h-4 w-5 items-center justify-center rounded text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700 disabled:opacity-30 dark:hover:bg-zinc-700 dark:hover:text-zinc-200"
+                                                :disabled="idx === 0"
+                                                aria-label="Mover para cima"
+                                                @click="moveLandingSection(idx, -1)"
+                                            >
+                                                <ChevronDown class="h-3.5 w-3.5 rotate-180" aria-hidden="true" />
+                                            </button>
+                                            <button
+                                                type="button"
+                                                class="flex h-4 w-5 items-center justify-center rounded text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700 disabled:opacity-30 dark:hover:bg-zinc-700 dark:hover:text-zinc-200"
+                                                :disabled="idx === configForm.landing.sections.length - 1"
+                                                aria-label="Mover para baixo"
+                                                @click="moveLandingSection(idx, 1)"
+                                            >
+                                                <ChevronDown class="h-3.5 w-3.5" aria-hidden="true" />
+                                            </button>
+                                        </div>
+                                        <span class="min-w-0 flex-1 truncate text-[13px] font-medium text-zinc-700 dark:text-zinc-300">
+                                            {{ landingSectionLabel(sec.id) }}
+                                        </span>
+                                        <Toggle v-model="sec.visible" />
+                                    </li>
+                                </ul>
+                            </div>
+
                             <div>
                                 <label class="mb-1.5 block text-sm font-medium text-zinc-700 dark:text-zinc-300">Título principal (headline)</label>
                                 <input v-model="configForm.landing.headline" type="text" :class="inputClass" maxlength="200" :placeholder="produto?.name || 'Ex: Domine o tráfego pago em 30 dias'" />

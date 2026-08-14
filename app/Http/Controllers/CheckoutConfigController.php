@@ -179,14 +179,17 @@ class CheckoutConfigController extends Controller
                 : [];
         }
 
-        if (isset($requestConfig['landing']) && is_array($requestConfig['landing'])
-            && array_key_exists('images', $requestConfig['landing'])) {
+        if (isset($requestConfig['landing']) && is_array($requestConfig['landing'])) {
             if (! isset($merged['landing']) || ! is_array($merged['landing'])) {
                 $merged['landing'] = [];
             }
-            $merged['landing']['images'] = is_array($requestConfig['landing']['images'])
-                ? array_values($requestConfig['landing']['images'])
-                : [];
+            foreach (['images', 'sections'] as $listKey) {
+                if (array_key_exists($listKey, $requestConfig['landing'])) {
+                    $merged['landing'][$listKey] = is_array($requestConfig['landing'][$listKey])
+                        ? array_values($requestConfig['landing'][$listKey])
+                        : [];
+                }
+            }
         }
 
         if (isset($requestConfig['appearance']) && is_array($requestConfig['appearance'])) {

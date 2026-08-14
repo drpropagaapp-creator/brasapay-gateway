@@ -245,10 +245,60 @@ const landingBenefits = computed(() =>
         .map((line) => line.trim())
         .filter(Boolean)
 );
+const LANDING_SECTION_ORDER = [
+    'headline', 'subheadline', 'cta', 'video', 'hero_image',
+    'images', 'custom_html', 'benefits', 'reviews', 'cta_final',
+];
+
+/** Ordem + visibilidade configuradas no Builder (ids novos entram no final). */
+const landingSectionsNormalized = computed(() => {
+    const raw = Array.isArray(landingConfig.value.sections) ? landingConfig.value.sections : [];
+    const seen = new Set();
+    const ordered = [];
+    raw.forEach((s) => {
+        const id = s?.id;
+        if (!LANDING_SECTION_ORDER.includes(id) || seen.has(id)) return;
+        seen.add(id);
+        ordered.push({ id, visible: s?.visible !== false });
+    });
+    LANDING_SECTION_ORDER.forEach((id) => {
+        if (!seen.has(id)) ordered.push({ id, visible: true });
+    });
+    return ordered;
+});
+
+const landingReviewsSectionVisible = computed(
+    () => landingSectionsNormalized.value.find((s) => s.id === 'reviews')?.visible !== false
+);
+
 const showLandingReviews = computed(
     () => isLandingTemplate.value
         && landingConfig.value.show_reviews !== false
+        && landingReviewsSectionVisible.value
         && (effectiveConfig.value?.reviews ?? []).length > 0
+);
+
+function landingSectionHasContent(id) {
+    switch (id) {
+        case 'headline': return !!landingHeadline.value;
+        case 'subheadline': return !!landingSubheadline.value;
+        case 'cta':
+        case 'cta_final': return !!landingCtaText.value;
+        case 'video': return hasVturb.value || !!effectiveConfig.value?.youtube_url;
+        case 'hero_image': return !!landingHeroImage.value;
+        case 'images': return landingImages.value.length > 0;
+        case 'custom_html': return !!landingCustomHtml.value;
+        case 'benefits': return landingBenefits.value.length > 0;
+        case 'reviews': return showLandingReviews.value;
+        default: return false;
+    }
+}
+
+/** Ids visíveis e com conteúdo, na ordem escolhida — é o que a landing renderiza. */
+const landingVisibleSections = computed(() =>
+    landingSectionsNormalized.value
+        .filter((s) => s.visible && landingSectionHasContent(s.id))
+        .map((s) => s.id)
 );
 
 /** Na landing as avaliações ficam na seção de vendas; evita duplicar na sidebar abaixo do formulário. */
@@ -454,98 +504,112 @@ function onConversionPixelsReady() {
             />
 
             <!-- Template Landing Page: seção de vendas antes do checkout -->
-            <section v-if="isLandingTemplate" class="mb-12" data-checkout="landing-hero">
-                <div class="mx-auto max-w-3xl text-center">
-                    <h1 class="text-3xl font-extrabold leading-tight tracking-tight text-gray-900 sm:text-4xl lg:text-[44px]">
-                        {{ landingHeadline }}
-                    </h1>
-                    <p v-if="landingSubheadline" class="mx-auto mt-4 max-w-2xl text-lg leading-relaxed text-gray-600">
+            <!-- Landing: elementos na ordem configurada no Builder (com mostrar/ocultar por elemento) -->
+            <section
+                v-if="isLandingTemplate && landingVisibleSections.length"
+                class="mb-12 space-y-8"
+                data-checkout="landing-hero"
+            >
+                <template v-for="secId in landingVisibleSections" :key="secId">
+                    <div v-if="secId === 'headline'" class="mx-auto max-w-3xl text-center">
+                        <h1 class="text-3xl font-extrabold leading-tight tracking-tight text-gray-900 sm:text-4xl lg:text-[44px]">
+                            {{ landingHeadline }}
+                        </h1>
+                    </div>
+
+                    <p
+                        v-else-if="secId === 'subheadline'"
+                        class="mx-auto -mt-3 max-w-2xl text-center text-lg leading-relaxed text-gray-600"
+                    >
                         {{ landingSubheadline }}
                     </p>
-                    <button
-                        type="button"
-                        class="mt-8 inline-flex items-center justify-center rounded-2xl px-8 py-4 text-lg font-bold text-white shadow-xl transition hover:opacity-90 focus:outline-none focus:ring-4 focus:ring-black/10"
-                        :style="{ backgroundColor: primaryColor }"
-                        data-checkout="landing-cta"
-                        @click="scrollToCheckout"
-                    >
-                        {{ landingCtaText }}
-                    </button>
-                    <p class="mt-3 text-xs text-gray-500">Pagamento 100% seguro · Acesso imediato após a confirmação</p>
-                </div>
 
-                <CheckoutVturb
-                    v-if="hasVturb"
-                    :embed-code="vturbEmbed"
-                    class="mx-auto mt-10 max-w-4xl"
-                />
-                <CheckoutYoutube
-                    v-else-if="effectiveConfig?.youtube_url"
-                    :url="effectiveConfig?.youtube_url"
-                    class="mx-auto mt-10 max-w-4xl"
-                />
+                    <div v-else-if="secId === 'cta'" class="mx-auto max-w-3xl text-center">
+                        <button
+                            type="button"
+                            class="inline-flex items-center justify-center rounded-2xl px-8 py-4 text-lg font-bold text-white shadow-xl transition hover:opacity-90 focus:outline-none focus:ring-4 focus:ring-black/10"
+                            :style="{ backgroundColor: primaryColor }"
+                            data-checkout="landing-cta"
+                            @click="scrollToCheckout"
+                        >
+                            {{ landingCtaText }}
+                        </button>
+                        <p class="mt-3 text-xs text-gray-500">Pagamento 100% seguro · Acesso imediato após a confirmação</p>
+                    </div>
 
-                <img
-                    v-if="landingHeroImage"
-                    :src="landingHeroImage"
-                    :alt="landingHeadline"
-                    class="mx-auto mt-10 w-full max-w-4xl rounded-3xl object-cover shadow-2xl"
-                    data-checkout="landing-hero-image"
-                    @error="(e) => e?.target && (e.target.style.display = 'none')"
-                />
+                    <template v-else-if="secId === 'video'">
+                        <CheckoutVturb
+                            v-if="hasVturb"
+                            :embed-code="vturbEmbed"
+                            class="mx-auto max-w-4xl"
+                        />
+                        <CheckoutYoutube
+                            v-else
+                            :url="effectiveConfig?.youtube_url"
+                            class="mx-auto max-w-4xl"
+                        />
+                    </template>
 
-                <!-- Imagens adicionais da landing, empilhadas em sequência -->
-                <div v-if="landingImages.length" class="mx-auto mt-8 max-w-4xl space-y-6" data-checkout="landing-images">
                     <img
-                        v-for="(img, i) in landingImages"
-                        :key="i"
-                        :src="img"
-                        alt=""
-                        class="w-full rounded-3xl object-cover shadow-xl"
+                        v-else-if="secId === 'hero_image'"
+                        :src="landingHeroImage"
+                        :alt="landingHeadline"
+                        class="mx-auto w-full max-w-4xl rounded-3xl object-cover shadow-2xl"
+                        data-checkout="landing-hero-image"
                         @error="(e) => e?.target && (e.target.style.display = 'none')"
                     />
-                </div>
 
-                <!-- Bloco de HTML personalizado (sanitizado no servidor) -->
-                <div
-                    v-if="landingCustomHtml"
-                    class="checkout-landing-html mx-auto mt-12 max-w-3xl rounded-3xl border border-white/20 bg-white/95 p-6 shadow-xl shadow-black/5 backdrop-blur sm:p-8"
-                    data-checkout="landing-custom-html"
-                    v-html="landingCustomHtml"
-                />
-
-                <div
-                    v-if="landingBenefits.length"
-                    class="mx-auto mt-12 max-w-3xl rounded-3xl border border-white/20 bg-white/95 p-6 shadow-xl shadow-black/5 backdrop-blur sm:p-8"
-                    data-checkout="landing-benefits"
-                >
-                    <h2 class="text-xl font-bold tracking-tight text-gray-900">{{ landingBenefitsTitle }}</h2>
-                    <ul class="mt-5 grid gap-3 sm:grid-cols-2">
-                        <li
-                            v-for="(benefit, i) in landingBenefits"
+                    <div v-else-if="secId === 'images'" class="mx-auto max-w-4xl space-y-6" data-checkout="landing-images">
+                        <img
+                            v-for="(img, i) in landingImages"
                             :key="i"
-                            class="flex items-start gap-2.5"
-                        >
-                            <CheckCircle2 class="mt-0.5 h-5 w-5 shrink-0" :style="{ color: primaryColor }" aria-hidden="true" />
-                            <span class="text-sm leading-relaxed text-gray-700">{{ benefit }}</span>
-                        </li>
-                    </ul>
-                </div>
+                            :src="img"
+                            alt=""
+                            class="w-full rounded-3xl object-cover shadow-xl"
+                            @error="(e) => e?.target && (e.target.style.display = 'none')"
+                        />
+                    </div>
 
-                <div v-if="showLandingReviews" class="mx-auto mt-10 max-w-3xl" data-checkout="landing-reviews">
-                    <CheckoutReviews :reviews="effectiveConfig?.reviews || []" :primary-color="primaryColor" />
-                </div>
+                    <div
+                        v-else-if="secId === 'custom_html'"
+                        class="checkout-landing-html mx-auto max-w-3xl rounded-3xl border border-white/20 bg-white/95 p-6 shadow-xl shadow-black/5 backdrop-blur sm:p-8"
+                        data-checkout="landing-custom-html"
+                        v-html="landingCustomHtml"
+                    />
 
-                <div class="mt-12 text-center">
-                    <button
-                        type="button"
-                        class="inline-flex items-center justify-center rounded-2xl px-8 py-4 text-lg font-bold text-white shadow-xl transition hover:opacity-90 focus:outline-none focus:ring-4 focus:ring-black/10"
-                        :style="{ backgroundColor: primaryColor }"
-                        @click="scrollToCheckout"
+                    <div
+                        v-else-if="secId === 'benefits'"
+                        class="mx-auto max-w-3xl rounded-3xl border border-white/20 bg-white/95 p-6 shadow-xl shadow-black/5 backdrop-blur sm:p-8"
+                        data-checkout="landing-benefits"
                     >
-                        {{ landingCtaText }}
-                    </button>
-                </div>
+                        <h2 class="text-xl font-bold tracking-tight text-gray-900">{{ landingBenefitsTitle }}</h2>
+                        <ul class="mt-5 grid gap-3 sm:grid-cols-2">
+                            <li
+                                v-for="(benefit, i) in landingBenefits"
+                                :key="i"
+                                class="flex items-start gap-2.5"
+                            >
+                                <CheckCircle2 class="mt-0.5 h-5 w-5 shrink-0" :style="{ color: primaryColor }" aria-hidden="true" />
+                                <span class="text-sm leading-relaxed text-gray-700">{{ benefit }}</span>
+                            </li>
+                        </ul>
+                    </div>
+
+                    <div v-else-if="secId === 'reviews'" class="mx-auto max-w-3xl" data-checkout="landing-reviews">
+                        <CheckoutReviews :reviews="effectiveConfig?.reviews || []" :primary-color="primaryColor" />
+                    </div>
+
+                    <div v-else-if="secId === 'cta_final'" class="text-center">
+                        <button
+                            type="button"
+                            class="inline-flex items-center justify-center rounded-2xl px-8 py-4 text-lg font-bold text-white shadow-xl transition hover:opacity-90 focus:outline-none focus:ring-4 focus:ring-black/10"
+                            :style="{ backgroundColor: primaryColor }"
+                            @click="scrollToCheckout"
+                        >
+                            {{ landingCtaText }}
+                        </button>
+                    </div>
+                </template>
             </section>
 
             <div
