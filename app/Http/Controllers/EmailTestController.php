@@ -38,7 +38,7 @@ class EmailTestController extends Controller
     {
         $validated = $request->validate([
             'test_to' => ['required', 'email'],
-            'email_provider' => ['nullable', 'string', 'in:smtp,hostinger,sendgrid'],
+            'email_provider' => ['nullable', 'string', 'in:smtp,hostinger,sendgrid,resend'],
             'smtp_host' => ['nullable', 'string'],
             'smtp_port' => ['nullable', 'string'],
             'smtp_username' => ['nullable', 'string'],
@@ -49,6 +49,9 @@ class EmailTestController extends Controller
             'sendgrid_api_key' => ['nullable', 'string'],
             'sendgrid_mail_from_address' => ['nullable', 'email', 'max:255'],
             'sendgrid_mail_from_name' => ['nullable', 'string', 'max:255'],
+            'resend_api_key' => ['nullable', 'string'],
+            'resend_mail_from_address' => ['nullable', 'email', 'max:255'],
+            'resend_mail_from_name' => ['nullable', 'string', 'max:255'],
         ]);
 
         $tenantId = PlatformConfigContext::settingsTenantId();
@@ -73,7 +76,7 @@ class EmailTestController extends Controller
         $tenantId = PlatformConfigContext::settingsTenantId();
 
         $validated = $request->validate([
-            'email_provider' => ['nullable', 'string', 'in:smtp,hostinger,sendgrid'],
+            'email_provider' => ['nullable', 'string', 'in:smtp,hostinger,sendgrid,resend'],
             'smtp_host' => ['nullable', 'string'],
             'smtp_port' => ['nullable', 'string'],
             'smtp_username' => ['nullable', 'string'],
@@ -84,6 +87,9 @@ class EmailTestController extends Controller
             'sendgrid_api_key' => ['nullable', 'string'],
             'sendgrid_mail_from_address' => ['nullable', 'email', 'max:255'],
             'sendgrid_mail_from_name' => ['nullable', 'string', 'max:255'],
+            'resend_api_key' => ['nullable', 'string'],
+            'resend_mail_from_address' => ['nullable', 'email', 'max:255'],
+            'resend_mail_from_name' => ['nullable', 'string', 'max:255'],
         ]);
 
         $provider = $validated['email_provider'] ?? Setting::get('email_provider', 'smtp', $tenantId);
@@ -120,11 +126,21 @@ class EmailTestController extends Controller
         $this->mailConfig->applyMailerConfigForTenant($tenantId, $overrides, $provider);
     }
 
-    /** Build overrides for applyMailerConfig from request (smtp_* or hostinger_* or sendgrid_*). */
+    /** Build overrides for applyMailerConfig from request (smtp_*, hostinger_*, sendgrid_* or resend_*). */
     protected function buildMailOverridesFromRequest(array $validated, string $provider): array
     {
         $overrides = [];
-        if ($provider === 'sendgrid') {
+        if ($provider === 'resend') {
+            if (isset($validated['resend_api_key']) && $validated['resend_api_key'] !== null && $validated['resend_api_key'] !== '') {
+                $overrides['resend_api_key'] = $validated['resend_api_key'];
+            }
+            if (! empty($validated['resend_mail_from_address'])) {
+                $overrides['resend_mail_from_address'] = $validated['resend_mail_from_address'];
+            }
+            if (isset($validated['resend_mail_from_name'])) {
+                $overrides['resend_mail_from_name'] = $validated['resend_mail_from_name'];
+            }
+        } elseif ($provider === 'sendgrid') {
             if (isset($validated['sendgrid_api_key']) && $validated['sendgrid_api_key'] !== null && $validated['sendgrid_api_key'] !== '') {
                 $overrides['sendgrid_api_key'] = $validated['sendgrid_api_key'];
             }

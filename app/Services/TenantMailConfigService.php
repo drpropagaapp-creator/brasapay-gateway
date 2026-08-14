@@ -7,7 +7,7 @@ use App\Models\Setting;
 class TenantMailConfigService
 {
     /**
-     * Whether the tenant has at least one email provider configured (SMTP, Hostinger or SendGrid).
+     * Whether the tenant has at least one email provider configured (SMTP, Hostinger, SendGrid or Resend).
      */
     public function isEmailConfigured(?int $tenantId): bool
     {
@@ -23,11 +23,13 @@ class TenantMailConfigService
                 return true;
             }
         }
-        $sendgridEncrypted = Setting::get('sendgrid_api_key', null, $tenantId);
-        if ($sendgridEncrypted) {
-            $key = @decrypt($sendgridEncrypted);
-            if ($key !== null && $key !== '') {
-                return true;
+        foreach (['sendgrid_api_key', 'resend_api_key'] as $apiKeySetting) {
+            $encrypted = Setting::get($apiKeySetting, null, $tenantId);
+            if ($encrypted) {
+                $key = @decrypt($encrypted);
+                if ($key !== null && $key !== '') {
+                    return true;
+                }
             }
         }
         return false;
@@ -49,6 +51,20 @@ class TenantMailConfigService
                 'port' => 587,
                 'encryption' => 'tls',
                 'username' => 'apikey',
+                'password' => $password,
+            ];
+        }
+        if ($provider === 'resend') {
+            $password = $overrides['resend_api_key'] ?? null;
+            if ($password === null) {
+                $encrypted = Setting::get('resend_api_key', null, $tenantId);
+                $password = $encrypted ? @decrypt($encrypted) : null;
+            }
+            return [
+                'host' => 'smtp.resend.com',
+                'port' => 465,
+                'encryption' => 'ssl',
+                'username' => 'resend',
                 'password' => $password,
             ];
         }
@@ -121,7 +137,7 @@ class TenantMailConfigService
             return $row->tenant_id;
         }
         $row = Setting::query()
-            ->whereIn('key', ['hostinger_smtp_username', 'sendgrid_api_key'])
+            ->whereIn('key', ['hostinger_smtp_username', 'sendgrid_api_key', 'resend_api_key'])
             ->whereNotNull('value')
             ->where('value', '!=', '')
             ->orderBy('tenant_id')
@@ -199,7 +215,7 @@ class TenantMailConfigService
         }
 
         throw new \RuntimeException(
-            'Nenhum servidor de e-mail configurado. Em Configurações → E-mail, preencha SMTP, Hostinger ou SendGrid e salve.'
+            'Nenhum servidor de e-mail configurado. Em Configurações → E-mail, preencha SMTP, Hostinger, SendGrid ou Resend e salve.'
         );
     }
 
@@ -248,6 +264,10 @@ class TenantMailConfigService
         if ($provider === 'sendgrid') {
             $fromAddress = $overrides['sendgrid_mail_from_address'] ?? Setting::get('sendgrid_mail_from_address', config('mail.from.address'), $tenantId);
             $fromName = $overrides['sendgrid_mail_from_name'] ?? Setting::get('sendgrid_mail_from_name', config('mail.from.name'), $tenantId);
+        } elseif ($provider === 'resend') {
+            // Resend usa username "resend" — o From deve ser de um domínio verificado no painel Resend.
+            $fromAddress = $overrides['resend_mail_from_address'] ?? Setting::get('resend_mail_from_address', config('mail.from.address'), $tenantId);
+            $fromName = $overrides['resend_mail_from_name'] ?? Setting::get('resend_mail_from_name', config('mail.from.name'), $tenantId);
         } elseif ($provider === 'hostinger') {
             $fromName = Setting::get('hostinger_mail_from_name', config('mail.from.name'), $tenantId);
             $replyTo = Setting::get('hostinger_reply_to', null, $tenantId);
