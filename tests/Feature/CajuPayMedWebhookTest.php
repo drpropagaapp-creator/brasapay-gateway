@@ -24,7 +24,7 @@ class CajuPayMedWebhookTest extends TestCase
         ], $raw);
     }
 
-    public function test_med_opened_checkout_creates_platform_dispute_without_order_disputed(): void
+    public function test_med_opened_checkout_creates_tenant_dispute_and_marks_order_disputed(): void
     {
         $secret = 'cwhsec_med_test_secret_32chars_xx';
         $cred = new GatewayCredential([
@@ -69,12 +69,12 @@ class CajuPayMedWebhookTest extends TestCase
             ],
         ], $secret)->assertOk();
 
-        $this->assertSame('completed', $order->fresh()->status);
+        $this->assertSame('disputed', $order->fresh()->status);
         $this->assertDatabaseHas('med_disputes', [
             'order_id' => $order->id,
             'cajupay_dispute_id' => $disputeId,
             'status' => MedDispute::STATUS_OPEN,
-            'responsible_party' => MedDispute::PARTY_PLATFORM,
+            'responsible_party' => MedDispute::PARTY_TENANT,
         ]);
     }
 

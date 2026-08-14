@@ -30,8 +30,7 @@ class MedEmailNotifications
                     $owner->email
                 );
             }
-
-            return;
+            // Sem return: admins também são avisados de MEDs do infoprodutor.
         }
 
         $emails = $this->adminRecipients();

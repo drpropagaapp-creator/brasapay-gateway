@@ -19,7 +19,7 @@ class MedPolicyServiceTest extends TestCase
         $this->policy = app(MedPolicyService::class);
     }
 
-    public function test_checkout_order_is_platform_managed(): void
+    public function test_checkout_pix_order_is_tenant_managed_without_med_zero(): void
     {
         $order = new Order([
             'tenant_id' => 1,
@@ -28,8 +28,33 @@ class MedPolicyServiceTest extends TestCase
         ]);
 
         $this->assertFalse($this->policy->isApiPixRestOrder($order));
-        $this->assertSame(MedDispute::PARTY_PLATFORM, $this->policy->responsiblePartyForOrder($order));
+        $this->assertSame(MedDispute::PARTY_TENANT, $this->policy->responsiblePartyForOrder($order));
+        $this->assertTrue($this->policy->shouldHoldTenantBalance(new MedDispute(['responsible_party' => MedDispute::PARTY_TENANT])));
         $this->assertFalse($this->policy->shouldHoldTenantBalance(new MedDispute(['responsible_party' => MedDispute::PARTY_PLATFORM])));
+    }
+
+    public function test_checkout_pix_with_med_zero_is_platform_managed(): void
+    {
+        Setting::set(MedPolicyService::SETTING_MED_ZERO, true, 3);
+
+        $order = new Order([
+            'tenant_id' => 3,
+            'payment_method' => 'pix',
+            'metadata' => [],
+        ]);
+
+        $this->assertSame(MedDispute::PARTY_PLATFORM, $this->policy->responsiblePartyForOrder($order));
+    }
+
+    public function test_non_pix_order_is_platform_managed(): void
+    {
+        $order = new Order([
+            'tenant_id' => 1,
+            'payment_method' => 'credit_card',
+            'metadata' => [],
+        ]);
+
+        $this->assertSame(MedDispute::PARTY_PLATFORM, $this->policy->responsiblePartyForOrder($order));
     }
 
     public function test_api_pix_rest_order_is_tenant_managed_without_med_zero(): void

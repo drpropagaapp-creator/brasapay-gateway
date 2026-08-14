@@ -19,6 +19,7 @@ import KycBanner from '@/components/layout/KycBanner.vue';
 import TotpPromptBanner from '@/components/layout/TotpPromptBanner.vue';
 import DemoExploreBanner from '@/components/layout/DemoExploreBanner.vue';
 import DemoModeBanner from '@/components/layout/DemoModeBanner.vue';
+import MedAlertBanner from '@/components/layout/MedAlertBanner.vue';
 
 const { isExpanded, setExpanded } = useSidebarProvider();
 usePanelPushSubscribe();
@@ -216,6 +217,7 @@ onBeforeUnmount(() => {
                     <DemoModeBanner />
                     <TotpPromptBanner />
                     <DemoExploreBanner class="mx-3 mb-2 md:mx-4 lg:mx-6" />
+                    <MedAlertBanner class="mx-3 mb-2 md:mx-4 lg:mx-6" />
                     <CloudBillingBanner />
                     <KycBanner />
                 </div>

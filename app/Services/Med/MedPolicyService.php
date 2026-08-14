@@ -28,7 +28,10 @@ class MedPolicyService
 
     public function responsiblePartyForOrder(Order $order): string
     {
-        if ($this->isApiPixRestOrder($order) && ! $this->medZeroForTenant((int) $order->tenant_id)) {
+        // MED de venda PIX (checkout ou API) é responsabilidade do infoprodutor:
+        // trava o valor na carteira e aparece em Vendas → Disputas MED para defesa.
+        // Exceção: tenant com "MED Zero" ativo — a plataforma absorve a disputa.
+        if ($order->payment_method === 'pix' && ! $this->medZeroForTenant((int) $order->tenant_id)) {
             return MedDispute::PARTY_TENANT;
         }
 
