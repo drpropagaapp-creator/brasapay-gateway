@@ -63,6 +63,41 @@ class SellerDashboardTemplateTest extends TestCase
         $this->assertSame('kawaii', SellerDashboardTemplate::current());
     }
 
+    public function test_platform_admin_can_save_prime_template(): void
+    {
+        $admin = User::factory()->create([
+            'role' => User::ROLE_PLATFORM_ADMIN,
+            'tenant_id' => null,
+        ]);
+
+        $this->actingAs($admin)
+            ->putJson(route('plataforma.settings.dashboard-template.update'), [
+                'template' => 'prime',
+            ])
+            ->assertOk()
+            ->assertJsonPath('template', 'prime');
+
+        $this->assertSame('prime', SellerDashboardTemplate::current());
+    }
+
+    public function test_infoprodutor_dashboard_receives_prime_template_prop(): void
+    {
+        Setting::set(SellerDashboardTemplate::KEY, SellerDashboardTemplate::PRIME, null);
+
+        $seller = User::factory()->create([
+            'role' => User::ROLE_INFOPRODUTOR,
+            'tenant_id' => 1,
+        ]);
+
+        $this->actingAs($seller)
+            ->get('/dashboard')
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->component('Dashboard/Index')
+                ->where('seller_dashboard_template', 'prime')
+            );
+    }
+
     public function test_infoprodutor_dashboard_receives_template_prop(): void
     {
         Setting::set(SellerDashboardTemplate::KEY, SellerDashboardTemplate::AURORA, null);

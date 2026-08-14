@@ -22,7 +22,7 @@ import DemoModeBanner from '@/components/layout/DemoModeBanner.vue';
 
 const { isExpanded, setExpanded } = useSidebarProvider();
 usePanelPushSubscribe();
-const { isAurora, isKawaii, isThemedShell, templateId } = useSellerDashboardTemplate();
+const { isAurora, isKawaii, isPrime, isThemedShell, templateId } = useSellerDashboardTemplate();
 const { clearHeading } = useThemedPageHeading();
 const page = usePage();
 
@@ -81,7 +81,8 @@ watchEffect(() => {
 });
 
 function applyThemedSidebarExpanded() {
-    if (isThemedShell.value && typeof window !== 'undefined' && window.innerWidth >= 1024) {
+    // Prime tem sidebar recolhível própria; não força expandido.
+    if (isThemedShell.value && !isPrime.value && typeof window !== 'undefined' && window.innerWidth >= 1024) {
         setExpanded(true);
     }
 }
@@ -107,6 +108,9 @@ const mainOffsetClass = computed(() => {
     if (customerPanel.value) {
         return isExpanded.value ? 'lg:ml-[260px]' : 'lg:ml-[64px]';
     }
+    if (isPrime.value) {
+        return isExpanded.value ? 'lg:ml-[280px]' : 'lg:ml-[88px]';
+    }
     if (isThemedShell.value) {
         return 'lg:ml-[276px]';
     }
@@ -118,7 +122,11 @@ const contentShellClass = computed(() => {
         return 'flex min-h-[calc(100dvh-0px)] flex-1 flex-col overflow-hidden rounded-none bg-white shadow-none dark:bg-[#0a0a0a] lg:min-h-[calc(100dvh-1rem)]';
     }
     if (isThemedShell.value && !customerPanel.value) {
-        const prefix = isKawaii.value ? 'kawaii-content-shell' : 'aurora-content-shell';
+        const prefix = isKawaii.value
+            ? 'kawaii-content-shell'
+            : isPrime.value
+              ? 'prime-content-shell'
+              : 'aurora-content-shell';
         return `${prefix} flex min-h-0 flex-1 flex-col overflow-hidden rounded-none`;
     }
     return 'flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl bg-white shadow-sm dark:bg-zinc-800';
@@ -212,7 +220,7 @@ onBeforeUnmount(() => {
             <div
                 v-if="isSellerDashboard && dashboardBanners.length"
                 class="mb-4 overflow-hidden rounded-2xl border border-zinc-200 bg-zinc-50 shadow-sm dark:border-zinc-700 dark:bg-zinc-800/40"
-                :class="isThemedShell ? (isKawaii ? 'kawaii-card border' : 'aurora-surface aurora-divider border') : ''"
+                :class="isThemedShell ? (isKawaii ? 'kawaii-card border' : isPrime ? 'prime-surface prime-divider border' : 'aurora-surface aurora-divider border') : ''"
             >
                 <div class="relative aspect-[1200/420] w-full overflow-hidden md:aspect-[1600/320]">
                     <img

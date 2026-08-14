@@ -14,12 +14,14 @@ class SellerDashboardTemplate
 
     public const KAWAII = 'kawaii';
 
+    public const PRIME = 'prime';
+
     /**
      * @return list<string>
      */
     public static function allowed(): array
     {
-        return [self::DEFAULT, self::AURORA, self::KAWAII];
+        return [self::DEFAULT, self::AURORA, self::KAWAII, self::PRIME];
     }
 
     public static function resolve(?string $raw): string

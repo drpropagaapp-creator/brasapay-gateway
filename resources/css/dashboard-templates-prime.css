@@ -1,0 +1,614 @@
+/* Template Prime — visual executivo premium (grafite frio + acento da marca, números tabulares) */
+
+[data-seller-template='prime'] {
+    --prime-sidebar-width: 264px;
+    --prime-rail-width: 72px;
+    --prime-bg: #0a0c10;
+    --prime-sidebar: #0d0f15;
+    --prime-panel: #10131a;
+    --prime-panel-hover: #161a23;
+    --prime-border: #1d222d;
+    --prime-border-strong: #2a3140;
+    --prime-text: #eef1f6;
+    --prime-muted: #99a1b3;
+    --prime-subtle: #6b7488;
+    --prime-hero-value: #ffffff;
+    --prime-positive: #34d399;
+    --prime-warning: #fbbf24;
+    --prime-negative: #f87171;
+    --prime-nav-hover-bg: rgba(255, 255, 255, 0.04);
+    --prime-chart-fore: #6b7488;
+    --chart-grid: #1d222d;
+    color: var(--prime-text);
+}
+
+html:not(.dark) [data-seller-template='prime'] {
+    --prime-bg: #f4f5f7;
+    --prime-sidebar: #ffffff;
+    --prime-panel: #ffffff;
+    --prime-panel-hover: #f4f6f8;
+    --prime-border: #e5e8ee;
+    --prime-border-strong: #cfd5e0;
+    --prime-text: #131722;
+    --prime-muted: #4c5568;
+    --prime-subtle: #717c91;
+    --prime-hero-value: #0b0e14;
+    --prime-positive: #059669;
+    --prime-warning: #b45309;
+    --prime-negative: #dc2626;
+    --prime-nav-hover-bg: rgba(15, 23, 42, 0.04);
+    --prime-chart-fore: #717c91;
+    --chart-grid: #e5e8ee;
+}
+
+[data-seller-template='prime'].seller-shell-root {
+    background-color: var(--prime-bg);
+}
+
+[data-seller-template='prime'] .prime-content-shell {
+    background: transparent;
+    border: 0;
+    box-shadow: none;
+}
+
+/* Números de dados sempre em dígitos tabulares (não pulam de largura) */
+[data-seller-template='prime'] .prime-num {
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.01em;
+}
+
+[data-seller-template='prime'] .prime-fg {
+    color: var(--prime-text);
+}
+
+[data-seller-template='prime'] .prime-fg-muted {
+    color: var(--prime-muted);
+}
+
+[data-seller-template='prime'] .prime-fg-subtle {
+    color: var(--prime-subtle);
+}
+
+[data-seller-template='prime'] .prime-divider {
+    border-color: var(--prime-border);
+}
+
+[data-seller-template='prime'] .prime-surface {
+    background-color: var(--prime-panel);
+    border-color: var(--prime-border);
+}
+
+[data-seller-template='prime'] .prime-surface-hover:hover {
+    background-color: var(--prime-panel-hover);
+}
+
+/* ── Sidebar ─────────────────────────────────────────────────────────────── */
+
+[data-seller-template='prime'] .prime-sidebar {
+    width: var(--prime-sidebar-width);
+    background-color: var(--prime-sidebar);
+    border-right: 1px solid var(--prime-border);
+    transition: width 0.25s ease;
+}
+
+@media (min-width: 1024px) {
+    [data-seller-template='prime'] .prime-sidebar--rail {
+        width: var(--prime-rail-width);
+    }
+}
+
+[data-seller-template='prime'] .prime-nav-link {
+    position: relative;
+    color: var(--prime-muted);
+}
+
+[data-seller-template='prime'] .prime-nav-link:hover {
+    background-color: var(--prime-nav-hover-bg);
+    color: var(--prime-text);
+}
+
+[data-seller-template='prime'] .prime-nav-active {
+    color: var(--prime-text);
+    background-color: color-mix(in srgb, var(--color-primary) 12%, transparent);
+}
+
+html:not(.dark) [data-seller-template='prime'] .prime-nav-active {
+    color: var(--prime-hero-value);
+}
+
+/* Trilho de acento à esquerda no item ativo — assinatura da sidebar Prime */
+[data-seller-template='prime'] .prime-nav-active::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    height: 60%;
+    width: 3px;
+    border-radius: 0 3px 3px 0;
+    background-color: var(--color-primary);
+}
+
+[data-seller-template='prime'] .prime-nav-active .prime-nav-icon {
+    color: var(--color-primary);
+}
+
+[data-seller-template='prime'] .prime-sidebar-footer {
+    border-top: 1px solid var(--prime-border);
+}
+
+[data-seller-template='prime'] .prime-sidebar-footer a.group {
+    width: 100%;
+    border-radius: 10px;
+    border: 1px solid var(--prime-border);
+    background-color: var(--prime-panel);
+    padding: 0.75rem;
+}
+
+[data-seller-template='prime'] .prime-sidebar-footer a.group:hover {
+    background-color: var(--prime-panel-hover);
+}
+
+[data-seller-template='prime'] .prime-sidebar-footer .text-zinc-600,
+[data-seller-template='prime'] .prime-sidebar-footer .text-zinc-500 {
+    color: var(--prime-muted);
+}
+
+[data-seller-template='prime'] .prime-collapse-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    width: 100%;
+    border-radius: 8px;
+    border: 1px solid var(--prime-border);
+    background-color: transparent;
+    padding: 0.5rem;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--prime-subtle);
+    cursor: pointer;
+    transition: background-color 0.15s, color 0.15s;
+}
+
+[data-seller-template='prime'] .prime-collapse-btn:hover {
+    background-color: var(--prime-panel-hover);
+    color: var(--prime-text);
+}
+
+/* ── Cards e superfícies ─────────────────────────────────────────────────── */
+
+[data-seller-template='prime'] .prime-card {
+    border-radius: 12px;
+    background-color: var(--prime-panel);
+    border: 1px solid var(--prime-border);
+    color: var(--prime-text);
+}
+
+[data-seller-template='prime'] .prime-card-label {
+    color: var(--prime-muted);
+}
+
+[data-seller-template='prime'] .prime-card-value {
+    color: var(--prime-text);
+    font-variant-numeric: tabular-nums;
+}
+
+[data-seller-template='prime'] .prime-card-footer {
+    color: var(--prime-muted);
+}
+
+/* Faixa de receita estilo extrato — assinatura do dashboard Prime */
+[data-seller-template='prime'] .prime-ledger {
+    position: relative;
+    overflow: hidden;
+    border-radius: 12px;
+    border: 1px solid var(--prime-border);
+    background-color: var(--prime-panel);
+}
+
+[data-seller-template='prime'] .prime-ledger::before {
+    content: '';
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: 3px;
+    background: linear-gradient(
+        180deg,
+        var(--color-primary),
+        color-mix(in srgb, var(--color-primary) 30%, transparent)
+    );
+}
+
+[data-seller-template='prime'] .prime-ledger-main {
+    background: radial-gradient(
+        120% 160% at 0% 0%,
+        color-mix(in srgb, var(--color-primary) 9%, transparent) 0%,
+        transparent 60%
+    );
+}
+
+[data-seller-template='prime'] .prime-ledger-divider {
+    border-color: var(--prime-border);
+}
+
+[data-seller-template='prime'] .prime-kpi-label {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--prime-subtle);
+}
+
+[data-seller-template='prime'] .prime-kpi-value {
+    color: var(--prime-text);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.01em;
+}
+
+[data-seller-template='prime'] .prime-hero-value {
+    color: var(--prime-hero-value);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.02em;
+}
+
+[data-seller-template='prime'] .prime-icon-circle {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 10px;
+    background-color: color-mix(in srgb, var(--color-primary) 10%, transparent);
+    color: var(--color-primary);
+    border: 1px solid color-mix(in srgb, var(--color-primary) 20%, transparent);
+}
+
+/* Linhas de atenção (abandono, reembolsos…) — cor apenas onde há significado */
+[data-seller-template='prime'] .prime-attention-row {
+    display: flex;
+    align-items: center;
+    gap: 0.875rem;
+    padding: 0.875rem 1.25rem;
+    color: inherit;
+    text-decoration: none;
+    transition: background-color 0.15s;
+}
+
+[data-seller-template='prime'] .prime-attention-row + .prime-attention-row {
+    border-top: 1px solid var(--prime-border);
+}
+
+[data-seller-template='prime'] a.prime-attention-row:hover {
+    background-color: var(--prime-panel-hover);
+}
+
+[data-seller-template='prime'] .prime-attention-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+    border-radius: 8px;
+    flex-shrink: 0;
+    border: 1px solid var(--prime-border);
+    background-color: var(--prime-panel-hover);
+    color: var(--prime-muted);
+}
+
+[data-seller-template='prime'] .prime-attention-icon--warning {
+    color: var(--prime-warning);
+    border-color: color-mix(in srgb, var(--prime-warning) 25%, transparent);
+    background-color: color-mix(in srgb, var(--prime-warning) 8%, transparent);
+}
+
+[data-seller-template='prime'] .prime-attention-icon--negative {
+    color: var(--prime-negative);
+    border-color: color-mix(in srgb, var(--prime-negative) 25%, transparent);
+    background-color: color-mix(in srgb, var(--prime-negative) 8%, transparent);
+}
+
+/* Toolbar de período (controle segmentado) */
+[data-seller-template='prime'] .prime-segmented {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    padding: 3px;
+    border-radius: 10px;
+    border: 1px solid var(--prime-border);
+    background-color: var(--prime-panel);
+}
+
+[data-seller-template='prime'] .prime-segmented-item {
+    border-radius: 7px;
+    padding: 0.375rem 0.75rem;
+    font-size: 13px;
+    font-weight: 500;
+    white-space: nowrap;
+    color: var(--prime-muted);
+    transition: color 0.15s, background-color 0.15s;
+}
+
+[data-seller-template='prime'] .prime-segmented-item:hover {
+    color: var(--prime-text);
+}
+
+[data-seller-template='prime'] .prime-segmented-item-active {
+    background-color: var(--prime-panel-hover);
+    color: var(--prime-text);
+    box-shadow: inset 0 0 0 1px var(--prime-border-strong);
+}
+
+[data-seller-template='prime'] .prime-progress-track {
+    height: 4px;
+    border-radius: 9999px;
+    background-color: var(--prime-border);
+    overflow: hidden;
+}
+
+[data-seller-template='prime'] .prime-progress-fill {
+    height: 100%;
+    border-radius: 9999px;
+    background-color: var(--color-primary);
+}
+
+/* Dropdown portalado para o body (fora do data-seller-template) */
+.prime-select-content {
+    background-color: #10131a;
+    border-color: #1d222d;
+    color: #eef1f6;
+}
+
+html:not(.dark) .prime-select-content {
+    background-color: #ffffff;
+    border-color: #e5e8ee;
+    color: #131722;
+}
+
+[data-seller-template='prime'] .prime-select-trigger {
+    border: 1px solid var(--prime-border);
+    background-color: var(--prime-panel);
+    color: var(--prime-text);
+}
+
+[data-seller-template='prime'] .prime-select-trigger:hover {
+    border-color: var(--prime-border-strong);
+}
+
+[data-seller-template='prime'] .prime-icon-btn {
+    color: var(--prime-muted);
+}
+
+[data-seller-template='prime'] .prime-icon-btn:hover {
+    background-color: var(--prime-panel-hover);
+    color: var(--prime-text);
+}
+
+/* ── Páginas internas (Vendas, Produtos, etc.) ───────────────────────────── */
+
+[data-seller-template='prime'] .prime-page {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+}
+
+[data-seller-template='prime'] .prime-page > .prime-subnav {
+    margin-top: -0.25rem;
+}
+
+[data-seller-template='prime'] .prime-page-section:not(.prime-page-section-flush) {
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+    border-radius: 12px;
+    border: 1px solid var(--prime-border);
+    background-color: var(--prime-panel);
+    padding: 1.5rem;
+}
+
+[data-seller-template='prime'] .prime-page-section {
+    border-radius: 12px;
+    border: 1px solid var(--prime-border);
+    background-color: var(--prime-panel);
+}
+
+[data-seller-template='prime'] .prime-page-section-flush {
+    padding: 0;
+    overflow: hidden;
+}
+
+[data-seller-template='prime'] .prime-section-title {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--prime-subtle);
+}
+
+[data-seller-template='prime'] .prime-page-section .grid.gap-3 {
+    gap: 1rem;
+}
+
+[data-seller-template='prime'] .prime-page-section .grid.gap-4,
+[data-seller-template='prime'] .prime-page .grid.gap-4 {
+    gap: 1.25rem;
+}
+
+[data-seller-template='prime'] .prime-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+}
+
+[data-seller-template='prime'] .prime-stat-card {
+    border-radius: 10px;
+    border: 1px solid var(--prime-border);
+    background-color: color-mix(in srgb, var(--prime-panel-hover) 40%, var(--prime-panel));
+    padding: 1.125rem 1.375rem;
+}
+
+[data-seller-template='prime'] .prime-stat-card-label {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--prime-muted);
+}
+
+[data-seller-template='prime'] .prime-stat-card-value {
+    margin-top: 0.5rem;
+    font-size: 1.5rem;
+    font-weight: 700;
+    line-height: 1.2;
+    color: var(--prime-text);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.01em;
+}
+
+[data-seller-template='prime'] .prime-subnav {
+    display: inline-flex;
+    flex-wrap: wrap;
+    gap: 0.25rem;
+    padding: 0.25rem;
+    border-radius: 10px;
+    border: 1px solid var(--prime-border);
+    background-color: color-mix(in srgb, var(--prime-panel-hover) 50%, var(--prime-panel));
+}
+
+[data-seller-template='prime'] .prime-subnav-item {
+    border-radius: 8px;
+    padding: 0.5rem 1rem;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--prime-muted);
+    transition: color 0.15s, background-color 0.15s;
+}
+
+[data-seller-template='prime'] .prime-subnav-item:hover {
+    color: var(--prime-text);
+    background-color: var(--prime-nav-hover-bg);
+}
+
+[data-seller-template='prime'] .prime-subnav-item-active {
+    background-color: var(--prime-panel);
+    box-shadow: inset 0 0 0 1px var(--prime-border-strong);
+    color: var(--prime-text);
+}
+
+[data-seller-template='prime'] .prime-btn-secondary {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    border-radius: 8px;
+    border: 1px solid var(--prime-border);
+    background-color: var(--prime-panel);
+    padding: 0.5rem 0.75rem;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--prime-text);
+    transition: background-color 0.15s;
+}
+
+[data-seller-template='prime'] .prime-btn-secondary:hover {
+    background-color: var(--prime-panel-hover);
+}
+
+[data-seller-template='prime'] .prime-page-section input:not([type='checkbox']):not([type='radio']),
+[data-seller-template='prime'] .prime-page-section select,
+[data-seller-template='prime'] .prime-page-section textarea {
+    border-radius: 10px;
+    border: 1px solid var(--prime-border);
+    background-color: var(--prime-bg);
+    color: var(--prime-text);
+    font-size: 0.875rem;
+    transition: border-color 0.15s;
+}
+
+[data-seller-template='prime'] .prime-page-section input:not([type='checkbox']):focus,
+[data-seller-template='prime'] .prime-page-section select:focus,
+[data-seller-template='prime'] .prime-page-section textarea:focus {
+    border-color: color-mix(in srgb, var(--color-primary) 50%, var(--prime-border));
+    outline: none;
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-primary) 15%, transparent);
+}
+
+[data-seller-template='prime'] .prime-page-section label {
+    color: var(--prime-muted);
+}
+
+[data-seller-template='prime'] .prime-table-panel {
+    overflow: hidden;
+    border-radius: 12px;
+    border: 1px solid var(--prime-border);
+    background-color: var(--prime-panel);
+}
+
+[data-seller-template='prime'] .prime-table-panel table {
+    width: 100%;
+}
+
+[data-seller-template='prime'] .prime-table-panel thead {
+    background-color: var(--prime-panel-hover);
+}
+
+[data-seller-template='prime'] .prime-table-panel thead th {
+    padding: 0.875rem 1.125rem;
+    color: var(--prime-muted);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+}
+
+[data-seller-template='prime'] .prime-table-panel tbody td {
+    padding: 1rem 1.125rem;
+    color: var(--prime-text);
+    font-variant-numeric: tabular-nums;
+}
+
+[data-seller-template='prime'] .prime-table-panel tbody tr {
+    border-top: 1px solid var(--prime-border);
+    background-color: var(--prime-panel);
+    transition: background-color 0.15s;
+}
+
+[data-seller-template='prime'] .prime-table-panel tbody tr:hover {
+    background-color: var(--prime-panel-hover);
+}
+
+[data-seller-template='prime'] .prime-page-section-flush + nav,
+[data-seller-template='prime'] .prime-page > nav[aria-label*='Paginação'],
+[data-seller-template='prime'] .prime-page > nav[aria-label*='paginação'] {
+    margin-top: 0.5rem;
+    padding-top: 0.25rem;
+}
+
+[data-seller-template='prime'] .prime-mobile-card {
+    border-radius: 10px;
+    border: 1px solid var(--prime-border);
+    background-color: var(--prime-panel);
+    padding: 1rem;
+}
+
+[data-seller-template='prime'] .prime-mobile-card:hover {
+    background-color: var(--prime-panel-hover);
+}
+
+[data-seller-template='prime'] .prime-inner-panel {
+    border-radius: 10px;
+    border: 1px solid var(--prime-border);
+    background-color: color-mix(in srgb, var(--prime-panel-hover) 35%, var(--prime-panel));
+    padding: 1.25rem;
+}
+
+[data-seller-template='prime'] .prime-inner-panel h2 {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--prime-text);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    [data-seller-template='prime'] .prime-sidebar,
+    [data-seller-template='prime'] .prime-card,
+    [data-seller-template='prime'] .prime-progress-fill {
+        transition: none;
+    }
+}

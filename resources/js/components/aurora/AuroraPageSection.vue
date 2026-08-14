@@ -5,7 +5,7 @@ defineProps({
     flush: { type: Boolean, default: false },
 });
 
-const { isAurora, isKawaii, isThemedShell } = useSellerDashboardTemplate();
+const { isAurora, isKawaii, isPrime, isThemedShell } = useSellerDashboardTemplate();
 </script>
 
 <template>
@@ -13,6 +13,13 @@ const { isAurora, isKawaii, isThemedShell } = useSellerDashboardTemplate();
         v-if="isAurora"
         class="aurora-page-section"
         :class="flush ? 'aurora-page-section-flush' : ''"
+    >
+        <slot />
+    </section>
+    <section
+        v-else-if="isPrime"
+        class="prime-page-section"
+        :class="flush ? 'prime-page-section-flush' : ''"
     >
         <slot />
     </section>

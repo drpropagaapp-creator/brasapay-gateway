@@ -7,7 +7,7 @@ defineProps({
     value: { type: String, required: true },
 });
 
-const { isAurora, isKawaii } = useSellerDashboardTemplate();
+const { isAurora, isKawaii, isPrime } = useSellerDashboardTemplate();
 </script>
 
 <template>
@@ -20,6 +20,18 @@ const { isAurora, isKawaii } = useSellerDashboardTemplate();
             <span>{{ label }}</span>
         </div>
         <p class="aurora-stat-card-value">
+            {{ value }}
+        </p>
+    </div>
+    <div
+        v-else-if="isPrime"
+        class="prime-stat-card"
+    >
+        <div class="prime-stat-card-label">
+            <component :is="icon" class="h-4 w-4 text-[var(--color-primary)]" aria-hidden="true" />
+            <span>{{ label }}</span>
+        </div>
+        <p class="prime-stat-card-value">
             {{ value }}
         </p>
     </div>

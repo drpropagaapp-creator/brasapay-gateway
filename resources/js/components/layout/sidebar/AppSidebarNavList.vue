@@ -7,7 +7,7 @@ const props = defineProps({
     items: { type: Array, default: () => [] },
     showText: { type: Boolean, default: true },
     isActive: { type: Function, required: true },
-    /** default | aurora | kawaii */
+    /** default | aurora | kawaii | prime */
     variant: { type: String, default: 'default' },
     isMobile: { type: Boolean, default: false },
 });
@@ -42,6 +42,15 @@ function linkClasses(href, isChild = false) {
             active ? 'kawaii-nav-active' : '',
         ];
     }
+    if (props.variant === 'prime') {
+        return [
+            'prime-nav-link flex items-center gap-3 rounded-lg text-[13px] font-medium transition-colors',
+            props.showText
+                ? (isChild ? 'py-2 pl-9 pr-3' : 'px-3 py-2.5')
+                : 'justify-center px-0 py-2.5',
+            active ? 'prime-nav-active' : '',
+        ];
+    }
     return [
         'menu-item group relative',
         isChild ? 'py-2 pl-9' : '',
@@ -57,6 +66,9 @@ function iconClasses(href) {
     }
     if (props.variant === 'kawaii') {
         return ['kawaii-nav-icon h-[17px] w-[17px] shrink-0'];
+    }
+    if (props.variant === 'prime') {
+        return ['prime-nav-icon h-[17px] w-[17px] shrink-0'];
     }
     return [active ? 'menu-item-icon-active' : 'menu-item-icon-inactive', 'shrink-0'];
 }
@@ -78,7 +90,9 @@ function iconClasses(href) {
                             ? 'border-zinc-200 dark:border-zinc-700'
                             : variant === 'aurora'
                               ? 'border-[var(--aurora-border)]'
-                              : 'border-[var(--kawaii-border)]',
+                              : variant === 'prime'
+                                ? 'border-[var(--prime-border)]'
+                                : 'border-[var(--kawaii-border)]',
                     ]"
                 />
             </li>

@@ -3,6 +3,8 @@ import { usePage } from '@inertiajs/vue3';
 
 const DEMO_TEMPLATE_KEY = 'demo_template_preview';
 
+const TEMPLATE_IDS = ['default', 'aurora', 'kawaii', 'prime'];
+
 /** Estado compartilhado entre todas as instâncias do composable. */
 const sharedPreviewOverride = ref(null);
 let previewListenerAttached = false;
@@ -12,7 +14,7 @@ function readPreviewFromStorage() {
         return null;
     }
     const raw = localStorage.getItem(DEMO_TEMPLATE_KEY);
-    if (raw === 'aurora' || raw === 'kawaii' || raw === 'default') {
+    if (TEMPLATE_IDS.includes(raw)) {
         return raw;
     }
     return null;
@@ -55,29 +57,33 @@ export function useSellerDashboardTemplate() {
 
         if (demoEnabled()) {
             const preview = sharedPreviewOverride.value ?? readPreviewFromStorage();
-            if (preview === 'aurora' || preview === 'kawaii' || preview === 'default') {
+            if (TEMPLATE_IDS.includes(preview)) {
                 return preview;
             }
         }
 
         const raw = page.props.seller_dashboard_template;
-        if (raw === 'aurora') return 'aurora';
-        if (raw === 'kawaii') return 'kawaii';
+        if (TEMPLATE_IDS.includes(raw)) {
+            return raw;
+        }
         return 'default';
     });
 
     const isAurora = computed(() => templateId.value === 'aurora');
     const isKawaii = computed(() => templateId.value === 'kawaii');
+    const isPrime = computed(() => templateId.value === 'prime');
     const isDefault = computed(() => templateId.value === 'default');
-    const isThemedShell = computed(() => isAurora.value || isKawaii.value);
+    const isThemedShell = computed(() => isAurora.value || isKawaii.value || isPrime.value);
     const themePrefix = computed(() => {
         if (isAurora.value) return 'aurora';
         if (isKawaii.value) return 'kawaii';
+        if (isPrime.value) return 'prime';
         return null;
     });
     const pageWrapperClass = computed(() => {
         if (isKawaii.value) return 'kawaii-page';
         if (isAurora.value) return 'aurora-page';
+        if (isPrime.value) return 'prime-page';
         return 'space-y-6';
     });
 
@@ -86,6 +92,7 @@ export function useSellerDashboardTemplate() {
         isDefault,
         isAurora,
         isKawaii,
+        isPrime,
         isThemedShell,
         themePrefix,
         pageWrapperClass,
