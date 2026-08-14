@@ -42,6 +42,15 @@ final class CheckoutConfigUrlSanitizer
                 $safe = SafeUrl::normalizeHttpUrl($config['landing']['hero_image']);
                 $config['landing']['hero_image'] = $safe ?? '';
             }
+            if (isset($config['landing']['images']) && is_array($config['landing']['images'])) {
+                $config['landing']['images'] = array_values(array_filter(array_map(
+                    fn ($url) => is_string($url) ? SafeUrl::normalizeHttpUrl($url) : null,
+                    $config['landing']['images']
+                )));
+            }
+            if (isset($config['landing']['custom_html']) && is_string($config['landing']['custom_html'])) {
+                $config['landing']['custom_html'] = HtmlSanitizer::richBlock($config['landing']['custom_html']);
+            }
             foreach (['headline' => 200, 'subheadline' => 500, 'cta_text' => 80, 'benefits_title' => 120] as $textKey => $max) {
                 if (isset($config['landing'][$textKey]) && is_string($config['landing'][$textKey])) {
                     $config['landing'][$textKey] = HtmlSanitizer::plainText($config['landing'][$textKey], $max);

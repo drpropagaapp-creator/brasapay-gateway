@@ -221,6 +221,8 @@ class Product extends Model
                 'subheadline' => '',
                 'cta_text' => 'Quero garantir o meu',
                 'hero_image' => null,
+                'images' => [],
+                'custom_html' => '',
                 'benefits_title' => 'O que você vai receber',
                 'benefits' => '',
                 'show_reviews' => true,

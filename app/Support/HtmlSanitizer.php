@@ -63,6 +63,36 @@ class HtmlSanitizer
     }
 
     /**
+     * Tags para blocos ricos autorados pelo vendedor (landing do checkout):
+     * estrutura de texto + imagens + tabelas. Sem script/iframe/form/video.
+     */
+    private const ALLOWED_TAGS_RICH_BLOCK = '<p><br><strong><em><b><i><u><s><a><ul><ol><li><h1><h2><h3><h4><h5><blockquote><pre><code><span><div><section><img><figure><figcaption><table><thead><tbody><tr><td><th><hr><small><mark><sup><sub>';
+
+    /**
+     * Sanitiza um bloco de HTML rico autorado pelo vendedor (ex.: HTML personalizado
+     * da landing do checkout). Permite imagens e estrutura, remove qualquer vetor de script.
+     */
+    public static function richBlock(?string $html, int $maxLen = 30000): string
+    {
+        if ($html === null || $html === '') {
+            return '';
+        }
+
+        if ($maxLen > 0 && mb_strlen($html) > $maxLen) {
+            $html = mb_substr($html, 0, $maxLen);
+        }
+
+        $html = strip_tags($html, self::ALLOWED_TAGS_RICH_BLOCK);
+        $html = self::removeEventHandlers($html);
+        $html = self::removeJavascriptUrls($html);
+        $html = self::removeDataUrls($html);
+        // style inline é permitido, mas sem expression()/javascript: dentro do CSS.
+        $html = (string) preg_replace('/style\s*=\s*["\'][^"\']*(expression\s*\(|javascript\s*:)[^"\']*["\']/i', '', $html);
+
+        return $html;
+    }
+
+    /**
      * Sanitiza texto puro (sem HTML) para armazenar em campos comuns (nome, endereço, etc.).
      * Remove tags, caracteres de controlo e normaliza espaços.
      */

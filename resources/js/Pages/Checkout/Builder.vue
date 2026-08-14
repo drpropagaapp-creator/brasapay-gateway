@@ -102,6 +102,10 @@ const configForm = reactive({
         subheadline: props.config?.landing?.subheadline ?? '',
         cta_text: props.config?.landing?.cta_text ?? 'Quero garantir o meu',
         hero_image: props.config?.landing?.hero_image ?? null,
+        images: Array.isArray(props.config?.landing?.images)
+            ? [...props.config.landing.images]
+            : [],
+        custom_html: props.config?.landing?.custom_html ?? '',
         benefits_title: props.config?.landing?.benefits_title ?? 'O que você vai receber',
         benefits: props.config?.landing?.benefits ?? '',
         show_reviews: props.config?.landing?.show_reviews !== false,
@@ -1084,6 +1088,47 @@ const inputClass =
                                 label="Imagem de destaque (hero)"
                                 recommended-size="1200×675 px (16:9)"
                             />
+                            <div class="rounded-xl border border-zinc-200 p-3 dark:border-zinc-700">
+                                <div class="mb-2 flex items-center justify-between">
+                                    <span class="text-sm font-medium text-zinc-700 dark:text-zinc-300">Imagens da landing (em sequência)</span>
+                                    <Button type="button" variant="outline" size="sm" @click="configForm.landing.images.push('')">
+                                        + Adicionar imagem
+                                    </Button>
+                                </div>
+                                <p class="mb-3 text-xs text-zinc-500 dark:text-zinc-400">
+                                    Aparecem empilhadas abaixo da imagem de destaque, na ordem — monte a página como uma landing (seções, provas, mockups…).
+                                </p>
+                                <div v-if="configForm.landing.images.length" class="space-y-3">
+                                    <div
+                                        v-for="(img, idx) in configForm.landing.images"
+                                        :key="'lp-img-' + idx"
+                                        class="rounded-lg border border-zinc-200 p-3 dark:border-zinc-700"
+                                    >
+                                        <div class="mb-2 flex items-center justify-between">
+                                            <span class="text-xs font-medium text-zinc-500 dark:text-zinc-400">Imagem {{ idx + 1 }}</span>
+                                            <Button type="button" variant="outline" size="icon" @click="configForm.landing.images.splice(idx, 1)">×</Button>
+                                        </div>
+                                        <ImageUpload
+                                            v-model="configForm.landing.images[idx]"
+                                            :upload-url="uploadUrl"
+                                            label=""
+                                            recommended-size="1200 px de largura"
+                                        />
+                                    </div>
+                                </div>
+                            </div>
+                            <div>
+                                <label class="mb-1.5 block text-sm font-medium text-zinc-700 dark:text-zinc-300">HTML personalizado (opcional)</label>
+                                <textarea
+                                    v-model="configForm.landing.custom_html"
+                                    rows="8"
+                                    :class="[inputClass, 'font-mono text-xs']"
+                                    placeholder="<h2>Para quem é este produto</h2>&#10;<p>Escreva livremente com HTML: títulos, listas, imagens, tabelas…</p>&#10;<img src=&quot;https://...&quot; alt=&quot;&quot; />"
+                                />
+                                <p class="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+                                    Aparece entre as imagens e os benefícios. Tags permitidas: títulos, parágrafos, listas, links, imagens, tabelas e destaque — scripts e iframes são removidos automaticamente por segurança.
+                                </p>
+                            </div>
                             <div>
                                 <label class="mb-1.5 block text-sm font-medium text-zinc-700 dark:text-zinc-300">Título da seção de benefícios</label>
                                 <input v-model="configForm.landing.benefits_title" type="text" :class="inputClass" maxlength="120" placeholder="O que você vai receber" />

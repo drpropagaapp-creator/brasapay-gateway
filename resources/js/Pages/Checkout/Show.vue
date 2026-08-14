@@ -230,6 +230,8 @@ const landingSubheadline = computed(() => (landingConfig.value.subheadline || ''
 const landingCtaText = computed(() => (landingConfig.value.cta_text || '').trim() || 'Quero garantir o meu');
 const landingHeroImage = computed(() => landingConfig.value.hero_image || null);
 const landingBenefitsTitle = computed(() => (landingConfig.value.benefits_title || '').trim() || 'O que você vai receber');
+const landingImages = computed(() => (Array.isArray(landingConfig.value.images) ? landingConfig.value.images : []).filter(Boolean));
+const landingCustomHtml = computed(() => String(landingConfig.value.custom_html || '').trim());
 const landingBenefits = computed(() =>
     String(landingConfig.value.benefits || '')
         .split('\n')
@@ -476,6 +478,26 @@ function onConversionPixelsReady() {
                     @error="(e) => e?.target && (e.target.style.display = 'none')"
                 />
 
+                <!-- Imagens adicionais da landing, empilhadas em sequência -->
+                <div v-if="landingImages.length" class="mx-auto mt-8 max-w-4xl space-y-6" data-checkout="landing-images">
+                    <img
+                        v-for="(img, i) in landingImages"
+                        :key="i"
+                        :src="img"
+                        alt=""
+                        class="w-full rounded-3xl object-cover shadow-xl"
+                        @error="(e) => e?.target && (e.target.style.display = 'none')"
+                    />
+                </div>
+
+                <!-- Bloco de HTML personalizado (sanitizado no servidor) -->
+                <div
+                    v-if="landingCustomHtml"
+                    class="checkout-landing-html mx-auto mt-12 max-w-3xl rounded-3xl border border-white/20 bg-white/95 p-6 shadow-xl shadow-black/5 backdrop-blur sm:p-8"
+                    data-checkout="landing-custom-html"
+                    v-html="landingCustomHtml"
+                />
+
                 <div
                     v-if="landingBenefits.length"
                     class="mx-auto mt-12 max-w-3xl rounded-3xl border border-white/20 bg-white/95 p-6 shadow-xl shadow-black/5 backdrop-blur sm:p-8"
@@ -650,3 +672,82 @@ function onConversionPixelsReady() {
         />
     </div>
 </template>
+
+<style>
+/* Tipografia do bloco de HTML personalizado da landing (conteúdo v-html sem classes) */
+.checkout-landing-html {
+    color: #374151;
+    font-size: 0.9375rem;
+    line-height: 1.7;
+}
+.checkout-landing-html h1,
+.checkout-landing-html h2,
+.checkout-landing-html h3,
+.checkout-landing-html h4,
+.checkout-landing-html h5 {
+    color: #111827;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    margin: 1.25em 0 0.5em;
+    line-height: 1.25;
+}
+.checkout-landing-html h1 { font-size: 1.75rem; }
+.checkout-landing-html h2 { font-size: 1.375rem; }
+.checkout-landing-html h3 { font-size: 1.125rem; }
+.checkout-landing-html > :first-child { margin-top: 0; }
+.checkout-landing-html > :last-child { margin-bottom: 0; }
+.checkout-landing-html p { margin: 0.75em 0; }
+.checkout-landing-html ul,
+.checkout-landing-html ol {
+    margin: 0.75em 0;
+    padding-left: 1.5em;
+}
+.checkout-landing-html ul { list-style: disc; }
+.checkout-landing-html ol { list-style: decimal; }
+.checkout-landing-html li { margin: 0.375em 0; }
+.checkout-landing-html a {
+    color: #2563eb;
+    text-decoration: underline;
+}
+.checkout-landing-html img {
+    max-width: 100%;
+    height: auto;
+    border-radius: 1rem;
+    margin: 1em 0;
+}
+.checkout-landing-html blockquote {
+    border-left: 3px solid #e5e7eb;
+    padding-left: 1em;
+    margin: 1em 0;
+    color: #6b7280;
+    font-style: italic;
+}
+.checkout-landing-html hr {
+    border: 0;
+    border-top: 1px solid #e5e7eb;
+    margin: 1.5em 0;
+}
+.checkout-landing-html table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 1em 0;
+    font-size: 0.875rem;
+}
+.checkout-landing-html th,
+.checkout-landing-html td {
+    border: 1px solid #e5e7eb;
+    padding: 0.5em 0.75em;
+    text-align: left;
+}
+.checkout-landing-html th {
+    background: #f9fafb;
+    font-weight: 600;
+}
+.checkout-landing-html pre {
+    background: #f3f4f6;
+    border-radius: 0.75rem;
+    padding: 1em;
+    overflow-x: auto;
+    font-size: 0.8125rem;
+}
+</style>
