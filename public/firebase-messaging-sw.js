@@ -20,8 +20,25 @@ function showNotificationFromPayload(payload) {
         badge: badge,
         tag: tag,
         renotify: false,
+        silent: false,
+        vibrate: [200, 100, 200],
         data: { url: url },
     });
+}
+
+function notifyClientsPushReceived(payload) {
+    // Som personalizado: SW não tem Audio; avisa as janelas abertas do painel para tocarem.
+    return self.clients
+        .matchAll({ type: 'window', includeUncontrolled: true })
+        .then(function (clientList) {
+            clientList.forEach(function (client) {
+                client.postMessage({
+                    type: 'PANEL_PUSH_RECEIVED',
+                    title: (payload && payload.data && payload.data.title) || null,
+                });
+            });
+        })
+        .catch(function () {});
 }
 
 function initFirebase(config) {
@@ -35,6 +52,7 @@ function initFirebase(config) {
     }
     backgroundHandlerRegistered = true;
     messaging.onBackgroundMessage(function (payload) {
+        notifyClientsPushReceived(payload);
         // SDK/navegador já exibem quando há payload.notification — evita duplicata.
         if (payload.notification) {
             return;

@@ -79,19 +79,23 @@ self.addEventListener('push', function (event) {
   const badge = payload.badge || payload.icon || icon;
   event.waitUntil(
     (async function () {
-      try {
-        const audio = new Audio(new URL('/cash.mp3', self.location.origin).href);
-        audio.volume = 1;
-        void audio.play().catch(function () {});
-      } catch (_) {}
       await self.registration.showNotification(payload.title, {
         body: payload.body,
         icon: icon,
         badge: badge,
         tag: payload.tag || payload.url || 'panel-push',
         renotify: false,
+        silent: false,
+        vibrate: [200, 100, 200],
         data: { url: payload.url },
       });
+      // Som personalizado: SW não tem Audio; avisa as janelas abertas do painel para tocarem.
+      try {
+        const clientList = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+        clientList.forEach(function (client) {
+          client.postMessage({ type: 'PANEL_PUSH_RECEIVED', title: payload.title, url: payload.url });
+        });
+      } catch (_) {}
     })()
   );
 });

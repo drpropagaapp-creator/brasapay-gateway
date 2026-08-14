@@ -17,6 +17,80 @@ let permissionCheckInterval = null;
 let swLifecycleRegistered = false;
 let mountCount = 0;
 
+/* ── Som de notificação (cash.mp3) ────────────────────────────────────────
+ * O service worker não tem acesso a Audio; ele avisa as janelas abertas via
+ * postMessage (PANEL_PUSH_RECEIVED) e a página toca o som. O primeiro toque/
+ * clique do usuário "destrava" o autoplay do navegador.
+ */
+const SOUND_STORAGE_KEY = 'panel_push_sound';
+let notificationAudio = null;
+let audioUnlockRegistered = false;
+let lastSoundPlayedAt = 0;
+
+function pushSoundEnabled() {
+    try {
+        return localStorage.getItem(SOUND_STORAGE_KEY) !== '0';
+    } catch {
+        return true;
+    }
+}
+
+function getNotificationAudio() {
+    if (typeof window === 'undefined' || typeof Audio === 'undefined') return null;
+    if (!notificationAudio) {
+        notificationAudio = new Audio('/cash.mp3');
+        notificationAudio.preload = 'auto';
+        notificationAudio.volume = 1;
+    }
+    return notificationAudio;
+}
+
+function registerAudioUnlockOnce() {
+    if (audioUnlockRegistered || typeof window === 'undefined') return;
+    audioUnlockRegistered = true;
+    const unlock = () => {
+        const audio = getNotificationAudio();
+        if (!audio) return;
+        // Play mudo + pause: navegador passa a permitir plays futuros sem gesto.
+        const previousMuted = audio.muted;
+        audio.muted = true;
+        audio.play().then(() => {
+            audio.pause();
+            audio.currentTime = 0;
+            audio.muted = previousMuted;
+        }).catch(() => {
+            audio.muted = previousMuted;
+        });
+        window.removeEventListener('pointerdown', unlock);
+        window.removeEventListener('keydown', unlock);
+    };
+    window.addEventListener('pointerdown', unlock, { once: false });
+    window.addEventListener('keydown', unlock, { once: false });
+}
+
+export function playPanelNotificationSound() {
+    if (!pushSoundEnabled()) return;
+    const now = Date.now();
+    if (now - lastSoundPlayedAt < 1500) return; // rajada de pushes = 1 som só
+    lastSoundPlayedAt = now;
+    const audio = getNotificationAudio();
+    if (!audio) return;
+    try {
+        audio.currentTime = 0;
+        void audio.play().catch(() => {});
+    } catch {}
+}
+
+export function setPanelPushSoundEnabled(enabled) {
+    try {
+        localStorage.setItem(SOUND_STORAGE_KEY, enabled ? '1' : '0');
+    } catch {}
+}
+
+export function isPanelPushSoundEnabled() {
+    return pushSoundEnabled();
+}
+
 function urlBase64ToUint8Array(base64String) {
     const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
     const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
@@ -143,6 +217,14 @@ function registerSwLifecycleOnce(getCheckExistingSubscription) {
         return;
     }
     swLifecycleRegistered = true;
+
+    // Som de notificação: o SW avisa via postMessage quando chega push.
+    navigator.serviceWorker.addEventListener('message', (event) => {
+        if (event?.data?.type === 'PANEL_PUSH_RECEIVED') {
+            playPanelNotificationSound();
+        }
+    });
+    registerAudioUnlockOnce();
 
     navigator.serviceWorker.addEventListener('controllerchange', () => {
         swUpdateApplied.value = true;
@@ -299,7 +381,10 @@ export function usePanelPushSubscribe() {
             return false;
         }
 
-        onMessage(firebaseMessaging, () => {});
+        // FCM em primeiro plano não passa pelo SW: toca o som direto aqui.
+        onMessage(firebaseMessaging, () => {
+            playPanelNotificationSound();
+        });
 
         return syncFcmToServer(token);
     }
