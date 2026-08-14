@@ -228,6 +228,7 @@ class Product extends Model
                 'show_reviews' => true,
             ],
             'youtube_url' => null,
+            'vturb_embed' => '',
             'redirect_after_purchase' => '',
             'back_redirect' => ['enabled' => false, 'url' => ''],
             'customer_fields' => [

@@ -111,6 +111,7 @@ const configForm = reactive({
         show_reviews: props.config?.landing?.show_reviews !== false,
     },
     youtube_url: props.config?.youtube_url ?? null,
+    vturb_embed: props.config?.vturb_embed ?? '',
     youtube_position: props.config?.youtube_position ?? 'top',
     redirect_after_purchase: props.config?.redirect_after_purchase ?? '',
     back_redirect: {
@@ -764,8 +765,20 @@ const inputClass =
                     <div v-show="sectionsOpen.video" class="border-t border-zinc-200 px-4 py-4 dark:border-zinc-700">
                         <div class="space-y-4">
                             <div>
-                                <label class="mb-1.5 block text-sm font-medium text-zinc-700 dark:text-zinc-300">URL do vídeo</label>
+                                <label class="mb-1.5 block text-sm font-medium text-zinc-700 dark:text-zinc-300">URL do vídeo (YouTube)</label>
                                 <input v-model="configForm.youtube_url" type="url" :class="inputClass" placeholder="https://www.youtube.com/watch?v=..." />
+                            </div>
+                            <div>
+                                <label class="mb-1.5 block text-sm font-medium text-zinc-700 dark:text-zinc-300">Ou player VTurb (código de incorporação)</label>
+                                <textarea
+                                    v-model="configForm.vturb_embed"
+                                    rows="5"
+                                    :class="[inputClass, 'font-mono text-xs']"
+                                    placeholder="Cole aqui o código de incorporação do VTurb, ex:&#10;&lt;vturb-smartplayer id=&quot;vid-...&quot;&gt;&lt;/vturb-smartplayer&gt;&#10;&lt;script&gt; ... scripts.converteai.net ... player.js ... &lt;/script&gt;"
+                                />
+                                <p class="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+                                    No VTurb: seu vídeo → Incorporar → copie o código. Se preenchido, o player VTurb é exibido no lugar do YouTube. Só scripts oficiais do converteai.net são carregados.
+                                </p>
                             </div>
                             <div>
                                 <label class="mb-1.5 block text-sm font-medium text-zinc-700 dark:text-zinc-300">Posição do vídeo</label>

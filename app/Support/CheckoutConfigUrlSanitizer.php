@@ -37,6 +37,17 @@ final class CheckoutConfigUrlSanitizer
             }
         }
 
+        // Embed VTurb: aceito apenas se referencia o player oficial (converteai.net).
+        // O componente do checkout só monta o placeholder e carrega scripts converteai.net —
+        // nenhum JS inline do vendedor é executado.
+        if (isset($config['vturb_embed']) && is_string($config['vturb_embed'])) {
+            $embed = trim($config['vturb_embed']);
+            if (mb_strlen($embed) > 6000) {
+                $embed = mb_substr($embed, 0, 6000);
+            }
+            $config['vturb_embed'] = str_contains($embed, 'converteai.net') ? $embed : '';
+        }
+
         if (isset($config['landing']) && is_array($config['landing'])) {
             if (isset($config['landing']['hero_image']) && is_string($config['landing']['hero_image'])) {
                 $safe = SafeUrl::normalizeHttpUrl($config['landing']['hero_image']);

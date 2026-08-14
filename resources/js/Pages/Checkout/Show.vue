@@ -7,6 +7,7 @@ import { useCheckoutLocale } from '@/composables/useCheckoutLocale';
 import CheckoutTimer from '@/components/checkout/CheckoutTimer.vue';
 import CheckoutBanners from '@/components/checkout/CheckoutBanners.vue';
 import CheckoutYoutube from '@/components/checkout/CheckoutYoutube.vue';
+import CheckoutVturb from '@/components/checkout/CheckoutVturb.vue';
 import CheckoutSummary from '@/components/checkout/CheckoutSummary.vue';
 import CheckoutForm from '@/components/checkout/CheckoutForm.vue';
 import CheckoutSidebar from '@/components/checkout/CheckoutSidebar.vue';
@@ -161,6 +162,7 @@ const previewRemountKey = computed(() => {
             rv: effectiveConfig.value?.reviews,
             tp: effectiveConfig.value?.template,
             lp: effectiveConfig.value?.landing,
+            vt: effectiveConfig.value?.vturb_embed,
         })}`;
     } catch (_) {
         return `p-${previewEpoch.value}`;
@@ -232,6 +234,11 @@ const landingHeroImage = computed(() => landingConfig.value.hero_image || null);
 const landingBenefitsTitle = computed(() => (landingConfig.value.benefits_title || '').trim() || 'O que você vai receber');
 const landingImages = computed(() => (Array.isArray(landingConfig.value.images) ? landingConfig.value.images : []).filter(Boolean));
 const landingCustomHtml = computed(() => String(landingConfig.value.custom_html || '').trim());
+
+/** VTurb tem precedência sobre YouTube quando o embed está preenchido. */
+const vturbEmbed = computed(() => String(effectiveConfig.value?.vturb_embed || '').trim());
+const hasVturb = computed(() => vturbEmbed.value.includes('converteai.net'));
+const videoPosition = computed(() => effectiveConfig.value?.youtube_position ?? 'top');
 const landingBenefits = computed(() =>
     String(landingConfig.value.benefits || '')
         .split('\n')
@@ -437,8 +444,12 @@ function onConversionPixelsReady() {
             </div>
 
             <CheckoutBanners v-if="banners.length" :urls="banners" />
+            <CheckoutVturb
+                v-if="!isLandingTemplate && hasVturb && videoPosition !== 'bottom'"
+                :embed-code="vturbEmbed"
+            />
             <CheckoutYoutube
-                v-if="!isLandingTemplate && (effectiveConfig?.youtube_position ?? 'top') !== 'bottom'"
+                v-if="!isLandingTemplate && !hasVturb && videoPosition !== 'bottom'"
                 :url="effectiveConfig?.youtube_url"
             />
 
@@ -463,8 +474,13 @@ function onConversionPixelsReady() {
                     <p class="mt-3 text-xs text-gray-500">Pagamento 100% seguro · Acesso imediato após a confirmação</p>
                 </div>
 
+                <CheckoutVturb
+                    v-if="hasVturb"
+                    :embed-code="vturbEmbed"
+                    class="mx-auto mt-10 max-w-4xl"
+                />
                 <CheckoutYoutube
-                    v-if="effectiveConfig?.youtube_url"
+                    v-else-if="effectiveConfig?.youtube_url"
                     :url="effectiveConfig?.youtube_url"
                     class="mx-auto mt-10 max-w-4xl"
                 />
@@ -640,8 +656,13 @@ function onConversionPixelsReady() {
             </div>
 
             <!-- Vídeo YouTube em baixo da página (quando a posição for "bottom") -->
+            <CheckoutVturb
+                v-if="!isLandingTemplate && hasVturb && videoPosition === 'bottom'"
+                :embed-code="vturbEmbed"
+                class="mt-8"
+            />
             <CheckoutYoutube
-                v-if="!isLandingTemplate && (effectiveConfig?.youtube_position ?? 'top') === 'bottom'"
+                v-if="!isLandingTemplate && !hasVturb && videoPosition === 'bottom'"
                 :url="effectiveConfig?.youtube_url"
                 class="mt-8"
             />
