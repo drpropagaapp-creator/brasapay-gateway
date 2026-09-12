@@ -6,11 +6,15 @@ use App\Http\Controllers\Concerns\RequiresPlatformStepUp;
 use App\Http\Controllers\Controller;
 use App\Models\KycDocument;
 use App\Models\User;
+use App\Services\PjConversionService;
 use App\Services\Platform\PlatformTotpService;
 use App\Services\PlatformAuditService;
 use App\Services\PlatformEmailNotifications;
+use App\Support\CnpjLookup;
 use App\Support\KycRequiredDocuments;
 use App\Support\KycUpload;
+use App\Support\MerchantProfileSnapshot;
+use App\Support\PjConversion;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Schema;
@@ -51,6 +55,7 @@ class KycVerificationsController extends Controller
                     'email' => $u->email,
                     'person_type' => $u->person_type,
                     'kyc_status' => $u->kyc_status,
+                    'pj_conversion_status' => PjConversion::status($u),
                     'updated_at' => $u->updated_at?->toIso8601String(),
                 ];
             })
@@ -66,7 +71,10 @@ class KycVerificationsController extends Controller
     {
         abort_unless($user->role === User::ROLE_INFOPRODUTOR, 404);
 
-        $documents = $user->kycDocuments()->orderBy('kind')->get()->map(function (KycDocument $d) {
+        $profile = MerchantProfileSnapshot::forUser($user);
+
+        $allDocuments = $user->kycDocuments()->orderByDesc('created_at')->get();
+        $mapDoc = function (KycDocument $d) {
             $base = route('plataforma.kyc.document', ['document' => $d]);
 
             return [
@@ -75,16 +83,24 @@ class KycVerificationsController extends Controller
                 'kind' => $d->kind,
                 'mime' => $d->original_mime,
                 'size_bytes' => $d->size_bytes,
+                'superseded_at' => $d->superseded_at?->toIso8601String(),
+                'is_active' => $d->superseded_at === null,
+                'created_at' => $d->created_at?->toIso8601String(),
                 'view_url' => $base,
                 'download_url' => $base.'?download=1',
             ];
-        });
+        };
+
+        $documents = $allDocuments->map($mapDoc)->values();
 
         return Inertia::render('Platform/Kyc/Show', [
             'merchant' => [
                 'id' => $user->id,
                 'name' => $user->name,
                 'email' => $user->email,
+                'phone' => $profile['phone'] ?? null,
+                'whatsapp' => $profile['whatsapp'] ?? null,
+                'whatsapp_url' => $profile['whatsapp_url'] ?? null,
                 'person_type' => $user->person_type,
                 'document' => $user->document,
                 'company_name' => $user->company_name,
@@ -101,7 +117,12 @@ class KycVerificationsController extends Controller
                 'kyc_status' => $user->kyc_status,
                 'kyc_rejection_reason' => $user->kyc_rejection_reason,
                 'kyc_reviewed_at' => $user->kyc_reviewed_at?->toIso8601String(),
+                'identity_document_type' => $user->identity_document_type ?? null,
+                'company_legal_nature' => $user->company_legal_nature ?? null,
+                'kyc_requirements_version' => (int) ($user->kyc_requirements_version ?? 1),
+                'pj_conversion' => PjConversion::forFrontend($user),
             ],
+            'cnpj_lookup' => CnpjLookup::forKycAdmin($user),
             'documents' => $documents,
             'platform_totp_enabled' => PlatformTotpService::isEnabledFor(request()->user()),
         ]);
@@ -164,6 +185,104 @@ class KycVerificationsController extends Controller
         $platformEmailNotifications->kycRejected($user->fresh(), $validated['reason']);
 
         return redirect()->route('plataforma.kyc.show', ['user' => $user->id])->with('success', 'Verificação rejeitada. O infoprodutor pode reenviar documentos.');
+    }
+
+    public function approvePjConversion(Request $request, User $user): RedirectResponse
+    {
+        abort_unless($user->role === User::ROLE_INFOPRODUTOR, 404);
+        abort_unless(PjConversion::isPendingReview($user), 422);
+
+        $this->validatePlatformStepUp($request, redirectRoute: 'plataforma.kyc.show');
+
+        $cpfBefore = (string) $user->document;
+        $cnpj = PjConversion::cnpj($user);
+
+        app(PjConversionService::class)->approve($user->fresh());
+
+        PlatformAuditService::log('platform.kyc.pj_conversion_approved', [
+            'merchant_id' => $user->id,
+            'previous_document' => $cpfBefore,
+            'cnpj' => $cnpj,
+        ], $request);
+
+        return redirect()->route('plataforma.kyc.show', ['user' => $user->id])->with('success', 'Migração para CNPJ aprovada. O CPF anterior ficou como responsável legal.');
+    }
+
+    public function rejectPjConversion(Request $request, User $user): RedirectResponse
+    {
+        abort_unless($user->role === User::ROLE_INFOPRODUTOR, 404);
+        abort_unless(PjConversion::isPendingReview($user), 422);
+
+        $this->validatePlatformStepUp($request, redirectRoute: 'plataforma.kyc.show');
+
+        $validated = $request->validate([
+            'reason' => ['required', 'string', 'max:2000'],
+        ]);
+
+        app(PjConversionService::class)->reject($user->fresh(), $validated['reason']);
+
+        PlatformAuditService::log('platform.kyc.pj_conversion_rejected', [
+            'merchant_id' => $user->id,
+            'reason' => $validated['reason'],
+        ], $request);
+
+        return redirect()->route('plataforma.kyc.show', ['user' => $user->id])->with('success', 'Migração para CNPJ rejeitada. A conta permanece pessoa física e operacional.');
+    }
+
+    public function refreshCnpj(Request $request, User $user): RedirectResponse
+    {
+        abort_unless($user->role === User::ROLE_INFOPRODUTOR, 404);
+        $cnpj = preg_replace('/\D/', '', (string) $user->document) ?? '';
+        if (strlen($cnpj) !== 14) {
+            $cnpj = PjConversion::cnpj($user) ?? '';
+        }
+        abort_unless($user->person_type === 'pj' || PjConversion::hasCnpj($user), 422);
+
+        if (strlen($cnpj) !== 14) {
+            return redirect()
+                ->route('plataforma.kyc.show', ['user' => $user->id])
+                ->with('error', 'CNPJ do cadastro inválido para consulta.');
+        }
+
+        try {
+            $snapshot = CnpjLookup::persistForUser(
+                $user->fresh(),
+                $cnpj,
+                (string) (PjConversion::companyName($user) ?? $user->company_name ?? ''),
+                null,
+                true,
+            );
+        } catch (\Throwable $e) {
+            PlatformAuditService::log('platform.kyc.cnpj_refresh_failed', [
+                'merchant_id' => $user->id,
+                'error' => $e->getMessage(),
+            ], $request);
+
+            return redirect()
+                ->route('plataforma.kyc.show', ['user' => $user->id])
+                ->with('error', 'Não foi possível consultar o CNPJ agora. Tente de novo em instantes.');
+        }
+
+        $refreshOk = ($snapshot['status'] ?? '') === \App\Services\Cnpj\BrasilApiCnpjClient::STATUS_OK
+            && filled($snapshot['razao_social'] ?? null)
+            && ($snapshot['has_official_data'] ?? true) !== false
+            && empty($snapshot['last_error']);
+
+        PlatformAuditService::log('platform.kyc.cnpj_refreshed', [
+            'merchant_id' => $user->id,
+            'status' => $snapshot['status'] ?? null,
+            'ok' => $refreshOk,
+        ], $request);
+
+        if ($refreshOk) {
+            return redirect()
+                ->route('plataforma.kyc.show', ['user' => $user->id])
+                ->with('success', 'Consulta CNPJ atualizada. Compare os dados da Receita com o cadastro.');
+        }
+
+        return redirect()
+            ->route('plataforma.kyc.show', ['user' => $user->id])
+            ->with('error', 'A consulta via API não foi bem-sucedida. Os dados anteriores, se houver, foram mantidos. Atenção na análise.');
     }
 
     public function downloadDocument(Request $request, KycDocument $document): StreamedResponse|\Symfony\Component\HttpFoundation\Response

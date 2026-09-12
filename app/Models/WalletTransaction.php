@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
@@ -70,5 +71,33 @@ class WalletTransaction extends Model
     public function order(): BelongsTo
     {
         return $this->belongsTo(Order::class);
+    }
+
+    /**
+     * Comissões de co-produção gravadas em meta da carteira.
+     * No PostgreSQL o operador JSON do Eloquent (meta->chave) falha com boolean/json;
+     * o backfill de afiliados já usa ->> por isso.
+     */
+    public function scopeCoproductionCommission(Builder $query): Builder
+    {
+        return $query->where(function (Builder $q) {
+            $driver = $q->getConnection()->getDriverName();
+            if ($driver === 'pgsql') {
+                $q->whereRaw("(meta->>'coproduction_role') = ?", ['coproducer'])
+                    ->orWhereRaw("(meta->>'coproduction') IN ('true', '1')")
+                    ->orWhereRaw(
+                        "NULLIF(meta->>'product_coproducer_id', '') IS NOT NULL"
+                        ." AND (meta->>'product_coproducer_id') <> 'null'"
+                    );
+
+                return;
+            }
+
+            $q->where('meta->coproduction_role', 'coproducer')
+                ->orWhere('meta->coproduction', true)
+                ->orWhere('meta->coproduction', 1)
+                ->orWhere('meta->coproduction', 'true')
+                ->orWhereNotNull('meta->product_coproducer_id');
+        });
     }
 }

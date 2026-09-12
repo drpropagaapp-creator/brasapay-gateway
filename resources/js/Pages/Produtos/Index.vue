@@ -27,9 +27,17 @@ const props = defineProps({
     produtos: { type: [Array, Object], default: () => [] },
     productTypes: { type: Array, default: () => [] },
     billingTypes: { type: Array, default: () => [] },
+    productCategories: { type: Array, default: () => [] },
     exchange_rates: { type: Object, default: () => ({ brl_eur: 0.16, brl_usd: 0.18 }) },
     plugin_card_actions: { type: Object, default: () => ({}) },
     plugin_form_sections: { type: Array, default: () => [] },
+    checkout_gateway_ui: {
+        type: Object,
+        default: () => ({
+            card_show_installments: false,
+            platform_card_installments_max: 12,
+        }),
+    },
 });
 
 const produtosList = computed(() => props.produtos?.data ?? (Array.isArray(props.produtos) ? props.produtos : []));
@@ -169,6 +177,12 @@ function pluginActions(productId) {
                                     {{ p.billing_type_label ?? 'Pagamento único' }}
                                 </span>
                                 <span
+                                    v-if="p.is_coproduction"
+                                    class="inline-block rounded bg-sky-100 px-1.5 py-0.5 text-xs font-medium text-sky-800 dark:bg-sky-900/40 dark:text-sky-200"
+                                >
+                                    Co-produção{{ p.coproduction_percent != null ? ' · ' + p.coproduction_percent + '%' : '' }}
+                                </span>
+                                <span
                                     :class="[
                                         'inline-block rounded px-2 py-0.5 text-xs font-medium',
                                         p.is_active
@@ -233,9 +247,10 @@ function pluginActions(productId) {
                                     @click="closeMenu"
                                 >
                                     <Pencil class="h-4 w-4 shrink-0" />
-                                    Editar
+                                    {{ p.is_coproduction ? 'Ver produto' : 'Editar' }}
                                 </Link>
                                 <button
+                                    v-if="!p.is_coproduction"
                                     type="button"
                                     class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
                                     @click="duplicate(p)"
@@ -244,7 +259,7 @@ function pluginActions(productId) {
                                     Duplicar
                                 </button>
                                 <button
-                                    v-if="p.approval?.can_resubmit"
+                                    v-if="p.approval?.can_resubmit && !p.is_coproduction"
                                     type="button"
                                     class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-amber-800 hover:bg-amber-50 dark:text-amber-200 dark:hover:bg-amber-950/30"
                                     @click="resubmit(p)"
@@ -252,6 +267,7 @@ function pluginActions(productId) {
                                     Reenviar para análise
                                 </button>
                                 <button
+                                    v-if="!p.is_coproduction"
                                     type="button"
                                     class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-900/20"
                                     @click="openDeleteModal(p)"
@@ -379,8 +395,10 @@ function pluginActions(productId) {
         :open="sidebarOpen"
         :product-types="productTypes"
         :billing-types="billingTypes"
+        :product-categories="productCategories"
         :exchange-rates="exchange_rates"
         :plugin-form-sections="plugin_form_sections"
+        :checkout-gateway-ui="checkout_gateway_ui"
         @close="closeSidebar"
         @success="closeSidebar"
     />

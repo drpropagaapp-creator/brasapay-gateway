@@ -9,6 +9,8 @@ use App\Services\CajuPay\CajuPayMedService;
 use App\Services\Med\MedDefenseDossierService;
 use App\Services\Med\MedPolicyService;
 use App\Services\Med\MedResolutionService;
+use App\Services\Bspay\BspayMedService;
+use App\Services\Versell\VersellMedService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -19,6 +21,8 @@ class MedDisputesController extends Controller
 {
     public function __construct(
         protected CajuPayMedService $medService,
+        protected VersellMedService $versellMedService,
+        protected BspayMedService $bspayMedService,
         protected MedResolutionService $resolutionService,
         protected MedDefenseDossierService $dossierService,
         protected MedPolicyService $policy,
@@ -131,11 +135,25 @@ class MedDisputesController extends Controller
         ]);
 
         try {
-            $this->medService->submitDefense(
-                $dispute,
-                $validated['text'],
-                $request->file('attachments', []) ?? []
-            );
+            if (VersellMedService::isVersellDispute($dispute)) {
+                $this->versellMedService->submitDefense(
+                    $dispute,
+                    $validated['text'],
+                    $request->file('attachments', []) ?? []
+                );
+            } elseif (BspayMedService::isBspayDispute($dispute)) {
+                $this->bspayMedService->submitDefense(
+                    $dispute,
+                    $validated['text'],
+                    $request->file('attachments', []) ?? []
+                );
+            } else {
+                $this->medService->submitDefense(
+                    $dispute,
+                    $validated['text'],
+                    $request->file('attachments', []) ?? []
+                );
+            }
         } catch (\Throwable $e) {
             report($e);
 

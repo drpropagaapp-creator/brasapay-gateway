@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Gateways\GatewayRegistry;
 use App\Services\PlatformPaymentMethods;
 use App\Support\SaleOrigin;
 use Illuminate\Database\Eloquent\Model;
@@ -171,9 +172,32 @@ class Order extends Model
             'card' => 'Cartão',
             'apple_pay' => 'Apple Pay',
             'google_pay' => 'Google Pay',
+            'paypal' => 'PayPal',
             'boleto' => 'Boleto',
             default => self::gatewaySlugDisplayLabel($this->gateway),
         };
+    }
+
+    /**
+     * Nome da adquirente (recebedor) usada nesta transação.
+     */
+    public function acquirerDisplayName(): string
+    {
+        $slug = strtolower(trim((string) ($this->gateway ?? '')));
+        if ($slug === '') {
+            return '—';
+        }
+        if ($slug === 'manual') {
+            return 'Manual';
+        }
+
+        $def = GatewayRegistry::get($slug);
+        $name = is_array($def) ? trim((string) ($def['name'] ?? '')) : '';
+        if ($name !== '') {
+            return $name;
+        }
+
+        return Str::headline(str_replace(['_', '-'], ' ', $slug));
     }
 
     /**
@@ -204,18 +228,12 @@ class Order extends Model
         return $base;
     }
 
-    public function saleApprovedPushBody(?OrderItem $item = null, bool $isOrderBump = false): string
+    public function saleApprovedPushBody(?OrderItem $item = null): string
     {
-        $lines = [];
-        if ($isOrderBump) {
-            $lines[] = 'Order bump';
-        }
-        $lines = array_merge($lines, $this->salePushContentLines($item));
+        $lines = $this->salePushContentLines($item);
 
         if ($lines === []) {
-            return $isOrderBump
-                ? 'Você recebeu uma nova venda de Order bump.'
-                : 'Você recebeu uma nova venda aprovada.';
+            return 'Você recebeu uma nova venda aprovada.';
         }
 
         return implode("\n", $lines);
@@ -261,7 +279,7 @@ class Order extends Model
         if ($items->isEmpty()) {
             return [[
                 'title' => $this->saleApprovedPushTitle(false),
-                'body' => $this->saleApprovedPushBody(null, false),
+                'body' => $this->saleApprovedPushBody(null),
                 'event_key' => 'sale_'.$this->id,
                 'is_order_bump' => false,
             ]];
@@ -276,7 +294,7 @@ class Order extends Model
 
             $messages[] = [
                 'title' => $this->saleApprovedPushTitle($isBump),
-                'body' => $this->saleApprovedPushBody($item, $isBump),
+                'body' => $this->saleApprovedPushBody($item),
                 'event_key' => $eventKey,
                 'is_order_bump' => $isBump,
             ];
@@ -321,10 +339,7 @@ class Order extends Model
                 ? (float) $breakdown['net']
                 : (float) $breakdown['gross'];
             $amount = number_format($value, 2, ',', '.');
-            $label = $mode === UserPushPreference::SALE_AMOUNT_MODE_NET
-                ? 'Valor líquido'
-                : 'Valor bruto';
-            $lines[] = $label.': R$ '.$amount;
+            $lines[] = 'Valor: R$ '.$amount;
         }
         if (! empty($prefs['show_payment_method'])) {
             $lines[] = 'Pagamento: '.$this->paymentMethodPushLabel();
@@ -420,7 +435,7 @@ class Order extends Model
 
         return match ($column) {
             'credit_card', 'creditcard', 'card' => 'card',
-            'pix', 'pix_auto', 'boleto', 'apple_pay', 'google_pay', 'open_finance' => $column,
+            'pix', 'pix_auto', 'boleto', 'apple_pay', 'google_pay', 'open_finance', 'paypal' => $column,
             default => null,
         };
     }
@@ -466,13 +481,16 @@ class Order extends Model
         if (in_array($method, ['spacepag', 'woovi', 'pushinpay', 'cajupay', 'efi', 'linaopenx'], true)) {
             $method = 'pix';
         }
-        if (in_array($method, ['pix', 'card', 'boleto'], true)) {
-            return $method;
+        if (in_array($method, ['pix', 'card', 'boleto', 'paypal'], true)) {
+            return $method === 'paypal' ? 'card' : $method;
         }
 
         $gateway = strtolower(trim((string) ($this->gateway ?? '')));
         if ($gateway === '') {
             return 'outro';
+        }
+        if ($gateway === 'paypal' || $gateway === 'stripe') {
+            return 'card';
         }
         if ($gateway === 'linaopenx' || str_contains($gateway, 'pix') || in_array($gateway, ['spacepag', 'woovi', 'pushinpay', 'cajupay', 'efi'], true)) {
             return 'pix';
@@ -577,6 +595,12 @@ class Order extends Model
     public function revokePurchasedProductAccessFromBuyer(): void
     {
         if (! $this->user_id) {
+            return;
+        }
+
+        if (\App\Services\MemberModuleAccessService::isRenewalOrder($this)) {
+            app(\App\Services\MemberModuleAccessService::class)->revokeFromOrder($this);
+
             return;
         }
 

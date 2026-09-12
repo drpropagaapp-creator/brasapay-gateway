@@ -5,7 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Product;
 use App\Models\ProductAffiliateEnrollment;
 use App\Models\User;
-use App\Services\AffiliateEnrollmentNotifier;
+use App\Services\AffiliateEnrollmentService;
 use App\Services\StorageService;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -13,6 +13,7 @@ use Inertia\Response;
 
 class AffiliateShowcaseController extends Controller
 {
+
     public function index(Request $request): Response
     {
         $user = auth()->user();
@@ -141,55 +142,12 @@ class AffiliateShowcaseController extends Controller
     public function enroll(Request $request, Product $product): \Illuminate\Http\RedirectResponse
     {
         $user = auth()->user();
-
-        if ($product->tenant_id === $user->tenant_id) {
-            return back()->with('error', 'Você não pode se afiliar ao próprio produto.');
+        if (! $user instanceof User) {
+            abort(401);
         }
 
-        if (! $product->affiliate_enabled || ! $product->affiliate_show_in_showcase || ! $product->isAvailableForPurchase()) {
-            return back()->with('error', 'Este produto não está disponível para afiliação.');
-        }
+        $result = app(AffiliateEnrollmentService::class)->requestEnrollment($product, $user, requireShowcase: true);
 
-        if (! $product->affiliateCommissionTotalsValid()) {
-            return back()->with('error', 'Este produto não pode aceitar afiliados no momento (comissões inválidas).');
-        }
-
-        $enrollment = ProductAffiliateEnrollment::query()
-            ->where('product_id', $product->id)
-            ->where('affiliate_user_id', $user->id)
-            ->first();
-
-        if ($enrollment) {
-            if ($enrollment->status === ProductAffiliateEnrollment::STATUS_APPROVED) {
-                return back()->with('info', 'Você já é afiliado deste produto.');
-            }
-            if ($enrollment->status === ProductAffiliateEnrollment::STATUS_PENDING) {
-                return back()->with('info', 'Sua solicitação já está pendente.');
-            }
-            if (in_array($enrollment->status, [ProductAffiliateEnrollment::STATUS_REJECTED, ProductAffiliateEnrollment::STATUS_REVOKED], true)) {
-                $enrollment->update([
-                    'status' => ProductAffiliateEnrollment::STATUS_PENDING,
-                    'public_ref' => null,
-                ]);
-            }
-        } else {
-            $enrollment = ProductAffiliateEnrollment::query()->create([
-                'product_id' => $product->id,
-                'affiliate_user_id' => $user->id,
-                'status' => ProductAffiliateEnrollment::STATUS_PENDING,
-                'public_ref' => null,
-            ]);
-        }
-
-        if (! $product->affiliate_manual_approval) {
-            $enrollment->refresh();
-            $enrollment->update(['status' => ProductAffiliateEnrollment::STATUS_APPROVED]);
-            $enrollment->ensurePublicRef();
-            app(AffiliateEnrollmentNotifier::class)->notifyApproved($enrollment->fresh());
-        }
-
-        return back()->with('success', $product->affiliate_manual_approval
-            ? 'Solicitação enviada ao produtor.'
-            : 'Você foi aprovado como afiliado.');
+        return back()->with($result['flash'], $result['message']);
     }
 }

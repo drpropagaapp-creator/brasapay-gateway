@@ -44,7 +44,7 @@
 
 /* Utilities para sidebar */
 @utility menu-item {
-    @apply relative flex items-center w-full gap-3 px-3 py-2.5 text-sm font-medium rounded-lg transition-colors;
+    @apply relative flex items-center w-full gap-3 px-3 py-2.5 text-sm font-medium rounded-lg transition-colors touch-manipulation;
 }
 
 @utility menu-item-active {
@@ -52,7 +52,16 @@
 }
 
 @utility menu-item-inactive {
-    @apply text-zinc-600 hover:bg-zinc-100 hover:text-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-800/80 dark:hover:text-zinc-200;
+    @apply text-zinc-600 dark:text-zinc-400;
+}
+
+@media (hover: hover) and (pointer: fine) {
+    .menu-item-inactive:hover {
+        @apply bg-zinc-100 text-zinc-800;
+    }
+    .dark .menu-item-inactive:hover {
+        @apply bg-zinc-800/80 text-zinc-200;
+    }
 }
 
 @utility menu-item-icon-active {
@@ -110,4 +119,36 @@
     .dark *::-webkit-scrollbar-thumb:active {
         background: rgb(39 39 42); /* zinc-800 */
     }
+}
+
+/* ApexCharts tooltip: no dark mode o body é text-zinc-100 e o tema light
+   não define color — fundo branco + texto claro. Força contraste. */
+.apexcharts-tooltip.apexcharts-theme-light {
+    color: #18181b;
+}
+html.dark .apexcharts-tooltip,
+html.dark .apexcharts-tooltip.apexcharts-theme-light,
+html.dark .apexcharts-tooltip.apexcharts-theme-dark {
+    background: #18181b !important;
+    color: #fafafa !important;
+    border: 1px solid #3f3f46 !important;
+}
+html.dark .apexcharts-tooltip-title {
+    background: #27272a !important;
+    color: #fafafa !important;
+    border-bottom-color: #3f3f46 !important;
+}
+html.dark .apexcharts-tooltip-text-y-label,
+html.dark .apexcharts-tooltip-text-y-value,
+html.dark .apexcharts-tooltip-text-goals-label,
+html.dark .apexcharts-tooltip-text-goals-value,
+html.dark .apexcharts-tooltip-text-z-label,
+html.dark .apexcharts-tooltip-text-z-value {
+    color: #fafafa !important;
+}
+html.dark .apexcharts-xaxistooltip,
+html.dark .apexcharts-yaxistooltip {
+    background: #18181b !important;
+    color: #fafafa !important;
+    border-color: #3f3f46 !important;
 }

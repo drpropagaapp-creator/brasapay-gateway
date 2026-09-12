@@ -6,6 +6,7 @@ use App\Http\Controllers\Concerns\RequiresPlatformStepUp;
 use App\Models\Setting;
 use App\Services\LegalDocumentsService;
 use App\Services\PhysicalProductAccess;
+use App\Services\SellerIntegrationVisibility;
 use App\Support\RemoteStorage;
 use App\Services\PlatformAuditService;
 use App\Support\HtmlSanitizer;
@@ -18,8 +19,11 @@ use App\Support\RegistrationTurnstileSettings;
 use App\Support\InfoproducerRegistrationSettings;
 use App\Support\AccountManagerSettings;
 use App\Support\ProductApprovalSettings;
+use App\Support\KycRequirementSettings;
 use App\Support\SellerPanelSupportSettings;
 use App\Support\PlatformCompanySettings;
+use App\Support\DatabaseBackupSettings;
+use App\Services\Platform\DatabaseBackupService;
 use App\Support\BrazilianDocuments;
 use App\Services\InstallationPublicUrlService;
 use App\Services\Stacker\ContainerRestartRequestService;
@@ -98,6 +102,7 @@ class SettingsController extends Controller
             && trim($storageS3SecretRaw) === '';
 
         $legalForm = app(LegalDocumentsService::class)->forAdminForm();
+        $backupService = app(DatabaseBackupService::class);
 
         return Inertia::render('Settings/Index', [
             'current_version' => $currentVersion,
@@ -142,12 +147,14 @@ class SettingsController extends Controller
                 'storage_s3_url' => $cloudR2Managed ? '' : $storageS3Url,
                 'storage_cloud_r2_managed' => $cloudR2Managed,
                 'physical_products_enabled' => PhysicalProductAccess::globalEnabled(),
+                ...($tenantId === null ? SellerIntegrationVisibility::forSettingsForm() : []),
                 ...($tenantId === null ? CheckoutTurnstileSettings::forSettingsForm() : []),
                 ...($tenantId === null ? LoginTurnstileSettings::forSettingsForm() : []),
                 ...($tenantId === null ? RegistrationTurnstileSettings::forSettingsForm() : []),
                 ...($tenantId === null ? RegistrationEmailVerificationSettings::forSettingsForm() : []),
                 ...($tenantId === null ? InfoproducerRegistrationSettings::forSettingsForm() : []),
                 ...($tenantId === null ? ProductApprovalSettings::forSettingsForm() : []),
+                ...($tenantId === null ? KycRequirementSettings::forSettingsForm() : []),
                 ...($tenantId === null ? AccountManagerSettings::forSettingsForm() : []),
                 ...($tenantId === null ? SellerPanelSupportSettings::forSettingsForm() : []),
                 ...($tenantId === null ? PlatformCompanySettings::forSettingsForm() : []),
@@ -157,8 +164,19 @@ class SettingsController extends Controller
                     'legal_privacy_contact_email' => $legalForm['legal_privacy_contact_email'],
                     'legal_cookie_banner_enabled' => $legalForm['legal_cookie_banner_enabled'],
                 ] : []),
+                ...($tenantId === null ? DatabaseBackupSettings::forSettingsForm() : []),
             ],
+            'backup_files' => $tenantId === null ? $backupService->listBackups() : [],
+            'backup_status' => $tenantId === null ? DatabaseBackupSettings::lastRun() : null,
+            'backup_storage' => $tenantId === null ? [
+                'provider' => $backupService->destinationProvider(),
+                'is_remote' => $backupService->destinationIsRemote(),
+                'label' => $backupService->destinationLabel(),
+                'prefix' => DatabaseBackupSettings::destinationPrefix(),
+                'independent_from_media' => true,
+            ] : null,
             'legal_defaults' => $tenantId === null ? ($legalForm['legal_defaults'] ?? []) : [],
+            'seller_integrations_catalog' => $tenantId === null ? SellerIntegrationVisibility::catalog() : [],
         ]);
     }
 
@@ -208,6 +226,7 @@ class SettingsController extends Controller
             'storage_s3_endpoint' => ['nullable', 'string', 'max:512'],
             'storage_s3_url' => ['nullable', 'string', 'max:512'],
             'physical_products_enabled' => ['nullable', 'boolean'],
+            ...SellerIntegrationVisibility::validationRules(),
             'checkout_turnstile_site_key' => ['nullable', 'string', 'max:255'],
             'checkout_turnstile_secret_key' => ['nullable', 'string', 'max:512'],
             'login_turnstile_enabled' => ['nullable', 'boolean'],
@@ -226,6 +245,12 @@ class SettingsController extends Controller
             'legal_terms_of_use_html' => ['nullable', 'string', 'max:200000'],
             'legal_privacy_contact_email' => ['nullable', 'email', 'max:255'],
             'legal_cookie_banner_enabled' => ['nullable', 'boolean'],
+            'kyc_allowed_identity_types' => ['nullable', 'array', 'min:1'],
+            'kyc_allowed_identity_types.*' => ['string', 'in:rg,cnh,passport'],
+            'kyc_require_address_proof' => ['nullable', 'boolean'],
+            'kyc_require_selfie_with_document' => ['nullable', 'boolean'],
+            'kyc_require_company_address_proof' => ['nullable', 'boolean'],
+            'kyc_require_company_constitution' => ['nullable', 'boolean'],
             'platform_legal_name' => ['nullable', 'string', 'max:255'],
             'platform_cnpj' => [
                 'nullable',
@@ -243,6 +268,7 @@ class SettingsController extends Controller
             ],
             'platform_checkout_notice_enabled' => ['nullable', 'boolean'],
             'platform_checkout_notice' => ['nullable', 'string', 'max:5000'],
+            ...DatabaseBackupSettings::validationRules(),
         ]);
 
         $tenantId = PlatformConfigContext::settingsTenantId();
@@ -333,6 +359,8 @@ class SettingsController extends Controller
 
             SellerPanelSupportSettings::persistFromValidated($validated);
             PlatformCompanySettings::persistFromValidated($validated);
+            KycRequirementSettings::persistFromValidated($validated);
+            DatabaseBackupSettings::persistFromValidated($validated, $request);
         }
 
         if ($tenantId === null && array_key_exists('physical_products_enabled', $validated)) {
@@ -341,6 +369,25 @@ class SettingsController extends Controller
                 ($validated['physical_products_enabled'] ?? false) ? '1' : '0',
                 null
             );
+        }
+
+        if ($tenantId === null) {
+            foreach (SellerIntegrationVisibility::ids() as $integrationId) {
+                $key = SellerIntegrationVisibility::settingKey($integrationId);
+                if (! array_key_exists($key, $validated)) {
+                    continue;
+                }
+                $enabling = filter_var($validated[$key], FILTER_VALIDATE_BOOLEAN);
+                $wasEnabled = SellerIntegrationVisibility::globalEnabled($integrationId);
+                SellerIntegrationVisibility::setGlobal($integrationId, $enabling);
+                if ($wasEnabled !== $enabling) {
+                    PlatformAuditService::log('settings.seller_integration.updated', [
+                        'integration' => $integrationId,
+                        'from' => $wasEnabled ? '1' : '0',
+                        'to' => $enabling ? '1' : '0',
+                    ], $request);
+                }
+            }
         }
 
         $emailKeys = [
@@ -377,7 +424,16 @@ class SettingsController extends Controller
             'checkout_turnstile_site_key',
             'checkout_turnstile_secret_key',
             'physical_products_enabled',
+            ...SellerIntegrationVisibility::settingKeys(),
         ];
+        $kycRequirementKeys = [
+            'kyc_allowed_identity_types',
+            'kyc_require_address_proof',
+            'kyc_require_selfie_with_document',
+            'kyc_require_company_address_proof',
+            'kyc_require_company_constitution',
+        ];
+        $backupKeys = DatabaseBackupSettings::FORM_KEYS;
         // Handle passwords separately (encrypt)
         if (array_key_exists('smtp_password', $validated) && $validated['smtp_password'] !== null && $validated['smtp_password'] !== '') {
             Setting::set('smtp_password', encrypt($validated['smtp_password']), $tenantId);
@@ -425,6 +481,12 @@ class SettingsController extends Controller
                 continue;
             }
             if (in_array($key, $securityToggleKeys, true)) {
+                continue;
+            }
+            if (in_array($key, $kycRequirementKeys, true)) {
+                continue;
+            }
+            if (in_array($key, $backupKeys, true)) {
                 continue;
             }
             if (in_array($key, $brandingKeys, true)) {

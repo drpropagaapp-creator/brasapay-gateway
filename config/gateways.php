@@ -48,6 +48,29 @@ return [
                 ['key' => 'webhook_postback_base_url', 'label' => 'URL base pública para webhooks (HTTPS, sem barra final)', 'type' => 'text', 'optional' => true],
             ],
         ],
+        'bspay' => [
+            'slug' => 'bspay',
+            'name' => 'BSPay',
+            'image' => 'images/gateways/bspay.png',
+            'methods' => ['pix'],
+            'scope' => 'national',
+            'country' => 'br',
+            'country_name' => 'Brasil, México',
+            'country_flag' => 'brasil.png',
+            'countries' => [
+                ['flag' => 'brasil.png', 'name' => 'Brasil'],
+                ['flag' => 'mexico.png', 'name' => 'México'],
+            ],
+            'signup_url' => 'https://bspay.co',
+            'driver' => \App\Gateways\Bspay\BspayDriver::class,
+            'credential_keys' => [
+                ['key' => 'client_id', 'label' => 'Client ID', 'type' => 'text'],
+                ['key' => 'client_secret', 'label' => 'Client Secret', 'type' => 'password'],
+                ['key' => 'bspay_payout_min_brl', 'label' => 'Mínimo líquido de payout (R$)', 'type' => 'text', 'optional' => true],
+                ['key' => 'bspay_admin_fee_pix_brl', 'label' => 'Taxa PIX paga à BSPay (R$)', 'type' => 'text', 'optional' => true],
+                ['key' => 'bspay_admin_fee_payout_brl', 'label' => 'Taxa de saque paga à BSPay (R$)', 'type' => 'text', 'optional' => true],
+            ],
+        ],
         'woovi' => [
             'slug' => 'woovi',
             'name' => 'Woovi',
@@ -105,6 +128,44 @@ return [
                 ['key' => 'webhook_secret', 'label' => 'Webhook Secret (whsec_...)', 'type' => 'password'],
                 ['key' => 'sandbox', 'label' => 'Usar ambiente de teste', 'type' => 'boolean'],
                 ['key' => 'link_enabled', 'label' => 'Habilitar Stripe Link no checkout', 'type' => 'boolean'],
+            ],
+        ],
+        'paypal' => [
+            'slug' => 'paypal',
+            'name' => 'PayPal',
+            'image' => 'images/gateways/paypal.png',
+            'methods' => ['paypal'],
+            'scope' => 'international',
+            'country_flag' => 'global.png',
+            'country_name' => 'Global',
+            'signup_url' => 'https://developer.paypal.com/dashboard/',
+            'driver' => \App\Gateways\PayPal\PayPalDriver::class,
+            'checkout_payload_keys' => ['client_id'],
+            'credential_keys' => [
+                [
+                    'key' => 'client_id',
+                    'label' => 'Client ID',
+                    'type' => 'text',
+                    'hint' => 'Client ID do app REST no PayPal Developer Dashboard (sandbox ou live).',
+                ],
+                [
+                    'key' => 'client_secret',
+                    'label' => 'Client Secret',
+                    'type' => 'password',
+                    'hint' => 'Client Secret do mesmo app. Nunca é exposto no checkout.',
+                ],
+                [
+                    'key' => 'webhook_id',
+                    'label' => 'Webhook ID',
+                    'type' => 'text',
+                    'hint' => 'Cadastre a URL do webhook no PayPal Developer Dashboard e cole aqui o Webhook ID. Eventos: PAYMENT.CAPTURE.COMPLETED, PAYMENT.CAPTURE.DENIED, PAYMENT.CAPTURE.REFUNDED.',
+                ],
+                [
+                    'key' => 'sandbox',
+                    'label' => 'Usar ambiente Sandbox',
+                    'type' => 'boolean',
+                    'hint' => 'Ative com credenciais sandbox; desative em produção com Client ID/Secret live.',
+                ],
             ],
         ],
         'mercadopago' => [
@@ -213,6 +274,68 @@ return [
                 ['key' => 'creditor_account_type', 'label' => 'Credor: tipo de conta: CACC (corrente), SVGS (poupança) ou TRAN', 'type' => 'text', 'optional' => true],
             ],
         ],
+         /*
+         | Versell — uma adquirente na UI; credenciais internas cash_in / cash_out.
+         | Cash In (PIX cob + webhook) e Cash Out (dict + transfer/cashout).
+         */
+        'versell' => [
+            'slug' => 'versell',
+            'name' => 'Versell',
+            'image' => 'images/gateways/versell-logo.svg',
+            'methods' => ['pix', 'pix_auto'],
+            'scope' => 'national',
+            'country' => 'br',
+            'country_name' => 'Brasil',
+            'country_flag' => 'brasil.png',
+            'signup_url' => 'https://finance.versell.com.br',
+            'driver' => \App\Gateways\Versell\VersellDriver::class,
+            'credential_keys' => [
+                ['key' => 'cash_in_client_id', 'label' => 'Client ID', 'type' => 'text', 'group' => 'cash_in', 'group_label' => 'Versell — Cash In'],
+                ['key' => 'cash_in_client_secret', 'label' => 'Client Secret', 'type' => 'password', 'group' => 'cash_in', 'group_label' => 'Versell — Cash In', 'optional' => true],
+                ['key' => 'cash_in_pix_key', 'label' => 'Chave PIX', 'type' => 'text', 'group' => 'cash_in', 'group_label' => 'Versell — Cash In'],
+                ['key' => 'cash_in_certificate', 'label' => 'Certificado CRT', 'type' => 'file', 'accept' => '.crt,.pem', 'group' => 'cash_in', 'group_label' => 'Versell — Cash In', 'file_kind' => 'certificate'],
+                ['key' => 'cash_in_private_key', 'label' => 'Private Key KEY', 'type' => 'file', 'accept' => '.key,.pem', 'group' => 'cash_in', 'group_label' => 'Versell — Cash In', 'file_kind' => 'private_key'],
+                ['key' => 'cash_out_client_id', 'label' => 'Client ID', 'type' => 'text', 'group' => 'cash_out', 'group_label' => 'Versell — Cash Out'],
+                ['key' => 'cash_out_client_secret', 'label' => 'Client Secret', 'type' => 'password', 'group' => 'cash_out', 'group_label' => 'Versell — Cash Out', 'optional' => true],
+                ['key' => 'cash_out_certificate', 'label' => 'Certificado CRT', 'type' => 'file', 'accept' => '.crt,.pem', 'group' => 'cash_out', 'group_label' => 'Versell — Cash Out', 'file_kind' => 'certificate'],
+                ['key' => 'cash_out_private_key', 'label' => 'Private Key KEY', 'type' => 'file', 'accept' => '.key,.pem', 'group' => 'cash_out', 'group_label' => 'Versell — Cash Out', 'file_kind' => 'private_key'],
+                ['key' => 'versell_payout_min_brl', 'label' => 'Mínimo líquido de payout (R$)', 'type' => 'text', 'optional' => true, 'group' => 'cash_out', 'group_label' => 'Versell — Cash Out'],
+                ['key' => 'versell_admin_fee_pix_brl', 'label' => 'Taxa PIX paga à Versell (R$)', 'type' => 'text', 'optional' => true, 'group' => 'cash_out', 'group_label' => 'Versell — Cash Out'],
+                ['key' => 'versell_admin_fee_payout_brl', 'label' => 'Taxa de saque paga à Versell (R$)', 'type' => 'text', 'optional' => true, 'group' => 'cash_out', 'group_label' => 'Versell — Cash Out'],
+            ],
+        ],
+        'cielo' => [
+            'slug' => 'cielo',
+            'name' => 'Cielo',
+            'image' => 'images/gateways/cielo.svg',
+            'methods' => ['pix', 'card'],
+            'scope' => 'national',
+            'country' => 'br',
+            'country_name' => 'Brasil',
+            'country_flag' => 'brasil.png',
+            'signup_url' => 'https://www.cielo.com.br',
+            'driver' => \App\Gateways\Cielo\CieloDriver::class,
+            'checkout_payload_keys' => ['sandbox'],
+            'credential_keys' => [
+                ['key' => 'merchant_id', 'label' => 'MerchantId (API E-commerce)', 'type' => 'text', 'group' => 'api', 'group_label' => 'API de pagamentos'],
+                ['key' => 'merchant_key', 'label' => 'MerchantKey (API E-commerce)', 'type' => 'password', 'group' => 'api', 'group_label' => 'API de pagamentos'],
+                ['key' => 'sandbox', 'label' => 'Usar sandbox (cartão; PIX Cielo2 não tem sandbox de pago)', 'type' => 'boolean', 'group' => 'api', 'group_label' => 'API de pagamentos'],
+                ['key' => 'webhook_header_key', 'label' => 'Header do webhook (nome, cadastro no Site Cielo)', 'type' => 'text', 'optional' => true, 'group' => 'api', 'group_label' => 'API de pagamentos'],
+                ['key' => 'webhook_header_value', 'label' => 'Header do webhook (valor secreto)', 'type' => 'password', 'optional' => true, 'group' => 'api', 'group_label' => 'API de pagamentos'],
+                ['key' => 'sop_client_id', 'label' => 'ClientId Silent Order Post (cartão)', 'type' => 'text', 'optional' => true, 'group' => 'sop', 'group_label' => 'Silent Order Post (cartão)'],
+                ['key' => 'sop_client_secret', 'label' => 'ClientSecret Silent Order Post (cartão)', 'type' => 'password', 'optional' => true, 'group' => 'sop', 'group_label' => 'Silent Order Post (cartão)'],
+            ],
+        ],
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Adquirentes só no checkout da plataforma (ex. BSPay).
+    | ApiPix e PixGO não usam estes slugs; checkout e demais canais sim.
+    |--------------------------------------------------------------------------
+    */
+    'api_pix_excluded_slugs' => [
+        'bspay',
     ],
 
     /*
@@ -225,13 +348,17 @@ return [
     'platform_acquirer_slugs' => [
         'cajupay',
         'efi',
-        'spacepag',
+        // 'spacepag', // oculto da UI (Financeiro → Adquirentes) e da ordem de cobrança
         'woovi',
+        'bspay',
         'onlyup',
         'mercadopago',
         'pagarme',
         'stripe',
+        'paypal',
         'linaopenx',
+        'versell', // Cash In + Cash Out (dict)
+        'cielo',
     ],
 
     /*
@@ -240,11 +367,12 @@ return [
     |--------------------------------------------------------------------------
     */
     'default_order' => [
-        'pix' => ['cajupay', 'spacepag', 'woovi', 'onlyup', 'efi', 'mercadopago', 'pagarme', 'pushinpay', 'asaas'],
-        'card' => ['cajupay', 'efi', 'stripe', 'mercadopago', 'pagarme', 'asaas'],
+        'pix' => ['cajupay', /* 'spacepag', */ 'woovi', 'bspay', 'onlyup', 'efi', 'mercadopago', 'pagarme', 'pushinpay', 'asaas', 'versell', 'cielo'],
+        'card' => ['cajupay', 'efi', 'stripe', 'mercadopago', 'pagarme', 'asaas', 'cielo'],
         'boleto' => ['efi', 'mercadopago', 'pagarme', 'asaas'],
-        'pix_auto' => ['efi', 'pushinpay'],
+        'pix_auto' => ['efi', 'pushinpay', 'versell'],
         'open_finance' => ['linaopenx'],
+        'paypal' => ['paypal'],
         'crypto' => [],
     ],
 ];

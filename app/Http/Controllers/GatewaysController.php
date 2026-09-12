@@ -5,9 +5,12 @@ namespace App\Http\Controllers;
 use App\Http\Controllers\Concerns\RequiresPlatformStepUp;
 use App\Gateways\CajuPay\CajuPayDriver;
 use App\Gateways\GatewayRegistry;
+use App\Gateways\Versell\VersellCredentials;
+use App\Gateways\Versell\VersellDriver;
 use App\Models\GatewayCredential;
 use App\Models\Setting;
 use App\Services\CajuPay\CajuPayWebhookBootstrapService;
+use App\Services\Versell\VersellWebhookBootstrapService;
 use App\Support\GatewayPluginRequirement;
 use App\Support\GatewayWebhookUrl;
 use App\Support\PlatformConfigContext;
@@ -56,6 +59,7 @@ class GatewaysController extends Controller
         $certificateConfigured = false;
         $certificateFilename = null;
         $decrypted = [];
+        $versellSecretsConfigured = null;
         if ($credential !== null && $credential->getRawOriginal('credentials') !== null && $credential->getRawOriginal('credentials') !== '') {
             $decrypted = $credential->getDecryptedCredentials();
             if ($decrypted === [] && (string) $credential->getRawOriginal('credentials') !== '') {
@@ -67,6 +71,13 @@ class GatewaysController extends Controller
             $certificateConfigured = !empty($decrypted['certificate_path'] ?? '');
             $certificateFilename = $decrypted['certificate_filename'] ?? null;
         }
+
+        $formSource = $decrypted;
+        if ($slug === 'versell') {
+            $formSource = VersellCredentials::flattenForForm($decrypted);
+            $versellSecretsConfigured = VersellCredentials::secretsConfigured($decrypted);
+        }
+
         foreach ($credentialKeys as $keyDef) {
             $keyDef = is_array($keyDef) ? $keyDef : (array) $keyDef;
             $key = $keyDef['key'] ?? '';
@@ -77,9 +88,12 @@ class GatewaysController extends Controller
             if ($type === 'file') {
                 continue;
             }
-            $raw = $decrypted[$key] ?? null;
+            $raw = $formSource[$key] ?? null;
             if ($type === 'boolean') {
                 $credentialValues[$key] = filter_var($raw, FILTER_VALIDATE_BOOLEAN);
+            } elseif ($type === 'password' && $slug === 'versell') {
+                // Nunca devolver secret Versell ao browser
+                $credentialValues[$key] = '';
             } else {
                 $credentialValues[$key] = $raw !== null && $raw !== '' ? (string) $raw : '';
             }
@@ -97,24 +111,43 @@ class GatewaysController extends Controller
         } elseif ($slug === 'mercadopago') {
             $webhookUrl = GatewayWebhookUrl::forGateway('mercadopago');
             $webhookHelp = 'Cadastre esta URL HTTPS em Suas integrações → Webhooks → modo Produção → evento Payments (payment). O Mercado Pago também recebe notificações via notification_url em cada cobrança PIX. Após o pagamento, o sistema consulta GET /v1/payments/{id} para confirmar aprovação.';
+        } elseif ($slug === 'pagarme') {
+            $webhookUrl = GatewayWebhookUrl::forGateway('pagarme');
+            $webhookHelp = 'Cadastre esta URL HTTPS no painel Pagar.me (Configurações → Webhooks), método POST. Eventos de cobrança (charge.paid, charge.payment_failed, charge.refunded) e pedido (order.paid). A URL não é enviada em cada cobrança: o cadastro no painel é obrigatório. Precisa ser pública (não localhost) e HTTPS. Após o evento, o sistema confirma o status em GET /charges/{id}.';
         } elseif ($slug === 'linaopenx') {
             $webhookUrl = GatewayWebhookUrl::forGateway('linaopenx');
             $webhookHelp = 'Cadastre esta URL HTTPS no painel Lina (Embedded Payment / webhooks) para eventos de pagamento Open Finance (PAYMENT, consent, status). Método POST. Opcionais: assinatura HMAC nos headers X-Lina-Signature, X-Webhook-Signature ou X-Signature — cole o mesmo segredo no campo “Segredo do webhook” abaixo. Se não configurar segredo, o webhook ainda é aceito, mas a confirmação do pedido sempre reconsulta a API Lina.';
+        } elseif ($slug === 'bspay') {
+            $webhookUrl = GatewayWebhookUrl::forGateway('bspay');
+            $webhookHelp = 'Cadastre esta URL HTTPS no painel BSPay (webhook/callback). A mesma URL também é enviada em cada PIX via postback_url e recebe cashin, cashout e MED (chargeback.opened/won/lost/canceled). Precisa ser pública (não localhost) e HTTPS.';
+        } elseif ($slug === 'versell') {
+            $webhookUrl = GatewayWebhookUrl::forGateway('versell');
+            $webhookHelp = 'Cash In: …/webhooks/gateways/versell (notifica em /pix). Cash Out: …/transfer, …/cashout e …/infractions (MED). Pix Automático: …/pix-automatico (notifica em /rec e /cobr). “Testar conexão” tenta registrar todos. Use HTTPS público (GETFY_WEBHOOK_PUBLIC_URL).';
+        } elseif ($slug === 'cielo') {
+            $webhookUrl = GatewayWebhookUrl::forGateway('cielo');
+            $webhookHelp = 'Cadastre esta URL HTTPS no Site Cielo (E-commerce → Gestão API E-commerce → URL de notificações), método POST, JSON. A URL é estática (não vai em cada cobrança). Recomendado: configure o mesmo header Key/Value no portal e nos campos abaixo. O Post de Notificação só traz PaymentId; o sistema confirma o status em GET /1/sales/{PaymentId}. PIX Cielo2 (Provider Cielo2) não tem sandbox de pagamento confirmado.';
+        } elseif ($slug === 'paypal') {
+            $webhookUrl = GatewayWebhookUrl::forGateway('paypal');
+            $webhookHelp = 'Cadastre esta URL HTTPS no PayPal Developer Dashboard (Webhooks) do mesmo app REST. Eventos: PAYMENT.CAPTURE.COMPLETED, PAYMENT.CAPTURE.DENIED, PAYMENT.CAPTURE.REFUNDED. Depois cole o Webhook ID no campo abaixo. Não altera PIX/cartão das outras adquirentes.';
         }
 
         $fileFieldsConfigured = [];
-        foreach ($credentialKeys as $keyDef) {
-            $keyDef = is_array($keyDef) ? $keyDef : (array) $keyDef;
-            if (($keyDef['type'] ?? '') !== 'file') {
-                continue;
+        if ($slug === 'versell') {
+            $fileFieldsConfigured = VersellCredentials::fileFieldsConfigured($decrypted);
+        } else {
+            foreach ($credentialKeys as $keyDef) {
+                $keyDef = is_array($keyDef) ? $keyDef : (array) $keyDef;
+                if (($keyDef['type'] ?? '') !== 'file') {
+                    continue;
+                }
+                $k = $keyDef['key'] ?? '';
+                $certKey = $gateway['certificate_key'] ?? null;
+                if ($k === '' || ($certKey !== null && $k === $certKey)) {
+                    continue;
+                }
+                $pathKey = $k.'_path';
+                $fileFieldsConfigured[$k] = ! empty($decrypted[$pathKey] ?? '');
             }
-            $k = $keyDef['key'] ?? '';
-            $certKey = $gateway['certificate_key'] ?? null;
-            if ($k === '' || ($certKey !== null && $k === $certKey)) {
-                continue;
-            }
-            $pathKey = $k.'_path';
-            $fileFieldsConfigured[$k] = ! empty($decrypted[$pathKey] ?? '');
         }
 
         $usesOauth = ! empty($gateway['oauth']);
@@ -158,6 +191,7 @@ class GatewaysController extends Controller
             'oauth_callback_url' => $oauthCallbackUrl,
             'oauth_connected' => $oauthConnected,
             'file_fields_configured' => $fileFieldsConfigured,
+            'secrets_configured' => $versellSecretsConfigured,
         ];
 
         return response()->json($payload)->header('Cache-Control', 'no-store, no-cache, must-revalidate');
@@ -230,6 +264,12 @@ class GatewaysController extends Controller
                     continue;
                 }
             }
+            if ($type === 'password' && $slug === 'versell') {
+                $trimmed = is_string($v) ? trim($v) : '';
+                // Secret vazio: nestFromFlat preserva o existente
+                $credentials[$key] = $trimmed;
+                continue;
+            }
             $credentials[$key] = is_string($v) ? trim($v) : '';
         }
 
@@ -272,6 +312,10 @@ class GatewaysController extends Controller
         }
 
         $certDir = 'gateway_certs/'.($tenantId ?? 'global');
+        if ($slug === 'versell') {
+            $certDir = 'gateway_certs/'.($tenantId ?? 'global').'/versell';
+        }
+
         foreach ($credentialKeys as $keyDef) {
             $keyDef = is_array($keyDef) ? $keyDef : (array) $keyDef;
             $key = $keyDef['key'] ?? '';
@@ -284,31 +328,75 @@ class GatewaysController extends Controller
             if ($request->hasFile($key)) {
                 $file = $request->file($key);
                 if ($file && $file->isValid()) {
-                    $ext = strtolower($file->getClientOriginalExtension() ?: 'pem');
-                    $safeKey = preg_replace('/[^a-z0-9_-]/i', '_', $key) ?: 'file';
-                    $path = $file->storeAs($certDir, $slug.'_'.$safeKey.'_'.time().'.'.$ext, 'local');
-                    $credentials[$pathKey] = Storage::path($path);
-                    $credentials[$nameKey] = $file->getClientOriginalName();
+                    $stored = $this->storeGatewayCredentialFile(
+                        $file,
+                        $slug,
+                        $key,
+                        $certDir,
+                        is_string($keyDef['file_kind'] ?? null) ? $keyDef['file_kind'] : null,
+                        is_string($keyDef['accept'] ?? null) ? $keyDef['accept'] : null,
+                    );
+                    if ($stored === null) {
+                        return response()->json([
+                            'success' => false,
+                            'message' => $this->invalidCredentialFileMessage($keyDef),
+                        ], 422);
+                    }
+                    $credentials[$pathKey] = $stored['path'];
+                    $credentials[$nameKey] = $stored['filename'];
                 }
             } elseif (! empty($existingCredentials[$pathKey])) {
+                // Flat legado / re-save sem novo arquivo
                 $credentials[$pathKey] = $existingCredentials[$pathKey];
                 if (! empty($existingCredentials[$nameKey])) {
                     $credentials[$nameKey] = $existingCredentials[$nameKey];
                 }
+            } elseif ($slug === 'versell') {
+                // Paths aninhados (cash_in.certificate_path) → flat para nestFromFlat
+                $nested = VersellCredentials::normalize($existingCredentials);
+                $api = str_starts_with($key, 'cash_out_') ? 'cash_out' : 'cash_in';
+                $nestedPath = str_contains($key, 'private_key') ? 'private_key_path' : 'certificate_path';
+                $nestedName = str_contains($key, 'private_key') ? 'private_key_filename' : 'certificate_filename';
+                $existingPath = $nested[$api][$nestedPath] ?? '';
+                if (is_string($existingPath) && $existingPath !== '') {
+                    $credentials[$pathKey] = $existingPath;
+                    $existingName = $nested[$api][$nestedName] ?? '';
+                    if (is_string($existingName) && $existingName !== '') {
+                        $credentials[$nameKey] = $existingName;
+                    }
+                }
             }
+        }
+
+        if ($slug === 'versell') {
+            $credentials = VersellCredentials::nestFromFlat($credentials, $existingCredentials);
         }
 
         $driver = GatewayRegistry::driver($slug);
         $isConnected = false;
         $webhookWarning = null;
+        $connectionMessage = null;
+        $diagnosis = null;
         if ($driver && !empty($credentials)) {
             try {
-                $isConnected = $driver->testConnection($credentials);
+                if ($slug === 'versell' && $driver instanceof VersellDriver) {
+                    $diagnosis = $driver->diagnoseConnection($credentials);
+                    $isConnected = $diagnosis['ok'];
+                    $connectionMessage = $diagnosis['message'];
+                } else {
+                    $isConnected = $driver->testConnection($credentials);
+                }
             } catch (\Throwable) {
                 $isConnected = false;
             }
             if ($isConnected && $slug === 'cajupay' && $driver instanceof CajuPayDriver) {
                 $credentials = $this->ensureCajuPayWebhookRegistered($driver, $credentials, $webhookWarning);
+            }
+            if ($isConnected && $slug === 'versell') {
+                $boot = app(VersellWebhookBootstrapService::class)->bootstrap($credentials);
+                if (! empty($boot['warning'])) {
+                    $webhookWarning = $boot['warning'];
+                }
             }
         }
 
@@ -321,12 +409,26 @@ class GatewaysController extends Controller
 
         PlatformAuditService::log('platform.gateway.update', ['gateway_slug' => $slug]);
 
+        $message = 'Credenciais salvas.';
+        if (is_string($connectionMessage) && $connectionMessage !== '') {
+            $message .= ' '.$connectionMessage;
+        }
+        if ($isConnected && is_array($diagnosis) && ! ($diagnosis['cash_out']['ok'] ?? false)) {
+            $message .= ' Disponível para PIX; Cash Out precisa ser corrigido para saques.';
+        } elseif ($isConnected && ! $connectionMessage) {
+            $message = 'Credenciais salvas e conexão verificada.';
+        }
+
         return response()->json([
             'success' => true,
             'is_connected' => $isConnected,
             'is_enabled' => $credential->is_enabled ?? true,
-            'message' => $isConnected ? 'Credenciais salvas e conexão verificada.' : 'Credenciais salvas.',
+            'message' => $message,
             'webhook_warning' => $webhookWarning,
+            'diagnosis' => $diagnosis !== null ? [
+                'cash_in' => $diagnosis['cash_in'],
+                'cash_out' => $diagnosis['cash_out'],
+            ] : null,
         ]);
     }
 
@@ -422,6 +524,10 @@ class GatewaysController extends Controller
             if ($key === '' || $key === $certificateKey) {
                 continue;
             }
+            // Arquivos (CRT/KEY Versell etc.) não vão no JSON do teste — já devem estar salvos.
+            if ($type === 'file') {
+                continue;
+            }
             if ($type === 'boolean') {
                 $rules[$key] = ['nullable', 'boolean'];
                 continue;
@@ -443,6 +549,9 @@ class GatewaysController extends Controller
             if ($key === '' || $key === $certificateKey) {
                 continue;
             }
+            if ($type === 'file') {
+                continue;
+            }
             $v = $validated[$key] ?? null;
             if ($type === 'boolean') {
                 $credentials[$key] = filter_var($v, FILTER_VALIDATE_BOOLEAN);
@@ -460,19 +569,39 @@ class GatewaysController extends Controller
             ], 422);
         }
 
-        foreach ($credentialKeys as $keyDef) {
-            $keyDef = is_array($keyDef) ? $keyDef : (array) $keyDef;
-            $key = $keyDef['key'] ?? '';
-            $type = $keyDef['type'] ?? 'text';
-            if ($key === '' || $type !== 'file' || $key === $certificateKey) {
-                continue;
+        if ($slug === 'versell') {
+            $credentials = VersellCredentials::nestFromFlat($credentials, $existingCredentials);
+            $files = VersellCredentials::fileFieldsConfigured($credentials);
+            foreach (['cash_in_certificate', 'cash_in_private_key', 'cash_out_certificate', 'cash_out_private_key'] as $fileKey) {
+                if (empty($files[$fileKey])) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Envie e salve os certificados CRT e as private keys KEY (Cash In e Cash Out) antes de testar.',
+                    ], 422);
+                }
             }
-            $pathKey = $key.'_path';
-            if (empty($credentials[$pathKey])) {
+            $secrets = VersellCredentials::secretsConfigured($credentials);
+            if (! $secrets['cash_in'] || ! $secrets['cash_out']) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Envie e salve todos os arquivos de certificado obrigatórios antes de testar a conexão.',
+                    'message' => 'Informe e salve os Client Secrets de Cash In e Cash Out antes de testar.',
                 ], 422);
+            }
+        } else {
+            foreach ($credentialKeys as $keyDef) {
+                $keyDef = is_array($keyDef) ? $keyDef : (array) $keyDef;
+                $key = $keyDef['key'] ?? '';
+                $type = $keyDef['type'] ?? 'text';
+                if ($key === '' || $type !== 'file' || $key === $certificateKey) {
+                    continue;
+                }
+                $pathKey = $key.'_path';
+                if (empty($credentials[$pathKey])) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Envie e salve todos os arquivos de certificado obrigatórios antes de testar a conexão.',
+                    ], 422);
+                }
             }
         }
 
@@ -491,6 +620,31 @@ class GatewaysController extends Controller
         }
 
         try {
+            if ($slug === 'versell' && $driver instanceof VersellDriver) {
+                $diagnosis = $driver->diagnoseConnection($credentials);
+                $webhookWarning = null;
+                if ($diagnosis['ok']) {
+                    $boot = app(VersellWebhookBootstrapService::class)->bootstrap($credentials);
+                    if (! empty($boot['warning'])) {
+                        $webhookWarning = $boot['warning'];
+                    }
+                }
+                if ($credential) {
+                    $credential->is_connected = $diagnosis['ok'];
+                    $credential->save();
+                }
+
+                return response()->json([
+                    'success' => $diagnosis['ok'],
+                    'message' => $diagnosis['message'],
+                    'diagnosis' => [
+                        'cash_in' => $diagnosis['cash_in'],
+                        'cash_out' => $diagnosis['cash_out'],
+                    ],
+                    'webhook_warning' => $webhookWarning,
+                ]);
+            }
+
             $ok = $driver->testConnection($credentials);
             $webhookWarning = null;
             if ($ok && $slug === 'cajupay' && $driver instanceof CajuPayDriver) {
@@ -722,5 +876,87 @@ class GatewaysController extends Controller
             'boleto' => GatewayRegistry::filterSlugsToAllowedAcquirers($raw['boleto'] ?? $default['boleto'] ?? []),
             'pix_auto' => GatewayRegistry::filterSlugsToAllowedAcquirers($raw['pix_auto'] ?? $default['pix_auto'] ?? []),
         ];
+    }
+
+    /**
+     * @return array{path: string, filename: string}|null
+     */
+    private function storeGatewayCredentialFile(
+        \Illuminate\Http\UploadedFile $file,
+        string $slug,
+        string $fieldKey,
+        string $certDir,
+        ?string $fileKind,
+        ?string $accept,
+    ): ?array {
+        $ext = strtolower($file->getClientOriginalExtension() ?: '');
+        $allowed = $this->allowedExtensionsForCredentialFile($fileKind, $accept);
+        if ($ext === '' || ! in_array($ext, $allowed, true)) {
+            return null;
+        }
+
+        $safeKey = preg_replace('/[^a-z0-9_-]/i', '_', $fieldKey) ?: 'file';
+        $safeName = $slug.'_'.$safeKey.'.'.$ext;
+        $path = $file->storeAs($certDir, $safeName, 'local');
+        $absolutePath = Storage::path($path);
+
+        @chmod($absolutePath, $fileKind === 'private_key' ? 0600 : 0640);
+
+        $original = $file->getClientOriginalName();
+        $safeOriginal = is_string($original) ? basename($original) : $safeName;
+        $safeOriginal = preg_replace('/[^\w.\- ()\[\]]+/u', '_', $safeOriginal) ?: $safeName;
+
+        Log::info('GatewaysController stored gateway credential file', [
+            'slug' => $slug,
+            'field' => $fieldKey,
+            'extension' => $ext,
+            // Nunca logar path com intenção de vazar conteúdo; só nome sanitizado
+            'filename' => $safeOriginal,
+        ]);
+
+        return [
+            'path' => $absolutePath,
+            'filename' => $safeOriginal,
+        ];
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function allowedExtensionsForCredentialFile(?string $fileKind, ?string $accept): array
+    {
+        if (is_string($accept) && $accept !== '') {
+            $parts = preg_split('/\s*,\s*/', $accept) ?: [];
+            $exts = [];
+            foreach ($parts as $part) {
+                $part = strtolower(ltrim(trim($part), '.'));
+                if ($part !== '') {
+                    $exts[] = $part;
+                }
+            }
+            if ($exts !== []) {
+                return array_values(array_unique($exts));
+            }
+        }
+
+        return match ($fileKind) {
+            'certificate' => ['crt', 'pem'],
+            'private_key' => ['key', 'pem'],
+            default => ['crt', 'key', 'pem'],
+        };
+    }
+
+    /**
+     * @param  array<string, mixed>  $keyDef
+     */
+    private function invalidCredentialFileMessage(array $keyDef): string
+    {
+        $label = trim((string) ($keyDef['label'] ?? 'arquivo'));
+        $accept = trim((string) ($keyDef['accept'] ?? ''));
+        if ($accept !== '') {
+            return "O campo {$label} deve ser um arquivo {$accept}.";
+        }
+
+        return "Arquivo inválido para {$label}.";
     }
 }

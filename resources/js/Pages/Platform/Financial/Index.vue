@@ -25,6 +25,7 @@ import FeePercentInput from '@/components/ui/FeePercentInput.vue';
 import {
     formatPercentForInput,
     normalizeMerchantFeeRulesForSubmit,
+    normalizeCardInstallmentRulesForSubmit,
 } from '@/lib/percentDecimal';
 
 const feeMethodRows = [
@@ -56,6 +57,12 @@ const props = defineProps({
         type: Object,
         default: () => ({}),
     },
+    card_installment_rules: {
+        type: Object,
+        default: () => ({}),
+    },
+    platform_card_installments_enabled: { type: Boolean, default: true },
+    platform_card_installments_max: { type: Number, default: 12 },
     merchant_settlement_rules: {
         type: Object,
         default: () => ({}),
@@ -68,7 +75,7 @@ const props = defineProps({
     platform_minimum_withdrawal_brl: { type: Number, default: 0 },
     effective_minimum_withdrawal_brl: { type: Number, default: 0 },
     payout_gateway_min_brl: { type: Number, default: 0 },
-    /** @type {'auto'|'cajupay'|'spacepag'|'woovi'|'onlyup'} */
+    /** @type {'auto'|'cajupay'|'woovi'|'bspay'|'versell'|'onlyup'} */
     payout_gateway_preference: { type: String, default: 'auto' },
     /** Slug efetivo usado hoje (pode diferir do preferido se este não estiver conectado). */
     payout_gateway_active: { type: String, default: null },
@@ -102,6 +109,43 @@ const props = defineProps({
 });
 
 const cajupayGateway = computed(() => (props.gateways || []).find((g) => g.slug === 'cajupay') ?? null);
+
+const ACQUIRER_GROUPS = [
+    {
+        id: 'psp',
+        title: 'PSP — Provedor de Serviços de Pagamento',
+        slugs: ['cajupay', 'efi', 'woovi', 'mercadopago', 'pagarme' /* , 'spacepag' */],
+        dotClass: 'bg-emerald-500',
+    },
+    {
+        id: 'acquirer',
+        title: 'Adquirente',
+        slugs: ['stripe', 'paypal'],
+        dotClass: 'bg-blue-500',
+    },
+    {
+        id: 'open_finance',
+        title: 'Open Finance',
+        slugs: ['linaopenx'],
+        dotClass: 'bg-violet-500',
+    },
+];
+
+const acquirerGroups = computed(() => {
+    const list = props.gateways || [];
+    const bySlug = Object.fromEntries(list.map((g) => [g.slug, g]));
+    const used = new Set();
+    const groups = ACQUIRER_GROUPS.map((group) => {
+        const items = group.slugs.map((slug) => bySlug[slug]).filter(Boolean);
+        items.forEach((g) => used.add(g.slug));
+        return { ...group, items };
+    });
+    const leftover = list.filter((g) => !used.has(g.slug));
+    if (leftover.length > 0 && groups[0]) {
+        groups[0] = { ...groups[0], items: [...groups[0].items, ...leftover] };
+    }
+    return groups.filter((g) => g.items.length > 0);
+});
 
 const GATEWAYS_API_BASE = '/plataforma/financeiro/gateways';
 
@@ -319,7 +363,7 @@ watch(
     () => props.payout_gateway_preference,
     (v) => {
         payoutPref.value =
-            v === 'cajupay' || v === 'spacepag' || v === 'woovi' || v === 'onlyup' ? v : 'auto';
+            v === 'cajupay' || v === 'woovi' || v === 'bspay' || v === 'versell' || v === 'onlyup' ? v : 'auto';
     },
     { immediate: true }
 );
@@ -362,7 +406,7 @@ async function savePayoutPreference() {
 }
 
 function allAllowedTabIds() {
-    return ['adquirentes', 'metodos', 'taxas', 'limites', 'saques', 'liquidacao', 'pixgo'];
+    return ['adquirentes', 'metodos', 'taxas', 'parcelamento', 'limites', 'saques', 'liquidacao', 'pixgo'];
 }
 
 const activeTab = ref('adquirentes');
@@ -375,6 +419,7 @@ const tabs = computed(() => [
     { id: 'adquirentes', label: 'Adquirentes', icon: CreditCard },
     { id: 'metodos', label: 'Formas de pagamento', icon: LayoutGrid },
     { id: 'taxas', label: 'Taxas', icon: Percent },
+    { id: 'parcelamento', label: 'Parcelamento', icon: Repeat },
     { id: 'limites', label: 'Limites', icon: SlidersHorizontal },
     { id: 'saques', label: 'Saques', icon: Banknote },
     { id: 'liquidacao', label: 'Liquidação', icon: CalendarClock },
@@ -637,6 +682,27 @@ function buildFeeRulesFromProps() {
     return out;
 }
 
+const INSTALLMENT_COUNTS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
+
+function installmentRowFromProps(n) {
+    const r = props.card_installment_rules?.[n] || props.card_installment_rules?.[String(n)] || {};
+    const card = feeBlock('card');
+    const settlementDays = props.merchant_settlement_rules?.card?.days_to_available ?? 0;
+    return {
+        percent: formatPercentForInput(r.percent ?? card.percent) || '0',
+        fixed: r.fixed ?? card.fixed,
+        days_to_available: r.days_to_available ?? settlementDays,
+    };
+}
+
+function buildInstallmentRulesFromProps() {
+    const out = {};
+    for (const n of INSTALLMENT_COUNTS) {
+        out[n] = installmentRowFromProps(n);
+    }
+    return out;
+}
+
 const feePercentRefs = {};
 const feeFixedRefs = {};
 
@@ -661,6 +727,10 @@ function flushFeeInputs() {
         feePercentRefs[row.key]?.commit?.();
         feeFixedRefs[row.key]?.commit?.();
     }
+    for (const n of INSTALLMENT_COUNTS) {
+        feePercentRefs[`inst-${n}`]?.commit?.();
+        feeFixedRefs[`inst-${n}`]?.commit?.();
+    }
 }
 
 function updateFeeField(key, field, value) {
@@ -671,6 +741,38 @@ function updateFeeField(key, field, value) {
             [field]: value,
         },
     };
+}
+
+function updateInstallmentField(n, field, value) {
+    installmentForm.card_installment_rules = {
+        ...installmentForm.card_installment_rules,
+        [n]: {
+            ...installmentForm.card_installment_rules[n],
+            [field]: value,
+        },
+    };
+}
+
+function copyCardFeeToAllInstallments() {
+    flushInstallmentInputs();
+    const card = feeForm.merchant_fee_rules.card || props.merchant_fee_rules?.card || {};
+    const days = Number(props.merchant_settlement_rules?.card?.days_to_available ?? 0);
+    const next = {};
+    for (const n of INSTALLMENT_COUNTS) {
+        next[n] = {
+            percent: card.percent ?? 0,
+            fixed: card.fixed ?? 0,
+            days_to_available: Number.isFinite(days) ? Math.max(0, Math.min(365, days)) : 0,
+        };
+    }
+    installmentForm.card_installment_rules = next;
+}
+
+function flushInstallmentInputs() {
+    for (const n of INSTALLMENT_COUNTS) {
+        feePercentRefs[`inst-${n}`]?.commit?.();
+        feeFixedRefs[`inst-${n}`]?.commit?.();
+    }
 }
 
 const feeForm = useForm({
@@ -688,12 +790,20 @@ const feeForm = useForm({
     api_pix_enabled: props.api_pix_enabled,
 });
 
+const PLATFORM_INSTALLMENT_MAX_OPTIONS = [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
+
+const installmentForm = useForm({
+    platform_card_installments_enabled: props.platform_card_installments_enabled !== false,
+    platform_card_installments_max: Math.min(12, Math.max(2, Number(props.platform_card_installments_max) || 12)),
+    card_installment_rules: buildInstallmentRulesFromProps(),
+});
+
 function submitFees() {
     flushFeeInputs();
     feeForm
         .transform((data) => ({
-            ...data,
             merchant_fee_rules: normalizeMerchantFeeRulesForSubmit(data.merchant_fee_rules),
+            api_pix_enabled: data.api_pix_enabled,
         }))
         .put('/plataforma/financeiro/taxas', {
             preserveScroll: true,
@@ -705,6 +815,29 @@ function submitFees() {
                     api_pix_enabled: props.api_pix_enabled,
                 });
                 feeForm.reset();
+            },
+        });
+}
+
+function submitInstallments() {
+    flushInstallmentInputs();
+    installmentForm
+        .transform((data) => ({
+            platform_card_installments_enabled: data.platform_card_installments_enabled,
+            platform_card_installments_max: Math.min(12, Math.max(2, Number(data.platform_card_installments_max) || 12)),
+            card_installment_rules: normalizeCardInstallmentRulesForSubmit(data.card_installment_rules),
+        }))
+        .put('/plataforma/financeiro/parcelamento', {
+            preserveScroll: true,
+            onSuccess: async () => {
+                installmentForm.clearErrors();
+                await nextTick();
+                installmentForm.defaults({
+                    platform_card_installments_enabled: props.platform_card_installments_enabled !== false,
+                    platform_card_installments_max: Math.min(12, Math.max(2, Number(props.platform_card_installments_max) || 12)),
+                    card_installment_rules: buildInstallmentRulesFromProps(),
+                });
+                installmentForm.reset();
             },
         });
 }
@@ -847,20 +980,34 @@ function submitSettlement() {
                     <h2 class="mb-4 text-sm font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
                         Adquirentes de pagamento
                     </h2>
-                    <p class="mb-4 text-sm text-zinc-600 dark:text-zinc-400">
+                    <p class="mb-6 text-sm text-zinc-600 dark:text-zinc-400">
                         Configure os adquirentes usados no checkout e nas APIs. Na cobrança, credenciais globais
                         (definidas aqui) têm prioridade sobre credenciais antigas por tenant.
                     </p>
-                    <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                        <GatewayCard
-                            v-for="g in props.gateways"
-                            :key="g.slug"
-                            :gateway="g"
-                            show-enabled-toggle
-                            :toggling-enabled="togglingGatewaySlug === g.slug"
-                            @click="openGatewaySidebar(g.slug)"
-                            @toggle-enabled="toggleGatewayEnabled(g, $event)"
-                        />
+                    <div class="space-y-8">
+                        <div v-for="group in acquirerGroups" :key="group.id">
+                            <div class="mb-3 flex items-center gap-2">
+                                <span
+                                    class="h-2.5 w-2.5 shrink-0 rounded-full"
+                                    :class="group.dotClass"
+                                    aria-hidden="true"
+                                />
+                                <h3 class="text-sm font-semibold text-zinc-800 dark:text-zinc-200">
+                                    {{ group.title }}
+                                </h3>
+                            </div>
+                            <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                                <GatewayCard
+                                    v-for="g in group.items"
+                                    :key="g.slug"
+                                    :gateway="g"
+                                    show-enabled-toggle
+                                    :toggling-enabled="togglingGatewaySlug === g.slug"
+                                    @click="openGatewaySidebar(g.slug)"
+                                    @toggle-enabled="toggleGatewayEnabled(g, $event)"
+                                />
+                            </div>
+                        </div>
                     </div>
                     <div
                         v-if="!props.gateways?.length"
@@ -1125,10 +1272,11 @@ function submitSettlement() {
                                     </h2>
                                     <p class="mt-1 max-w-2xl text-sm leading-relaxed text-zinc-600 dark:text-zinc-400">
                                         <strong class="font-medium text-zinc-800 dark:text-zinc-200">CajuPay</strong>,
-                                        <strong class="font-medium text-zinc-800 dark:text-zinc-200">Spacepag</strong> e
-                                        <strong class="font-medium text-zinc-800 dark:text-zinc-200">Woovi</strong> podem ser
-                                        usados para saque automático PIX. Em modo automático a ordem é CajuPay → Spacepag →
-                                        Woovi (o primeiro conectado vence).
+                                        <strong class="font-medium text-zinc-800 dark:text-zinc-200">Woovi</strong>,
+                                        <strong class="font-medium text-zinc-800 dark:text-zinc-200">BSPay</strong> e
+                                        <strong class="font-medium text-zinc-800 dark:text-zinc-200">Versell</strong> podem ser
+                                        usados para saque automático PIX. Em modo automático a ordem é CajuPay →
+                                        Woovi → BSPay → Versell (o primeiro conectado vence).
                                     </p>
                                 </div>
                             </div>
@@ -1154,10 +1302,12 @@ function submitSettlement() {
                                 v-model="payoutPref"
                                 class="w-full cursor-pointer rounded-xl border border-zinc-200 bg-white px-3.5 py-2.5 text-sm font-medium text-zinc-900 shadow-sm outline-none transition focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-100"
                             >
-                                <option value="auto">Automático (CajuPay → Spacepag → Woovi)</option>
+                                <option value="auto">Automático (CajuPay → Woovi → BSPay → Versell)</option>
                                 <option value="cajupay">Forçar CajuPay</option>
-                                <option value="spacepag">Forçar Spacepag</option>
+                                <!-- <option value="spacepag">Forçar Spacepag</option> -->
                                 <option value="woovi">Forçar Woovi</option>
+                                <option value="bspay">Forçar BSPay</option>
+                                <option value="versell">Forçar Versell</option>
                                 <option value="onlyup">Forçar OnlyUp</option>
                             </select>
                         </div>
@@ -1304,6 +1454,7 @@ function submitSettlement() {
                                 </tbody>
                             </table>
                         </div>
+
                         <p v-if="feeForm.errors.merchant_fee_rules" class="text-sm text-red-600">
                             {{ feeForm.errors.merchant_fee_rules }}
                         </p>
@@ -1316,6 +1467,133 @@ function submitSettlement() {
                                 API PIX externa habilitada globalmente
                             </label>
                             <p class="mt-1 text-xs text-zinc-500 dark:text-zinc-400">Pode ser sobrescrita por infoprodutor na tela API Pagamentos.</p>
+                        </div>
+                    </form>
+                </section>
+            </div>
+        </Transition>
+
+        <Transition
+            enter-active-class="transition duration-200 ease-out"
+            enter-from-class="opacity-0"
+            enter-to-class="opacity-100"
+            leave-active-class="transition duration-150 ease-in"
+            leave-from-class="opacity-100"
+            leave-to-class="opacity-0"
+        >
+            <div v-show="activeTab === 'parcelamento'" class="space-y-6">
+                <section class="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm dark:border-zinc-700 dark:bg-zinc-800">
+                    <h2 class="mb-2 text-sm font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+                        Parcelamento no cartão
+                    </h2>
+                    <p class="mb-6 text-sm text-zinc-600 dark:text-zinc-400">
+                        Controla se os infoprodutores podem oferecer cartão parcelado e o teto de parcelas da plataforma.
+                        As taxas 1x a 12x abaixo continuam valendo para o cálculo de líquido e liquidação — não alteram o checkout à vista.
+                    </p>
+                    <form class="space-y-6" @submit.prevent="submitInstallments">
+                        <label class="flex items-start gap-3 rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-3 dark:border-zinc-700 dark:bg-zinc-900/60">
+                            <input
+                                v-model="installmentForm.platform_card_installments_enabled"
+                                type="checkbox"
+                                class="mt-0.5 h-4 w-4 rounded border-zinc-300"
+                            />
+                            <span>
+                                <span class="block text-sm font-medium text-zinc-800 dark:text-zinc-100">
+                                    Ativar venda parcelada com cartão de crédito
+                                </span>
+                                <span class="mt-1 block text-xs text-zinc-500 dark:text-zinc-400">
+                                    Desativado: nenhum seller oferece parcelamento e o checkout fica só à vista, mesmo se o produto já tiver parcelas configuradas.
+                                </span>
+                            </span>
+                        </label>
+                        <div>
+                            <label for="platform-installments-max" class="text-sm font-medium text-zinc-800 dark:text-zinc-200">
+                                Quantidade máxima de parcelas permitidas
+                            </label>
+                            <select
+                                id="platform-installments-max"
+                                v-model.number="installmentForm.platform_card_installments_max"
+                                :disabled="!installmentForm.platform_card_installments_enabled"
+                                class="mt-1 w-full max-w-xs rounded-lg border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-600 dark:bg-zinc-900"
+                            >
+                                <option v-for="n in PLATFORM_INSTALLMENT_MAX_OPTIONS" :key="'plat-max-' + n" :value="n">
+                                    {{ n }} parcelas
+                                </option>
+                            </select>
+                            <p class="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+                                Teto que o seller pode escolher no produto (de 2x até este valor).
+                            </p>
+                            <p v-if="installmentForm.errors.platform_card_installments_max" class="mt-1 text-sm text-red-600">
+                                {{ installmentForm.errors.platform_card_installments_max }}
+                            </p>
+                        </div>
+
+                        <div class="rounded-xl border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-700 dark:bg-zinc-900/60">
+                            <div class="mb-3 flex flex-wrap items-start justify-between gap-3">
+                                <div>
+                                    <h3 class="text-sm font-semibold text-zinc-800 dark:text-zinc-100">
+                                        Cartão por parcelamento (1x a 12x)
+                                    </h3>
+                                    <p class="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
+                                        Percentual e valor fixo de cada linha incidem sobre o <strong class="font-medium">bruto total</strong> da venda naquela quantidade de parcelas.
+                                        A disponibilidade é o intervalo entre as fatias: numa 12x, o líquido sai em 12 partes; a 1ª libera em D+X, a 2ª em D+2X, e assim por diante.
+                                        Com 0 dias, o crédito segue a aba Liquidação (sem calendário por parcela). Apple Pay e Google Pay continuam nas linhas próprias da aba Taxas.
+                                    </p>
+                                </div>
+                                <Button type="button" variant="secondary" @click="copyCardFeeToAllInstallments">
+                                    Copiar taxa de Cartão p/ todas
+                                </Button>
+                            </div>
+                            <div class="overflow-x-auto">
+                                <table class="w-full min-w-[640px] text-left text-sm">
+                                    <thead class="border-b border-zinc-200 text-xs uppercase text-zinc-500 dark:border-zinc-600">
+                                        <tr>
+                                            <th class="pb-2 pr-4">Parcelas</th>
+                                            <th class="pb-2 pr-4">Percentual (%)</th>
+                                            <th class="pb-2 pr-4">Valor fixo</th>
+                                            <th class="pb-2">Disponível em (dias)</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody class="divide-y divide-zinc-100 dark:divide-zinc-700">
+                                        <tr v-for="n in INSTALLMENT_COUNTS" :key="'inst-fee-' + n">
+                                            <td class="py-3 font-medium text-zinc-900 dark:text-white">
+                                                {{ n === 1 ? '1x (à vista)' : n + 'x' }}
+                                            </td>
+                                            <td class="py-3 pr-4">
+                                                <FeePercentInput
+                                                    :ref="(el) => setFeePercentRef('inst-' + n, el)"
+                                                    :model-value="installmentForm.card_installment_rules[n].percent"
+                                                    @update:model-value="(v) => updateInstallmentField(n, 'percent', v)"
+                                                />
+                                            </td>
+                                            <td class="py-3 pr-4">
+                                                <FeeFixedInput
+                                                    :ref="(el) => setFeeFixedRef('inst-' + n, el)"
+                                                    :model-value="installmentForm.card_installment_rules[n].fixed"
+                                                    @update:model-value="(v) => updateInstallmentField(n, 'fixed', v)"
+                                                />
+                                            </td>
+                                            <td class="py-3">
+                                                <input
+                                                    v-model.number="installmentForm.card_installment_rules[n].days_to_available"
+                                                    type="number"
+                                                    min="0"
+                                                    max="365"
+                                                    step="1"
+                                                    class="w-full max-w-[140px] rounded-lg border border-zinc-300 px-3 py-2 dark:border-zinc-600 dark:bg-zinc-900"
+                                                />
+                                            </td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                            <p v-if="installmentForm.errors.card_installment_rules" class="mt-2 text-sm text-red-600">
+                                {{ installmentForm.errors.card_installment_rules }}
+                            </p>
+                        </div>
+
+                        <div class="flex justify-end">
+                            <Button type="submit" :disabled="installmentForm.processing">Salvar parcelamento</Button>
                         </div>
                     </form>
                 </section>
@@ -1471,8 +1749,9 @@ function submitSettlement() {
                         Política de saques
                     </h2>
                     <p class="mb-6 text-sm text-zinc-600 dark:text-zinc-400">
-                        Controle saque automático, janela de horário para solicitações e PIN de aprovação manual.
-                        Ações críticas exigem 2FA quando ativado em Meu perfil.
+                        Controle saque automático, janela de horário para solicitações e PIN de operação.
+                        Com 2FA ativo no perfil, o PIN não é exigido nas aprovações. Sem 2FA, o PIN é obrigatório.
+                        Pagamento manual nunca é aceito sem 2FA ou PIN cadastrado.
                     </p>
                     <form class="space-y-5" @submit.prevent="submitWithdrawalPolicy">
                         <label class="flex items-center gap-3">
@@ -1522,7 +1801,7 @@ function submitSettlement() {
 
                         <div class="rounded-xl border border-zinc-200 p-4 dark:border-zinc-600">
                             <div class="flex flex-wrap items-start justify-between gap-2">
-                                <p class="text-sm font-medium text-zinc-800 dark:text-zinc-200">PIN de aprovação manual</p>
+                                <p class="text-sm font-medium text-zinc-800 dark:text-zinc-200">PIN de operação</p>
                                 <button
                                     v-if="withdrawal_policy?.has_manual_approval_pin"
                                     type="button"
@@ -1533,13 +1812,19 @@ function submitSettlement() {
                                 </button>
                             </div>
                             <p class="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-                                Obrigatório ao aprovar saques quando o automático estiver desligado.
-                                Use de {{ MANUAL_APPROVAL_PIN_MIN_LENGTH }} a {{ MANUAL_APPROVAL_PIN_MAX_LENGTH }} dígitos numéricos.
+                                Obrigatório para pagar saques quando o 2FA do perfil estiver desligado.
+                                Com 2FA ativo, este PIN não é pedido. Use de {{ MANUAL_APPROVAL_PIN_MIN_LENGTH }} a {{ MANUAL_APPROVAL_PIN_MAX_LENGTH }} dígitos numéricos.
                                 {{
                                     withdrawal_policy?.has_manual_approval_pin
                                         ? 'Para trocar, informe o PIN atual. Deixe os campos em branco para manter.'
                                         : 'Ainda não definido.'
                                 }}
+                            </p>
+                            <p
+                                v-if="!platformTotpEnabled && !withdrawal_policy?.has_manual_approval_pin"
+                                class="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-100"
+                            >
+                                Seu 2FA está desligado. Cadastre um PIN aqui para conseguir pagar saques (incluindo pagamento manual).
                             </p>
                             <div class="mt-3 grid gap-3 sm:grid-cols-2">
                                 <input

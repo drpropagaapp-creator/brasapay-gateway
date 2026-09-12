@@ -20,6 +20,7 @@ import {
     TicketPercent,
     GraduationCap,
     UserPlus,
+    Handshake,
     Gift,
     Truck,
     Zap,
@@ -42,8 +43,12 @@ const iconMap = {
     CodeXml,
 };
 
-/** Hover only — evita rajadas de prefetch ao clicar e competir com a navegação real. */
+/** Hover only no desktop — no mobile o primeiro toque vira hover e compete com a navegação. */
 export const panelNavPrefetch = 'hover';
+
+export function navPrefetch(isMobile) {
+    return isMobile ? false : panelNavPrefetch;
+}
 
 export function useAppSidebarNav() {
     const page = usePage();
@@ -125,11 +130,12 @@ export function useAppSidebarNav() {
             items.push({ name: t('sidebar.coupons', 'Cupons'), href: '/produtos/cupons', icon: TicketPercent });
             items.push({ name: t('sidebar.students', 'Alunos'), href: '/produtos/alunos', icon: GraduationCap });
             items.push({ name: t('sidebar.affiliates_menu', 'Afiliados'), href: '/afiliados', icon: UserPlus });
+            items.push({ name: t('sidebar.coproduction', 'Co-produção'), href: '/coproducao', icon: Handshake });
         }
 
         items.push({ separator: true });
 
-        if (canView('integracoes.view')) {
+        if (canView('integracoes.view') && page.props.seller_integrations_any_visible !== false) {
             items.push({ name: t('sidebar.integrations', 'Integrações'), href: '/integracoes', icon: Cable });
         }
 
@@ -188,6 +194,9 @@ export function useAppSidebarNav() {
         }
         if (href === '/afiliados') {
             return url === '/afiliados' || url.startsWith('/afiliados/');
+        }
+        if (href === '/coproducao') {
+            return url === '/coproducao' || url.startsWith('/coproducao/') || url.startsWith('/produtos/coproducao');
         }
         if (href === '/produtos') {
             if (

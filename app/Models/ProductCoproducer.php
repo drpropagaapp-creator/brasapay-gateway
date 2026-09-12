@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Schema;
 
 class ProductCoproducer extends Model
 {
@@ -71,20 +72,92 @@ class ProductCoproducer extends Model
         if ($this->status !== self::STATUS_ACTIVE || $this->co_producer_user_id === null) {
             return false;
         }
-        $now = now();
         if ($this->starts_at && $this->starts_at->isFuture()) {
             return false;
         }
-        if ($this->ends_at && $this->ends_at->isPast()) {
+        if ($this->ends_at && $this->ends_at->lte(now())) {
             return false;
         }
 
         return true;
     }
 
+    /**
+     * Marca como expiradas as co-produções ativas cujo prazo (ends_at) já passou.
+     * Não apaga o registro: o histórico de comissões depende do vínculo.
+     */
+    public static function expireOverdue(): int
+    {
+        if (! Schema::hasTable('product_coproducers')) {
+            return 0;
+        }
+
+        return (int) static::query()
+            ->where('status', self::STATUS_ACTIVE)
+            ->whereNotNull('ends_at')
+            ->where('ends_at', '<=', now())
+            ->update(['status' => self::STATUS_EXPIRED]);
+    }
+
     public static function normalizeEmail(string $email): string
     {
         return strtolower(trim($email));
+    }
+
+    public static function isActiveCoproducerOf(int $userId, string $productId): bool
+    {
+        if ($userId < 1 || $productId === '') {
+            return false;
+        }
+
+        $row = static::query()
+            ->where('product_id', $productId)
+            ->where('co_producer_user_id', $userId)
+            ->where('status', self::STATUS_ACTIVE)
+            ->first();
+
+        return $row instanceof self && $row->isActiveNow();
+    }
+
+    /**
+     * @return list<string>
+     */
+    public static function activeProductIdsForUser(int $userId): array
+    {
+        if ($userId < 1) {
+            return [];
+        }
+
+        return static::query()
+            ->where('co_producer_user_id', $userId)
+            ->where('status', self::STATUS_ACTIVE)
+            ->where(function ($q) {
+                $q->whereNull('starts_at')->orWhere('starts_at', '<=', now());
+            })
+            ->where(function ($q) {
+                $q->whereNull('ends_at')->orWhere('ends_at', '>', now());
+            })
+            ->pluck('product_id')
+            ->map(fn ($id) => (string) $id)
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    public static function userHasParticipations(int $userId): bool
+    {
+        if ($userId < 1) {
+            return false;
+        }
+
+        return static::query()
+            ->where('co_producer_user_id', $userId)
+            ->whereIn('status', [
+                self::STATUS_ACTIVE,
+                self::STATUS_REVOKED,
+                self::STATUS_EXPIRED,
+            ])
+            ->exists();
     }
 
     public function applyAcceptance(User $user): void
@@ -112,6 +185,8 @@ class ProductCoproducer extends Model
         if ($token === null || trim($token) === '' || ! $user->isInfoprodutor()) {
             return false;
         }
+
+        self::expireOverdue();
 
         $invitation = self::query()
             ->where('token', $token)
@@ -147,6 +222,22 @@ class ProductCoproducer extends Model
     }
 
     /**
+     * Tenant da carteira do co-produtor — o mesmo critério de CoproductionCommissionQuery::tenantIdForUser.
+     */
+    public static function walletTenantIdFor(self $row): int
+    {
+        $user = $row->relationLoaded('coProducer')
+            ? $row->coProducer
+            : ($row->co_producer_user_id ? User::query()->find((int) $row->co_producer_user_id) : null);
+
+        if ($user instanceof User) {
+            return (int) ($user->tenant_id ?? $user->id);
+        }
+
+        return (int) $row->co_producer_user_id;
+    }
+
+    /**
      * @return array<int, array{tenant_id: int, gross: float, product_coproducer_id: int|null, role: string}>
      */
     public static function buildGrossSlicesForOrder(Order $order, float $grossTotal, bool $isAffiliateSale): array
@@ -156,13 +247,17 @@ class ProductCoproducer extends Model
             return [['tenant_id' => $sellerTenantId, 'gross' => $grossTotal, 'product_coproducer_id' => null, 'role' => 'seller']];
         }
 
+        static::expireOverdue();
+
         $productId = $order->product_id;
         if ($productId === null || $productId === '') {
             return [['tenant_id' => $sellerTenantId, 'gross' => $grossTotal, 'product_coproducer_id' => null, 'role' => 'seller']];
         }
 
+        $productIdStr = (string) $productId;
         $rows = static::query()
-            ->where('product_id', $productId)
+            ->with(['coProducer:id,tenant_id'])
+            ->where('product_id', $productIdStr)
             ->where('status', self::STATUS_ACTIVE)
             ->whereNotNull('co_producer_user_id')
             ->where(function ($q) {
@@ -171,7 +266,9 @@ class ProductCoproducer extends Model
             ->where(function ($q) {
                 $q->whereNull('ends_at')->orWhere('ends_at', '>', now());
             })
-            ->get();
+            ->get()
+            ->filter(fn (self $row) => (string) $row->product_id === $productIdStr)
+            ->values();
 
         $eligible = $rows->filter(function (ProductCoproducer $row) use ($isAffiliateSale) {
             if ($isAffiliateSale) {
@@ -228,7 +325,7 @@ class ProductCoproducer extends Model
                     $remaining = round($remaining - $sliceGross, 2);
                 }
             }
-            $coproducerTenant = (int) $row->co_producer_user_id;
+            $coproducerTenant = self::walletTenantIdFor($row);
             if ($coproducerTenant > 0 && $sliceGross > 0.0001) {
                 $coproducerSlices[] = [
                     'tenant_id' => $coproducerTenant,
@@ -236,6 +333,7 @@ class ProductCoproducer extends Model
                     'product_coproducer_id' => (int) $row->id,
                     'role' => 'coproducer',
                     'product_affiliate_enrollment_id' => null,
+                    'commission_percent' => $pct,
                 ];
             }
         }

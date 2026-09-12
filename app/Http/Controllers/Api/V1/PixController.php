@@ -5,13 +5,17 @@ namespace App\Http\Controllers\Api\V1;
 use App\Http\Controllers\Controller;
 use App\Models\ApiApplication;
 use App\Models\Order;
+use App\Models\User;
 use App\Services\ApiPixAccess;
 use App\Services\MerchantOperationalGuard;
-use App\Jobs\PollCajuPayPixRefundJob;
+use App\Services\CajuPay\CajuPayPixRefundConfirmationService;
 use App\Services\OrderRefundGatewayBridge;
 use App\Services\PlatformOrderAdminService;
+use App\Services\SellerActivityLogService;
+use App\Services\SellerRefundBalanceGuard;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use InvalidArgumentException;
 
 class PixController extends Controller
 {
@@ -65,6 +69,7 @@ class PixController extends Controller
 
         PlatformOrderAdminService::cancelPending($orderModel);
         $orderModel = $orderModel->fresh();
+        $this->logApiPixCancelled($app, $orderModel);
 
         return response()->json([
             'order_id' => $orderModel->id,
@@ -92,10 +97,35 @@ class PixController extends Controller
             ], 422);
         }
 
+        try {
+            SellerRefundBalanceGuard::assertSufficient($orderModel);
+        } catch (InvalidArgumentException $e) {
+            $this->logApiRefundFailure($app, $orderModel, $e->getMessage(), [
+                'failure_kind' => 'insufficient_balance',
+            ]);
+
+            return response()->json([
+                'message' => $e->getMessage(),
+                'order_id' => $orderModel->id,
+                'status' => $orderModel->status,
+            ], 422);
+        }
+
         $bridge = app(OrderRefundGatewayBridge::class);
         $bridgeResult = $bridge->tryRefund($orderModel);
 
         if ($bridgeResult['status'] === 'blocked_med') {
+            $this->logApiRefundFailure(
+                $app,
+                $orderModel,
+                $bridgeResult['note'] ?? 'Reembolso bloqueado por disputa MED.',
+                [
+                    'failure_kind' => 'blocked_med',
+                    'gateway_status' => $bridgeResult['status'] ?? null,
+                    'error_code' => $bridgeResult['error_code'] ?? null,
+                ]
+            );
+
             return response()->json([
                 'message' => $bridgeResult['note'] ?? 'Reembolso bloqueado por disputa MED.',
                 'order_id' => $orderModel->id,
@@ -105,6 +135,17 @@ class PixController extends Controller
         }
 
         if ($bridgeResult['status'] === 'failed') {
+            $this->logApiRefundFailure(
+                $app,
+                $orderModel,
+                $bridgeResult['note'] ?? 'Falha no reembolso no gateway.',
+                [
+                    'failure_kind' => 'gateway_failed',
+                    'gateway_status' => $bridgeResult['status'] ?? null,
+                    'error_code' => $bridgeResult['error_code'] ?? null,
+                ]
+            );
+
             return response()->json([
                 'message' => $bridgeResult['note'] ?? 'Falha no reembolso no gateway.',
                 'order_id' => $orderModel->id,
@@ -113,25 +154,96 @@ class PixController extends Controller
             ], 422);
         }
 
-        if ($bridgeResult['status'] === 'gateway_pending') {
-            PollCajuPayPixRefundJob::dispatch($orderModel->id)->delay(now()->addSeconds(5));
+        if (CajuPayPixRefundConfirmationService::isCajuPixOrder($orderModel)
+            && in_array($bridgeResult['status'], ['gateway_ok', 'gateway_pending'], true)) {
+            app(CajuPayPixRefundConfirmationService::class)
+                ->lockWalletAndAwait($orderModel, null, 'seller_manual_refund');
+            $orderModel = $orderModel->fresh();
+            $this->logApiRefund($app, $orderModel, $bridgeResult);
 
             return response()->json([
                 'order_id' => $orderModel->id,
                 'status' => $orderModel->status,
                 'gateway_refund' => $bridgeResult,
-                'message' => $bridgeResult['note'] ?? 'Reembolso PIX em processamento.',
+                'message' => $orderModel->status === 'refund_pending'
+                    ? ($bridgeResult['note'] ?? 'Reembolso PIX em processamento.')
+                    : null,
             ]);
         }
 
         PlatformOrderAdminService::refundPaidOrDisputed($orderModel);
         $orderModel = $orderModel->fresh();
+        $this->logApiRefund($app, $orderModel, $bridgeResult);
 
         return response()->json([
             'order_id' => $orderModel->id,
             'status' => $orderModel->status,
             'gateway_refund' => $bridgeResult,
         ]);
+    }
+
+    /**
+     * @param  array<string, mixed>  $bridgeResult
+     */
+    private function logApiRefund(ApiApplication $app, Order $order, array $bridgeResult): void
+    {
+        $owner = $this->sellerOwnerForApp($app);
+
+        SellerActivityLogService::record(
+            actor: $owner,
+            action: SellerActivityLogService::REFUND_COMPLETED,
+            targetType: Order::class,
+            targetId: $order->id,
+            metadata: array_filter([
+                'order_id' => $order->id,
+                'amount' => (float) ($order->amount ?? 0),
+                'gateway_status' => $bridgeResult['status'] ?? null,
+            ], fn ($v) => $v !== null && $v !== ''),
+            tenantId: (int) $app->tenant_id,
+            source: 'api',
+        );
+    }
+
+    /**
+     * @param  array<string, mixed>  $extra
+     */
+    private function logApiRefundFailure(ApiApplication $app, Order $order, string $reason, array $extra = []): void
+    {
+        SellerActivityLogService::recordRefundFailure(
+            actor: $this->sellerOwnerForApp($app),
+            order: $order,
+            reason: $reason,
+            extra: $extra,
+            source: 'api',
+        );
+    }
+
+    private function sellerOwnerForApp(ApiApplication $app): ?User
+    {
+        return User::query()
+            ->where('role', User::ROLE_INFOPRODUTOR)
+            ->where(function ($q) use ($app) {
+                $q->where('id', $app->tenant_id)->orWhere('tenant_id', $app->tenant_id);
+            })
+            ->first();
+    }
+
+    private function logApiPixCancelled(ApiApplication $app, Order $order): void
+    {
+        $owner = $this->sellerOwnerForApp($app);
+
+        SellerActivityLogService::record(
+            actor: $owner,
+            action: SellerActivityLogService::API_PIX_CANCELLED,
+            targetType: Order::class,
+            targetId: $order->id,
+            metadata: array_filter([
+                'order_id' => $order->id,
+                'amount' => (float) ($order->amount ?? 0),
+            ], fn ($v) => $v !== null && $v !== ''),
+            tenantId: (int) $app->tenant_id,
+            source: 'api',
+        );
     }
 }
 

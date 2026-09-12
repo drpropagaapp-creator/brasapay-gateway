@@ -12,6 +12,9 @@ import CheckoutSummary from '@/components/checkout/CheckoutSummary.vue';
 import CheckoutForm from '@/components/checkout/CheckoutForm.vue';
 import CheckoutSidebar from '@/components/checkout/CheckoutSidebar.vue';
 import CheckoutReviews from '@/components/checkout/CheckoutReviews.vue';
+import CheckoutPurchaseSummary from '@/components/checkout/CheckoutPurchaseSummary.vue';
+import CheckoutLegalFooter from '@/components/checkout/CheckoutLegalFooter.vue';
+import { usePlatformBranding } from '@/composables/usePlatformBranding';
 import SalesNotification from '@/components/checkout/SalesNotification.vue';
 import SupportButton from '@/components/checkout/SupportButton.vue';
 import ExitPopup from '@/components/checkout/ExitPopup.vue';
@@ -57,6 +60,8 @@ const props = defineProps({
     card_mercadopago_sandbox: { type: Boolean, default: false },
     /** Chaves por gateway slug para gateways de plugin (checkout_payload_keys na definição). Ex.: { 'meu-gateway': { publishable_key: '...' } } */
     card_gateway_keys: { type: Object, default: () => ({}) },
+    paypal_client_id: { type: String, default: '' },
+    paypal_sandbox: { type: Boolean, default: false },
     subscription_plan: { type: Object, default: null },
     /** Definido no servidor quando a URL traz `?preview=1` (preview no iframe do Builder). */
     checkout_builder_preview: { type: Boolean, default: false },
@@ -65,7 +70,7 @@ const props = defineProps({
     affiliate_ref: { type: String, default: '' },
     /** Quando true, loga motivos de tracking Meta no console do browser. */
     meta_tracking_debug: { type: Boolean, default: false },
-    /** Aviso legal da plataforma no final do checkout (já interpolado). Vazio = não exibe. */
+    /** Aviso legal da plataforma no rodapé do quadro. Vazio = Termos · Privacidade. */
     platform_checkout_notice: { type: String, default: '' },
 });
 
@@ -209,6 +214,10 @@ const {
 });
 
 const localeLabels = { pt_BR: 'PT', en: 'EN', es: 'ES' };
+const { branding, appName } = usePlatformBranding();
+const platformLogoUrl = computed(() =>
+    String(branding.value?.app_logo || branding.value?.app_logo_icon || '').trim()
+);
 const appearance = computed(() => effectiveConfig.value?.appearance ?? {});
 const backgroundColor = computed(() => appearance.value.background_color || '#E3E3E3');
 const primaryColor = computed(() => appearance.value.primary_color || '#0ea5e9');
@@ -457,7 +466,11 @@ function onConversionPixelsReady() {
     >
         <CheckoutTimer :config="timerConfig" :storage-key="storageKey" :t="t" />
 
-        <div class="mx-auto max-w-6xl px-4 pb-6 pt-10 sm:px-6 sm:pb-8 sm:pt-12 lg:pb-10 lg:pt-14" data-checkout="layout-inner">
+        <div
+            class="mx-auto max-w-6xl px-4 pb-6 sm:px-6 sm:pb-8 lg:pb-10"
+            :class="banners.length ? 'pt-2' : 'pt-3'"
+            data-checkout="layout-inner"
+        >
             <!-- Flash -->
             <div
                 v-if="flash?.error"
@@ -671,15 +684,47 @@ function onConversionPixelsReady() {
                             :card-mercadopago-public-key="card_mercadopago_public_key || ''"
                             :card-mercadopago-sandbox="card_mercadopago_sandbox"
                             :card-gateway-keys="card_gateway_keys || {}"
+                            :paypal-client-id="paypal_client_id || ''"
+                            :paypal-sandbox="paypal_sandbox"
+                            :checkout-locale="locale"
                             :checkout-total-brl="checkoutTotalBrl"
                             :conversion-pixels="conversion_pixels"
                             :requires-shipping="requiresShipping"
                             :product-subtotal-brl="
                                 appliedCoupon?.final_price ?? product?.price_brl ?? product?.price ?? 0
                             "
+                            :platform-checkout-notice="platform_checkout_notice || ''"
                             @update:shipping-amount="onShippingAmountUpdate"
                             @coupon-applied="onCouponApplied"
                             @coupon-cleared="onCouponCleared"
+                        >
+                            <template #before-submit>
+                                <CheckoutPurchaseSummary
+                                    compact
+                                    :product="product"
+                                    :subscription-plan="subscription_plan"
+                                    :applied-coupon="appliedCoupon"
+                                    :selected-order-bumps="selectedOrderBumpsList"
+                                    :order-bumps-total-brl="orderBumpsTotalBrl"
+                                    :requires-shipping="requiresShipping"
+                                    :shipping-amount-brl="shippingAmountBrl"
+                                    :t="t"
+                                    :display-currency="displayCurrency"
+                                    :price-in-currency="priceInCurrency"
+                                    :format-price="formatPrice"
+                                    :primary-color="primaryColor"
+                                />
+                            </template>
+                        </CheckoutForm>
+                    </div>
+                    <div
+                        class="mt-4 overflow-hidden rounded-3xl border border-white/20 bg-white/95 p-6 shadow-xl shadow-black/5 backdrop-blur lg:hidden"
+                        data-checkout="card-legal-footer"
+                    >
+                        <CheckoutLegalFooter
+                            :logo-url="platformLogoUrl"
+                            :app-name="appName"
+                            :notice="platform_checkout_notice || ''"
                         />
                     </div>
                 </div>
@@ -730,14 +775,6 @@ function onConversionPixelsReady() {
                 :url="effectiveConfig?.youtube_url"
                 class="mt-8"
             />
-
-            <p
-                v-if="platform_checkout_notice"
-                data-checkout="platform-notice"
-                class="mx-auto mt-8 max-w-3xl whitespace-pre-line text-center text-xs leading-relaxed text-gray-500"
-            >
-                {{ platform_checkout_notice }}
-            </p>
         </div>
 
         <SalesNotification

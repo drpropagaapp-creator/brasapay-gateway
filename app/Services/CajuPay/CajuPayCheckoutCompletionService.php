@@ -78,6 +78,10 @@ class CajuPayCheckoutCompletionService
         if (CajuPayPaymentId::looksLikeUuid($chargeId)) {
             $meta['cajupay_payment_id'] = $chargeId;
         }
+        $pickedInstallments = CajuPayCheckoutMetadata::installmentsFromPayload($payload);
+        if ($pickedInstallments !== null && (int) ($meta['installments'] ?? 1) <= 1) {
+            $meta['installments'] = $pickedInstallments;
+        }
 
         $order->update([
             'gateway' => 'cajupay',

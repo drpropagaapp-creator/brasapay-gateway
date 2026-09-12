@@ -2,6 +2,7 @@
 
 namespace App\Support;
 
+use App\Models\Product;
 use App\Models\Setting;
 use App\Models\User;
 use App\Services\BrandingEmailData;
@@ -21,7 +22,7 @@ final class PlatformCompanySettings
     public const KEY_CHECKOUT_NOTICE = 'platform_checkout_notice';
 
     public const DEFAULT_CHECKOUT_NOTICE = <<<'TXT'
-Ao concluir a compra na {plataforma}, você declara estar de acordo com os Termos de Uso e demais Políticas da empresa {razao_social}, inscrita no CNPJ {cnpj}.
+Ao concluir a compra na {plataforma}, você declara estar de acordo com os {termos} e a política de {privacidade} da empresa {razao_social}, inscrita no CNPJ {cnpj}.
 
 A responsabilidade pela oferta, entrega e qualidade do produto é de {infoprodutor}, que realiza a venda por meio da nossa plataforma, através do email {email_infoprodutor}.
 TXT;
@@ -36,7 +37,10 @@ TXT;
         ['token' => '{plataforma}', 'label' => 'Nome da plataforma'],
         ['token' => '{infoprodutor}', 'label' => 'Nome do infoprodutor vendedor'],
         ['token' => '{email_infoprodutor}', 'label' => 'E-mail do infoprodutor vendedor'],
+        ['token' => '{email_suporte_produto}', 'label' => 'E-mail para suporte configurado no produto'],
         ['token' => '{empresa}', 'label' => 'Nome comercial (Empresa) do infoprodutor'],
+        ['token' => '{termos}', 'label' => 'Link clicável “Termos” para /termos-de-uso'],
+        ['token' => '{privacidade}', 'label' => 'Link clicável “Privacidade” para /politica-privacidade'],
     ];
 
     public static function legalName(): string
@@ -89,9 +93,10 @@ TXT;
     }
 
     /**
-     * Texto já interpolado para o checkout. Null quando desativado ou vazio.
+     * Texto interpolado para o checkout. Null quando desativado ou vazio.
+     * Mantém {termos} e {privacidade} para o front renderizar os links.
      */
-    public static function resolvedCheckoutNoticeForTenant(?int $tenantId): ?string
+    public static function resolvedCheckoutNoticeForTenant(?int $tenantId, ?Product $product = null): ?string
     {
         if (! self::isCheckoutNoticeEnabled()) {
             return null;
@@ -105,8 +110,7 @@ TXT;
             return null;
         }
 
-        $text = self::replaceCheckoutNoticePlaceholders($template, $tenantId);
-        $text = trim($text);
+        $text = trim(self::replaceCheckoutNoticePlaceholders($template, $tenantId, $product));
 
         return $text !== '' ? $text : null;
     }
@@ -162,13 +166,14 @@ TXT;
         }
     }
 
-    public static function replaceCheckoutNoticePlaceholders(string $template, ?int $tenantId): string
+    public static function replaceCheckoutNoticePlaceholders(string $template, ?int $tenantId, ?Product $product = null): string
     {
         $seller = self::sellerForTenant($tenantId);
         $cnpj = self::cnpjFormatted();
         $tradeName = trim((string) ($seller?->trade_name ?? ''));
         $map = [
             '{email_infoprodutor}' => trim((string) ($seller?->email ?? '')),
+            '{email_suporte_produto}' => self::productSupportEmail($product),
             '{nome do infoprodutor}' => trim((string) ($seller?->name ?? '')),
             '{razao_social}' => self::legalName(),
             '{razão_social}' => self::legalName(),
@@ -211,6 +216,13 @@ TXT;
         }
 
         return trim((string) config('mail.from.address', ''));
+    }
+
+    private static function productSupportEmail(?Product $product): string
+    {
+        $email = strtolower(trim((string) ($product?->support_email ?? '')));
+
+        return ($email !== '' && filter_var($email, FILTER_VALIDATE_EMAIL)) ? $email : '';
     }
 
     private static function sellerForTenant(?int $tenantId): ?User

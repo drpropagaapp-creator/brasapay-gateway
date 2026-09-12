@@ -2,8 +2,8 @@
 
 use App\Http\Controllers\Auth\ForgotPasswordController;
 use App\Http\Controllers\Auth\LoginController;
-use App\Http\Controllers\Auth\TwoFactorLoginController;
 use App\Http\Controllers\Auth\ResetPasswordController;
+use App\Http\Controllers\Auth\TwoFactorLoginController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
@@ -91,7 +91,7 @@ Route::get('/', function (\Illuminate\Http\Request $request) {
             return redirect()->to('/login')->with('error', 'Faça login para acessar a área de membros.');
         }
 
-        if (! $resolved['product']->hasMemberAreaAccess($request->user())) {
+        if (! app(\App\Services\MemberAccessGrantService::class)->userHasMemberAreaAccess($request->user(), $resolved['product'])) {
             return redirect()->route('checkout.show', ['slug' => $resolved['product']->checkout_slug])
                 ->with('error', 'Você não tem acesso a esta área. Adquira o produto para continuar.');
         }
@@ -144,19 +144,28 @@ Route::get('/cron', function () {
     return response()->json(['ok' => true, 'message' => 'Schedule executed']);
 })->middleware('throttle:60,1')->name('cron.url');
 
-Route::middleware('throttle:60,1')->group(function () {
+Route::middleware(['throttle:60,1', \App\Http\Middleware\LogInboundGatewayWebhook::class])->group(function () {
     Route::post('/webhooks/gateways/linaopenx', [\App\Http\Controllers\Webhooks\LinaOpenxWebhookController::class, 'handle'])->name('webhooks.linaopenx');
     Route::post('/webhooks/gateways/spacepag', [\App\Http\Controllers\Webhooks\SpacepagWebhookController::class, 'handle'])->name('webhooks.spacepag');
     Route::post('/webhooks/gateways/woovi', [\App\Http\Controllers\Webhooks\WooviWebhookController::class, 'handle'])->name('webhooks.woovi');
+    Route::post('/webhooks/gateways/bspay', [\App\Http\Controllers\Webhooks\BspayWebhookController::class, 'handle'])->name('webhooks.bspay');
     Route::post('/webhooks/gateways/stripe', [\App\Http\Controllers\Webhooks\StripeWebhookController::class, 'handle'])->name('webhooks.stripe');
+    Route::post('/webhooks/gateways/paypal', [\App\Http\Controllers\Webhooks\PayPalWebhookController::class, 'handle'])->name('webhooks.paypal');
     Route::post('/webhooks/gateways/efi/pix', [\App\Http\Controllers\Webhooks\EfiWebhookController::class, 'pix'])->name('webhooks.efi.pix');
     Route::post('/webhooks/gateways/efi/pix-recorrente', [\App\Http\Controllers\Webhooks\EfiWebhookController::class, 'pixRecorrente'])->name('webhooks.efi.pix-recorrente');
     Route::post('/webhooks/gateways/efi/notification', [\App\Http\Controllers\Webhooks\EfiWebhookController::class, 'notification'])->name('webhooks.efi.notification');
+    Route::post('/webhooks/gateways/versell/pix', [\App\Http\Controllers\Webhooks\VersellWebhookController::class, 'pix'])->name('webhooks.versell.pix');
+    Route::post('/webhooks/gateways/versell/pix-automatico/rec', [\App\Http\Controllers\Webhooks\VersellWebhookController::class, 'pixAutoRec'])->name('webhooks.versell.pix_auto.rec');
+    Route::post('/webhooks/gateways/versell/pix-automatico/cobr', [\App\Http\Controllers\Webhooks\VersellWebhookController::class, 'pixAutoCobr'])->name('webhooks.versell.pix_auto.cobr');
+    Route::post('/webhooks/gateways/versell/transfer', [\App\Http\Controllers\Webhooks\VersellPayoutWebhookController::class, 'handle'])->name('webhooks.versell.transfer');
+    Route::post('/webhooks/gateways/versell/cashout', [\App\Http\Controllers\Webhooks\VersellPayoutWebhookController::class, 'handle'])->name('webhooks.versell.cashout');
+    Route::post('/webhooks/gateways/versell/infractions', [\App\Http\Controllers\Webhooks\VersellInfractionWebhookController::class, 'handle'])->name('webhooks.versell.infractions');
     Route::post('/webhooks/gateways/mercadopago', [\App\Http\Controllers\Webhooks\MercadoPagoWebhookController::class, 'handle'])->name('webhooks.mercadopago');
     Route::get('/webhooks/gateways/mercadopago', [\App\Http\Controllers\Webhooks\MercadoPagoWebhookController::class, 'handle'])->name('webhooks.mercadopago.ipn');
     Route::post('/webhooks/gateways/pushinpay', [\App\Http\Controllers\Webhooks\PushinPayWebhookController::class, 'handle'])->name('webhooks.pushinpay');
     Route::post('/webhooks/gateways/asaas', [\App\Http\Controllers\Webhooks\AsaasWebhookController::class, 'handle'])->name('webhooks.asaas');
     Route::post('/webhooks/gateways/pagarme', [\App\Http\Controllers\Webhooks\PagarmeWebhookController::class, 'handle'])->name('webhooks.pagarme');
+    Route::post('/webhooks/gateways/cielo', [\App\Http\Controllers\Webhooks\CieloWebhookController::class, 'handle'])->name('webhooks.cielo');
     Route::post('/webhooks/gateways/cajupay/checkout', [\App\Http\Controllers\Webhooks\CajuPayCheckoutWebhookController::class, 'handle'])->name('webhooks.cajupay.checkout');
     Route::post('/webhooks/gateways/cajupay', [\App\Http\Controllers\Webhooks\CajuPayCheckoutWebhookController::class, 'handle'])->name('webhooks.cajupay');
     Route::post('/webhooks/gateways/cajupay/payout', [\App\Http\Controllers\Webhooks\CajuPayPayoutWebhookController::class, 'handle'])->name('webhooks.cajupay.payout');
@@ -189,6 +198,10 @@ Route::get('/coproducao/convite/{token}', [\App\Http\Controllers\CoproductionInv
     ->name('coproduction.invite.show')
     ->where('token', '[A-Za-z0-9]{32,64}');
 
+Route::get('/afiliar/{token}', [\App\Http\Controllers\AffiliateJoinController::class, 'show'])
+    ->name('affiliate.join.show')
+    ->where('token', '[a-z0-9]{32,64}');
+
 Route::get('/c/{slug}', [\App\Http\Controllers\CheckoutController::class, 'show'])->name('checkout.show')->where('slug', '[a-z0-9]{6,16}');
 Route::get('/checkout/pix', [\App\Http\Controllers\CheckoutController::class, 'pixPage'])->name('checkout.pix');
 Route::get('/checkout/lina/return/{order}', [\App\Http\Controllers\CheckoutController::class, 'linaReturn'])->name('checkout.lina.return')->where('order', '[0-9]+');
@@ -212,6 +225,12 @@ Route::post('/checkout/cajupay/session', [\App\Http\Controllers\CheckoutControll
 Route::post('/checkout/cajupay/confirm-order', [\App\Http\Controllers\CheckoutController::class, 'cajupayConfirmOrder'])
     ->name('checkout.cajupay.confirm-order')
     ->middleware('throttle:checkout-cajupay-confirm');
+Route::post('/checkout/paypal/create-order', [\App\Http\Controllers\CheckoutController::class, 'paypalCreateOrder'])
+    ->name('checkout.paypal.create-order')
+    ->middleware('throttle:checkout-card');
+Route::post('/checkout/paypal/capture', [\App\Http\Controllers\CheckoutController::class, 'paypalCapture'])
+    ->name('checkout.paypal.capture')
+    ->middleware('throttle:checkout-card');
 Route::post('/checkout/cajupay/sdk-session', [\App\Http\Controllers\CajuPayCheckoutSdkController::class, 'createSession'])
     ->name('checkout.cajupay.sdk-session')
     ->middleware('throttle:checkout-cajupay-session');
@@ -222,6 +241,9 @@ Route::get('/checkout/cajupay/session-status', [\App\Http\Controllers\CajuPayChe
 Route::post('/checkout/pagarme-tokenize-sink', fn () => response()->noContent())
     ->name('checkout.pagarme-tokenize-sink')
     ->middleware('throttle:120,1');
+Route::post('/checkout/cielo-sop-token', [\App\Http\Controllers\CieloSopController::class, 'token'])
+    ->name('checkout.cielo-sop-token')
+    ->middleware('throttle:30,1');
 Route::post('/api/checkout/track', [\App\Http\Controllers\CheckoutTrackingController::class, 'track'])
     ->name('checkout.track')
     ->middleware('throttle:checkout-track');
@@ -251,6 +273,7 @@ Route::get('/email/verificar/{id}/{hash}', [\App\Http\Controllers\EmailVerificat
 Route::post('/cadastro', [\App\Http\Controllers\InfoprodutorRegistrationController::class, 'store'])->middleware('throttle:registration-store');
 Route::post('/cadastro/validar-email', [\App\Http\Controllers\InfoprodutorRegistrationController::class, 'validateEmail'])->middleware('throttle:registration-validate');
 Route::post('/cadastro/validar-documento', [\App\Http\Controllers\InfoprodutorRegistrationController::class, 'validateDocument'])->middleware('throttle:registration-validate');
+Route::post('/cadastro/consultar-cnpj', [\App\Http\Controllers\InfoprodutorRegistrationController::class, 'lookupCnpj'])->middleware('throttle:registration-validate');
 
 Route::middleware('throttle:10,1')->group(function () {
     Route::post('/demo/login/admin', [\App\Http\Controllers\DemoLoginController::class, 'loginAdmin'])->name('demo.login.admin');
@@ -346,6 +369,7 @@ Route::prefix('plataforma')->name('plataforma.')->group(function () {
             Route::post('/excluir-em-massa', [\App\Http\Controllers\Platform\UsersController::class, 'bulkDestroy'])
                 ->middleware('throttle:5,1')
                 ->name('bulk-destroy');
+            Route::get('/{user}/edit', [\App\Http\Controllers\Platform\UsersController::class, 'edit'])->name('edit');
             Route::get('/{user}', [\App\Http\Controllers\Platform\UsersController::class, 'show'])->name('show');
             Route::get('/{user}/taxas-efetivas', [\App\Http\Controllers\Platform\UsersController::class, 'effectiveFees'])->name('effective-fees');
             Route::get('/{user}/observacoes', [\App\Http\Controllers\Platform\MerchantAdminNotesController::class, 'index'])->name('notes.index');
@@ -354,6 +378,12 @@ Route::prefix('plataforma')->name('plataforma.')->group(function () {
                 ->middleware('throttle:60,1')
                 ->name('account-manager.assign');
             Route::post('/{user}/ajuste-saldo', [\App\Http\Controllers\Platform\UsersController::class, 'adjustBalance'])->name('adjust-balance');
+            Route::post('/{user}/carteira/transacoes/{walletTransaction}/antecipar', [\App\Http\Controllers\Platform\UsersController::class, 'anticipateWalletSale'])
+                ->middleware('throttle:30,1')
+                ->name('wallet.anticipate');
+            Route::post('/{user}/resetar-2fa', [\App\Http\Controllers\Platform\UsersController::class, 'resetTotp'])
+                ->middleware('throttle:10,1')
+                ->name('reset-totp');
             Route::put('/{user}', [\App\Http\Controllers\Platform\UsersController::class, 'update'])->name('update');
             Route::delete('/{user}', [\App\Http\Controllers\Platform\UsersController::class, 'destroy'])->name('destroy');
         });
@@ -431,6 +461,19 @@ Route::prefix('plataforma')->name('plataforma.')->group(function () {
         Route::post('/configuracoes/storage/migrate', [\App\Http\Controllers\StorageMigrateController::class, '__invoke'])
             ->withoutMiddleware([\App\Http\Middleware\HandleInertiaRequests::class])
             ->name('settings.storage.migrate');
+        Route::post('/configuracoes/backup/run', [\App\Http\Controllers\Platform\DatabaseBackupController::class, 'run'])
+            ->middleware('throttle:3,1')
+            ->withoutMiddleware([\App\Http\Middleware\HandleInertiaRequests::class])
+            ->name('settings.backup.run');
+        Route::post('/configuracoes/backup/download', [\App\Http\Controllers\Platform\DatabaseBackupController::class, 'download'])
+            ->middleware('throttle:3,1')
+            ->withoutMiddleware([\App\Http\Middleware\HandleInertiaRequests::class])
+            ->name('settings.backup.download');
+        Route::get('/configuracoes/backup/arquivos/{filename}', [\App\Http\Controllers\Platform\DatabaseBackupController::class, 'file'])
+            ->where('filename', 'stacker-[A-Za-z0-9.-]+\.sql\.gz')
+            ->middleware('throttle:20,1')
+            ->withoutMiddleware([\App\Http\Middleware\HandleInertiaRequests::class])
+            ->name('settings.backup.file');
         Route::get('/configuracoes/idiomas/data', [\App\Http\Controllers\Platform\LanguageSettingsController::class, 'data'])->name('settings.languages.data');
         Route::post('/configuracoes/idiomas/languages', [\App\Http\Controllers\Platform\LanguageSettingsController::class, 'addLanguage'])->name('settings.languages.add');
         Route::put('/configuracoes/idiomas/languages/{platformLanguage}', [\App\Http\Controllers\Platform\LanguageSettingsController::class, 'updateLanguage'])->name('settings.languages.update');
@@ -475,6 +518,10 @@ Route::prefix('plataforma')->name('plataforma.')->group(function () {
         Route::post('/configuracoes/gateways/{slug}/certificate', [\App\Http\Controllers\GatewaysController::class, 'updateCertificate'])->name('gateways.certificate');
         Route::put('/configuracoes/gateways/{slug}/certificate', [\App\Http\Controllers\GatewaysController::class, 'updateCertificate']);
 
+        Route::get('/fiscal', [\App\Http\Controllers\Platform\FiscalController::class, 'index'])->name('fiscal.index');
+        Route::get('/fiscal/export.csv', [\App\Http\Controllers\Platform\FiscalController::class, 'exportCsv'])->name('fiscal.export.csv');
+        Route::get('/fiscal/export.xlsx', [\App\Http\Controllers\Platform\FiscalController::class, 'exportXlsx'])->name('fiscal.export.xlsx');
+
         Route::get('/financeiro', [\App\Http\Controllers\Platform\FinancialController::class, 'index'])->name('financeiro.index');
         Route::put('/financeiro/gateways/order', [\App\Http\Controllers\GatewaysController::class, 'updateOrder'])->name('financeiro.gateways.order');
         Route::get('/financeiro/gateways/{slug}', [\App\Http\Controllers\GatewaysController::class, 'show'])->name('financeiro.gateways.show');
@@ -492,6 +539,7 @@ Route::prefix('plataforma')->name('plataforma.')->group(function () {
         Route::delete('/financeiro/cajupay-contas/{cajuPayAccount}', [\App\Http\Controllers\Platform\CajuPayAccountsController::class, 'destroy'])->name('financeiro.cajupay-contas.destroy');
         Route::put('/financeiro/metodos-pagamento', [\App\Http\Controllers\Platform\FinancialController::class, 'updatePaymentMethods'])->name('financeiro.payment-methods.update');
         Route::put('/financeiro/taxas', [\App\Http\Controllers\Platform\FinancialController::class, 'updateFees'])->name('financeiro.taxas.update');
+        Route::put('/financeiro/parcelamento', [\App\Http\Controllers\Platform\FinancialController::class, 'updateInstallments'])->name('financeiro.parcelamento.update');
         Route::put('/financeiro/pixgo', [\App\Http\Controllers\Platform\FinancialController::class, 'updatePixGo'])->name('financeiro.pixgo.update');
         Route::put('/financeiro/limites', [\App\Http\Controllers\Platform\FinancialController::class, 'updateChargeLimits'])->name('financeiro.limites.update');
         Route::put('/financeiro/liquidacao', [\App\Http\Controllers\Platform\FinancialController::class, 'updateSettlement'])->name('financeiro.liquidacao.update');
@@ -570,6 +618,9 @@ Route::prefix('plataforma')->name('plataforma.')->group(function () {
         Route::post('/transacoes/pedidos/{order}/reembolsar', [\App\Http\Controllers\Platform\TransactionsController::class, 'refundOrder'])
             ->name('transacoes.pedidos.refund')
             ->middleware('throttle:10,1');
+        Route::post('/transacoes/pedidos/{order}/reembolso-manual', [\App\Http\Controllers\Platform\TransactionsController::class, 'refundOrderOffline'])
+            ->name('transacoes.pedidos.refund-offline')
+            ->middleware('throttle:10,1');
         Route::post('/transacoes/pedidos/{order}/marcar-med', [\App\Http\Controllers\Platform\TransactionsController::class, 'markDisputedOrder'])
             ->name('transacoes.pedidos.disputed')
             ->middleware('throttle:10,1');
@@ -598,6 +649,19 @@ Route::prefix('plataforma')->name('plataforma.')->group(function () {
         Route::get('/verificacoes-kyc/usuario/{user}', [\App\Http\Controllers\Platform\KycVerificationsController::class, 'show'])->name('kyc.show');
         Route::post('/verificacoes-kyc/usuario/{user}/aprovar', [\App\Http\Controllers\Platform\KycVerificationsController::class, 'approve'])->name('kyc.approve')->middleware('throttle:30,1');
         Route::post('/verificacoes-kyc/usuario/{user}/rejeitar', [\App\Http\Controllers\Platform\KycVerificationsController::class, 'reject'])->name('kyc.reject')->middleware('throttle:30,1');
+        Route::post('/verificacoes-kyc/usuario/{user}/aprovar-migracao-pj', [\App\Http\Controllers\Platform\KycVerificationsController::class, 'approvePjConversion'])->name('kyc.approve-pj-conversion')->middleware('throttle:30,1');
+        Route::post('/verificacoes-kyc/usuario/{user}/rejeitar-migracao-pj', [\App\Http\Controllers\Platform\KycVerificationsController::class, 'rejectPjConversion'])->name('kyc.reject-pj-conversion')->middleware('throttle:30,1');
+        Route::post('/verificacoes-kyc/usuario/{user}/consultar-cnpj', [\App\Http\Controllers\Platform\KycVerificationsController::class, 'refreshCnpj'])->name('kyc.refresh-cnpj')->middleware('throttle:20,1');
+
+        Route::get('/log-infoprodutor', [\App\Http\Controllers\Platform\SellerActivityLogsController::class, 'index'])
+            ->name('seller-activity-logs.index');
+        Route::get('/log-sistema', [\App\Http\Controllers\Platform\SystemLogsController::class, 'index'])
+            ->name('system-logs.index');
+        Route::get('/log-sistema/feed', [\App\Http\Controllers\Platform\SystemLogsController::class, 'feed'])
+            ->middleware('throttle:30,1')
+            ->name('system-logs.feed');
+        Route::get('/webhooks', [\App\Http\Controllers\Platform\InboundWebhooksController::class, 'index'])
+            ->name('webhooks.index');
 
         Route::get('/gerenciar-plugins', [\App\Http\Controllers\PluginsController::class, 'index'])->name('plugins.index');
         Route::get('/gerenciar-plugins/store-plugins-list', [\App\Http\Controllers\PluginsController::class, 'storePluginsList'])->name('plugins.store.list');
@@ -643,6 +707,10 @@ Route::middleware(['auth', 'admin.tenant', 'seller.panel', 'stacker.license', 'r
         ->name('coproduction.invite.accept')
         ->middleware('throttle:20,1')
         ->where('token', '[A-Za-z0-9]{32,64}');
+    Route::post('/afiliar/{token}', [\App\Http\Controllers\AffiliateJoinController::class, 'enroll'])
+        ->name('affiliate.join.enroll')
+        ->middleware('throttle:30,1')
+        ->where('token', '[a-z0-9]{32,64}');
     Route::post('/painel/idioma', [\App\Http\Controllers\PanelLanguageController::class, 'switch'])->name('panel.language.switch');
     Route::post('/painel/push-subscribe', [\App\Http\Controllers\PanelPwaController::class, 'pushSubscribe'])->name('panel.pwa.push-subscribe')->middleware('throttle:20,1');
     Route::get('/painel/notifications', [\App\Http\Controllers\PanelNotificationsController::class, 'index'])->name('panel.notifications.index');
@@ -717,6 +785,9 @@ Route::middleware(['auth', 'admin.tenant', 'seller.panel', 'stacker.license', 'r
     Route::put('/meu-perfil/username', [\App\Http\Controllers\ProfileController::class, 'updateUsername'])->name('profile.update-username');
     Route::put('/meu-perfil/senha', [\App\Http\Controllers\ProfileController::class, 'updatePassword'])->name('profile.update-password');
     Route::put('/meu-perfil/preferencias-push', [\App\Http\Controllers\ProfileController::class, 'updatePushPreferences'])->name('profile.push-preferences');
+    Route::post('/meu-perfil/migrar-para-cnpj', [\App\Http\Controllers\PjConversionController::class, 'start'])->middleware('throttle:10,1')->name('profile.pj-conversion.start');
+    Route::post('/meu-perfil/migrar-para-cnpj/consultar', [\App\Http\Controllers\PjConversionController::class, 'lookupCnpj'])->middleware('throttle:20,1')->name('profile.pj-conversion.lookup');
+    Route::post('/meu-perfil/migrar-para-cnpj/cancelar', [\App\Http\Controllers\PjConversionController::class, 'cancel'])->middleware('throttle:10,1')->name('profile.pj-conversion.cancel');
     Route::post('/seguranca/totp/iniciar', [\App\Http\Controllers\TotpSecurityController::class, 'beginTotp'])->name('security.totp.begin');
     Route::post('/seguranca/totp/confirmar', [\App\Http\Controllers\TotpSecurityController::class, 'confirmTotp'])->name('security.totp.confirm');
     Route::post('/seguranca/totp/desativar', [\App\Http\Controllers\TotpSecurityController::class, 'disableTotp'])->name('security.totp.disable');
@@ -728,6 +799,7 @@ Route::middleware(['auth', 'admin.tenant', 'seller.panel', 'stacker.license', 'r
     Route::redirect('/reembolsos', '/vendas/reembolsos')->middleware('team.permission:vendas.view');
 
     Route::get('/kyc', [\App\Http\Controllers\SellerKycController::class, 'show'])->name('kyc.upload');
+    Route::post('/kyc/preferences', [\App\Http\Controllers\SellerKycController::class, 'updatePreferences'])->middleware('throttle:30,1')->name('kyc.preferences');
     Route::post('/kyc/document', [\App\Http\Controllers\SellerKycController::class, 'uploadDocument'])->middleware('throttle:30,1')->name('kyc.document');
     Route::post('/kyc/finalize', [\App\Http\Controllers\SellerKycController::class, 'finalize'])->middleware('throttle:15,1')->name('kyc.finalize');
     Route::post('/kyc', [\App\Http\Controllers\SellerKycController::class, 'store'])->middleware('throttle:15,1')->name('kyc.store');
@@ -826,7 +898,8 @@ Route::middleware(['auth', 'admin.tenant', 'seller.panel', 'stacker.license', 'r
         Route::get('/produtos/afiliados/metricas/cliques', [\App\Http\Controllers\AffiliateMetricsTrackingController::class, 'clicks'])->name('produtos.afiliados.metrics.clicks');
         Route::get('/produtos/{produto}/painel-afiliado', [\App\Http\Controllers\AffiliateProductPanelController::class, 'show'])->name('produtos.painel-afiliado.show');
         Route::put('/produtos/{produto}/painel-afiliado', [\App\Http\Controllers\AffiliateProductPanelController::class, 'updatePixels'])->name('produtos.painel-afiliado.update');
-        Route::get('/produtos/coproducao', [\App\Http\Controllers\ProdutosController::class, 'coproductionIndex'])->name('produtos.coproducao');
+        Route::get('/coproducao', [\App\Http\Controllers\CoproductionPanelController::class, 'index'])->name('coproducao.index');
+        Route::redirect('/produtos/coproducao', '/coproducao')->name('produtos.coproducao');
         Route::get('/produtos/coproducao/metricas', [\App\Http\Controllers\CoproducerMetricsTrackingController::class, 'index'])->name('produtos.coproducao.metrics.index');
         Route::get('/produtos/coproducao/metricas/origem', [\App\Http\Controllers\CoproducerMetricsTrackingController::class, 'origins'])->name('produtos.coproducao.metrics.origins');
         Route::get('/produtos/coproducao/metricas/funil', [\App\Http\Controllers\CoproducerMetricsTrackingController::class, 'funnel'])->name('produtos.coproducao.metrics.funnel');
@@ -846,6 +919,7 @@ Route::middleware(['auth', 'admin.tenant', 'seller.panel', 'stacker.license', 'r
         Route::post('/produtos/{produto}/coproducers', [\App\Http\Controllers\ProductCoproductionController::class, 'store'])->name('produtos.coproducers.store')->middleware('throttle:30,1');
         Route::delete('/produtos/{produto}/coproducers/{coproducer}', [\App\Http\Controllers\ProductCoproductionController::class, 'destroy'])->name('produtos.coproducers.destroy');
         Route::put('/produtos/{produto}/affiliate-settings', [\App\Http\Controllers\ProductAffiliateController::class, 'updateSettings'])->name('produtos.affiliate-settings.update');
+        Route::post('/produtos/{produto}/affiliate-invite-token/regenerate', [\App\Http\Controllers\ProductAffiliateController::class, 'regenerateInviteToken'])->name('produtos.affiliate-invite-token.regenerate');
         Route::post('/produtos/{produto}/affiliate-enrollments/{enrollment}/approve', [\App\Http\Controllers\ProductAffiliateController::class, 'approve'])->name('produtos.affiliate-enrollments.approve');
         Route::post('/produtos/{produto}/affiliate-enrollments/{enrollment}/reject', [\App\Http\Controllers\ProductAffiliateController::class, 'reject'])->name('produtos.affiliate-enrollments.reject');
         Route::post('/produtos/{produto}/affiliate-enrollments/{enrollment}/revoke', [\App\Http\Controllers\ProductAffiliateController::class, 'revoke'])->name('produtos.affiliate-enrollments.revoke');
@@ -917,11 +991,11 @@ Route::middleware(['auth', 'admin.tenant', 'seller.panel', 'stacker.license', 'r
         Route::get('/produtos/{produto}/member-builder/comments', [\App\Http\Controllers\MemberBuilderController::class, 'commentsIndex'])->name('member-builder.comments.index');
         Route::put('/produtos/{produto}/member-builder/comments/{comment}', [\App\Http\Controllers\MemberBuilderController::class, 'updateComment'])->name('member-builder.comments.update');
         Route::post('/produtos/{produto}/member-builder/community-pages', [\App\Http\Controllers\MemberBuilderController::class, 'storeCommunityPage'])->name('member-builder.community-pages.store');
-        Route::put('/produtos/{produto}/member-builder/community-pages/{page}', [\App\Http\Controllers\MemberBuilderController::class, 'updateCommunityPage'])->name('member-builder.community-pages.update');
+        Route::put('/produtos/{produto}/member-builder/community-pages/{page}', [\App\Http\Controllers\MemberBuilderController::class, 'updateCommunityPage'])->name('member-builder.community-pages.update')->whereNumber('page');
         // POST aceito para update/delete: JSON + PUT/DELETE falham em alguns proxies/servidores
-        Route::post('/produtos/{produto}/member-builder/community-pages/{page}', [\App\Http\Controllers\MemberBuilderController::class, 'updateCommunityPage'])->name('member-builder.community-pages.update.post');
-        Route::delete('/produtos/{produto}/member-builder/community-pages/{page}', [\App\Http\Controllers\MemberBuilderController::class, 'destroyCommunityPage'])->name('member-builder.community-pages.destroy');
-        Route::post('/produtos/{produto}/member-builder/community-pages/{page}/delete', [\App\Http\Controllers\MemberBuilderController::class, 'destroyCommunityPage'])->name('member-builder.community-pages.destroy.post');
+        Route::post('/produtos/{produto}/member-builder/community-pages/{page}', [\App\Http\Controllers\MemberBuilderController::class, 'updateCommunityPage'])->name('member-builder.community-pages.update.post')->whereNumber('page');
+        Route::delete('/produtos/{produto}/member-builder/community-pages/{page}', [\App\Http\Controllers\MemberBuilderController::class, 'destroyCommunityPage'])->name('member-builder.community-pages.destroy')->whereNumber('page');
+        Route::post('/produtos/{produto}/member-builder/community-pages/{page}/delete', [\App\Http\Controllers\MemberBuilderController::class, 'destroyCommunityPage'])->name('member-builder.community-pages.destroy.post')->whereNumber('page');
         Route::post('/produtos/{produto}/member-builder/send-push', [\App\Http\Controllers\MemberBuilderController::class, 'sendPushNotification'])->name('member-builder.send-push');
     });
 
@@ -988,27 +1062,35 @@ Route::middleware(['auth', 'admin.tenant', 'seller.panel', 'stacker.license', 'r
         Route::post('/integracoes/plugins/{slug}/disable', [\App\Http\Controllers\IntegrationsController::class, 'disablePlugin'])->name('integrations.plugins.disable');
         Route::delete('/integracoes/plugins/{slug}', [\App\Http\Controllers\IntegrationsController::class, 'uninstallPlugin'])->name('integrations.plugins.uninstall');
 
-        Route::post('/integracoes/utmify', [\App\Http\Controllers\UtmifyController::class, 'store'])->name('integrations.utmify.store');
-        Route::put('/integracoes/utmify/{utmify}', [\App\Http\Controllers\UtmifyController::class, 'update'])->name('integrations.utmify.update');
-        Route::delete('/integracoes/utmify/{utmify}', [\App\Http\Controllers\UtmifyController::class, 'destroy'])->name('integrations.utmify.destroy');
-        Route::post('/integracoes/utmify/{utmify}/test', [\App\Http\Controllers\UtmifyController::class, 'test'])->name('integrations.utmify.test');
+        Route::middleware('seller.integration:utmify')->group(function () {
+            Route::post('/integracoes/utmify', [\App\Http\Controllers\UtmifyController::class, 'store'])->name('integrations.utmify.store');
+            Route::put('/integracoes/utmify/{utmify}', [\App\Http\Controllers\UtmifyController::class, 'update'])->name('integrations.utmify.update');
+            Route::delete('/integracoes/utmify/{utmify}', [\App\Http\Controllers\UtmifyController::class, 'destroy'])->name('integrations.utmify.destroy');
+            Route::post('/integracoes/utmify/{utmify}/test', [\App\Http\Controllers\UtmifyController::class, 'test'])->name('integrations.utmify.test');
+        });
 
-        Route::post('/integracoes/spedy', [\App\Http\Controllers\SpedyController::class, 'store'])->name('integrations.spedy.store');
-        Route::put('/integracoes/spedy/{spedy}', [\App\Http\Controllers\SpedyController::class, 'update'])->name('integrations.spedy.update');
-        Route::delete('/integracoes/spedy/{spedy}', [\App\Http\Controllers\SpedyController::class, 'destroy'])->name('integrations.spedy.destroy');
+        Route::middleware('seller.integration:spedy')->group(function () {
+            Route::post('/integracoes/spedy', [\App\Http\Controllers\SpedyController::class, 'store'])->name('integrations.spedy.store');
+            Route::put('/integracoes/spedy/{spedy}', [\App\Http\Controllers\SpedyController::class, 'update'])->name('integrations.spedy.update');
+            Route::delete('/integracoes/spedy/{spedy}', [\App\Http\Controllers\SpedyController::class, 'destroy'])->name('integrations.spedy.destroy');
+        });
 
-        Route::post('/integracoes/cademi', [\App\Http\Controllers\CademiController::class, 'store'])->name('integrations.cademi.store');
-        Route::put('/integracoes/cademi/{cademi}', [\App\Http\Controllers\CademiController::class, 'update'])->name('integrations.cademi.update');
-        Route::delete('/integracoes/cademi/{cademi}', [\App\Http\Controllers\CademiController::class, 'destroy'])->name('integrations.cademi.destroy');
-        Route::get('/integracoes/cademi/{cademi}/tags', [\App\Http\Controllers\CademiController::class, 'tags'])->name('integrations.cademi.tags');
+        Route::middleware('seller.integration:cademi')->group(function () {
+            Route::post('/integracoes/cademi', [\App\Http\Controllers\CademiController::class, 'store'])->name('integrations.cademi.store');
+            Route::put('/integracoes/cademi/{cademi}', [\App\Http\Controllers\CademiController::class, 'update'])->name('integrations.cademi.update');
+            Route::delete('/integracoes/cademi/{cademi}', [\App\Http\Controllers\CademiController::class, 'destroy'])->name('integrations.cademi.destroy');
+            Route::get('/integracoes/cademi/{cademi}/tags', [\App\Http\Controllers\CademiController::class, 'tags'])->name('integrations.cademi.tags');
+        });
 
-        Route::get('/integracoes/webhooks', [\App\Http\Controllers\WebhookController::class, 'index'])->name('integrations.webhooks.index');
-        Route::post('/integracoes/webhooks', [\App\Http\Controllers\WebhookController::class, 'store'])->name('integrations.webhooks.store');
-        Route::put('/integracoes/webhooks/{webhook}', [\App\Http\Controllers\WebhookController::class, 'update'])->name('integrations.webhooks.update');
-        Route::delete('/integracoes/webhooks/{webhook}', [\App\Http\Controllers\WebhookController::class, 'destroy'])->name('integrations.webhooks.destroy');
-        Route::post('/integracoes/webhooks/{webhook}/test', [\App\Http\Controllers\WebhookController::class, 'test'])->name('integrations.webhooks.test');
-        Route::get('/integracoes/webhooks/{webhook}/logs', [\App\Http\Controllers\WebhookController::class, 'logs'])->name('integrations.webhooks.logs');
-        Route::get('/integracoes/webhooks/{webhook}/logs/{log}', [\App\Http\Controllers\WebhookController::class, 'showLog'])->name('integrations.webhooks.logs.show');
+        Route::middleware('seller.integration:webhook')->group(function () {
+            Route::get('/integracoes/webhooks', [\App\Http\Controllers\WebhookController::class, 'index'])->name('integrations.webhooks.index');
+            Route::post('/integracoes/webhooks', [\App\Http\Controllers\WebhookController::class, 'store'])->name('integrations.webhooks.store');
+            Route::put('/integracoes/webhooks/{webhook}', [\App\Http\Controllers\WebhookController::class, 'update'])->name('integrations.webhooks.update');
+            Route::delete('/integracoes/webhooks/{webhook}', [\App\Http\Controllers\WebhookController::class, 'destroy'])->name('integrations.webhooks.destroy');
+            Route::post('/integracoes/webhooks/{webhook}/test', [\App\Http\Controllers\WebhookController::class, 'test'])->name('integrations.webhooks.test');
+            Route::get('/integracoes/webhooks/{webhook}/logs', [\App\Http\Controllers\WebhookController::class, 'logs'])->name('integrations.webhooks.logs');
+            Route::get('/integracoes/webhooks/{webhook}/logs/{log}', [\App\Http\Controllers\WebhookController::class, 'showLog'])->name('integrations.webhooks.logs.show');
+        });
     });
 
 });
@@ -1066,6 +1148,8 @@ Route::prefix('m/{slug}')->where(['slug' => '[a-zA-Z0-9]{6,16}'])->middleware('m
         Route::get('modulos', fn (string $slug) => redirect()->route('member-area-app.show', $slug))->name('member-area-app.modulos');
         Route::get('modulo/{module}', [\App\Http\Controllers\MemberAreaAppController::class, 'moduleContent'])->name('member-area-app.module');
         Route::get('aula/{lesson}', [\App\Http\Controllers\MemberAreaAppController::class, 'lesson'])->name('member-area-app.lesson');
+        Route::post('modulo/{module}/renovar-pix', [\App\Http\Controllers\MemberModuleRenewalController::class, 'createPix'])->middleware('throttle:10,1')->name('member-area-app.module.renew-pix');
+        Route::get('modulo/{module}/renovar-pix/{order}', [\App\Http\Controllers\MemberModuleRenewalController::class, 'status'])->middleware('throttle:60,1')->name('member-area-app.module.renew-pix.status');
         Route::post('aula/{lesson}/complete', [\App\Http\Controllers\MemberAreaAppController::class, 'completeLesson'])->name('member-area-app.lesson.complete');
         Route::post('aula/{lesson}/comments', [\App\Http\Controllers\MemberAreaAppController::class, 'storeLessonComment'])->name('member-area-app.lesson.comments.store');
         Route::get('loja', [\App\Http\Controllers\MemberAreaAppController::class, 'loja'])->name('member-area-app.loja');
@@ -1117,6 +1201,8 @@ Route::middleware(['web', 'member.area.resolve.by.host'])->group(function () {
         Route::get('modulos', [\App\Http\Controllers\MemberAreaAppController::class, 'modulos'])->name('member-area-app.modulos.host');
         Route::get('modulo/{module}', [\App\Http\Controllers\MemberAreaAppController::class, 'moduleContent'])->name('member-area-app.module.host');
         Route::get('aula/{lesson}', [\App\Http\Controllers\MemberAreaAppController::class, 'lesson'])->name('member-area-app.lesson.host');
+        Route::post('modulo/{module}/renovar-pix', [\App\Http\Controllers\MemberModuleRenewalController::class, 'createPix'])->middleware('throttle:10,1')->name('member-area-app.module.renew-pix.host');
+        Route::get('modulo/{module}/renovar-pix/{order}', [\App\Http\Controllers\MemberModuleRenewalController::class, 'status'])->middleware('throttle:60,1')->name('member-area-app.module.renew-pix.status.host');
         Route::post('aula/{lesson}/complete', [\App\Http\Controllers\MemberAreaAppController::class, 'completeLesson'])->name('member-area-app.lesson.complete.host');
         Route::post('aula/{lesson}/comments', [\App\Http\Controllers\MemberAreaAppController::class, 'storeLessonComment'])->name('member-area-app.lesson.comments.store.host');
         Route::get('loja', [\App\Http\Controllers\MemberAreaAppController::class, 'loja'])->name('member-area-app.loja.host');

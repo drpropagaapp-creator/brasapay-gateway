@@ -29,4 +29,28 @@ final class CajuPayCheckoutMetadata
 
         return is_string($v) && trim($v) !== '' ? trim($v) : null;
     }
+
+    /**
+     * N de parcelas no payload Caju (webhook / sessão). Null se o campo não vier.
+     *
+     * @param  array<string, mixed>  $payload
+     */
+    public static function installmentsFromPayload(array $payload): ?int
+    {
+        $object = $payload['data']['object'] ?? $payload['object'] ?? $payload;
+        if (! is_array($object)) {
+            $object = $payload;
+        }
+        foreach (['installments', 'card_installments', 'installment_count'] as $key) {
+            if (! array_key_exists($key, $object)) {
+                continue;
+            }
+            $n = (int) $object[$key];
+            if ($n >= 1) {
+                return max(1, min(12, $n));
+            }
+        }
+
+        return null;
+    }
 }

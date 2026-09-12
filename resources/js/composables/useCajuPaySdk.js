@@ -5,7 +5,7 @@
  * O backend Getfy devolve o token público após `POST /checkout` + `POST /checkout/cajupay/sdk-session`.
  */
 
-const SDK_URL = 'https://cdn.cajupay.com.br/sdk/v1/cajupay-sdk.min.js';
+const SDK_URL = 'https://cdn.cajupay.com.br/sdk/v1/cajupay-sdk.min.js?v=20260905';
 const DEFAULT_API_BASE = 'https://api.cajupay.com.br';
 
 let sdkPromise = null;
@@ -59,7 +59,7 @@ export function loadCajuPaySdk() {
 
 /**
  * @param {string} containerSelector
- * @param {{ token: string, defaultMethod?: string, preparePaymentUIOnMount?: boolean, initialPayer?: object, baseUrl?: string, onStatus?: (event: any) => void }} opts
+ * @param {{ token: string, defaultMethod?: string, preparePaymentUIOnMount?: boolean, initialPayer?: object, baseUrl?: string, locale?: string, onStatus?: (event: any) => void, onSuccess?: (event: any) => void, onError?: (event: any) => void }} opts
  */
 export async function mountCajuPayCheckout(containerSelector, opts) {
     if (!opts || !opts.token) {
@@ -79,15 +79,23 @@ export async function mountCajuPayCheckout(containerSelector, opts) {
 
     const defaultMethod = opts.defaultMethod || 'card';
     const preparePaymentUIOnMount = opts.preparePaymentUIOnMount ?? (defaultMethod === 'card');
+    const locale = typeof opts.locale === 'string' ? opts.locale.trim() : '';
 
-    return await instance.mountCheckout(containerSelector, {
+    const mountOpts = {
         token: opts.token,
         defaultMethod,
         embeddedOnly: true,
         preparePaymentUIOnMount,
         initialPayer: opts.initialPayer || undefined,
         onStatus: typeof opts.onStatus === 'function' ? opts.onStatus : undefined,
-    });
+        onSuccess: typeof opts.onSuccess === 'function' ? opts.onSuccess : undefined,
+        onError: typeof opts.onError === 'function' ? opts.onError : undefined,
+    };
+    if (locale !== '') {
+        mountOpts.locale = locale;
+    }
+
+    return await instance.mountCheckout(containerSelector, mountOpts);
 }
 
 export async function confirmCajuPayController(controller) {
@@ -131,9 +139,16 @@ export function cajupayDefaultMethodFor(method) {
             return 'apple_pay';
         case 'google_pay':
             return 'google_pay';
-        case 'pix':
-            return 'pix';
         default:
             return 'card';
     }
+}
+
+export function readCajuPayInstallments(containerSelector) {
+    if (typeof document === 'undefined') return 1;
+    const root = document.querySelector(containerSelector);
+    const el = root?.querySelector?.('[data-cajupay-installments]');
+    const n = parseInt(el?.value, 10);
+
+    return Number.isFinite(n) && n >= 1 ? Math.min(12, n) : 1;
 }

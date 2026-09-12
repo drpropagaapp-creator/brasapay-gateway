@@ -14,6 +14,7 @@ use App\Models\SubscriptionPlan;
 use App\Support\GatewayApiCredentials;
 use App\Support\GatewayPluginRequirement;
 use App\Support\GatewayWebhookUrl;
+use App\Support\SaleOrigin;
 use Illuminate\Support\Facades\Log;
 
 class PaymentService
@@ -37,6 +38,9 @@ class PaymentService
         foreach ($orderSlugs as $gatewaySlug) {
             if (microtime(true) > $deadline) {
                 break;
+            }
+            if (! $this->isPixAcquirerAllowedForOrder($gatewaySlug, $order)) {
+                continue;
             }
             $resolved = $this->resolveGatewayPaymentContext($tenantId, $gatewaySlug);
             if ($resolved === null) {
@@ -75,6 +79,9 @@ class PaymentService
                 $meta = is_array($order->metadata) ? $order->metadata : [];
                 if (! empty($resolved['gateway_credential_id'])) {
                     $meta['gateway_credential_id'] = (int) $resolved['gateway_credential_id'];
+                }
+                if (isset($result['metadata']) && is_array($result['metadata'])) {
+                    $meta = array_merge($meta, $result['metadata']);
                 }
                 $order->update([
                     'gateway' => $gatewaySlug,
@@ -152,11 +159,18 @@ class PaymentService
                     (string) $order->id,
                     $card
                 );
-                $order->update([
+                $cardPatch = [
                     'gateway' => $gatewaySlug,
                     'gateway_id' => $result['transaction_id'] ?? null,
                     'cajupay_account_id' => $gatewaySlug === 'cajupay' ? ($resolved['cajupay_account_id'] ?? null) : $order->cajupay_account_id,
-                ]);
+                ];
+                if (isset($result['metadata']) && is_array($result['metadata']) && $result['metadata'] !== []) {
+                    $cardPatch['metadata'] = array_merge(
+                        is_array($order->metadata) ? $order->metadata : [],
+                        $result['metadata']
+                    );
+                }
+                $order->update($cardPatch);
                 $return = [
                     'transaction_id' => $result['transaction_id'] ?? '',
                     'gateway' => $gatewaySlug,
@@ -164,6 +178,12 @@ class PaymentService
                 ];
                 if (isset($result['client_secret'])) {
                     $return['client_secret'] = $result['client_secret'];
+                }
+                if (isset($result['status_detail'])) {
+                    $return['status_detail'] = $result['status_detail'];
+                }
+                if (isset($result['charged_amount'])) {
+                    $return['charged_amount'] = $result['charged_amount'];
                 }
                 return $return;
             } catch (\Throwable $e) {
@@ -345,6 +365,7 @@ class PaymentService
             'boleto' => $pick('boleto'),
             'pix_auto' => $pick('pix_auto'),
             'open_finance' => $pick('open_finance'),
+            'paypal' => $pick('paypal'),
         ];
     }
 
@@ -450,6 +471,7 @@ class PaymentService
             'boleto' => ['id' => 'boleto', 'label' => 'Boleto'],
             'pix_auto' => ['id' => 'pix_auto', 'label' => 'PIX automático'],
             'open_finance' => ['id' => 'open_finance', 'label' => 'Open Finance'],
+            'paypal' => ['id' => 'paypal', 'label' => 'PayPal'],
         ];
 
         foreach ($methodConfig as $methodKey => $meta) {
@@ -462,6 +484,9 @@ class PaymentService
                     continue;
                 }
             } elseif (($enabled[$methodKey] ?? true) === false) {
+                continue;
+            }
+            if ($methodKey === 'paypal' && $subscription !== null) {
                 continue;
             }
             if ($methodKey === 'pix_auto') {
@@ -545,8 +570,8 @@ class PaymentService
     {
         $tenantId = $product->tenant_id;
         $credentialBySlug = GatewayCredential::connectedMapForPayment($tenantId);
-        $out = ['pix' => false, 'card' => false, 'boleto' => false, 'pix_auto' => false, 'apple_pay' => false, 'google_pay' => false, 'open_finance' => false];
-        foreach (['pix', 'card', 'boleto', 'pix_auto', 'open_finance'] as $methodKey) {
+        $out = ['pix' => false, 'card' => false, 'boleto' => false, 'pix_auto' => false, 'apple_pay' => false, 'google_pay' => false, 'open_finance' => false, 'paypal' => false];
+        foreach (['pix', 'card', 'boleto', 'pix_auto', 'open_finance', 'paypal'] as $methodKey) {
             if ($methodKey === 'pix_auto' && $plan === null) {
                 continue;
             }
@@ -627,6 +652,32 @@ class PaymentService
         $pg = $config['payment_gateways'] ?? null;
 
         return is_array($pg) && $pg !== [] ? $pg : null;
+    }
+
+    /**
+     * ApiPix e PixGO não podem usar certas adquirentes (ex. BSPay).
+     * Checkout da plataforma e demais canais não são afetados.
+     */
+    public function isPixAcquirerAllowedForOrder(string $gatewaySlug, Order $order): bool
+    {
+        $excluded = config('gateways.api_pix_excluded_slugs', []);
+        if (! is_array($excluded) || ! in_array($gatewaySlug, $excluded, true)) {
+            return true;
+        }
+
+        if ($order->isPixGoSale()) {
+            return false;
+        }
+
+        $origin = SaleOrigin::resolveForOrder($order);
+        if (in_array($origin, [SaleOrigin::API, SaleOrigin::PIXGO], true)) {
+            return false;
+        }
+
+        $meta = is_array($order->metadata) ? $order->metadata : [];
+        $source = is_string($meta['source'] ?? null) ? $meta['source'] : '';
+
+        return ! in_array($source, ['api', 'pixgo'], true);
     }
 
     private function webhookUrlForGateway(string $gatewaySlug): string

@@ -2,8 +2,10 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Controllers\Concerns\LogsSellerActivity;
 use App\Models\ProductCoproducer;
 use App\Models\User;
+use App\Services\SellerActivityLogService;
 use App\Support\InfoproducerRegistrationSettings;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -12,6 +14,8 @@ use Inertia\Response;
 
 class CoproductionInviteController extends Controller
 {
+    use LogsSellerActivity;
+
     public function show(string $token): Response
     {
         $invitation = ProductCoproducer::query()
@@ -93,6 +97,8 @@ class CoproductionInviteController extends Controller
             return back()->withErrors(['email' => 'Você não pode aceitar co-produção do próprio produto.']);
         }
 
+        ProductCoproducer::expireOverdue();
+
         if (ProductCoproducer::query()
             ->where('product_id', $invitation->product_id)
             ->where('co_producer_user_id', $user->id)
@@ -104,6 +110,13 @@ class CoproductionInviteController extends Controller
 
         $invitation->applyAcceptance($user);
 
-        return redirect()->route('dashboard')->with('success', 'Co-produção aceita. Suas comissões serão creditadas na carteira conforme as vendas.');
+        $this->logSellerActivity(SellerActivityLogService::COPRODUCTION_ACCEPTED, $invitation, [
+            'email' => $invitation->email,
+            'product_id' => $invitation->product_id,
+            'product_name' => $invitation->product?->name,
+        ]);
+
+        return redirect()->route('coproducao.index', ['tab' => 'participacoes'])
+            ->with('success', 'Co-produção aceita. Você já pode acompanhar o produto e as comissões em Co-produção e em Vendas.');
     }
 }

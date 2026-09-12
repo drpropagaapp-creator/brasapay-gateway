@@ -6,6 +6,7 @@ use App\Models\Order;
 use App\Models\ProductCoproducer;
 use App\Models\TenantWallet;
 use App\Models\WalletTransaction;
+use App\Support\CardInstallmentEconomics;
 use App\Support\WalletCreditReference;
 use Carbon\Carbon;
 use Illuminate\Database\QueryException;
@@ -65,7 +66,7 @@ class OrderCompletedWalletCreditor
         }
         $feeMethod = EffectiveMerchantFees::feeMethodForOrder($order);
         $bucket = match ($method) {
-            'card', 'apple_pay', 'google_pay' => 'card',
+            'card', 'apple_pay', 'google_pay', 'paypal' => 'card',
             'boleto' => 'boleto',
             'pix_auto', 'pix', 'open_finance', null, '' => 'pix',
             default => 'pix',
@@ -75,6 +76,7 @@ class OrderCompletedWalletCreditor
             'apple_pay' => 'apple_pay',
             'google_pay' => 'google_pay',
             'card' => 'card',
+            'paypal' => 'card',
             'boleto' => 'boleto',
             'open_finance' => 'open_finance',
             default => 'pix',
@@ -103,10 +105,18 @@ class OrderCompletedWalletCreditor
                 'coproduction_role' => $role,
                 'product_coproducer_id' => $slice['product_coproducer_id'] ?? null,
                 'affiliate_enrollment_id' => $slice['product_affiliate_enrollment_id'] ?? null,
+                'commission_percent' => $slice['commission_percent'] ?? null,
             ];
 
             $source = is_array($order->metadata ?? null) ? (($order->metadata['source'] ?? null) ?: null) : null;
-            $feeCalc = EffectiveMerchantFees::calculateSaleFee($tenantId, $feeMethod, $grossSlice, is_string($source) ? $source : null);
+            $installments = $feeMethod === 'card' ? CardInstallmentEconomics::countFromOrder($order) : 1;
+            $feeCalc = EffectiveMerchantFees::calculateSaleFee(
+                $tenantId,
+                $feeMethod,
+                $grossSlice,
+                is_string($source) ? $source : null,
+                $feeMethod === 'card' ? $installments : null
+            );
             $net = $feeCalc['net'];
             if ($net <= 0) {
                 continue;
@@ -117,7 +127,21 @@ class OrderCompletedWalletCreditor
             $reservePct = $rules['reserve_percent'];
             $reserveHoldDays = max(0, (int) ($rules['reserve_hold_days'] ?? 0));
 
-            if ($days === 0 && $reservePct <= 0) {
+            $installmentIntervalDays = 0;
+            $splitInstallments = false;
+            if ($feeMethod === 'card' && CardInstallmentEconomics::platformHasSavedTable()) {
+                $instRule = CardInstallmentEconomics::ruleFor(
+                    EffectiveMerchantFees::forTenant($tenantId)['card_installments'] ?? [],
+                    $installments
+                );
+                $installmentIntervalDays = $instRule['days_to_available'];
+                $splitInstallments = CardInstallmentEconomics::shouldSplit($installments, $installmentIntervalDays);
+                if (! $splitInstallments && $installmentIntervalDays > 0) {
+                    $days = $installmentIntervalDays;
+                }
+            }
+
+            if (! $splitInstallments && $days === 0 && $reservePct <= 0) {
                 if (self::creditAvailableDirectly($order, $tenantId, $bucket, $feeCalc, $grossSlice, $baseMeta)) {
                     continue;
                 }
@@ -125,15 +149,29 @@ class OrderCompletedWalletCreditor
                 continue;
             }
 
-            $mainNet = round($net * (1 - $reservePct / 100.0), 2);
-            $reserveNet = round($net - $mainNet, 2);
-
             $parts = [];
-            if ($mainNet > 0.0001) {
-                $parts[] = ['portion' => 'main', 'net' => $mainNet];
-            }
-            if ($reserveNet > 0.0001) {
-                $parts[] = ['portion' => 'reserve', 'net' => $reserveNet];
+            if ($splitInstallments) {
+                foreach (CardInstallmentEconomics::splitAmount($net, $installments) as $slice) {
+                    if ($slice['amount'] <= 0.0001) {
+                        continue;
+                    }
+                    $parts[] = [
+                        'portion' => 'i'.$slice['index'],
+                        'net' => $slice['amount'],
+                        'days' => $slice['index'] * $installmentIntervalDays,
+                        'installment_index' => $slice['index'],
+                        'installments' => $installments,
+                    ];
+                }
+            } else {
+                $mainNet = round($net * (1 - $reservePct / 100.0), 2);
+                $reserveNet = round($net - $mainNet, 2);
+                if ($mainNet > 0.0001) {
+                    $parts[] = ['portion' => 'main', 'net' => $mainNet];
+                }
+                if ($reserveNet > 0.0001) {
+                    $parts[] = ['portion' => 'reserve', 'net' => $reserveNet];
+                }
             }
 
             if ($parts === []) {
@@ -183,7 +221,9 @@ class OrderCompletedWalletCreditor
                     $grossPart = round($grossForSlice * $ratio, 2);
                     $feePart = round($feeTotal * $ratio, 2);
 
-                    $totalDays = $days + (($portion === 'reserve') ? $reserveHoldDays : 0);
+                    $totalDays = array_key_exists('days', $part)
+                        ? max(0, (int) $part['days'])
+                        : ($days + (($portion === 'reserve') ? $reserveHoldDays : 0));
                     $clearsAt = $totalDays === 0
                         ? Carbon::now()
                         : Carbon::now()->addDays($totalDays);
@@ -209,6 +249,12 @@ class OrderCompletedWalletCreditor
                     ]);
                     if ($portion === 'reserve' && $reserveHoldDays > 0) {
                         $meta['reserve_hold_days'] = $reserveHoldDays;
+                    }
+                    if (isset($part['installments'])) {
+                        $meta['installments'] = (int) $part['installments'];
+                    }
+                    if (isset($part['installment_index'])) {
+                        $meta['installment_index'] = (int) $part['installment_index'];
                     }
 
                     try {

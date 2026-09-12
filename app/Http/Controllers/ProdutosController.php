@@ -8,26 +8,31 @@ use App\Events\ProductDeleted;
 use App\Events\ProductDuplicated;
 use App\Events\ProductIndexLoading;
 use App\Events\ProductUpdated;
+use App\Gateways\GatewayRegistry;
+use App\Http\Controllers\Concerns\LogsSellerActivity;
 use App\Models\CademiIntegration;
 use App\Models\GatewayCredential;
 use App\Models\Product;
-use App\Models\ShippingStore;
 use App\Models\ProductAffiliateEnrollment;
 use App\Models\ProductCoproducer;
 use App\Models\ProductOffer;
 use App\Models\ProductOrderBump;
+use App\Models\ShippingStore;
 use App\Models\SubscriptionPlan;
 use App\Models\User;
-use App\Services\PaymentService;
 use App\Services\MemberAccessGrantService;
 use App\Services\MinimumChargeService;
+use App\Services\PaymentService;
 use App\Services\PhysicalProductAccess;
+use App\Services\PlatformCardInstallments;
 use App\Services\ProductApprovalService;
+use App\Services\SellerActivityLogService;
+use App\Services\SellerIntegrationVisibility;
 use App\Services\StorageService;
 use App\Services\TeamAccessService;
+use App\Support\CardInstallments;
 use App\Support\HtmlSanitizer;
 use App\Support\MoneyDecimal;
-use App\Gateways\GatewayRegistry;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -38,6 +43,8 @@ use InvalidArgumentException;
 
 class ProdutosController extends Controller
 {
+    use LogsSellerActivity;
+
     /**
      * @return list<string>
      */
@@ -72,14 +79,51 @@ class ProdutosController extends Controller
 
     public function index(Request $request): Response
     {
-        $tenantId = auth()->user()->tenant_id;
+        $user = auth()->user();
+        $tenantId = $user->tenant_id;
         $rates = config('products.rates', ['brl_eur' => 0.16, 'brl_usd' => 0.18]);
         $query = Product::forTenant($tenantId)->orderBy('name');
-        if (auth()->user()->isTeam()) {
-            $allowed = app(TeamAccessService::class)->allowedProductIdsFor(auth()->user());
+        if ($user->isTeam()) {
+            $allowed = app(TeamAccessService::class)->allowedProductIdsFor($user);
             $query->whereIn('id', $allowed ?: ['__none__']);
         }
-        $products = $query->paginate(20)->withQueryString()->through(fn (Product $p) => $this->productToArray($p, $rates));
+
+        $coproIds = [];
+        $coproPercents = [];
+        if (! $user->isTeam()) {
+            ProductCoproducer::expireOverdue();
+            $coproRows = ProductCoproducer::query()
+                ->where('co_producer_user_id', $user->id)
+                ->where('status', ProductCoproducer::STATUS_ACTIVE)
+                ->where(function ($q) {
+                    $q->whereNull('starts_at')->orWhere('starts_at', '<=', now());
+                })
+                ->where(function ($q) {
+                    $q->whereNull('ends_at')->orWhere('ends_at', '>', now());
+                })
+                ->get(['product_id', 'commission_percent']);
+            $coproIds = $coproRows->pluck('product_id')->map(fn ($id) => (string) $id)->unique()->values()->all();
+            foreach ($coproRows as $row) {
+                $coproPercents[(string) $row->product_id] = (float) $row->commission_percent;
+            }
+        }
+
+        if ($coproIds !== []) {
+            $ownIds = (clone $query)->pluck('id')->map(fn ($id) => (string) $id)->all();
+            $allIds = array_values(array_unique(array_merge($ownIds, $coproIds)));
+            $query = Product::query()->whereIn('id', $allIds ?: ['__none__'])->orderBy('name');
+        }
+
+        $products = $query->paginate(20)->withQueryString()->through(function (Product $p) use ($rates, $tenantId, $coproPercents) {
+            $arr = $this->productToArray($p, $rates);
+            $isCoproduction = (int) $p->tenant_id !== (int) $tenantId;
+            $arr['is_coproduction'] = $isCoproduction;
+            $arr['coproduction_percent'] = $isCoproduction
+                ? ($coproPercents[(string) $p->id] ?? null)
+                : null;
+
+            return $arr;
+        });
 
         $productTypes = collect(PhysicalProductAccess::filterTypeConfig(Product::typeConfig()))->map(fn ($config, $value) => [
             'value' => $value,
@@ -94,9 +138,11 @@ class ProdutosController extends Controller
             'produtos' => $products,
             'productTypes' => $productTypes,
             'billingTypes' => $billingTypes,
+            'productCategories' => Product::categoriesForSelect(),
             'exchange_rates' => $rates,
             'plugin_card_actions' => [],
             'plugin_form_sections' => [],
+            'checkout_gateway_ui' => $this->checkoutGatewayUiForTenant($tenantId),
         ]);
         event(new ProductIndexLoading($data));
         $payload = $data->getArrayCopy();
@@ -145,6 +191,7 @@ class ProdutosController extends Controller
             'support_email' => ['nullable', 'email', 'max:255'],
             'slug' => ['nullable', 'string', 'max:255'],
             'description' => ['nullable', 'string'],
+            'category' => ['nullable', 'string', 'in:'.implode(',', Product::categoryKeys())],
             'type' => ['required', 'string', 'in:'.implode(',', self::allowedProductTypes())],
             'billing_type' => ['required', 'string', 'in:'.implode(',', self::BILLING_TYPES)],
             'price' => $this->platformPriceRules(),
@@ -152,6 +199,9 @@ class ProdutosController extends Controller
             'is_active' => ['boolean'],
             'image' => ['nullable', 'file', 'mimes:jpg,jpeg,png,webp,gif', 'max:2048'],
             'deliverable_link' => ['nullable', 'string', 'url', 'max:500'],
+            'card_installments' => ['nullable', 'array'],
+            'card_installments.enabled' => ['nullable', 'boolean'],
+            'card_installments.max' => ['nullable', 'integer', 'min:1', 'max:12'],
         ]);
 
         // Texto puro (evita XSS armazenado em nome/descrição)
@@ -206,9 +256,11 @@ class ProdutosController extends Controller
         unset($validated['image']);
         $deliverableLink = $validated['deliverable_link'] ?? null;
         unset($validated['deliverable_link']);
+        $cardInstallmentsInput = $validated['card_installments'] ?? null;
+        unset($validated['card_installments']);
 
         try {
-            $product = DB::transaction(function () use ($request, $validated, $deliverableLink) {
+            $product = DB::transaction(function () use ($request, $validated, $deliverableLink, $cardInstallmentsInput) {
                 $product = Product::create($validated);
 
                 if ($request->has('deliverable_link')) {
@@ -216,6 +268,8 @@ class ProdutosController extends Controller
                     $config['deliverable_link'] = $deliverableLink ?? '';
                     $product->update(['checkout_config' => $config]);
                 }
+
+                $this->applyCardInstallmentsToProduct($product, $cardInstallmentsInput);
 
                 if ($request->hasFile('image')) {
                     $path = app(StorageService::class)->putFile('products', $request->file('image'));
@@ -233,7 +287,7 @@ class ProdutosController extends Controller
             if ($this->isDuplicateProductSlugException($e)) {
                 $validated['slug'] = Product::uniqueSlugForTenant($tenantId, $baseSlug !== '' ? $baseSlug : 'produto');
                 try {
-                    $product = DB::transaction(function () use ($request, $validated, $deliverableLink) {
+                    $product = DB::transaction(function () use ($request, $validated, $deliverableLink, $cardInstallmentsInput) {
                         $product = Product::create($validated);
 
                         if ($request->has('deliverable_link')) {
@@ -241,6 +295,8 @@ class ProdutosController extends Controller
                             $config['deliverable_link'] = $deliverableLink ?? '';
                             $product->update(['checkout_config' => $config]);
                         }
+
+                        $this->applyCardInstallmentsToProduct($product, $cardInstallmentsInput);
 
                         if ($request->hasFile('image')) {
                             $path = app(StorageService::class)->putFile('products', $request->file('image'));
@@ -268,12 +324,16 @@ class ProdutosController extends Controller
             $success = 'Produto em análise. Seu produto foi enviado para análise das regras internas da plataforma. Após a avaliação, você será informado sobre a aprovação ou sobre eventuais ajustes necessários.';
         }
 
+        $this->logSellerActivity(SellerActivityLogService::PRODUCT_CREATED, $product, [
+            'name' => $product->name,
+        ]);
+
         return redirect()->route('produtos.index')->with('success', $success);
     }
 
     public function edit(Product $produto): Response
     {
-        $this->authorizeProduct($produto);
+        $this->authorizeProduct($produto, manage: false);
         $produto->load('users:id,name,email', 'offers', 'subscriptionPlans', 'orderBumps');
 
         $rates = config('products.rates', ['brl_eur' => 0.16, 'brl_usd' => 0.18]);
@@ -401,37 +461,28 @@ class ProdutosController extends Controller
             ->values()->all();
         $produtoArray['products_for_upsell'] = $productsForUpsell;
 
+        $checkoutGatewayUi = $this->checkoutGatewayUiForTenant($tenantId);
         $paymentService = app(PaymentService::class);
-        $cardOrder = $paymentService->getGatewayOrderForMethod($tenantId, 'card', null, null);
-        $primaryCard = $cardOrder[0] ?? null;
-        $credentialBySlug = GatewayCredential::connectedMapForPayment($tenantId);
-        $primaryConnectedCardSlug = null;
-        foreach ($cardOrder as $slug) {
-            if (! is_string($slug) || $slug === '' || ! $credentialBySlug->get($slug)) {
-                continue;
-            }
-            $gw = GatewayRegistry::get($slug);
-            if ($gw && in_array('card', $gw['methods'] ?? [], true)) {
-                $primaryConnectedCardSlug = $slug;
-                break;
-            }
-        }
-        $checkoutGatewayUi = [
-            'card_show_installments' => in_array($primaryCard, ['efi', 'asaas'], true),
-            'digital_wallets_at_checkout' => $primaryConnectedCardSlug === 'cajupay',
-        ];
 
         $basePlanForGlobalMethods = $produto->billing_type === Product::BILLING_SUBSCRIPTION
             ? $produto->subscriptionPlans()->orderBy('position')->first()
             : null;
         $globalPaymentMethodsAvailable = $paymentService->globallyAvailablePaymentMethodKeys($produto, $basePlanForGlobalMethods);
 
-        $cademiIntegrations = CademiIntegration::forTenant($tenantId)
-            ->orderBy('name')
-            ->get(['id', 'name'])
-            ->map(fn (CademiIntegration $i) => ['id' => $i->id, 'name' => $i->name])
-            ->values()
-            ->all();
+        $cademiAvailable = SellerIntegrationVisibility::effectiveForTenant(
+            SellerIntegrationVisibility::CADEMI,
+            $tenantId !== null ? (int) $tenantId : null
+        );
+        $cademiIntegrations = $cademiAvailable
+            ? CademiIntegration::forTenant($tenantId)
+                ->orderBy('name')
+                ->get(['id', 'name'])
+                ->map(fn (CademiIntegration $i) => ['id' => $i->id, 'name' => $i->name])
+                ->values()
+                ->all()
+            : [];
+
+        ProductCoproducer::expireOverdue();
 
         $produtoArray['coproducers'] = $produto->coproducers()
             ->with('coProducer:id,name,email')
@@ -465,6 +516,10 @@ class ProdutosController extends Controller
         $produtoArray['affiliate_showcase_description'] = $produto->affiliate_showcase_description;
         $produtoArray['affiliate_hide_customer_data'] = (bool) $produto->affiliate_hide_customer_data;
         $produtoArray['affiliate_checkout_base_url'] = $checkoutBaseUrl;
+        if ($produto->affiliate_enabled) {
+            $produto->ensureAffiliateInviteToken();
+        }
+        $produtoArray['affiliate_join_url'] = $produto->affiliate_enabled ? $produto->affiliateJoinUrl() : null;
 
         $produtoArray['refund_policy_days'] = $produto->refund_policy_days !== null
             ? (int) $produto->refund_policy_days
@@ -507,14 +562,20 @@ class ProdutosController extends Controller
             ->values()
             ->all();
 
+        $coproductionReadonly = ProductCoproducer::isActiveCoproducerOf((int) auth()->id(), (string) $produto->id)
+            && (int) $produto->tenant_id !== (int) $tenantId;
+
         return Inertia::render('Produtos/Edit', [
             'produto' => $produtoArray,
+            'coproduction_readonly' => $coproductionReadonly,
             'productTypes' => $productTypes,
             'billingTypes' => $billingTypes,
+            'productCategories' => Product::categoriesForSelect(),
             'exchange_rates' => $rates,
             'checkout_gateway_ui' => $checkoutGatewayUi,
             'global_payment_methods_available' => $globalPaymentMethodsAvailable,
             'cademi_integrations' => $cademiIntegrations,
+            'cademi_available' => $cademiAvailable,
             'shipping_stores' => PhysicalProductAccess::globalEnabled() ? $shippingStores : [],
             'layoutContentFlushLeft' => true,
             'pageTitleBadge' => $produto->name,
@@ -534,6 +595,13 @@ class ProdutosController extends Controller
         ]);
 
         $tenantId = auth()->user()->tenant_id;
+        $cademiAvailable = SellerIntegrationVisibility::effectiveForTenant(
+            SellerIntegrationVisibility::CADEMI,
+            $tenantId !== null ? (int) $tenantId : null
+        );
+        if (! $cademiAvailable && ! empty($validated['cademi_integration_id'])) {
+            abort(403, 'A integração Cademí não está disponível.');
+        }
         if (! empty($validated['cademi_integration_id'])) {
             $exists = CademiIntegration::forTenant($tenantId)->where('id', (int) $validated['cademi_integration_id'])->exists();
             if (! $exists) {
@@ -570,6 +638,10 @@ class ProdutosController extends Controller
             ]);
         }
 
+        $this->logSellerActivity(SellerActivityLogService::PRODUCT_MEMBER_AREA_UPDATED, $produto, [
+            'name' => $produto->name,
+        ]);
+
         return response()->json(['ok' => true]);
     }
 
@@ -587,6 +659,7 @@ class ProdutosController extends Controller
             'notification_name' => ['nullable', 'string', 'max:80'],
             'support_email' => ['nullable', 'email', 'max:255'],
             'description' => ['nullable', 'string'],
+            'category' => ['nullable', 'string', 'in:'.implode(',', Product::categoryKeys())],
             'type' => ['required', 'string', 'in:'.implode(',', self::allowedProductTypes($produto))],
             'billing_type' => ['required', 'string', 'in:'.implode(',', self::BILLING_TYPES)],
             'price' => $this->platformPriceRules(),
@@ -644,6 +717,7 @@ class ProdutosController extends Controller
             'payment_methods_enabled.apple_pay' => ['nullable', 'boolean'],
             'payment_methods_enabled.google_pay' => ['nullable', 'boolean'],
             'payment_methods_enabled.open_finance' => ['nullable', 'boolean'],
+            'payment_methods_enabled.paypal' => ['nullable', 'boolean'],
             'email_template' => ['nullable', 'array'],
             'email_template.logo_url' => ['nullable', 'string', 'max:500'],
             'email_template.from_name' => ['nullable', 'string', 'max:255'],
@@ -827,11 +901,13 @@ class ProdutosController extends Controller
                     $config['deliverable_link'] = $deliverableLink ?? '';
                     $configUpdated = true;
                 }
-                if (is_array($cardInstallments)) {
-                    $config['card_installments'] = [
-                        'enabled' => ! empty($cardInstallments['enabled']),
-                        'max' => min(12, max(1, (int) ($cardInstallments['max'] ?? 1))),
-                    ];
+                $billingType = $validated['billing_type'] ?? $produto->billing_type;
+                $normalizedInstallments = PlatformCardInstallments::normalizeSellerInput(
+                    is_array($cardInstallments) ? $cardInstallments : null,
+                    (string) $billingType
+                );
+                if ($normalizedInstallments !== null) {
+                    $config['card_installments'] = $normalizedInstallments;
                     $configUpdated = true;
                 }
                 if (is_array($paymentMethodsPm) && $paymentMethodsPm['pm'] !== null) {
@@ -873,6 +949,10 @@ class ProdutosController extends Controller
             $url .= '?tab='.urlencode($tab);
         }
 
+        $this->logSellerActivity(SellerActivityLogService::PRODUCT_UPDATED, $produto, [
+            'name' => $produto->name,
+        ]);
+
         return redirect($url)->with('success', 'Produto atualizado.');
     }
 
@@ -885,6 +965,10 @@ class ProdutosController extends Controller
             $storage->delete($produto->image);
         }
         $produto->delete();
+
+        $this->logSellerActivity(SellerActivityLogService::PRODUCT_DELETED, $produto, [
+            'name' => $produto->name,
+        ]);
 
         return redirect()->route('produtos.index')->with('success', 'Produto removido.');
     }
@@ -906,6 +990,7 @@ class ProdutosController extends Controller
             'name' => $baseName,
             'slug' => $uniqueSlug,
             'description' => $produto->description,
+            'category' => $produto->category,
             'type' => $produto->type,
             'billing_type' => $produto->billing_type ?? Product::BILLING_ONE_TIME,
             'image' => null,
@@ -932,6 +1017,11 @@ class ProdutosController extends Controller
             $success = 'Produto duplicado e enviado para análise.';
         }
 
+        $this->logSellerActivity(SellerActivityLogService::PRODUCT_DUPLICATED, $newProduct, [
+            'name' => $newProduct->name,
+            'source_product_id' => $produto->id,
+        ]);
+
         return redirect()->route('produtos.index')->with('success', $success);
     }
 
@@ -945,6 +1035,10 @@ class ProdutosController extends Controller
             return back()->with('error', $e->getMessage());
         }
 
+        $this->logSellerActivity(SellerActivityLogService::PRODUCT_RESUBMITTED, $produto, [
+            'name' => $produto->name,
+        ]);
+
         return back()->with('success', 'Produto reenviado para análise. Ele permanecerá indisponível para venda até nova aprovação.');
     }
 
@@ -954,6 +1048,11 @@ class ProdutosController extends Controller
         $validated = $request->validate(['email' => ['required', 'email', 'exists:users,email']]);
         $user = User::where('email', $validated['email'])->whereIn('role', User::buyerRoleValues())->firstOrFail();
         $memberAccessGrant->grant($user, $produto);
+
+        $this->logSellerActivity(SellerActivityLogService::STUDENT_PRODUCT_ADDED, $produto, [
+            'email' => $user->email,
+            'name' => $produto->name,
+        ]);
 
         return back()->with('success', 'Acesso concedido.');
     }
@@ -1012,7 +1111,12 @@ class ProdutosController extends Controller
         $maxPosition = $produto->offers()->max('position') ?? 0;
         $validated['position'] = $maxPosition + 1;
         $validated['checkout_slug'] = ProductOffer::generateUniqueCheckoutSlug();
+        $validated['affiliate_share_enabled'] = true;
         ProductOffer::create($validated);
+
+        $this->logSellerActivity(SellerActivityLogService::PRODUCT_OFFER_CREATED, $produto, [
+            'name' => $validated['name'],
+        ]);
 
         return back()->with('success', 'Oferta adicionada.');
     }
@@ -1032,6 +1136,10 @@ class ProdutosController extends Controller
         $validated['price'] = MoneyDecimal::toFloat($validated['price']);
         $offer->update($validated);
 
+        $this->logSellerActivity(SellerActivityLogService::PRODUCT_OFFER_UPDATED, $offer, [
+            'name' => $offer->name,
+        ]);
+
         return back()->with('success', 'Oferta atualizada.');
     }
 
@@ -1042,6 +1150,10 @@ class ProdutosController extends Controller
             abort(404);
         }
         $offer->delete();
+
+        $this->logSellerActivity(SellerActivityLogService::PRODUCT_OFFER_DELETED, $offer, [
+            'name' => $offer->name,
+        ]);
 
         return back()->with('success', 'Oferta removida.');
     }
@@ -1077,6 +1189,10 @@ class ProdutosController extends Controller
         $validated['position'] = $maxPosition + 1;
         ProductOrderBump::create($validated);
 
+        $this->logSellerActivity(SellerActivityLogService::PRODUCT_ORDER_BUMP_CREATED, $produto, [
+            'name' => $validated['title'] ?? $produto->name,
+        ]);
+
         return back()->with('success', 'Order bump adicionado.');
     }
 
@@ -1111,6 +1227,10 @@ class ProdutosController extends Controller
             : null;
         $bump->update($validated);
 
+        $this->logSellerActivity(SellerActivityLogService::PRODUCT_ORDER_BUMP_UPDATED, $bump, [
+            'name' => $bump->title ?? $produto->name,
+        ]);
+
         return back()->with('success', 'Order bump atualizado.');
     }
 
@@ -1121,6 +1241,10 @@ class ProdutosController extends Controller
             abort(404);
         }
         $bump->delete();
+
+        $this->logSellerActivity(SellerActivityLogService::PRODUCT_ORDER_BUMP_DELETED, $bump, [
+            'name' => $bump->title ?? $produto->name,
+        ]);
 
         return back()->with('success', 'Order bump removido.');
     }
@@ -1145,6 +1269,10 @@ class ProdutosController extends Controller
         $validated['checkout_slug'] = SubscriptionPlan::generateUniqueCheckoutSlug();
         SubscriptionPlan::create($validated);
 
+        $this->logSellerActivity(SellerActivityLogService::PRODUCT_PLAN_CREATED, $produto, [
+            'name' => $validated['name'],
+        ]);
+
         return back()->with('success', 'Plano adicionado.');
     }
 
@@ -1164,6 +1292,10 @@ class ProdutosController extends Controller
         $validated['price'] = MoneyDecimal::toFloat($validated['price']);
         $plan->update($validated);
 
+        $this->logSellerActivity(SellerActivityLogService::PRODUCT_PLAN_UPDATED, $plan, [
+            'name' => $plan->name,
+        ]);
+
         return back()->with('success', 'Plano atualizado.');
     }
 
@@ -1174,6 +1306,10 @@ class ProdutosController extends Controller
             abort(404);
         }
         $plan->delete();
+
+        $this->logSellerActivity(SellerActivityLogService::PRODUCT_PLAN_DELETED, $plan, [
+            'name' => $plan->name,
+        ]);
 
         return back()->with('success', 'Plano removido.');
     }
@@ -1213,19 +1349,26 @@ class ProdutosController extends Controller
         ];
     }
 
-    private function authorizeProduct(Product $produto): void
+    private function authorizeProduct(Product $produto, bool $manage = true): void
     {
-        $tenantId = auth()->user()->tenant_id;
-        if ($produto->tenant_id !== $tenantId) {
-            abort(403);
+        $user = auth()->user();
+        $tenantId = $user->tenant_id;
+        if ((int) $produto->tenant_id === (int) $tenantId) {
+            if ($user->isTeam()) {
+                $allowed = app(TeamAccessService::class)->allowedProductIdsFor($user);
+                if (! in_array($produto->id, $allowed, true)) {
+                    abort(403);
+                }
+            }
+
+            return;
         }
 
-        if (auth()->user()->isTeam()) {
-            $allowed = app(TeamAccessService::class)->allowedProductIdsFor(auth()->user());
-            if (! in_array($produto->id, $allowed, true)) {
-                abort(403);
-            }
+        if (! $manage && ProductCoproducer::isActiveCoproducerOf((int) $user->id, (string) $produto->id)) {
+            return;
         }
+
+        abort(403);
     }
 
     /**
@@ -1278,6 +1421,8 @@ class ProdutosController extends Controller
             'slug' => $p->slug,
             'checkout_slug' => $p->checkout_slug,
             'description' => $p->description,
+            'category' => $p->category,
+            'category_label' => Product::categoryLabels()[$p->category] ?? null,
             'type' => $p->type,
             'type_label' => $typeLabel,
             'billing_type' => $billingType,
@@ -1331,6 +1476,7 @@ class ProdutosController extends Controller
             'apple_pay' => $request->boolean('payment_methods_enabled.apple_pay', true),
             'google_pay' => $request->boolean('payment_methods_enabled.google_pay', true),
             'open_finance' => $request->boolean('payment_methods_enabled.open_finance', true),
+            'paypal' => $request->boolean('payment_methods_enabled.paypal', true),
         ];
         $keysToCheck = ['pix', 'card', 'boleto', 'open_finance'];
         if ($billingType === Product::BILLING_SUBSCRIPTION && $basePlan) {
@@ -1341,6 +1487,9 @@ class ProdutosController extends Controller
         }
         if (! empty($global['google_pay'])) {
             $keysToCheck[] = 'google_pay';
+        }
+        if (! empty($global['paypal'])) {
+            $keysToCheck[] = 'paypal';
         }
         foreach (array_keys($pm) as $k) {
             if (empty($global[$k])) {
@@ -1407,6 +1556,11 @@ class ProdutosController extends Controller
                 $produto->save();
             }
 
+            $this->logSellerActivity(SellerActivityLogService::PRODUCT_CHECKOUT_SLUG_GENERATED, $produto, [
+                'name' => $produto->name,
+                'type' => 'main',
+            ]);
+
             return redirect()->to(route('produtos.edit', $produto).'?tab=checkout')->with('success', 'Link do checkout (produto base) gerado.');
         }
 
@@ -1417,6 +1571,11 @@ class ProdutosController extends Controller
                 $offer->save();
             }
 
+            $this->logSellerActivity(SellerActivityLogService::PRODUCT_CHECKOUT_SLUG_GENERATED, $produto, [
+                'name' => $produto->name,
+                'type' => 'offer',
+            ]);
+
             return redirect()->to(route('produtos.edit', $produto).'?tab=checkout')->with('success', 'Link do checkout da oferta gerado.');
         }
 
@@ -1425,6 +1584,11 @@ class ProdutosController extends Controller
             $plan->checkout_slug = SubscriptionPlan::generateUniqueCheckoutSlug();
             $plan->save();
         }
+
+        $this->logSellerActivity(SellerActivityLogService::PRODUCT_CHECKOUT_SLUG_GENERATED, $produto, [
+            'name' => $produto->name,
+            'type' => 'plan',
+        ]);
 
         return redirect()->to(route('produtos.edit', $produto).'?tab=checkout')->with('success', 'Link do checkout do plano gerado.');
     }
@@ -1447,12 +1611,92 @@ class ProdutosController extends Controller
             $offer = ProductOffer::where('id', $validated['offer_id'])->where('product_id', $produto->id)->firstOrFail();
             $offer->update(['checkout_slug' => null]);
 
+            $this->logSellerActivity(SellerActivityLogService::PRODUCT_CHECKOUT_SLUG_REMOVED, $produto, [
+                'name' => $produto->name,
+                'type' => 'offer',
+            ]);
+
             return redirect()->to(route('produtos.edit', $produto).'?tab=checkout')->with('success', 'Checkout exclusivo da oferta removido; ela passará a usar o checkout principal.');
         }
 
         $plan = SubscriptionPlan::where('id', $validated['plan_id'])->where('product_id', $produto->id)->firstOrFail();
         $plan->update(['checkout_slug' => null]);
 
+        $this->logSellerActivity(SellerActivityLogService::PRODUCT_CHECKOUT_SLUG_REMOVED, $produto, [
+            'name' => $produto->name,
+            'type' => 'plan',
+        ]);
+
         return redirect()->to(route('produtos.edit', $produto).'?tab=checkout')->with('success', 'Checkout exclusivo do plano removido; ele passará a usar o checkout principal.');
+    }
+
+    /**
+     * @return array{
+     *     card_show_installments: bool,
+     *     card_installments_gateway_name: string,
+     *     digital_wallets_at_checkout: bool,
+     *     platform_card_installments_enabled: bool,
+     *     platform_card_installments_max: int
+     * }
+     */
+    private function checkoutGatewayUiForTenant(mixed $tenantId): array
+    {
+        $platformEnabled = PlatformCardInstallments::globalEnabled();
+        $platformMax = PlatformCardInstallments::maxAllowed();
+        $tenantId = $tenantId !== null && $tenantId !== '' ? (int) $tenantId : null;
+        if ($tenantId !== null && $tenantId < 1) {
+            $tenantId = null;
+        }
+        if ($tenantId === null) {
+            return [
+                'card_show_installments' => false,
+                'card_installments_gateway_name' => '',
+                'digital_wallets_at_checkout' => false,
+                'platform_card_installments_enabled' => $platformEnabled,
+                'platform_card_installments_max' => $platformMax,
+            ];
+        }
+
+        $paymentService = app(PaymentService::class);
+        $cardOrder = $paymentService->getGatewayOrderForMethod($tenantId, 'card', null, null);
+        $credentialBySlug = GatewayCredential::connectedMapForPayment($tenantId);
+        $primaryConnectedCardSlug = null;
+        foreach ($cardOrder as $slug) {
+            if (! is_string($slug) || $slug === '' || ! $credentialBySlug->get($slug)) {
+                continue;
+            }
+            $gw = GatewayRegistry::get($slug);
+            if ($gw && in_array('card', $gw['methods'] ?? [], true)) {
+                $primaryConnectedCardSlug = $slug;
+                break;
+            }
+        }
+        $connectedCardDef = is_string($primaryConnectedCardSlug)
+            ? GatewayRegistry::get($primaryConnectedCardSlug)
+            : null;
+
+        return [
+            'card_show_installments' => $platformEnabled && CardInstallments::gatewaySupports($primaryConnectedCardSlug),
+            'card_installments_gateway_name' => is_array($connectedCardDef)
+                ? (string) ($connectedCardDef['name'] ?? $primaryConnectedCardSlug)
+                : '',
+            'digital_wallets_at_checkout' => $primaryConnectedCardSlug === 'cajupay',
+            'platform_card_installments_enabled' => $platformEnabled,
+            'platform_card_installments_max' => $platformMax,
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>|null  $input
+     */
+    private function applyCardInstallmentsToProduct(Product $product, ?array $input): void
+    {
+        $normalized = PlatformCardInstallments::normalizeSellerInput($input, (string) $product->billing_type);
+        if ($normalized === null) {
+            return;
+        }
+        $config = $product->checkout_config ?? [];
+        $config['card_installments'] = $normalized;
+        $product->update(['checkout_config' => $config]);
     }
 }

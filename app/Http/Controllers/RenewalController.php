@@ -6,6 +6,7 @@ use App\Events\BoletoGenerated;
 use App\Events\OrderPending;
 use App\Events\PixGenerated;
 use App\Gateways\GatewayRegistry;
+use App\Gateways\Versell\VersellCredentials;
 use App\Models\GatewayCredential;
 use App\Models\Order;
 use App\Models\Product;
@@ -13,7 +14,9 @@ use App\Models\Subscription;
 use App\Services\EfiPixRecorrenteService;
 use App\Services\MinimumChargeService;
 use App\Services\PaymentService;
+use App\Services\PlatformCardInstallments;
 use App\Services\SubscriptionRenewalService;
+use App\Services\Versell\VersellPixRecorrenteService;
 use App\Support\CheckoutCardContract;
 use App\Support\FakeConsumerData;
 use Illuminate\Http\RedirectResponse;
@@ -73,6 +76,10 @@ class RenewalController extends Controller
             $config = array_replace_recursive($config, $plan->checkout_config);
         }
         $cardInstallmentsConfig = $config['card_installments'] ?? ['enabled' => false, 'max' => 1];
+        $resolvedInstallments = PlatformCardInstallments::forProductConfig(
+            is_array($cardInstallmentsConfig) ? $cardInstallmentsConfig : [],
+            true
+        );
 
         $payload = [
             'token' => $token,
@@ -97,8 +104,8 @@ class RenewalController extends Controller
             'card_pagarme_public_key' => '',
             'card_pagarme_api_base_url' => rtrim((string) config('services.pagarme.base_url', 'https://api.pagar.me/core/v5'), '/'),
             'card_gateway_keys' => [],
-            'card_installments_enabled' => ! empty($cardInstallmentsConfig['enabled']),
-            'card_max_installments' => min(12, max(1, (int) ($cardInstallmentsConfig['max'] ?? 1))),
+            'card_installments_enabled' => $resolvedInstallments['enabled'],
+            'card_max_installments' => $resolvedInstallments['max'],
             'customer_cpf' => $subscription->user?->document ? preg_replace('/\D/', '', (string) $subscription->user->document) : '',
         ];
 
@@ -190,6 +197,20 @@ class RenewalController extends Controller
             if ($slug === 'pagarme') {
                 $payload['card_gateway_keys'][$slug]['api_base_url'] = rtrim((string) config('services.pagarme.base_url', 'https://api.pagar.me/core/v5'), '/');
             }
+            if ($slug === 'cielo') {
+                $payload['card_gateway_keys'][$slug]['sandbox'] = ! empty($creds['sandbox']);
+                $payload['card_gateway_keys'][$slug]['sop_configured'] = trim((string) ($creds['sop_client_id'] ?? '')) !== ''
+                    && trim((string) ($creds['sop_client_secret'] ?? '')) !== '';
+            }
+        }
+        foreach ($availablePaymentMethods as $m) {
+            if (($m['id'] ?? '') === 'card' && ($m['gateway_slug'] ?? '') === 'cielo') {
+                $cred = GatewayCredential::resolveForPayment($tenantId, 'cielo');
+                if ($cred) {
+                    $payload['card_gateway_slug'] = 'cielo';
+                }
+                break;
+            }
         }
     }
 
@@ -255,16 +276,32 @@ class RenewalController extends Controller
         ];
 
         if ($paymentMethod === 'pix_auto' && $subscription->gateway_subscription_id) {
-            $credential = GatewayCredential::resolveForPayment($tenantId, 'efi');
+            $pixAutoGateway = Order::query()
+                ->where('user_id', $subscription->user_id)
+                ->where('product_id', $subscription->product_id)
+                ->where('payment_method', 'pix_auto')
+                ->whereIn('gateway', ['efi', 'versell'])
+                ->orderByDesc('id')
+                ->value('gateway');
+            $pixAutoGateway = is_string($pixAutoGateway) && $pixAutoGateway !== '' ? $pixAutoGateway : 'efi';
+
+            $credential = GatewayCredential::resolveForPayment($tenantId, $pixAutoGateway);
             if ($credential) {
                 $credentials = $credential->getDecryptedCredentials();
-                if (! empty($credentials['certificate_path'])) {
+                $ready = $pixAutoGateway === 'versell'
+                    ? VersellCredentials::isCashInReady($credentials)
+                    : ! empty($credentials['certificate_path']);
+
+                if ($ready) {
                     $order = Order::create(array_merge($orderPayload, [
                         'status' => 'pending',
-                        'gateway' => 'efi',
+                        'gateway' => $pixAutoGateway,
                         'gateway_id' => null,
                         'payment_method' => 'pix_auto',
-                        'metadata' => ['checkout_payment_method' => 'pix_auto'],
+                        'metadata' => [
+                            'checkout_payment_method' => 'pix_auto',
+                            ($pixAutoGateway === 'versell' ? 'versell_pix_auto_id_rec' : 'efi_pix_auto_id_rec') => $subscription->gateway_subscription_id,
+                        ],
                     ]));
                     event(new OrderPending($order));
                     try {
@@ -277,7 +314,11 @@ class RenewalController extends Controller
                             'name' => $user->name ?? $user->email,
                             'email' => $user->email,
                         ];
-                        $service = new EfiPixRecorrenteService($credentials);
+                        if ($pixAutoGateway === 'versell') {
+                            $service = new VersellPixRecorrenteService($credentials);
+                        } else {
+                            $service = new EfiPixRecorrenteService($credentials);
+                        }
                         $service->createCobrancaRecorrente(
                             $idRec,
                             $amount,

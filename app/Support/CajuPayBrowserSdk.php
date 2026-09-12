@@ -36,4 +36,36 @@ final class CajuPayBrowserSdk
 
         return rtrim($request->getSchemeAndHttpHost(), '/').'/checkout/cajupay/sdk-api';
     }
+
+    /**
+     * Locale BCP-47 esperado pela sessão/SDK CajuPay (`pt-BR`, `en`, `auto`).
+     */
+    public static function localeFromCheckout(?string $checkoutLocale): string
+    {
+        $raw = str_replace('_', '-', trim((string) $checkoutLocale));
+        if ($raw === '') {
+            return 'pt-BR';
+        }
+        if (strcasecmp($raw, 'auto') === 0) {
+            return 'auto';
+        }
+
+        return substr($raw, 0, 16);
+    }
+
+    public static function partnerCheckoutUrl(?Request $request, ?string $checkoutSlug = null): string
+    {
+        $referer = trim((string) ($request?->headers->get('referer') ?? ''));
+        if ($referer !== '' && filter_var($referer, FILTER_VALIDATE_URL)) {
+            return $referer;
+        }
+        if (is_string($checkoutSlug) && $checkoutSlug !== '') {
+            try {
+                return url()->route('checkout.show', ['slug' => $checkoutSlug]);
+            } catch (\Throwable) {
+            }
+        }
+
+        return is_string($request?->url()) ? $request->url() : '';
+    }
 }

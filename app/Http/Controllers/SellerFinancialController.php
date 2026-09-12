@@ -11,6 +11,7 @@ use App\Services\EffectiveMerchantFees;
 use App\Services\EffectiveSettlementRules;
 use App\Services\MerchantWithdrawalService;
 use App\Services\Payout\PayoutUserSettings;
+use App\Services\SellerActivityLogService;
 use App\Services\Payout\PlatformPayoutGateway;
 use App\Services\Withdrawal\WithdrawalMinimumService;
 use App\Services\WithdrawalAutoPayoutService;
@@ -153,14 +154,17 @@ class SellerFinancialController extends Controller
         }
 
         $payoutGateway = PlatformPayoutGateway::activeSlug();
+        $subject = $user->kycSubjectUser();
+        // Versell exige chave + tipo + CPF/CNPJ do titular (mesmo formulário da CajuPay).
+        // BSPay/OnlyUp só precisam da chave (como Woovi).
         $payoutPixSetup = match ($payoutGateway) {
-            'cajupay' => 'label_and_key',
+            'cajupay', 'versell' => 'label_and_key',
             'spacepag' => 'key_and_receiver',
-            'woovi' => 'pix_key_only',
+            'woovi', 'bspay', 'onlyup' => 'pix_key_only',
             default => null,
         };
         $cajuPixOwnerDocumentHint = '';
-        if ($payoutGateway === 'cajupay') {
+        if (in_array($payoutGateway, ['cajupay', 'versell'], true)) {
             $cajuPixOwnerDocumentHint = BrazilianDocumentDigits::onlyDigits((string) ($subject->document ?? ''));
         }
 
@@ -189,7 +193,6 @@ class SellerFinancialController extends Controller
             ];
         }
 
-        $subject = $user->kycSubjectUser();
         $kycFinanceLocked = Schema::hasColumn('users', 'kyc_status')
             && ! $subject->isMerchantOperationallyApproved();
 
@@ -212,7 +215,26 @@ class SellerFinancialController extends Controller
             'kyc_rejection_reason' => Schema::hasColumn('users', 'kyc_rejection_reason')
                 ? ($subject->kyc_rejection_reason ?? null)
                 : null,
+            'kyc_identity_document_type' => Schema::hasColumn('users', 'identity_document_type')
+                ? ($subject->identity_document_type ?? null)
+                : null,
+            'kyc_company_legal_nature' => Schema::hasColumn('users', 'company_legal_nature')
+                ? ($subject->company_legal_nature ?? null)
+                : null,
+            'kyc_company_nature_suggestion' => (($subject->person_type ?? '') === 'pj' || \App\Support\PjConversion::isCollectingOrPending($subject))
+                ? \App\Support\KycRequiredDocuments::suggestCompanyNatureFromLookup($subject)
+                : null,
+            'kyc_uploaded_kinds' => Schema::hasTable('kyc_documents')
+                ? \App\Models\KycDocument::query()
+                    ->where('user_id', $subject->id)
+                    ->active()
+                    ->pluck('kind')
+                    ->values()
+                    ->all()
+                : [],
+            'kyc_requirements' => \App\Support\KycRequirementSettings::forSellerForm(),
             'kyc_finance_locked' => $kycFinanceLocked,
+            'pj_conversion' => \App\Support\PjConversion::forFrontend($subject),
             'registration_snapshot' => MerchantProfileSnapshot::forUser($subject, maskDocuments: false),
             'payout_settings' => is_array($user->payout_settings) ? $user->payout_settings : [],
             /** @var 'label_and_key'|'key_and_receiver'|null Fluxo de cadastro PIX sem expor adquirente ao vendedor */
@@ -250,7 +272,8 @@ class SellerFinancialController extends Controller
                 ->with('error', 'A plataforma ainda não configurou o recebimento automático de saques por PIX.');
         }
 
-        if ($slug === 'cajupay') {
+        // CajuPay e Versell: chave + tipo + documento do titular (Cash Out dict).
+        if (in_array($slug, ['cajupay', 'versell'], true)) {
             $validated = $request->validate([
                 'label' => ['required', 'string', 'max:120'],
                 'pix_key_type' => ['required', 'string', 'in:cpf,cnpj,email,phone,evp'],
@@ -302,6 +325,8 @@ class SellerFinancialController extends Controller
             $user->payout_settings = $settings;
             $user->save();
 
+            $this->logPayoutSettingsUpdated($user, $settings);
+
             return redirect()->route('financeiro.seller.index')->with('success', 'Dados para recebimento de saques atualizados.');
         }
 
@@ -331,10 +356,12 @@ class SellerFinancialController extends Controller
             $user->payout_settings = $settings;
             $user->save();
 
+            $this->logPayoutSettingsUpdated($user, $settings);
+
             return redirect()->route('financeiro.seller.index')->with('success', 'Dados para recebimento de saques salvos.');
         }
 
-        if ($slug === 'woovi') {
+        if (in_array($slug, ['woovi', 'bspay', 'onlyup'], true)) {
             $validated = $request->validate([
                 'pix_key' => ['required', 'string', 'max:120'],
                 'pix_key_type' => ['required', 'string', 'in:cpf,cnpj,email,phone,evp'],
@@ -348,10 +375,14 @@ class SellerFinancialController extends Controller
             }
             $settings['payout_pix_key'] = $pk;
             $settings['payout_pix_key_type'] = $pkt;
-            $settings['woovi_pix_key'] = $pk;
-            $settings['woovi_pix_key_type'] = $pkt;
+            if ($slug === 'woovi') {
+                $settings['woovi_pix_key'] = $pk;
+                $settings['woovi_pix_key_type'] = $pkt;
+            }
             $user->payout_settings = $settings;
             $user->save();
+
+            $this->logPayoutSettingsUpdated($user, $settings);
 
             return redirect()->route('financeiro.seller.index')->with('success', 'Chave PIX para saques salva.');
         }
@@ -393,7 +424,7 @@ class SellerFinancialController extends Controller
         }
 
         $slug = PlatformPayoutGateway::activeSlug();
-        if ($slug === 'cajupay') {
+        if (in_array($slug, ['cajupay', 'versell'], true)) {
             $settings = is_array($user->payout_settings) ? $user->payout_settings : [];
             $pixKey = PayoutUserSettings::cajuPixKey($settings);
             $pixKeyType = PayoutUserSettings::cajuPixKeyType($settings);
@@ -422,7 +453,7 @@ class SellerFinancialController extends Controller
                 ]);
             }
         }
-        if ($slug === 'woovi') {
+        if (in_array($slug, ['woovi', 'bspay', 'onlyup'], true)) {
             $settings = is_array($user->payout_settings) ? $user->payout_settings : [];
             if (PayoutUserSettings::pixKey($settings) === '' || PayoutUserSettings::pixKeyType($settings) === '') {
                 throw ValidationException::withMessages([
@@ -530,5 +561,36 @@ class SellerFinancialController extends Controller
 
             return $row;
         }, $rows);
+    }
+
+    /**
+     * @param  array<string, mixed>  $settings
+     */
+    private function logPayoutSettingsUpdated(User $user, array $settings): void
+    {
+        $pixKey = PayoutUserSettings::pixKey($settings);
+        if ($pixKey === '') {
+            $pixKey = PayoutUserSettings::cajuPixKey($settings);
+        }
+        $pixKeyType = PayoutUserSettings::pixKeyType($settings);
+        if ($pixKeyType === '') {
+            $pixKeyType = PayoutUserSettings::cajuPixKeyType($settings);
+        }
+
+        SellerActivityLogService::record(
+            actor: $user,
+            action: SellerActivityLogService::PAYOUT_SETTINGS_UPDATED,
+            targetType: User::class,
+            targetId: $user->id,
+            metadata: array_filter([
+                'pix_key_type' => $pixKeyType !== '' ? $pixKeyType : null,
+                'pix_key_masked' => SellerActivityLogService::maskValue($pixKey),
+                'label' => PayoutUserSettings::pixLabel($settings) ?: null,
+                'receiver_name' => isset($settings['receiver_name']) ? trim((string) $settings['receiver_name']) : null,
+                'receiver_document_masked' => SellerActivityLogService::maskValue(
+                    isset($settings['receiver_document']) ? (string) $settings['receiver_document'] : null
+                ),
+            ], fn ($v) => $v !== null && $v !== ''),
+        );
     }
 }

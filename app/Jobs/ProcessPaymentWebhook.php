@@ -18,6 +18,8 @@ use App\Support\CajuPayCheckoutMetadata;
 use App\Support\GatewayPaymentCredentials;
 use App\Support\MercadoPagoCredentialCandidates;
 use App\Services\EfiPixRecorrenteService;
+use App\Services\Versell\VersellPixRecorrenteService;
+use App\Gateways\Versell\VersellCredentials;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Bus\Queueable;
@@ -113,7 +115,7 @@ class ProcessPaymentWebhook implements ShouldQueue
         $isRefundEvent = in_array($this->event, ['order.refunded', 'payment.refunded'], true)
             || ($this->gatewaySlug === 'cajupay' && in_array($this->event, ['checkout.payment.refunded', 'card.payment.refunded', 'pix.payment.refunded'], true));
         if ($isRefundEvent && in_array($this->status, ['refunded', 'refund'], true)) {
-            if (in_array($order->status, ['completed', 'disputed'], true)) {
+            if (in_array($order->status, ['completed', 'disputed', 'refund_pending'], true)) {
                 $skipReconfirmRefund = $this->gatewaySlug === 'cajupay'
                     && in_array($this->event, ['checkout.payment.refunded', 'card.payment.refunded', 'pix.payment.refunded'], true);
                 if (! $skipReconfirmRefund && ! $this->reconfirmGatewayStatus($order, ['cancelled'])) {
@@ -216,6 +218,9 @@ class ProcessPaymentWebhook implements ShouldQueue
         ], true)) {
             return true;
         }
+        if ($this->gatewaySlug === 'paypal' && $this->event === 'PAYMENT.CAPTURE.COMPLETED') {
+            return true;
+        }
 
         return false;
     }
@@ -296,12 +301,12 @@ class ProcessPaymentWebhook implements ShouldQueue
             if ($apiStatus !== 'paid' && $trustedCajuCheckoutWebhook) {
                 $apiStatus = 'paid';
             }
-            if ($apiStatus !== 'paid' && $this->gatewaySlug === 'mercadopago' && $this->isTrustedMercadoPagoSource()) {
-                // Só força paid quando a API não respondeu (null). pending/in_process = race → retry.
-                if ($apiStatus === null && ($this->status === 'paid' || in_array($this->event, ['payment.updated', 'payment.created', 'order.paid'], true))) {
-                    $apiStatus = 'paid';
-                }
+            if ($apiStatus !== 'paid' && $this->isTrustedBspayPaidWebhook()) {
+                // cashin.confirmed é a fonte de verdade; o extrato list da BSPay frequentemente não devolve a linha.
+                $apiStatus = 'paid';
             }
+            // Mercado Pago: NUNCA liberar só pelo webhook/evento. Fonte de verdade = GET /v1/payments/{id}
+            // (status approved). Se a API falhar (null) ou ainda estiver pending → retry; rejected → não liberar.
             if ($apiStatus !== 'paid') {
                 Log::warning('ProcessPaymentWebhook: paid branch aborted (gateway reconfirm not paid)', [
                     'order_id' => $order->id,
@@ -315,10 +320,14 @@ class ProcessPaymentWebhook implements ShouldQueue
                 if ($this->shouldRetryMercadoPagoReconfirm($apiStatus)) {
                     $this->releasePaidBranchForRetry(
                         $this->mercadoPagoReconfirmDelaySeconds(),
-                        'reconfirm_pending',
+                        $apiStatus === null ? 'reconfirm_api_unavailable' : 'reconfirm_pending',
                         $order,
                         $apiStatus
                     );
+                } elseif ($this->gatewaySlug === 'mercadopago' && $apiStatus === 'cancelled' && $order->status === 'pending') {
+                    // rejected/cancelled confirmado na API — não liberar; espelha a carteira do comprador.
+                    $order->update(['status' => 'rejected']);
+                    event(new OrderRejected($order));
                 } elseif ($this->gatewaySlug === 'linaopenx' && ($apiStatus === null || $apiStatus === 'pending')) {
                     $this->releasePaidBranchForRetry(10, 'lina_reconfirm_pending', $order, $apiStatus);
                 }
@@ -359,6 +368,8 @@ class ProcessPaymentWebhook implements ShouldQueue
                         $metadata = $order->metadata ?? [];
                         if (isset($metadata['efi_pix_auto_id_rec']) && $this->gatewaySlug === 'efi') {
                             $idRec = $metadata['efi_pix_auto_id_rec'];
+                        } elseif (isset($metadata['versell_pix_auto_id_rec']) && $this->gatewaySlug === 'versell') {
+                            $idRec = $metadata['versell_pix_auto_id_rec'];
                         } elseif (isset($metadata['pushinpay_subscription_id']) && $this->gatewaySlug === 'pushinpay') {
                             $idRec = $metadata['pushinpay_subscription_id'];
                         }
@@ -376,6 +387,8 @@ class ProcessPaymentWebhook implements ShouldQueue
 
                         if ($idRec !== null && $this->gatewaySlug === 'efi') {
                             $this->createEfiPixAutoCobrForNextPeriod($order, $subscription, $plan);
+                        } elseif ($idRec !== null && $this->gatewaySlug === 'versell') {
+                            $this->createVersellPixAutoCobrForNextPeriod($order, $subscription, $plan);
                         }
                     }
                 }
@@ -387,8 +400,8 @@ class ProcessPaymentWebhook implements ShouldQueue
     }
 
     /**
-     * Mercado Pago PIX: payment.created costuma chegar com status ainda pending na API.
-     * Sem retry o pedido fica pendente até aprovação manual / reconcile.
+     * Mercado Pago: payment.created costuma chegar com status ainda pending na API.
+     * Também retenta quando a consulta à API falhou (null) — nunca liberar sem approved.
      */
     private function shouldRetryMercadoPagoReconfirm(?string $apiStatus): bool
     {
@@ -398,6 +411,11 @@ class ProcessPaymentWebhook implements ShouldQueue
 
         if (! $this->isTrustedMercadoPagoSource()) {
             return false;
+        }
+
+        // null = API indisponível / credencial errada — retry, não liberar.
+        if ($apiStatus === null) {
+            return true;
         }
 
         return in_array($apiStatus, ['pending', 'in_process', 'in_mediation'], true);
@@ -460,6 +478,14 @@ class ProcessPaymentWebhook implements ShouldQueue
             'reconcile_mercadopago',
             'order_status_poll',
         ], true);
+    }
+
+    private function isTrustedBspayPaidWebhook(): bool
+    {
+        return $this->gatewaySlug === 'bspay'
+            && ($this->payload['webhook_source'] ?? '') === 'bspay_webhook'
+            && $this->event === 'order.paid'
+            && $this->status === 'paid';
     }
 
     private function fetchGatewayTransactionStatus(Order $order): ?string
@@ -595,16 +621,60 @@ class ProcessPaymentWebhook implements ShouldQueue
         }
     }
 
+    private function createVersellPixAutoCobrForNextPeriod(Order $order, Subscription $subscription, $plan): void
+    {
+        $credential = GatewayCredential::resolveForPayment($order->tenant_id, 'versell');
+        if (! $credential) {
+            return;
+        }
+        $credentials = $credential->getDecryptedCredentials();
+        if (! VersellCredentials::isCashInReady($credentials)) {
+            return;
+        }
+
+        $idRec = $subscription->gateway_subscription_id;
+        if ($idRec === null || $idRec === '') {
+            return;
+        }
+
+        $amount = (float) $plan->price;
+        $periodEnd = $subscription->current_period_end;
+        $dataDeVencimento = $periodEnd ? $periodEnd->format('Y-m-d') : now()->addMonth()->format('Y-m-d');
+
+        $devedor = [
+            'name' => $order->user ? $order->user->name : null ?? $order->email,
+            'email' => $order->email,
+        ];
+
+        try {
+            $service = new VersellPixRecorrenteService($credentials);
+            $service->createCobrancaRecorrente(
+                $idRec,
+                $amount,
+                $dataDeVencimento,
+                null,
+                $devedor,
+                'Renovação assinatura - Pedido #'.$order->id
+            );
+        } catch (\Throwable $e) {
+            Log::warning('ProcessPaymentWebhook: falha ao criar cobr PIX automático Versell', [
+                'order_id' => $order->id,
+                'idRec' => $idRec,
+                'message' => $e->getMessage(),
+            ]);
+        }
+    }
+
     private function inferPaymentMethodForOrder(Order $order): string
     {
         $meta = is_array($order->metadata ?? null) ? $order->metadata : [];
         $m = $meta['checkout_payment_method'] ?? null;
-        if (in_array($m, ['pix', 'card', 'boleto', 'pix_auto', 'open_finance'], true)) {
+        if (in_array($m, ['pix', 'card', 'boleto', 'pix_auto', 'open_finance', 'paypal'], true)) {
             return $m;
         }
         $g = (string) ($order->gateway ?? '');
-        if ($g === 'stripe') {
-            return 'card';
+        if ($g === 'stripe' || $g === 'paypal') {
+            return $g === 'paypal' ? 'paypal' : 'card';
         }
         if ($g === 'linaopenx') {
             return 'open_finance';

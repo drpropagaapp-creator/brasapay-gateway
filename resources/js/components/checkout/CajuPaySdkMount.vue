@@ -1,6 +1,6 @@
 <script setup>
 import { onBeforeUnmount, ref, watch, computed, defineExpose } from 'vue';
-import { mountCajuPayCheckout, confirmCajuPayController, cajupayDefaultMethodFor, setCajuPayPayer } from '@/composables/useCajuPaySdk';
+import { mountCajuPayCheckout, confirmCajuPayController, cajupayDefaultMethodFor, setCajuPayPayer, readCajuPayInstallments } from '@/composables/useCajuPaySdk';
 
 const props = defineProps({
     paymentMethod: { type: String, required: true },
@@ -11,6 +11,7 @@ const props = defineProps({
     containerId: { type: String, default: 'cajupay-method' },
     /** Apple/Google Pay: chamado imediatamente antes do 1º `confirm()` do SDK. */
     beforeWalletPrime: { type: Function, default: null },
+    locale: { type: String, default: '' },
 });
 
 const error = ref('');
@@ -18,6 +19,7 @@ const controller = ref(null);
 const mountedKey = ref('');
 const cardFieldReady = ref(false);
 const cardPrimingInFlight = ref(false);
+const selectedInstallments = ref(1);
 /** Invalida mounts obsoletos quando token/baseUrl/método mudam durante await assíncrono. */
 let mountGeneration = 0;
 
@@ -32,7 +34,7 @@ function buildMountKey() {
     const base = (props.apiBaseUrl || '').trim();
     const method = props.paymentMethod || '';
 
-    return `${token}|${base}|${method}`;
+    return `${token}|${base}|${method}|${(props.locale || '').trim()}`;
 }
 
 function syncPayerFromProps() {
@@ -54,6 +56,7 @@ function destroyController() {
     mountedKey.value = '';
     cardFieldReady.value = false;
     cardPrimingInFlight.value = false;
+    selectedInstallments.value = 1;
     const el = typeof document !== 'undefined' ? document.querySelector(containerSelector.value) : null;
     if (el) {
         try {
@@ -67,6 +70,31 @@ function onSdkStatus(event) {
     if (phase === 'awaiting_card_details' || (isWalletMethod.value && phase === 'awaiting_wallet_confirmation')) {
         cardFieldReady.value = true;
     }
+    const fromEvent = Number(event?.session?.installments ?? event?.installments ?? 0);
+    if (fromEvent >= 1) {
+        selectedInstallments.value = Math.min(12, fromEvent);
+    }
+}
+
+function onSdkSuccess(event) {
+    const fromEvent = Number(event?.session?.installments ?? event?.installments ?? 0);
+    if (fromEvent >= 1) {
+        selectedInstallments.value = Math.min(12, fromEvent);
+    }
+}
+
+function getInstallments() {
+    const fromDom = readCajuPayInstallments(containerSelector.value);
+    if (fromDom > 1) {
+        selectedInstallments.value = fromDom;
+
+        return fromDom;
+    }
+    if (selectedInstallments.value > 1) {
+        return selectedInstallments.value;
+    }
+
+    return fromDom;
 }
 
 async function onCardMountReady() {
@@ -133,7 +161,9 @@ async function tryMount() {
             defaultMethod,
             preparePaymentUIOnMount: defaultMethod === 'card',
             initialPayer: props.initialPayer,
+            locale: (props.locale || '').trim(),
             onStatus: onSdkStatus,
+            onSuccess: onSdkSuccess,
         });
 
         if (generation !== mountGeneration) {
@@ -174,7 +204,7 @@ async function tryMount() {
 }
 
 watch(
-    () => [props.sessionToken, props.apiBaseUrl, props.paymentMethod],
+    () => [props.sessionToken, props.apiBaseUrl, props.paymentMethod, props.locale],
     () => {
         void tryMount();
     },
@@ -234,6 +264,7 @@ defineExpose({
     isReady: () => !!controller.value,
     setPayer,
     isCardFieldReady: () => cardFieldReady.value,
+    getInstallments,
 });
 </script>
 

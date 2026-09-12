@@ -82,6 +82,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'platform.admin' => \App\Http\Middleware\EnsurePlatformAdmin::class,
             'customer.panel' => \App\Http\Middleware\EnsureCustomerPanel::class,
             'physical.products' => \App\Http\Middleware\EnsurePhysicalProductsEnabled::class,
+            'seller.integration' => \App\Http\Middleware\EnsureSellerIntegrationEnabled::class,
             'installer.access' => \App\Http\Middleware\EnsureInstallerAccess::class,
             'mp.balance.tool' => \App\Http\Middleware\EnsureMercadoPagoBalanceToolEnabled::class,
             'stacker.license' => \App\Http\Middleware\EnsureStackerLicense::class,
@@ -199,18 +200,24 @@ return Application::configure(basePath: dirname(__DIR__))
         $schedule->job(new \App\Jobs\SendSubscriptionRemindersJob)->dailyAt('09:00');
         $schedule->job(new \App\Jobs\ChargeDueSubscriptionsWithSavedCardJob)->dailyAt('07:00');
         $schedule->command('subscriptions:expire-due')->dailyAt('00:10');
+        $schedule->command('coproduction:expire')->hourly();
         $schedule->command('checkout:fire-abandoned-cart-webhooks --minutes=10')->everyMinute();
         $schedule->command('integrax:process-cart-recovery')->everyMinute();
         $schedule->command('email-campaign:process')->everyMinute();
         $schedule->command('payments:reconcile-pending --limit=200 --days=45 --min-age-minutes=0')->everyTwoMinutes();
         $schedule->command('payments:reconcile-mercadopago --limit=100 --days=45 --min-age-minutes=0')->everyMinute();
         $schedule->command('payments:reconcile-pending --source=pixgo --limit=100 --days=1 --min-age-minutes=1')->everyMinute();
+        $schedule->command('payments:reconcile-cajupay-refunds --limit=100')->everyMinute();
         $schedule->command('withdrawals:reconcile-spacepag --limit=80 --min-age-minutes=0')->everyMinute();
         $schedule->command('withdrawals:reconcile-woovi --limit=80 --min-age-minutes=0')->everyMinute();
+        $schedule->command('withdrawals:reconcile-bspay --limit=80 --min-age-minutes=0')->everyMinute();
         $schedule->command('withdrawals:reconcile-cajupay --limit=80 --min-age-minutes=0')->everyTwoMinutes();
+        $schedule->command('withdrawals:reconcile-versell --limit=80 --min-age-minutes=0')->everyTwoMinutes();
+        $schedule->command('versell:reconcile-infractions --hours=72')->everyFiveMinutes()->withoutOverlapping(10);
         $schedule->command('settlement:release')->everyFiveMinutes();
         $schedule->command('schedule:heartbeat')->everyMinute();
         $schedule->command('push:process-schedule')->everyMinute();
+        $schedule->command('backup:database')->everyMinute()->withoutOverlapping(30);
         $schedule->command('conquistas:reconcile')->dailyAt('03:30');
         $schedule->command('metrics:aggregate-daily --sync')->dailyAt('01:15');
         // Logs: daily + a cada 6h (evita flood diurno encher disco antes do prune noturno).
@@ -218,6 +225,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $schedule->command($logsPrune)->dailyAt('03:45');
         $schedule->command($logsPrune)->everySixHours();
         $schedule->command('queue:prune-failed --hours=168')->dailyAt('04:00');
+        $schedule->command('inbound-webhooks:prune --days=14')->dailyAt('04:15');
         $schedule->job(new \App\Jobs\QueueHeartbeatJob)->everyMinute();
     })
     ->create();

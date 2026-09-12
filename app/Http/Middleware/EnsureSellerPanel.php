@@ -73,6 +73,7 @@ class EnsureSellerPanel
     {
         return $request->routeIs(
             'kyc.upload',
+            'kyc.preferences',
             'kyc.document',
             'kyc.finalize',
             'kyc.store',
@@ -84,6 +85,9 @@ class EnsureSellerPanel
             'profile.update-username',
             'profile.update-password',
             'profile.push-preferences',
+            'profile.pj-conversion.start',
+            'profile.pj-conversion.lookup',
+            'profile.pj-conversion.cancel',
             'verification.notice',
             'verification.resend',
         );

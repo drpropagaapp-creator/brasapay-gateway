@@ -2,12 +2,9 @@
 
 namespace App\Jobs;
 
-use App\Gateways\CajuPay\CajuPayDriver;
-use App\Gateways\GatewayRegistry;
-use App\Models\GatewayCredential;
 use App\Models\Order;
-use App\Services\PlatformOrderAdminService;
-use App\Support\CajuPayPaymentId;
+use App\Services\CajuPay\CajuPayPixRefundConfirmationService;
+use App\Services\SellerActivityLogService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -28,7 +25,7 @@ class PollCajuPayPixRefundJob implements ShouldQueue
         public int $attempt = 1
     ) {}
 
-    public function handle(): void
+    public function handle(CajuPayPixRefundConfirmationService $confirmation): void
     {
         $order = Order::query()->find($this->orderId);
         if ($order === null || $order->status === 'refunded') {
@@ -36,56 +33,57 @@ class PollCajuPayPixRefundJob implements ShouldQueue
         }
 
         $meta = is_array($order->metadata) ? $order->metadata : [];
-        if (empty($meta['cajupay_pix_refund_pending'])) {
-            return;
-        }
-
-        $paymentId = CajuPayPaymentId::fromOrder($order);
-        if ($paymentId === null) {
-            return;
-        }
-
-        $account = app(CajuPayAccountResolver::class)->resolveForOrder($order);
-        if (! $account) {
-            return;
-        }
-
-        $driver = GatewayRegistry::driver('cajupay');
-        if (! $driver instanceof CajuPayDriver) {
+        $awaiting = $order->status === 'refund_pending' || ! empty($meta['cajupay_pix_refund_pending']);
+        if (! $awaiting) {
             return;
         }
 
         try {
-            $body = $driver->getPixRefund($account->getDecryptedCredentials(), $paymentId);
-        } catch (\Throwable $e) {
-            Log::debug('PollCajuPayPixRefundJob: consulta falhou', ['order_id' => $order->id, 'message' => $e->getMessage()]);
-            if ($this->attempt < 24) {
-                self::dispatch($this->orderId, $this->attempt + 1)->delay(now()->addSeconds(5));
+            if ($confirmation->confirmIfRemoteCancelled($order)) {
+                return;
             }
+        } catch (\Throwable $e) {
+            Log::debug('PollCajuPayPixRefundJob: confirmação falhou', [
+                'order_id' => $order->id,
+                'message' => $e->getMessage(),
+            ]);
 
-            return;
+            if ($this->attempt >= 24) {
+                $this->logUnconfirmed(
+                    $order,
+                    'A adquirente não recebeu o evento de reembolso (falha de comunicação). Detalhe: '.$e->getMessage(),
+                    'acquirer_unreachable'
+                );
+
+                return;
+            }
         }
 
-        $status = strtolower(trim((string) ($body['status'] ?? '')));
-        if ($status === 'devolvido') {
-            unset($meta['cajupay_pix_refund_pending']);
-            $meta['cajupay_pix_refund_status'] = 'devolvido';
-            $order->update(['metadata' => $meta]);
-            PlatformOrderAdminService::applyGatewayRefund($order->fresh());
-
-            return;
-        }
-
-        if (in_array($status, ['submitted', 'pending_balance'], true) && $this->attempt < 24) {
+        if ($this->attempt < 24) {
             self::dispatch($this->orderId, $this->attempt + 1)->delay(now()->addSeconds(5));
 
             return;
         }
 
-        if ($status === 'failed') {
-            unset($meta['cajupay_pix_refund_pending']);
-            $meta['cajupay_pix_refund_status'] = 'failed';
-            $order->update(['metadata' => $meta]);
-        }
+        $this->logUnconfirmed(
+            $order,
+            'A adquirente não recebeu ou não confirmou o evento de reembolso após várias consultas.',
+            'acquirer_unconfirmed'
+        );
+    }
+
+    private function logUnconfirmed(Order $order, string $reason, string $failureKind): void
+    {
+        SellerActivityLogService::recordRefundFailure(
+            actor: null,
+            order: $order,
+            reason: $reason,
+            extra: [
+                'failure_kind' => $failureKind,
+                'gateway_status' => 'unconfirmed',
+                'poll_attempts' => $this->attempt,
+            ],
+            source: 'job',
+        );
     }
 }

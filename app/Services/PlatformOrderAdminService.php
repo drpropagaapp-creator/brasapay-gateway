@@ -64,20 +64,55 @@ class PlatformOrderAdminService
         }
 
         DB::transaction(function () use ($order, $manualRefundMeta, $debitReason) {
-            self::reverseSaleCreditIfExists($order, $debitReason);
-            $meta = is_array($order->metadata) ? $order->metadata : [];
-            if ($manualRefundMeta !== null) {
-                $meta['manual_refund'] = $manualRefundMeta;
-            }
-            $order->update([
-                'status' => 'refunded',
-                'metadata' => $meta,
-            ]);
-            AffiliateCommissionRecorder::markRefundedForOrder($order->fresh());
-            ReferralCommissionRecorder::reverseForOrder($order->fresh());
-            $order->fresh()?->revokePurchasedProductAccessFromBuyer();
-            event(new OrderRefunded($order->fresh()));
+            self::applyLocalRefundEffects($order, $manualRefundMeta, $debitReason, 'refunded', fireRefundedEvent: true);
         });
+    }
+
+    /**
+     * Caju aceitou o pedido (submitted/pending_balance): debita a carteira agora e deixa o pedido
+     * em "reembolso em andamento" até o webhook/polling confirmar.
+     *
+     * @param  array<string, mixed>|null  $manualRefundMeta
+     */
+    public static function beginPendingGatewayRefund(
+        Order $order,
+        ?array $manualRefundMeta = null,
+        string $debitReason = 'seller_manual_refund',
+    ): void {
+        if (! in_array($order->status, ['completed', 'disputed'], true)) {
+            throw new InvalidArgumentException('Só é possível reembolsar pedidos pagos ou em MED.');
+        }
+
+        DB::transaction(function () use ($order, $manualRefundMeta, $debitReason) {
+            self::applyLocalRefundEffects($order, $manualRefundMeta, $debitReason, 'refund_pending', fireRefundedEvent: false);
+        });
+    }
+
+    /**
+     * @param  array<string, mixed>|null  $manualRefundMeta
+     */
+    private static function applyLocalRefundEffects(
+        Order $order,
+        ?array $manualRefundMeta,
+        string $debitReason,
+        string $status,
+        bool $fireRefundedEvent,
+    ): void {
+        self::reverseSaleCreditIfExists($order, $debitReason);
+        $meta = is_array($order->metadata) ? $order->metadata : [];
+        if ($manualRefundMeta !== null) {
+            $meta['manual_refund'] = $manualRefundMeta;
+        }
+        $order->update([
+            'status' => $status,
+            'metadata' => $meta,
+        ]);
+        AffiliateCommissionRecorder::markRefundedForOrder($order->fresh());
+        ReferralCommissionRecorder::reverseForOrder($order->fresh());
+        $order->fresh()?->revokePurchasedProductAccessFromBuyer();
+        if ($fireRefundedEvent) {
+            event(new OrderRefunded($order->fresh()));
+        }
     }
 
     /**
@@ -215,6 +250,13 @@ class PlatformOrderAdminService
             return;
         }
 
+        if (WalletTransaction::query()
+            ->where('order_id', $order->id)
+            ->where('type', WalletTransaction::TYPE_DEBIT_REFUND)
+            ->exists()) {
+            return;
+        }
+
         $lines = WalletTransaction::query()
             ->where('order_id', $order->id)
             ->whereIn('type', [WalletTransaction::TYPE_CREDIT_SALE, WalletTransaction::TYPE_CREDIT_SALE_PENDING])
@@ -282,13 +324,9 @@ class PlatformOrderAdminService
                 $totalFee += (float) $line->amount_fee;
 
                 if ($line->type === WalletTransaction::TYPE_CREDIT_SALE_PENDING) {
-                    $pending = (float) ($wallet->{$pendCol} ?? 0);
-                    $take = min($n, max(0, $pending));
-                    $wallet->{$pendCol} = round($pending - $take, 2);
+                    self::takeFromWalletBucket($wallet, $pendCol, $availCol, $n);
                 } elseif ($line->type === WalletTransaction::TYPE_CREDIT_SALE) {
-                    $available = (float) ($wallet->{$availCol} ?? 0);
-                    $take = min($n, max(0, $available));
-                    $wallet->{$availCol} = round($available - $take, 2);
+                    self::takeFromWalletBucket($wallet, $availCol, $pendCol, $n);
                 }
             }
 
@@ -427,6 +465,16 @@ class PlatformOrderAdminService
             return;
         }
 
+        if ($order->status === 'refund_pending') {
+            DB::transaction(function () use ($order) {
+                $order->update(['status' => 'refunded']);
+                self::ensureApprovedRefundRequestForGateway($order->fresh());
+            });
+            event(new OrderRefunded($order->fresh()));
+
+            return;
+        }
+
         if (! in_array($order->status, ['completed', 'disputed'], true)) {
             return;
         }
@@ -467,6 +515,24 @@ class PlatformOrderAdminService
             'gateway_refund_status' => 'gateway_ok',
             'resolved_at' => now(),
         ]);
+    }
+
+    private static function takeFromWalletBucket(
+        TenantWallet $wallet,
+        string $primaryCol,
+        string $secondaryCol,
+        float $amount,
+    ): void {
+        $remaining = $amount;
+        $primary = (float) ($wallet->{$primaryCol} ?? 0);
+        $takePrimary = min($remaining, max(0, $primary));
+        $wallet->{$primaryCol} = round($primary - $takePrimary, 2);
+        $remaining = round($remaining - $takePrimary, 2);
+        if ($remaining > 0.0001) {
+            $secondary = (float) ($wallet->{$secondaryCol} ?? 0);
+            $takeSecondary = min($remaining, max(0, $secondary));
+            $wallet->{$secondaryCol} = round($secondary - $takeSecondary, 2);
+        }
     }
 
     private static function recalcWalletAggregates(TenantWallet $wallet): void

@@ -57,11 +57,18 @@ function formatDate(value) {
 }
 
 function statusLabel(status) {
+    if (props.venda?.status_label) {
+        return props.venda.status_label;
+    }
+    if (status === 'refunded' && props.venda?.manual_refund?.offline) {
+        return 'Reembolso manual';
+    }
     const map = {
         completed: 'Pago',
         pending: 'Pendente',
         disputed: 'MED',
         cancelled: 'Cancelado',
+        refund_pending: 'Aguardando reembolso',
         refunded: 'Reembolsado',
     };
     return map[status] ?? status ?? '–';
@@ -212,7 +219,9 @@ const shippingDeliveryLabel = computed(() => {
                                 v-if="venda.status === 'refunded' && venda.manual_refund"
                                 class="space-y-2 rounded-xl border border-red-200 bg-red-50/80 px-3 py-3 dark:border-red-900/50 dark:bg-red-950/30"
                             >
-                                <p class="text-xs font-medium uppercase tracking-wide text-red-800 dark:text-red-200">Reembolso</p>
+                                <p class="text-xs font-medium uppercase tracking-wide text-red-800 dark:text-red-200">
+                                    {{ venda.manual_refund.offline ? 'Reembolso manual' : 'Reembolso' }}
+                                </p>
                                 <p class="text-sm text-red-900 dark:text-red-100">
                                     Por: <strong>{{ refundAuthorLabel(venda.manual_refund) }}</strong>
                                     <span v-if="venda.manual_refund.initiated_by_name">
@@ -295,16 +304,20 @@ const shippingDeliveryLabel = computed(() => {
                             <div class="space-y-1">
                                 <p class="text-xs font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Método de pagamento</p>
                                 <p class="text-sm text-zinc-900 dark:text-white">{{ venda.gateway_label ?? '–' }}</p>
+                            </div>
+                            <div class="space-y-1">
+                                <p class="text-xs font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Recebedor</p>
+                                <p class="text-sm text-zinc-900 dark:text-white">{{ venda.recebedor || '—' }}</p>
                                 <p
                                     v-if="venda.cajupay_account_badge"
                                     class="mt-1 inline-flex rounded-full bg-sky-100 px-2 py-0.5 text-xs font-medium text-sky-900 dark:bg-sky-900/40 dark:text-sky-100"
                                 >
-                                    CajuPay: {{ venda.cajupay_account_badge }}
+                                    {{ venda.cajupay_account_badge }}
                                 </p>
                             </div>
                             <div class="space-y-1">
                                 <p class="text-xs font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Parcelas</p>
-                                <p class="text-sm text-zinc-900 dark:text-white">1</p>
+                                <p class="text-sm text-zinc-900 dark:text-white">{{ venda.installments > 1 ? venda.installments + 'x' : '1x' }}</p>
                             </div>
                             <div class="space-y-1">
                                 <p class="text-xs font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Recorrência</p>

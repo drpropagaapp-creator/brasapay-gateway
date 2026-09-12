@@ -18,6 +18,7 @@ import {
     AlertTriangle,
     Banknote,
     CircleDollarSign,
+    FileSpreadsheet,
     Code2,
     Trophy,
     BadgeCheck,
@@ -25,13 +26,16 @@ import {
     Puzzle,
     Plug,
     Gift,
+    ScrollText,
+    Logs,
     ContactRound,
     ChartNoAxesCombined,
+    Webhook,
 } from 'lucide-vue-next';
 import { useSidebar } from '@/composables/useSidebar';
 
 const page = usePage();
-const { isExpanded, isMobileOpen, toggleSidebar, isMobile } = useSidebar();
+const { isExpanded, isMobileOpen, toggleSidebar, isMobile, closeMobileSidebarIfOpen } = useSidebar();
 
 const showText = () => isExpanded.value || isMobileOpen.value;
 
@@ -71,7 +75,7 @@ function badgeLabel(count) {
 
 /**
  * Ordem pensada no fluxo do operador:
- * visão geral → pessoas → vendas/risco → dinheiro → crescimento → sistema.
+ * visão geral → pessoas → vendas/risco → dinheiro → crescimento → sistema (ops/saúde).
  */
 const navGroupsCore = [
     {
@@ -108,9 +112,7 @@ const navGroupsCore = [
             { name: 'Saques', href: '/plataforma/saques', icon: Banknote, badgeKey: 'saques' },
             { name: 'Saldo', href: '/plataforma/saldo', icon: CircleDollarSign },
             { name: 'Financeiro', href: '/plataforma/financeiro', icon: Wallet, badgeKey: 'financeiro' },
-            { name: 'Indique e Ganhe', href: '/plataforma/indique-e-ganhe', icon: Gift },
-            { name: 'Saúde de Pagamentos', href: '/plataforma/ops/saude-pagamentos', icon: Activity },
-            { name: 'Saúde UTMify', href: '/plataforma/ops/saude-utmify', icon: Activity },
+            { name: 'Fiscal', href: '/plataforma/fiscal', icon: FileSpreadsheet },
         ],
     },
     {
@@ -119,6 +121,7 @@ const navGroupsCore = [
         items: [
             { name: 'Métricas e Tracking', href: '/plataforma/metricas', icon: ChartNoAxesCombined },
             { name: 'Conquistas', href: '/plataforma/conquistas', icon: Trophy },
+            { name: 'Indique e Ganhe', href: '/plataforma/indique-e-ganhe', icon: Gift },
             { name: 'E-mail Marketing', href: '/plataforma/email-marketing', icon: Mail },
             { name: 'IntegraX SMS', href: '/plataforma/integrax', icon: MessageSquare },
             { name: 'App', href: '/plataforma/app', icon: Smartphone },
@@ -129,6 +132,11 @@ const navGroupsCore = [
         label: 'Sistema',
         items: [
             { name: 'Configurações', href: '/plataforma/configuracoes', icon: Settings },
+            { name: 'Saúde de Pagamentos', href: '/plataforma/ops/saude-pagamentos', icon: Activity },
+            { name: 'Saúde UTMify', href: '/plataforma/ops/saude-utmify', icon: Activity },
+            { name: 'Webhooks', href: '/plataforma/webhooks', icon: Webhook },
+            { name: 'Log Infoprodutor', href: '/plataforma/log-infoprodutor', icon: ScrollText },
+            { name: 'Log sistema', href: '/plataforma/log-sistema', icon: Logs },
             { name: 'Plugins', href: '/plataforma/gerenciar-plugins', icon: Puzzle },
         ],
     },
@@ -206,6 +214,9 @@ function isActive(href) {
     if (href === '/plataforma/financeiro') {
         return url === '/plataforma/financeiro' || url.startsWith('/plataforma/financeiro/');
     }
+    if (href === '/plataforma/fiscal') {
+        return url === '/plataforma/fiscal' || url.startsWith('/plataforma/fiscal/');
+    }
     if (href === '/plataforma/indique-e-ganhe') {
         return url === '/plataforma/indique-e-ganhe' || url.startsWith('/plataforma/indique-e-ganhe/');
     }
@@ -214,6 +225,15 @@ function isActive(href) {
     }
     if (href === '/plataforma/ops/saude-utmify') {
         return url === '/plataforma/ops/saude-utmify' || url.startsWith('/plataforma/ops/saude-utmify/');
+    }
+    if (href === '/plataforma/log-infoprodutor') {
+        return url === '/plataforma/log-infoprodutor' || url.startsWith('/plataforma/log-infoprodutor/');
+    }
+    if (href === '/plataforma/log-sistema') {
+        return url === '/plataforma/log-sistema' || url.startsWith('/plataforma/log-sistema/');
+    }
+    if (href === '/plataforma/webhooks') {
+        return url === '/plataforma/webhooks' || url.startsWith('/plataforma/webhooks/');
     }
     if (href === '/plataforma/metricas') {
         return url === '/plataforma/metricas' || url.startsWith('/plataforma/metricas/');
@@ -262,10 +282,9 @@ const linkInactive =
         <div class="platform-sidebar-head flex h-14 shrink-0 items-center justify-between gap-2 border-b border-zinc-200 px-3 dark:border-zinc-800">
             <Link
                 href="/plataforma/dashboard"
-                :class="[
-                    'flex min-w-0 flex-1 items-center overflow-hidden py-1.5',
-                    showText() ? 'justify-start gap-2' : 'justify-center',
-                ]"
+                class="flex min-w-0 flex-1 cursor-pointer touch-manipulation items-center overflow-hidden py-1.5"
+                :class="showText() ? 'justify-start gap-2' : 'justify-center'"
+                @click="closeMobileSidebarIfOpen"
             >
                 <template v-if="hasLogoFull()">
                     <img
@@ -336,13 +355,13 @@ const linkInactive =
                         v-for="item in group.items"
                         :key="item.href"
                         :href="item.href"
-                        class="platform-nav-link relative flex items-center gap-3 px-4 py-2.5 text-sm font-medium transition-colors"
+                        class="platform-nav-link relative flex cursor-pointer touch-manipulation items-center gap-3 px-4 py-2.5 text-sm font-medium transition-colors"
                         :class="[
                             isNavItemActive(item.href) ? linkActive : linkInactive,
                             showText() ? '' : 'justify-center px-0',
                         ]"
                         :title="!showText() ? item.name : undefined"
-                        @click="isMobile ? toggleSidebar() : null"
+                        @click="closeMobileSidebarIfOpen"
                     >
                         <span
                             v-if="isNavItemActive(item.href)"

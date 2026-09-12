@@ -29,6 +29,7 @@ const props = defineProps({
     products_summary: { type: Object, default: null },
     products_approval_enabled: { type: Boolean, default: false },
     products_type_options: { type: Array, default: () => [] },
+    products_category_options: { type: Array, default: () => [] },
     effective_merchant_fees: { type: Array, default: () => [] },
     admin_notes: { type: Array, default: () => [] },
     platform_referral_commission_percent: { type: Number, default: 20 },
@@ -44,6 +45,7 @@ const props = defineProps({
     },
     achievements_progress: { type: Object, default: null },
     achievement_unlocks: { type: Array, default: () => [] },
+    has_manual_approval_pin: { type: Boolean, default: false },
 });
 
 const activeTab = computed(() => {
@@ -275,7 +277,7 @@ function formatFeePreview(percent, fixed) {
             </div>
             <div class="flex flex-wrap gap-2">
                 <Link
-                    :href="`/plataforma/usuarios?edit=${merchant.id}`"
+                    :href="`/plataforma/usuarios/${merchant.id}/edit`"
                     class="inline-flex items-center gap-2 rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-200"
                 >
                     Editar configurações
@@ -368,6 +370,7 @@ function formatFeePreview(percent, fixed) {
             :summary="products_summary"
             :approval-enabled="products_approval_enabled"
             :type-options="products_type_options"
+            :category-options="products_category_options"
             :products-total="products_total"
         />
 
@@ -377,6 +380,7 @@ function formatFeePreview(percent, fixed) {
             :wallet-transactions="wallet_transactions"
             :filters="wallet_filters"
             :type-labels="wallet_transaction_type_labels"
+            :has-manual-approval-pin="has_manual_approval_pin"
         />
 
         <template v-if="activeTab === 'achievements'">
@@ -665,7 +669,7 @@ function formatFeePreview(percent, fixed) {
                             </template>
                             <div class="mt-1">
                                 <Link
-                                    :href="`/plataforma/usuarios?edit=${merchant.id}`"
+                                    :href="`/plataforma/usuarios/${merchant.id}/edit`"
                                     class="text-xs text-[var(--color-primary)] underline"
                                 >
                                     Editar no cadastro

@@ -2,7 +2,9 @@
 
 namespace App\Support;
 
+use App\Models\Order;
 use App\Models\WalletTransaction;
+use App\Services\AdminSettlementAnticipateService;
 use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\Schema;
@@ -121,27 +123,99 @@ final class MerchantAdminWalletMovementsListing
 
         $paginator = $query
             ->paginate($perPage, ['*'], 'wallet_page')
-            ->withQueryString()
-            ->through(function (WalletTransaction $t) use ($labels) {
-                $meta = is_array($t->meta) ? $t->meta : [];
+            ->withQueryString();
 
-                return [
-                    'id' => $t->id,
-                    'type' => $t->type,
-                    'type_label' => $labels[$t->type] ?? $t->type,
-                    'bucket' => $t->bucket,
-                    'amount_net' => (float) $t->amount_net,
-                    'order_id' => $t->order_id,
-                    'withdrawal_id' => $t->withdrawal_id,
-                    'note' => $meta['note'] ?? null,
-                    'created_at' => $t->created_at?->toIso8601String(),
-                ];
-            });
+        $orderIds = $paginator->getCollection()
+            ->pluck('order_id')
+            ->filter(fn ($id) => $id !== null && (int) $id > 0)
+            ->map(fn ($id) => (int) $id)
+            ->unique()
+            ->values()
+            ->all();
+
+        $orderStatuses = [];
+        if ($orderIds !== [] && Schema::hasTable('orders')) {
+            $orderStatuses = Order::query()->whereIn('id', $orderIds)->pluck('status', 'id')->all();
+        }
+
+        $paginator->through(function (WalletTransaction $t) use ($labels, $orderStatuses) {
+            $meta = is_array($t->meta) ? $t->meta : [];
+            $settlement = self::settlementPayload($t, $meta);
+            $orderStatus = isset($t->order_id) ? ($orderStatuses[(int) $t->order_id] ?? null) : null;
+            $anticipated = isset($meta['anticipated_at']) && is_string($meta['anticipated_at']) && $meta['anticipated_at'] !== '';
+            $typeLabel = $labels[$t->type] ?? $t->type;
+            if ($t->type === WalletTransaction::TYPE_CREDIT_SALE_PENDING && $anticipated) {
+                $typeLabel = $labels[WalletTransaction::TYPE_CREDIT_SALE] ?? 'Venda creditada';
+            }
+
+            return [
+                'id' => $t->id,
+                'type' => $t->type,
+                'type_label' => $typeLabel,
+                'bucket' => $t->bucket,
+                'amount_net' => (float) $t->amount_net,
+                'order_id' => $t->order_id,
+                'withdrawal_id' => $t->withdrawal_id,
+                'note' => $meta['note'] ?? null,
+                'created_at' => $t->created_at?->toIso8601String(),
+                'clears_at' => $settlement['clears_at'],
+                'released_at' => $settlement['released_at'],
+                'settlement_status' => $settlement['status'],
+                'settlement_at' => $settlement['at'],
+                'can_anticipate' => AdminSettlementAnticipateService::canAnticipate(
+                    $t,
+                    $meta,
+                    is_string($orderStatus) ? $orderStatus : null
+                ),
+            ];
+        });
 
         return [
             'wallet_transactions' => $paginator,
             'filters' => $filters,
             'type_options' => $labels,
+        ];
+    }
+
+    /**
+     * Data em que o valor entra no saldo disponível do seller (clears_at).
+     *
+     * @param  array<string, mixed>  $meta
+     * @return array{clears_at: ?string, released_at: ?string, status: ?string, at: ?string}
+     */
+    public static function settlementPayload(WalletTransaction $t, array $meta): array
+    {
+        $clearsAt = isset($meta['clears_at']) && is_string($meta['clears_at']) && $meta['clears_at'] !== ''
+            ? $meta['clears_at']
+            : null;
+        $releasedAt = isset($meta['released_at']) && is_string($meta['released_at']) && $meta['released_at'] !== ''
+            ? $meta['released_at']
+            : null;
+        $released = $releasedAt !== null;
+
+        if ($t->type === WalletTransaction::TYPE_CREDIT_SALE || $released) {
+            return [
+                'clears_at' => $clearsAt,
+                'released_at' => $releasedAt,
+                'status' => 'available',
+                'at' => $releasedAt ?? $clearsAt,
+            ];
+        }
+
+        if ($t->type === WalletTransaction::TYPE_CREDIT_SALE_PENDING) {
+            return [
+                'clears_at' => $clearsAt,
+                'released_at' => $releasedAt,
+                'status' => 'pending',
+                'at' => $clearsAt,
+            ];
+        }
+
+        return [
+            'clears_at' => $clearsAt,
+            'released_at' => $releasedAt,
+            'status' => null,
+            'at' => null,
         ];
     }
 

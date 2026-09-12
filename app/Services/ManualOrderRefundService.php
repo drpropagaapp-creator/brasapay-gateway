@@ -2,10 +2,10 @@
 
 namespace App\Services;
 
-use App\Jobs\PollCajuPayPixRefundJob;
 use App\Models\Order;
 use App\Models\RefundRequest;
 use App\Models\User;
+use App\Services\CajuPay\CajuPayPixRefundConfirmationService;
 use App\Support\OrderManualRefund;
 use Illuminate\Support\Facades\Schema;
 use InvalidArgumentException;
@@ -29,51 +29,148 @@ class ManualOrderRefundService
             throw new InvalidArgumentException('Origem do reembolso inválida.');
         }
 
+        if ($initiatedBy === 'seller') {
+            $this->assertSellerBalanceOrLog($order, $actor);
+        }
+
         $gw = $this->gatewayBridge->tryRefund($order);
 
         if ($gw['status'] === 'blocked_med') {
+            $message = $gw['note'] ?? 'Reembolso bloqueado por disputa MED aberta.';
+            $this->logSellerRefundFailureIfNeeded($order, $actor, $message, $gw, 'blocked_med');
+
             return [
                 'success' => false,
-                'message' => $gw['note'] ?? 'Reembolso bloqueado por disputa MED aberta.',
+                'message' => $message,
                 'gateway_status' => 'blocked_med',
             ];
         }
 
         if ($gw['status'] === 'failed') {
+            if (CajuPayPixRefundConfirmationService::isCajuPixOrder($order)
+                && app(CajuPayPixRefundConfirmationService::class)->isRemoteCancelledOrRefunded($order)) {
+                $manualRefundMeta = OrderManualRefund::buildMeta($actor, $initiatedBy, $reason, $gw);
+                $debitReason = $initiatedBy === 'platform' ? 'platform_manual_refund' : 'seller_manual_refund';
+                $outcome = app(CajuPayPixRefundConfirmationService::class)
+                    ->lockWalletAndAwait($order, $manualRefundMeta, $debitReason);
+                $this->recordApprovedRefundRequest(
+                    $order->fresh(),
+                    $actor,
+                    $reason,
+                    $gw,
+                    pendingGateway: $outcome === 'refund_pending'
+                );
+
+                return [
+                    'success' => true,
+                    'message' => $outcome === 'refund_pending'
+                        ? 'CajuPay já cancelou o pagamento. Saldo do seller bloqueado; aguardando efetivação.'
+                        : 'Pedido #'.$order->id.' reembolsado.',
+                    'gateway_status' => $outcome === 'refund_pending' ? 'gateway_pending' : 'gateway_ok',
+                ];
+            }
+
+            $message = $gw['note'] ?? 'Falha ao solicitar reembolso no gateway.';
+            $this->logSellerRefundFailureIfNeeded($order, $actor, $message, $gw, 'gateway_failed');
+
             return [
                 'success' => false,
-                'message' => $gw['note'] ?? 'Falha ao solicitar reembolso no gateway.',
+                'message' => $message,
                 'gateway_status' => 'failed',
-            ];
-        }
-
-        if ($gw['status'] === 'gateway_pending') {
-            PollCajuPayPixRefundJob::dispatch($order->id)->delay(now()->addSeconds(5));
-            $this->recordApprovedRefundRequest(
-                $order,
-                $actor,
-                $reason,
-                $gw,
-                pendingGateway: true
-            );
-
-            return [
-                'success' => true,
-                'message' => $gw['note'] ?? 'Reembolso PIX enviado à CajuPay. A carteira será ajustada quando a devolução for confirmada.',
-                'gateway_status' => 'gateway_pending',
             ];
         }
 
         $manualRefundMeta = OrderManualRefund::buildMeta($actor, $initiatedBy, $reason, $gw);
         $debitReason = $initiatedBy === 'platform' ? 'platform_manual_refund' : 'seller_manual_refund';
 
-        PlatformOrderAdminService::refundPaidOrDisputed($order, $manualRefundMeta, $debitReason);
+        if (CajuPayPixRefundConfirmationService::isCajuPixOrder($order)
+            && in_array($gw['status'], ['gateway_ok', 'gateway_pending'], true)) {
+            $outcome = app(CajuPayPixRefundConfirmationService::class)
+                ->lockWalletAndAwait($order, $manualRefundMeta, $debitReason);
+            $this->recordApprovedRefundRequest(
+                $order->fresh(),
+                $actor,
+                $reason,
+                $gw,
+                pendingGateway: $outcome === 'refund_pending'
+            );
+
+            if ($outcome === 'refund_pending') {
+                return [
+                    'success' => true,
+                    'message' => 'Reembolso enviado. Saldo do seller bloqueado; aguardando confirmação na CajuPay.',
+                    'gateway_status' => 'gateway_pending',
+                ];
+            }
+
+            return [
+                'success' => true,
+                'message' => 'Pedido #'.$order->id.' reembolsado.',
+                'gateway_status' => 'gateway_ok',
+            ];
+        }
+
+        try {
+            PlatformOrderAdminService::refundPaidOrDisputed($order, $manualRefundMeta, $debitReason);
+        } catch (\Throwable $e) {
+            $this->logSellerRefundFailureIfNeeded(
+                $order,
+                $actor,
+                'Falha ao ajustar a carteira após o reembolso na adquirente: '.$e->getMessage(),
+                $gw,
+                'wallet_debit_failed'
+            );
+            throw $e;
+        }
         $this->recordApprovedRefundRequest($order->fresh(), $actor, $reason, $gw);
 
         return [
             'success' => true,
             'message' => 'Pedido #'.$order->id.' reembolsado.',
             'gateway_status' => (string) ($gw['status'] ?? 'gateway_ok'),
+        ];
+    }
+
+    /**
+     * Reembolso já feito fora do sistema: não chama o gateway, debita a carteira e revoga o acesso.
+     *
+     * @return array{success: bool, message: string, gateway_status: string}
+     */
+    public function refundOffline(Order $order, User $actor, string $initiatedBy, ?string $reason = null): array
+    {
+        if (! OrderManualRefund::canManualRefund($order)) {
+            throw new InvalidArgumentException('Só é possível reembolsar pedidos pagos ou em MED.');
+        }
+
+        if (! in_array($initiatedBy, ['seller', 'platform'], true)) {
+            throw new InvalidArgumentException('Origem do reembolso inválida.');
+        }
+
+        if ($initiatedBy === 'seller') {
+            $this->assertSellerBalanceOrLog($order, $actor);
+        }
+
+        $gw = [
+            'status' => 'offline',
+            'note' => 'Reembolso registrado manualmente (feito fora do sistema).',
+            'offline' => true,
+        ];
+
+        $manualRefundMeta = OrderManualRefund::buildMeta($actor, $initiatedBy, $reason, $gw);
+        $debitReason = $initiatedBy === 'platform' ? 'platform_offline_refund' : 'seller_offline_refund';
+
+        PlatformOrderAdminService::refundPaidOrDisputed($order, $manualRefundMeta, $debitReason);
+        $this->recordApprovedRefundRequest(
+            $order->fresh(),
+            $actor,
+            $reason ?: 'Reembolso manual (fora do sistema).',
+            $gw
+        );
+
+        return [
+            'success' => true,
+            'message' => 'Pedido #'.$order->id.' marcado como reembolso manual.',
+            'gateway_status' => 'offline',
         ];
     }
 
@@ -90,8 +187,12 @@ class ManualOrderRefundService
         bool $pendingGateway = false,
     ): void {
         if (! Schema::hasTable('refund_requests') || ! $order->user_id) {
+            $this->logSellerRefundIfNeeded($order, $actor, $reason, $gw, $pendingGateway);
+
             return;
         }
+
+        $this->logSellerRefundIfNeeded($order, $actor, $reason, $gw, $pendingGateway);
 
         $customerReason = trim((string) ($reason ?? ''));
         if ($customerReason === '') {
@@ -129,5 +230,72 @@ class ManualOrderRefundService
             'customer_reason' => $customerReason,
             ...$payload,
         ]);
+    }
+
+    /**
+     * @param  array{status?: string, note?: string|null}  $gw
+     */
+    private function logSellerRefundIfNeeded(
+        Order $order,
+        User $actor,
+        ?string $reason,
+        array $gw,
+        bool $pendingGateway = false,
+    ): void {
+        if (! $actor->canAccessSellerPanel()) {
+            return;
+        }
+
+        SellerActivityLogService::record(
+            actor: $actor,
+            action: SellerActivityLogService::REFUND_COMPLETED,
+            targetType: Order::class,
+            targetId: $order->id,
+            metadata: array_filter([
+                'order_id' => $order->id,
+                'amount' => (float) ($order->amount ?? 0),
+                'reason' => $reason,
+                'gateway_status' => $gw['status'] ?? null,
+                'pending_gateway' => $pendingGateway ?: null,
+            ], fn ($v) => $v !== null && $v !== ''),
+            tenantId: (int) $order->tenant_id,
+        );
+    }
+
+    /**
+     * @param  array{status?: string, note?: string|null, error_code?: string|null}  $gw
+     */
+    private function logSellerRefundFailureIfNeeded(
+        Order $order,
+        User $actor,
+        string $reason,
+        array $gw = [],
+        string $failureKind = 'gateway_failed',
+    ): void {
+        if (! $actor->canAccessSellerPanel()) {
+            return;
+        }
+
+        SellerActivityLogService::recordRefundFailure(
+            actor: $actor,
+            order: $order,
+            reason: $reason,
+            extra: array_filter([
+                'failure_kind' => $failureKind,
+                'gateway_status' => $gw['status'] ?? null,
+                'error_code' => $gw['error_code'] ?? null,
+                'gateway_note' => $gw['note'] ?? null,
+            ], fn ($v) => $v !== null && $v !== ''),
+        );
+    }
+
+    private function assertSellerBalanceOrLog(Order $order, User $actor): void
+    {
+        try {
+            SellerRefundBalanceGuard::assertSufficient($order);
+        } catch (InvalidArgumentException $e) {
+            $this->logSellerRefundFailureIfNeeded($order, $actor, $e->getMessage(), [], 'insufficient_balance');
+            throw $e;
+        }
     }
 }

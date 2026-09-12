@@ -26,6 +26,7 @@ use Illuminate\Database\QueryException;
 use Illuminate\Support\Arr;
 use App\Services\MemberAreaResolver;
 use App\Services\MemberAccessGrantService;
+use App\Services\MemberStudentAccountService;
 use App\Services\MemberCommentService;
 use App\Services\StorageService;
 use App\Services\GamificationService;
@@ -78,6 +79,48 @@ class MemberBuilderController extends Controller
         }
 
         return array_slice($out, 0, 30);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function moduleAccessScheduleRules(): array
+    {
+        return [
+            'expire_after_days' => ['nullable', 'integer', 'min:1', 'max:3650'],
+            'expire_at_date' => ['nullable', 'date_format:Y-m-d'],
+            'renewal_price' => ['nullable', 'numeric', 'min:0.01', 'max:999999.99'],
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $validated
+     * @return array<string, mixed>
+     */
+    private function normalizeModuleAccessSchedule(array $validated, bool $forceExpire): array
+    {
+        if ($forceExpire || array_key_exists('expire_at_date', $validated) || array_key_exists('expire_after_days', $validated)) {
+            $date = $validated['expire_at_date'] ?? null;
+            $days = $validated['expire_after_days'] ?? null;
+            if (! empty($date)) {
+                $validated['expire_at_date'] = $date;
+                $validated['expire_after_days'] = null;
+            } elseif (! empty($days)) {
+                $validated['expire_after_days'] = (int) $days;
+                $validated['expire_at_date'] = null;
+            } else {
+                $validated['expire_after_days'] = null;
+                $validated['expire_at_date'] = null;
+            }
+        }
+        if (array_key_exists('renewal_price', $validated)) {
+            $price = $validated['renewal_price'];
+            $validated['renewal_price'] = ($price !== null && $price !== '' && (float) $price > 0)
+                ? round((float) $price, 2)
+                : null;
+        }
+
+        return $validated;
     }
 
     public function __construct(
@@ -194,6 +237,9 @@ class MemberBuilderController extends Controller
                         'show_title_on_cover' => $m->show_title_on_cover ?? true,
                         'release_after_days' => $m->release_after_days,
                         'release_at_date' => $m->release_at_date?->format('Y-m-d'),
+                        'expire_after_days' => $m->expire_after_days,
+                        'expire_at_date' => $m->expire_at_date?->format('Y-m-d'),
+                        'renewal_price' => $m->renewal_price !== null ? (float) $m->renewal_price : null,
                         'lessons' => $m->lessons->map(fn (MemberLesson $l) => [
                             'id' => $l->id,
                             'title' => $l->title,
@@ -714,6 +760,7 @@ class MemberBuilderController extends Controller
                 'show_title_on_cover' => ['nullable', 'boolean'],
                 'release_after_days' => ['nullable', 'integer', 'min:1', 'max:3650'],
                 'release_at_date' => ['nullable', 'date_format:Y-m-d'],
+                ...$this->moduleAccessScheduleRules(),
             ]);
             if (! empty($validated['release_at_date'] ?? null)) {
                 $validated['release_after_days'] = null;
@@ -723,6 +770,7 @@ class MemberBuilderController extends Controller
             } else {
                 $validated['release_at_date'] = null;
             }
+            $validated = $this->normalizeModuleAccessSchedule($validated, true);
             $max = MemberModule::where('member_section_id', $section->id)->max('position') ?? 0;
             $module = MemberModule::create([
                 'member_section_id' => $section->id,
@@ -732,6 +780,9 @@ class MemberBuilderController extends Controller
                 'show_title_on_cover' => $validated['show_title_on_cover'] ?? true,
                 'release_after_days' => $validated['release_after_days'] ?? null,
                 'release_at_date' => $validated['release_at_date'] ?? null,
+                'expire_after_days' => $validated['expire_after_days'] ?? null,
+                'expire_at_date' => $validated['expire_at_date'] ?? null,
+                'renewal_price' => $validated['renewal_price'] ?? null,
             ]);
         } elseif ($sectionType === 'products') {
             $validated = $request->validate([
@@ -798,6 +849,9 @@ class MemberBuilderController extends Controller
                 'show_title_on_cover' => $module->show_title_on_cover ?? true,
                 'release_after_days' => $module->release_after_days,
                 'release_at_date' => $module->release_at_date?->format('Y-m-d'),
+                'expire_after_days' => $module->expire_after_days,
+                'expire_at_date' => $module->expire_at_date?->format('Y-m-d'),
+                'renewal_price' => $module->renewal_price !== null ? (float) $module->renewal_price : null,
                 'lessons' => $module->relationLoaded('lessons') ? $module->lessons->map(fn (MemberLesson $l) => [
                     'id' => $l->id,
                     'title' => $l->title,
@@ -845,6 +899,7 @@ class MemberBuilderController extends Controller
                 'show_title_on_cover' => ['sometimes', 'boolean'],
                 'release_after_days' => ['nullable', 'integer', 'min:1', 'max:3650'],
                 'release_at_date' => ['nullable', 'date_format:Y-m-d'],
+                ...$this->moduleAccessScheduleRules(),
             ]);
             if (array_key_exists('release_at_date', $validated) || array_key_exists('release_after_days', $validated)) {
                 $date = $validated['release_at_date'] ?? null;
@@ -860,6 +915,7 @@ class MemberBuilderController extends Controller
                     $validated['release_at_date'] = null;
                 }
             }
+            $validated = $this->normalizeModuleAccessSchedule($validated, false);
         } elseif ($sectionType === 'products') {
             $validated = $request->validate([
                 'title' => ['sometimes', 'string', 'max:255'],
@@ -1192,15 +1248,19 @@ class MemberBuilderController extends Controller
     }
 
     /**
-     * Criar novo aluno (nome, email, senha), dar acesso ao produto e opcionalmente adicionar à turma.
+     * Criar novo aluno ou reutilizar cliente existente, dar acesso ao produto e opcionalmente adicionar à turma.
      */
-    public function storeNewAluno(Request $request, Product $produto, MemberAccessGrantService $memberAccessGrant): JsonResponse|RedirectResponse
-    {
+    public function storeNewAluno(
+        Request $request,
+        Product $produto,
+        MemberAccessGrantService $memberAccessGrant,
+        MemberStudentAccountService $memberStudentAccount
+    ): JsonResponse|RedirectResponse {
         $this->authorizeProduct($produto);
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:255'],
-            'email' => ['required', 'email', 'max:255', 'unique:users,email'],
-            'password' => ['required', 'string', 'min:6', 'max:255'],
+            'email' => ['required', 'email', 'max:255'],
+            'password' => ['nullable', 'string', 'min:6', 'max:255'],
             'turma_id' => ['nullable', 'integer', 'exists:member_turmas,id'],
         ]);
         $turmaId = $validated['turma_id'] ?? null;
@@ -1213,21 +1273,30 @@ class MemberBuilderController extends Controller
                 return back()->with('error', 'Turma inválida.');
             }
         }
-        $user = User::create([
-            'name' => $validated['name'],
-            'email' => $validated['email'],
-            'password' => Hash::make($validated['password']),
-            'role' => User::ROLE_CLIENTE,
-            'tenant_id' => null,
-        ]);
+
+        $resolved = $memberStudentAccount->resolveOrCreateCliente(
+            $validated['email'],
+            $validated['name'],
+            $validated['password'] ?? null
+        );
+        $user = $resolved['user'];
         $memberAccessGrant->grant($user, $produto);
         if ($turmaId) {
             MemberTurma::find($turmaId)->users()->syncWithoutDetaching([$user->id]);
         }
+
+        $message = $resolved['created']
+            ? 'Aluno criado e adicionado.'
+            : 'Usuário já existente. Acesso ao produto concedido.';
+
         if ($request->expectsJson()) {
-            return response()->json(['message' => 'Aluno criado e adicionado.', 'user' => ['id' => $user->id, 'name' => $user->name, 'email' => $user->email]]);
+            return response()->json([
+                'message' => $message,
+                'created' => $resolved['created'],
+                'user' => ['id' => $user->id, 'name' => $user->name, 'email' => $user->email],
+            ]);
         }
-        return back()->with('success', 'Aluno criado e adicionado.');
+        return back()->with('success', $message);
     }
 
     // Comments

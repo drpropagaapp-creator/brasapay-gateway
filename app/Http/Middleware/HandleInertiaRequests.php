@@ -16,6 +16,7 @@ use App\Services\MinimumChargeService;
 use App\Services\MemberProgressService;
 use App\Services\MemberAreaResolver;
 use App\Services\PhysicalProductAccess;
+use App\Services\SellerIntegrationVisibility;
 use App\Support\BrandingAssetUrls;
 use App\Support\DemoMode;
 use App\Support\InfoproducerRegistrationSettings;
@@ -319,8 +320,14 @@ class HandleInertiaRequests extends Middleware
             'platform_minimum_charge_brl' => $user && $user->canAccessSellerPanel()
                 ? app(MinimumChargeService::class)->platformMinimumBrlForTenant($tenantId)
                 : 0,
+            'platform_card_installments' => $user && $user->canAccessSellerPanel()
+                ? \App\Services\PlatformCardInstallments::publicConfig()
+                : ['enabled' => false, 'max' => 12],
             'physical_products_enabled_effective' => $user && $user->canAccessSellerPanel()
                 ? PhysicalProductAccess::globalEnabled()
+                : false,
+            'seller_integrations_any_visible' => $user && $user->canAccessSellerPanel()
+                ? SellerIntegrationVisibility::anyVisibleForTenant($tenantId !== null ? (int) $tenantId : null)
                 : false,
             'product_approval_required' => $user && $user->canAccessSellerPanel()
                 ? (ProductApprovalService::columnsReady() && ! ProductApprovalSettings::autoApproveEnabled())

@@ -2,14 +2,49 @@
 
 namespace App\Services\CajuPay;
 
+use App\Gateways\CajuPay\CajuPayDriver;
 use App\Models\GatewayCredential;
 use App\Models\Order;
+use App\Models\Product;
+use App\Services\PlatformCardInstallments;
+use App\Support\CardInstallments;
+use App\Support\CajuPayBrowserSdk;
 use Illuminate\Support\Facades\Http;
-use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Str;
 
 class CajuPaySdkCheckoutService
 {
+    /**
+     * Flags de parcelamento Cartão Brasil para POST /api/sdk/v1/checkout/sessions.
+     *
+     * @param  array<string, mixed>  $checkoutConfig
+     * @return array{allow_card_installments: bool, card_max_installments: int}
+     */
+    public static function cardInstallmentSessionOptions(
+        array $checkoutConfig,
+        float $amountBrl,
+        bool $isSubscription,
+        string $method
+    ): array {
+        if ($method !== 'card') {
+            return ['allow_card_installments' => false, 'card_max_installments' => 1];
+        }
+
+        $raw = $checkoutConfig['card_installments'] ?? [];
+        $resolved = PlatformCardInstallments::forProductConfig(
+            is_array($raw) ? $raw : [],
+            $isSubscription
+        );
+        $max = CardInstallments::maxAllowedForAmount($amountBrl, $resolved['max']);
+        if (! $resolved['enabled'] || $max < 2) {
+            return ['allow_card_installments' => false, 'card_max_installments' => 1];
+        }
+
+        return [
+            'allow_card_installments' => true,
+            'card_max_installments' => $max,
+        ];
+    }
+
     /**
      * @return array{token: string, checkout_session_id: string, raw: array<string, mixed>}
      */
@@ -22,69 +57,55 @@ class CajuPaySdkCheckoutService
         }
 
         $amountCents = (int) round(((float) $order->amount) * 100);
-        if ($amountCents < 1) {
-            throw new \RuntimeException('CajuPay: valor inválido.');
-        }
-
-        $base = $this->baseUrl($credentials);
         $wallet = $this->normalizeWallet($wallet);
+        $order->loadMissing(['product', 'productOffer', 'subscriptionPlan']);
+        $flags = self::cardInstallmentSessionOptions(
+            $this->checkoutConfigForOrder($order),
+            (float) $order->amount,
+            $order->subscription_plan_id !== null,
+            $wallet
+        );
 
-        $body = [
-            'amount_cents' => $amountCents,
-            'currency' => 'BRL',
-            'description' => 'Pedido #'.$order->id,
-            'allow_pix' => false,
-            'allow_card' => true,
-            'allow_apple_pay' => $wallet === 'apple_pay',
-            'allow_google_pay' => $wallet === 'google_pay',
-        ];
-        if ($wallet === 'card') {
-            $body['allow_apple_pay'] = false;
-            $body['allow_google_pay'] = false;
-        }
+        $allowedMethods = $wallet === 'card' ? ['card'] : [$wallet, 'card'];
+        $consumer = array_filter([
+            'email' => trim((string) ($order->email ?? '')),
+            'document' => preg_replace('/\D/', '', (string) ($order->cpf ?? '')) ?: null,
+        ]);
 
-        $idempotencyKey = Str::limit('getfy-caju-sdk-'.$order->id, 200, '');
-
-        $response = Http::acceptJson()
-            ->asJson()
-            ->timeout(25)
-            ->withOptions(['connect_timeout' => 10])
-            ->baseUrl($base)
-            ->withHeaders([
-                'X-API-Key' => $public,
-                'X-API-Secret' => $secret,
-                'Idempotency-Key' => $idempotencyKey,
+        return app(CajuPayDriver::class)->createSdkCheckoutSession(
+            $credentials,
+            $amountCents,
+            'Pedido #'.$order->id,
+            (string) $order->id,
+            $consumer,
+            $allowedMethods,
+            $wallet,
+            array_merge($flags, [
+                'locale' => CajuPayBrowserSdk::localeFromCheckout('pt_BR'),
             ])
-            ->post('/api/sdk/v1/checkout/sessions', $body);
+        );
+    }
 
-        if (! $response->successful()) {
-            $msg = $response->body();
-            if (strlen($msg) > 400) {
-                $msg = substr($msg, 0, 400).'…';
-            }
-            Log::warning('CajuPaySdkCheckoutService: create session failed', [
-                'order_id' => $order->id,
-                'status' => $response->status(),
-            ]);
-            throw new \RuntimeException('CajuPay: '.($msg !== '' ? $msg : 'Erro ao criar sessão de checkout.'));
+    /**
+     * @return array<string, mixed>
+     */
+    private function checkoutConfigForOrder(Order $order): array
+    {
+        $defaults = Product::defaultCheckoutConfig();
+        $plan = $order->subscriptionPlan;
+        if ($plan && is_array($plan->checkout_config) && $plan->checkout_config !== []) {
+            return array_replace_recursive($defaults, $plan->checkout_config);
+        }
+        $offer = $order->productOffer;
+        if ($offer && is_array($offer->checkout_config) && $offer->checkout_config !== []) {
+            return array_replace_recursive($defaults, $offer->checkout_config);
+        }
+        $product = $order->product;
+        if ($product && is_array($product->checkout_config) && $product->checkout_config !== []) {
+            return array_replace_recursive($defaults, $product->checkout_config);
         }
 
-        $data = $response->json();
-        if (! is_array($data)) {
-            throw new \RuntimeException('CajuPay: resposta inválida.');
-        }
-
-        $token = $data['token'] ?? null;
-        $sessionId = $data['checkout_session_id'] ?? null;
-        if (! is_string($token) || $token === '' || ! is_string($sessionId) || $sessionId === '') {
-            throw new \RuntimeException('CajuPay: token ou checkout_session_id ausente.');
-        }
-
-        return [
-            'token' => $token,
-            'checkout_session_id' => $sessionId,
-            'raw' => $data,
-        ];
+        return $defaults;
     }
 
     /**

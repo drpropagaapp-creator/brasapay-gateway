@@ -5,10 +5,10 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Str;
 
 class Product extends Model
@@ -20,21 +20,31 @@ class Product extends Model
     public $incrementing = false;
 
     public const TYPE_APLICATIVO = 'aplicativo';
+
     public const TYPE_AREA_MEMBROS = 'area_membros';
+
     public const TYPE_AREA_MEMBROS_EXTERNA = 'area_membros_externa';
+
     public const TYPE_LINK = 'link';
+
     public const TYPE_LINK_PAGAMENTO = 'link_pagamento';
+
     public const TYPE_PRODUTO_FISICO = 'produto_fisico';
 
     public const BILLING_ONE_TIME = 'one_time';
+
     public const BILLING_SUBSCRIPTION = 'subscription';
 
     public const APPROVAL_PENDING = 'pending';
+
     public const APPROVAL_APPROVED = 'approved';
+
     public const APPROVAL_REJECTED = 'rejected';
 
     public const APPROVAL_SOURCE_AUTOMATIC = 'automatic';
+
     public const APPROVAL_SOURCE_MANUAL = 'manual';
+
     public const APPROVAL_SOURCE_MIGRATION = 'migration';
 
     protected $fillable = [
@@ -46,6 +56,7 @@ class Product extends Model
         'checkout_slug',
         'checkout_config',
         'description',
+        'category',
         'type',
         'billing_type',
         'image',
@@ -68,6 +79,7 @@ class Product extends Model
         'affiliate_support_email',
         'affiliate_showcase_description',
         'affiliate_hide_customer_data',
+        'affiliate_invite_token',
         'refund_policy_days',
         'shipping_store_id',
         'physical_config',
@@ -276,6 +288,7 @@ class Product extends Model
                 'apple_pay' => true,
                 'google_pay' => true,
                 'open_finance' => true,
+                'paypal' => true,
             ],
             'stripe_link_enabled' => true,
             'deliverable_link' => '',
@@ -380,6 +393,7 @@ class Product extends Model
     public function getCheckoutConfigAttribute(mixed $value): array
     {
         $stored = is_array($value) ? $value : (is_string($value) ? json_decode($value, true) : []);
+
         return array_replace_recursive(static::defaultCheckoutConfig(), $stored ?? []);
     }
 
@@ -684,6 +698,7 @@ class Product extends Model
         if (($theme['sidebar_bg'] ?? '') === '#1e293b') {
             $config['theme']['sidebar_bg'] = '#27272a';
         }
+
         return $config;
     }
 
@@ -743,6 +758,7 @@ class Product extends Model
         if ($tenantId === null) {
             return $query->whereNull('tenant_id');
         }
+
         return $query->where('tenant_id', $tenantId);
     }
 
@@ -811,11 +827,71 @@ class Product extends Model
         return $this->hasMany(ProductAffiliateEnrollment::class);
     }
 
+    public static function generateAffiliateInviteToken(): string
+    {
+        do {
+            $token = Str::lower(Str::random(40));
+        } while (self::query()->where('affiliate_invite_token', $token)->exists());
+
+        return $token;
+    }
+
+    public function ensureAffiliateInviteToken(): string
+    {
+        if (! \Illuminate\Support\Facades\Schema::hasColumn($this->getTable(), 'affiliate_invite_token')) {
+            return '';
+        }
+
+        $current = trim((string) ($this->affiliate_invite_token ?? ''));
+        if ($current !== '') {
+            return $current;
+        }
+
+        $this->affiliate_invite_token = self::generateAffiliateInviteToken();
+        $this->save();
+
+        return (string) $this->affiliate_invite_token;
+    }
+
+    public function regenerateAffiliateInviteToken(): string
+    {
+        if (! \Illuminate\Support\Facades\Schema::hasColumn($this->getTable(), 'affiliate_invite_token')) {
+            return '';
+        }
+
+        $this->affiliate_invite_token = self::generateAffiliateInviteToken();
+        $this->save();
+
+        return (string) $this->affiliate_invite_token;
+    }
+
+    public function affiliateJoinUrl(): ?string
+    {
+        $token = trim((string) ($this->affiliate_invite_token ?? ''));
+        if ($token === '') {
+            return null;
+        }
+
+        return url('/afiliar/'.$token);
+    }
+
+    public static function findByAffiliateInviteToken(string $token): ?self
+    {
+        $token = Str::lower(trim($token));
+        if ($token === '' || ! \Illuminate\Support\Facades\Schema::hasColumn((new static)->getTable(), 'affiliate_invite_token')) {
+            return null;
+        }
+
+        return self::query()->where('affiliate_invite_token', $token)->first();
+    }
+
     /**
      * Soma dos % de co-produtores (pendentes ou ativos) que participam de vendas por afiliado.
      */
     public function sumCoproducerPercentOnAffiliateSales(): float
     {
+        ProductCoproducer::expireOverdue();
+
         return round((float) $this->coproducers()
             ->whereIn('status', [ProductCoproducer::STATUS_PENDING, ProductCoproducer::STATUS_ACTIVE])
             ->where('commission_on_affiliate_sales', true)
@@ -923,5 +999,76 @@ class Product extends Model
             self::BILLING_ONE_TIME => 'Pagamento único',
             self::BILLING_SUBSCRIPTION => 'Assinatura',
         ];
+    }
+
+    /**
+     * Categorias disponíveis para classificação do infoproduto.
+     *
+     * @return array<string, string>
+     */
+    public static function categoryLabels(): array
+    {
+        return [
+            'educacao_e_cursos' => 'Educação e Cursos',
+            'negocios_e_empreendedorismo' => 'Negócios e Empreendedorismo',
+            'marketing_e_vendas' => 'Marketing e Vendas',
+            'financas_e_investimentos' => 'Finanças e Investimentos',
+            'tecnologia_e_inovacao' => 'Tecnologia e Inovação',
+            'saude_e_bem_estar' => 'Saúde e Bem-estar',
+            'desenvolvimento_pessoal' => 'Desenvolvimento Pessoal',
+            'lifestyle_e_hobbies' => 'Lifestyle e Hobbies',
+            'conteudo_e_recursos_digitais' => 'Conteúdo e Recursos Digitais',
+            'automotivos' => 'Automotivos',
+            'outros' => 'Outros',
+        ];
+    }
+
+    /**
+     * @return list<string>
+     */
+    public static function categoryKeys(): array
+    {
+        return array_keys(self::categoryLabels());
+    }
+
+    /**
+     * @return list<array{value: string, label: string}>
+     */
+    public static function categoriesForSelect(): array
+    {
+        $out = [];
+        foreach (self::categoryLabels() as $value => $label) {
+            $out[] = ['value' => $value, 'label' => $label];
+        }
+
+        return $out;
+    }
+
+    public static function normalizeCategoryFilter(?string $category): string
+    {
+        $category = trim((string) $category);
+        if ($category === '' || $category === 'all') {
+            return '';
+        }
+        if ($category === 'uncategorized') {
+            return 'uncategorized';
+        }
+
+        return in_array($category, self::categoryKeys(), true) ? $category : '';
+    }
+
+    public function scopeOfCategory(Builder $query, ?string $category): Builder
+    {
+        $normalized = self::normalizeCategoryFilter($category);
+        if ($normalized === '') {
+            return $query;
+        }
+        if ($normalized === 'uncategorized') {
+            return $query->where(function (Builder $q) {
+                $q->whereNull('category')->orWhere('category', '');
+            });
+        }
+
+        return $query->where('category', $normalized);
     }
 }

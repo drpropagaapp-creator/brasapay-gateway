@@ -6,6 +6,7 @@ use App\Http\Controllers\Concerns\BuildsMerchantWalletProps;
 use App\Http\Controllers\Concerns\RequiresPlatformStepUp;
 use App\Http\Controllers\Concerns\ProvidesPlatformGatewayProps;
 use App\Http\Controllers\Controller;
+use App\Services\AdminSettlementAnticipateService;
 use App\Services\AdminWalletAdjustmentService;
 use App\Gateways\GatewayRegistry;
 use App\Models\AccountManager;
@@ -18,12 +19,15 @@ use App\Services\AccountManagerAssignmentService;
 use App\Services\EffectiveMerchantFees;
 use App\Services\MinimumChargeService;
 use App\Services\ApiPixAccess;
+use App\Services\SellerIntegrationVisibility;
 use App\Services\Med\MedPolicyService;
 use App\Services\Platform\MerchantRevenueBreakdownService;
 use App\Services\Platform\PlatformTotpService;
 use App\Services\PlatformAdminDeletionService;
 use App\Services\PlatformAuditService;
 use App\Services\SalesAchievementsService;
+use App\Services\Withdrawal\WithdrawalPolicyService;
+use App\Support\BrazilianDocumentDigits;
 use App\Support\MerchantAdminProductsListing;
 use App\Support\MerchantAdminWalletMovementsListing;
 use App\Support\MerchantProfileSnapshot;
@@ -62,8 +66,13 @@ class UsersController extends Controller
         protected MerchantRevenueBreakdownService $merchantRevenueBreakdown,
     ) {}
 
-    public function index(Request $request): Response
+    public function index(Request $request): Response|RedirectResponse
     {
+        $legacyEditUserId = $request->query('edit');
+        if (is_numeric($legacyEditUserId)) {
+            return redirect()->route('plataforma.usuarios.edit', ['user' => (int) $legacyEditUserId]);
+        }
+
         $search = $request->query('q');
         $search = is_string($search) ? trim($search) : '';
         $search = $search !== '' ? $search : null;
@@ -101,16 +110,7 @@ class UsersController extends Controller
         }
 
         if ($search !== null) {
-            $like = '%'.str_replace(['%', '_'], ['\\%', '\\_'], $search).'%';
-            $usersQuery->where(function ($q) use ($like, $search) {
-                $q->where('users.name', 'like', $like)
-                    ->orWhere('users.email', 'like', $like)
-                    ->orWhere('users.document', 'like', $like);
-                if (ctype_digit($search)) {
-                    $id = (int) $search;
-                    $q->orWhere('users.id', $id)->orWhere('users.tenant_id', $id);
-                }
-            });
+            $this->applyInfoprodutorSearch($usersQuery, $search);
         }
 
         $dirSql = $sortDirection === 'desc' ? 'desc' : 'asc';
@@ -201,6 +201,7 @@ class UsersController extends Controller
                 'avatar_url' => $u->avatar ? app(\App\Services\StorageService::class)->url($u->avatar) : null,
                 'tenant_id' => $u->tenant_id,
                 'person_type' => $u->person_type,
+                'document_type' => $this->documentTypeLabel($u),
                 'document' => $u->document,
                 'account_status' => $u->account_status ?? 'approved',
                 'merchant_fees' => $u->merchant_fees ?? [],
@@ -228,8 +229,6 @@ class UsersController extends Controller
         $paginator->setCollection($rows);
 
         $settingsTenantId = PlatformConfigContext::settingsTenantId();
-        $editUserId = $request->query('edit');
-        $editUserId = is_numeric($editUserId) ? (int) $editUserId : null;
 
         return Inertia::render('Platform/Users/Index', [
             'users' => $paginator,
@@ -245,7 +244,6 @@ class UsersController extends Controller
                 ['value' => 'suspended', 'label' => 'Suspenso'],
                 ['value' => 'blocked', 'label' => 'Bloqueado'],
             ],
-            'edit_user_id' => $editUserId,
             'gateways' => $this->buildGatewaysListForMerchantPicker(),
             'platform_gateway_order' => $this->buildGatewayOrderForSettings($settingsTenantId),
             'platform_merchant_fees' => $this->formatEffectiveFeesForFrontend(EffectiveMerchantFees::platformDefaults()),
@@ -268,6 +266,104 @@ class UsersController extends Controller
                 ])
                 ->values()
                 ->all(),
+        ]);
+    }
+
+    public function edit(User $user): Response
+    {
+        Gate::authorize('manageMerchantForPlatform', $user);
+
+        $tenantId = (int) ($user->tenant_id ?? $user->id);
+        $wallet = null;
+        if (Schema::hasTable('tenant_wallets') && $tenantId > 0) {
+            $wallet = TenantWallet::query()->where('tenant_id', $tenantId)->first();
+        }
+
+        $walletAdmin = null;
+        if ($wallet && Schema::hasColumn('tenant_wallets', 'admin_withdrawal_blocked')) {
+            $walletAdmin = [
+                'admin_withdrawal_blocked' => (bool) $wallet->admin_withdrawal_blocked,
+                'admin_blocked_amount' => $wallet->admin_blocked_amount !== null ? (float) $wallet->admin_blocked_amount : null,
+                'admin_block_until' => $wallet->admin_block_until?->toIso8601String(),
+                'admin_block_note' => $wallet->admin_block_note,
+            ];
+        }
+
+        $salesTotals = $this->salesAchievements->getValidSalesTotalsForTenants(collect([$tenantId]));
+        $medTotal = 0.0;
+        if (Schema::hasTable('wallet_transactions') && $tenantId > 0) {
+            $medTotal = round((float) WalletTransaction::query()
+                ->where('tenant_id', $tenantId)
+                ->where('type', WalletTransaction::TYPE_MED_HOLD)
+                ->sum('amount_net'), 2);
+        }
+
+        $adminNotesCount = 0;
+        if (Schema::hasTable('merchant_admin_notes')) {
+            $adminNotesCount = MerchantAdminNote::query()->where('merchant_user_id', $user->id)->count();
+        }
+
+        $merchant = [
+            'id' => $user->id,
+            'name' => $user->name,
+            'trade_name' => $user->trade_name,
+            'email' => $user->email,
+            'phone' => Schema::hasColumn('users', 'phone') ? ($user->phone ?? null) : null,
+            'avatar_url' => $user->avatar ? app(\App\Services\StorageService::class)->url($user->avatar) : null,
+            'tenant_id' => $user->tenant_id,
+            'person_type' => $user->person_type,
+            'document' => $user->document,
+            'account_status' => $user->account_status ?? 'approved',
+            'merchant_fees' => $user->merchant_fees ?? [],
+            'merchant_settlement_overrides' => $user->merchant_settlement_overrides ?? [],
+            'merchant_gateway_order' => $user->merchant_gateway_order ?? [],
+            'cajupay_account_id' => $user->cajupay_account_id,
+            'api_pix_mode' => $tenantId > 0 ? ApiPixAccess::tenantMode($tenantId) : ApiPixAccess::MODE_INHERIT,
+            'integration_modes' => $tenantId > 0 ? SellerIntegrationVisibility::tenantModes($tenantId) : SellerIntegrationVisibility::tenantModes(null),
+            'med_zero_enabled' => $tenantId > 0 ? app(MedPolicyService::class)->medZeroForTenant($tenantId) : false,
+            'charge_limits' => $tenantId > 0 ? $this->chargeLimitsPayloadForTenant($tenantId) : $this->emptyChargeLimitsPayload(),
+            'saldo_disponivel' => $wallet ? (float) $wallet->available_balance : 0.0,
+            'saldo_pix' => $wallet ? (float) $wallet->pending_balance : 0.0,
+            'vendas_totais' => $salesTotals[$tenantId] ?? 0.0,
+            'med_total' => $medTotal,
+            'wallet_admin' => $walletAdmin,
+            'admin_notes_count' => $adminNotesCount,
+            'totp_enabled' => PlatformTotpService::isEnabledFor($user),
+            'referral_commission_percent' => Schema::hasColumn('users', 'referral_commission_percent')
+                ? ($user->referral_commission_percent !== null ? (float) $user->referral_commission_percent : null)
+                : null,
+            'created_at' => $user->created_at?->toIso8601String(),
+        ];
+
+        $settingsTenantId = PlatformConfigContext::settingsTenantId();
+
+        return Inertia::render('Platform/Users/Edit', [
+            'merchant' => $merchant,
+            'gateways' => $this->buildGatewaysListForMerchantPicker(),
+            'platform_gateway_order' => $this->buildGatewayOrderForSettings($settingsTenantId),
+            'platform_merchant_fees' => $this->formatEffectiveFeesForFrontend(EffectiveMerchantFees::platformDefaults()),
+            'platform_referral_commission_percent' => \App\Support\ReferralProgramSettings::commissionPercent(),
+            'platform_charge_limits' => [
+                'api_pix_minimum_charge_brl' => $this->minimumChargeService->apiPixMinimumBrl(),
+                'platform_minimum_charge_brl' => $this->minimumChargeService->platformMinimumBrl(),
+            ],
+            'platform_api_pix_enabled' => ApiPixAccess::globalEnabled(),
+            'platform_integrations_enabled' => SellerIntegrationVisibility::globalMap(),
+            'platform_integrations' => SellerIntegrationVisibility::catalog(),
+            'cajupay_accounts' => CajuPayAccount::query()
+                ->enabled()
+                ->connected()
+                ->orderByDesc('is_default')
+                ->orderBy('name')
+                ->get(['id', 'name', 'is_default'])
+                ->map(fn (CajuPayAccount $account) => [
+                    'id' => $account->id,
+                    'name' => $account->name,
+                    'is_default' => $account->is_default,
+                ])
+                ->values()
+                ->all(),
+            'has_manual_approval_pin' => WithdrawalPolicyService::hasManualApprovalPin(),
         ]);
     }
 
@@ -325,6 +421,7 @@ class UsersController extends Controller
             'summary' => null,
             'approval_enabled' => Schema::hasTable('products') && Schema::hasColumn('products', 'approval_status'),
             'type_options' => [],
+            'category_options' => [],
         ];
         if ($tab === 'products') {
             $productsPayload = MerchantAdminProductsListing::paginateForTenant($tenantId, $request);
@@ -394,6 +491,7 @@ class UsersController extends Controller
             'products_summary' => $productsPayload['summary'],
             'products_approval_enabled' => $productsPayload['approval_enabled'],
             'products_type_options' => $productsPayload['type_options'],
+            'products_category_options' => $productsPayload['category_options'] ?? [],
             'achievements_progress' => $achievementsPayload['progress'],
             'achievement_unlocks' => $achievementsPayload['unlocks'],
             'effective_merchant_fees' => $this->formatEffectiveFeesForFrontend(
@@ -411,6 +509,7 @@ class UsersController extends Controller
             'admin_notes' => $adminNotes,
             'account_manager' => $this->accountManagerPayload($user),
             'account_managers_options' => $this->activeAccountManagersOptions(),
+            'has_manual_approval_pin' => WithdrawalPolicyService::hasManualApprovalPin(),
         ]);
     }
 
@@ -531,6 +630,100 @@ class UsersController extends Controller
         return redirect()
             ->route('plataforma.usuarios.show', $user)
             ->with('success', 'Saldo ajustado com sucesso.');
+    }
+
+    public function anticipateWalletSale(
+        Request $request,
+        User $user,
+        WalletTransaction $walletTransaction,
+        AdminSettlementAnticipateService $anticipateService
+    ): RedirectResponse {
+        Gate::authorize('manageMerchantForPlatform', $user);
+
+        $this->validateRequiredSecurityStepUp(
+            $request,
+            'Cadastre o 2FA em Meu perfil ou o PIN de operação em Financeiro > Saques para antecipar saldo.'
+        );
+
+        $request->validate([
+            'totp_code' => ['nullable', 'string', 'max:16'],
+            'manual_approval_pin' => ['nullable', 'string', 'max:'.WithdrawalPolicyService::MANUAL_APPROVAL_PIN_MAX_LENGTH, 'regex:/^\d*$/'],
+        ]);
+
+        $tenantId = $this->tenantIdForUser($user);
+        if ((int) $walletTransaction->tenant_id !== $tenantId) {
+            abort(404);
+        }
+
+        $actor = $request->user();
+        if ($actor === null) {
+            abort(403);
+        }
+
+        try {
+            $anticipateService->anticipate($walletTransaction, $actor);
+        } catch (InvalidArgumentException $e) {
+            return $this->redirectToWalletTab($request, $user)
+                ->with('error', $e->getMessage());
+        }
+
+        PlatformAuditService::log('platform.wallet.settlement_anticipated', [
+            'merchant_user_id' => $user->id,
+            'tenant_id' => $tenantId,
+            'wallet_transaction_id' => $walletTransaction->id,
+            'order_id' => $walletTransaction->order_id,
+            'amount_net' => (float) $walletTransaction->amount_net,
+            'bucket' => $walletTransaction->bucket,
+        ], $request);
+
+        return $this->redirectToWalletTab($request, $user)
+            ->with('success', 'Saldo antecipado com sucesso.');
+    }
+
+    public function resetTotp(Request $request, User $user): RedirectResponse
+    {
+        Gate::authorize('manageMerchantForPlatform', $user);
+
+        $this->validateRequiredSecurityStepUp(
+            $request,
+            'Cadastre o 2FA em Meu perfil ou o PIN de operação em Financeiro > Saques para resetar o 2FA deste infoprodutor.'
+        );
+
+        $request->validate([
+            'totp_code' => ['nullable', 'string', 'max:16'],
+            'manual_approval_pin' => ['nullable', 'string', 'max:'.WithdrawalPolicyService::MANUAL_APPROVAL_PIN_MAX_LENGTH, 'regex:/^\d*$/'],
+        ]);
+
+        $user->refresh();
+        if (! PlatformTotpService::isEnabledFor($user) && (! is_string($user->totp_secret) || $user->totp_secret === '')) {
+            return redirect()
+                ->route('plataforma.usuarios.edit', $user)
+                ->with('error', 'Este infoprodutor não possui 2FA ativo.');
+        }
+
+        PlatformTotpService::forceDisable($user);
+
+        PlatformAuditService::log('platform.merchant.totp_reset', [
+            'merchant_user_id' => $user->id,
+            'tenant_id' => $user->tenant_id,
+        ], $request);
+
+        return redirect()
+            ->route('plataforma.usuarios.edit', $user)
+            ->with('success', '2FA desativado. O infoprodutor poderá entrar apenas com a senha e cadastrar um novo 2FA.');
+    }
+
+    private function redirectToWalletTab(Request $request, User $user): RedirectResponse
+    {
+        $query = ['tab' => 'wallet'];
+        foreach (['wallet_type', 'wallet_q', 'wallet_date_from', 'wallet_date_to', 'wallet_per_page', 'wallet_sort', 'wallet_direction', 'wallet_page'] as $key) {
+            $value = $request->input($key);
+            if (is_numeric($value) || (is_string($value) && $value !== '')) {
+                $query[$key] = $value;
+            }
+        }
+
+        return redirect()->route('plataforma.usuarios.show', array_merge(['user' => $user], $query));
     }
 
     public function create(): Response
@@ -684,6 +877,8 @@ class UsersController extends Controller
             'admin_block_until' => ['nullable', 'date'],
             'admin_block_note' => ['nullable', 'string', 'max:500'],
             'api_pix_mode' => ['nullable', 'string', 'in:inherit,enabled,disabled'],
+            'integration_modes' => ['nullable', 'array'],
+            'integration_modes.*' => ['nullable', 'string', 'in:inherit,enabled,disabled'],
             'med_zero_enabled' => ['nullable', 'boolean'],
             'api_pix_minimum_charge_brl' => ['nullable', 'numeric', 'min:0', 'max:999999'],
             'platform_minimum_charge_brl' => ['nullable', 'numeric', 'min:0', 'max:999999'],
@@ -791,6 +986,34 @@ class UsersController extends Controller
                 }
             }
 
+            if ($request->has('integration_modes') && is_array($validated['integration_modes'] ?? null)) {
+                foreach (SellerIntegrationVisibility::ids() as $integrationId) {
+                    if (! array_key_exists($integrationId, $validated['integration_modes'])) {
+                        continue;
+                    }
+                    $newMode = (string) $validated['integration_modes'][$integrationId];
+                    if (! in_array($newMode, [
+                        SellerIntegrationVisibility::MODE_INHERIT,
+                        SellerIntegrationVisibility::MODE_ENABLED,
+                        SellerIntegrationVisibility::MODE_DISABLED,
+                    ], true)) {
+                        continue;
+                    }
+                    $prevMode = SellerIntegrationVisibility::tenantMode($integrationId, $tenantId);
+                    if ($prevMode === $newMode) {
+                        continue;
+                    }
+                    SellerIntegrationVisibility::setTenantMode($integrationId, $tenantId, $newMode);
+                    PlatformAuditService::log('platform.merchant.integration_mode', [
+                        'merchant_user_id' => $user->id,
+                        'tenant_id' => $tenantId,
+                        'integration' => $integrationId,
+                        'from' => $prevMode,
+                        'to' => $newMode,
+                    ], $request);
+                }
+            }
+
             if ($request->has('med_zero_enabled')) {
                 $prevMedZero = app(MedPolicyService::class)->medZeroForTenant($tenantId);
                 $newMedZero = $request->boolean('med_zero_enabled');
@@ -875,7 +1098,9 @@ class UsersController extends Controller
 
         PlatformAuditService::log('platform.merchant.updated', ['user_id' => $user->id], $request);
 
-        return redirect()->route('plataforma.usuarios.index')->with('success', 'Usuário atualizado.');
+        return redirect()
+            ->route('plataforma.usuarios.show', $user)
+            ->with('success', 'Infoprodutor atualizado.');
     }
 
     /**
@@ -1084,5 +1309,80 @@ class UsersController extends Controller
         }
 
         return round(max(0, (float) $raw), 2);
+    }
+
+    /**
+     * Busca por nome, e-mail, nome fantasia, CPF/CNPJ (com ou sem máscara) e ID.
+     *
+     * @param  \Illuminate\Database\Eloquent\Builder<User>  $usersQuery
+     */
+    private function applyInfoprodutorSearch($usersQuery, string $search): void
+    {
+        $like = '%'.str_replace(['%', '_'], ['\\%', '\\_'], $search).'%';
+        $digits = BrazilianDocumentDigits::onlyDigits($search);
+        $digitLike = $digits !== ''
+            ? '%'.str_replace(['%', '_'], ['\\%', '\\_'], $digits).'%'
+            : null;
+
+        $usersQuery->where(function ($q) use ($like, $search, $digitLike) {
+            $q->where('users.name', 'like', $like)
+                ->orWhere('users.email', 'like', $like);
+
+            if (Schema::hasColumn('users', 'trade_name')) {
+                $q->orWhere('users.trade_name', 'like', $like);
+            }
+
+            if (Schema::hasColumn('users', 'document')) {
+                $q->orWhere('users.document', 'like', $like);
+                if ($digitLike !== null) {
+                    $q->orWhere('users.document', 'like', $digitLike);
+                    $this->orWhereDocumentDigitsMatch($q, $digitLike);
+                }
+            }
+
+            if ($digitLike !== null && Schema::hasColumn('users', 'legal_representative_cpf')) {
+                $q->orWhere('users.legal_representative_cpf', 'like', $digitLike);
+            }
+
+            if (ctype_digit($search)) {
+                $id = (int) $search;
+                $q->orWhere('users.id', $id)->orWhere('users.tenant_id', $id);
+            }
+        });
+    }
+
+    private function orWhereDocumentDigitsMatch($query, string $digitLike): void
+    {
+        $driver = Schema::getConnection()->getDriverName();
+        if ($driver === 'pgsql') {
+            $query->orWhereRaw("regexp_replace(COALESCE(users.document, ''), '[^0-9]', '', 'g') LIKE ?", [$digitLike]);
+
+            return;
+        }
+
+        $query->orWhereRaw(
+            "REPLACE(REPLACE(REPLACE(COALESCE(users.document, ''), '.', ''), '-', ''), '/', '') LIKE ?",
+            [$digitLike]
+        );
+    }
+
+    private function documentTypeLabel(User $user): string
+    {
+        if (($user->person_type ?? '') === 'pj') {
+            return 'CNPJ';
+        }
+        if (($user->person_type ?? '') === 'pf') {
+            return 'CPF';
+        }
+
+        $digits = BrazilianDocumentDigits::onlyDigits((string) ($user->document ?? ''));
+        if (strlen($digits) === 14) {
+            return 'CNPJ';
+        }
+        if (strlen($digits) === 11) {
+            return 'CPF';
+        }
+
+        return '—';
     }
 }

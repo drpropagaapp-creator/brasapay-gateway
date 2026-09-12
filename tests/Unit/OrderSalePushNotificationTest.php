@@ -20,7 +20,7 @@ class OrderSalePushNotificationTest extends TestCase
 
         $this->assertSame('Venda aprovada (Cartão de crédito)', $order->saleApprovedPushTitle());
         $this->assertSame(
-            "Produto: curso do joão\nValor bruto: R$ 47,00\nPagamento: Cartão de crédito",
+            "Produto: curso do joão\nValor: R$ 47,00\nPagamento: Cartão de crédito",
             $order->saleApprovedPushBody()
         );
     }
@@ -36,7 +36,7 @@ class OrderSalePushNotificationTest extends TestCase
 
         $this->assertSame('Venda aprovada (PIX)', $order->saleApprovedPushTitle());
         $this->assertSame(
-            "Produto: E-book Premium\nValor bruto: R$ 19,90\nPagamento: PIX",
+            "Produto: E-book Premium\nValor: R$ 19,90\nPagamento: PIX",
             $order->saleApprovedPushBody()
         );
     }
@@ -57,7 +57,7 @@ class OrderSalePushNotificationTest extends TestCase
         $this->assertStringNotContainsString('Nome Interno Longo', $order->saleApprovedPushBody());
     }
 
-    public function test_order_bump_push_title_and_body_include_order_bump_label(): void
+    public function test_order_bump_push_keeps_label_in_title_only(): void
     {
         $order = new Order([
             'amount' => 150,
@@ -95,9 +95,9 @@ class OrderSalePushNotificationTest extends TestCase
         $this->assertTrue($messages[1]['is_order_bump']);
         $this->assertSame('sale_55_bump_2', $messages[1]['event_key']);
         $this->assertSame('Venda aprovada — Order bump (PIX)', $messages[1]['title']);
-        $this->assertStringStartsWith("Order bump\n", $messages[1]['body']);
+        $this->assertStringNotContainsString('Order bump', $messages[1]['body']);
         $this->assertStringContainsString('Produto: Bump Extra', $messages[1]['body']);
-        $this->assertStringContainsString('Valor bruto: R$ 50,00', $messages[1]['body']);
+        $this->assertStringContainsString('Valor: R$ 50,00', $messages[1]['body']);
     }
 
     public function test_payment_method_push_label_falls_back_to_payment_method_column(): void
@@ -122,7 +122,7 @@ class OrderSalePushNotificationTest extends TestCase
 
         $this->assertSame('PIX gerado (PIX)', $order->pixGeneratedPushTitle());
         $this->assertSame(
-            "Produto: E-book Premium\nValor bruto: R$ 19,90\nPagamento: PIX\nAguardando pagamento",
+            "Produto: E-book Premium\nValor: R$ 19,90\nPagamento: PIX\nAguardando pagamento",
             $order->pixGeneratedPushBody()
         );
     }
@@ -141,7 +141,7 @@ class OrderSalePushNotificationTest extends TestCase
 
         $this->assertSame('Boleto gerado (Boleto)', $order->boletoGeneratedPushTitle());
         $this->assertSame(
-            "Produto: Mentoria VIP\nValor bruto: R$ 120,00\nPagamento: Boleto\nAguardando pagamento",
+            "Produto: Mentoria VIP\nValor: R$ 120,00\nPagamento: Boleto\nAguardando pagamento",
             $order->boletoGeneratedPushBody()
         );
         $this->assertStringNotContainsString('Nome Interno', $order->boletoGeneratedPushBody());

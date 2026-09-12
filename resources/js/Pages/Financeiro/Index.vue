@@ -44,11 +44,26 @@ const props = defineProps({
     kyc_status: { type: String, default: null },
     kyc_person_type: { type: String, default: 'pf' },
     kyc_rejection_reason: { type: String, default: null },
+    kyc_identity_document_type: { type: String, default: null },
+    kyc_company_legal_nature: { type: String, default: null },
+    kyc_company_nature_suggestion: { type: String, default: null },
+    kyc_uploaded_kinds: { type: Array, default: () => [] },
+    kyc_requirements: {
+        type: Object,
+        default: () => ({
+            allowed_identity_types: ['rg', 'cnh', 'passport'],
+            require_address_proof: true,
+            require_selfie_with_document: true,
+            require_company_address_proof: true,
+            require_company_constitution: true,
+        }),
+    },
     /** Dados do cadastro inicial (somente leitura). */
     registration_snapshot: {
         type: Object,
         default: () => ({}),
     },
+    pj_conversion: { type: Object, default: null },
 });
 
 function snap(v) {
@@ -90,6 +105,11 @@ function setFinanceTab(tab) {
 const needsKycDocuments = computed(() => {
     const s = props.kyc_status || 'not_submitted';
     return s === 'not_submitted' || s === 'rejected';
+});
+
+const pjConversionMode = computed(() => {
+    const status = props.pj_conversion?.status;
+    return status === 'collecting_docs' || status === 'pending_review';
 });
 
 function openKycModal() {
@@ -342,12 +362,12 @@ function syncPayoutPixFormFromProps() {
     if (props.payout_pix_setup === 'label_and_key') {
         payoutPixForm.label = (s.payout_pix_label || s.cajupay_pix_label || '').trim();
         payoutPixForm.pix_key_type = s.cajupay_pix_key_type || s.payout_pix_key_type || 'cpf';
-        const rawKey = (s.cajupay_pix_key || '').trim();
+        const rawKey = (s.cajupay_pix_key || s.payout_pix_key || '').trim();
         payoutPixForm.pix_key =
             payoutPixForm.pix_key_type === 'cpf' || payoutPixForm.pix_key_type === 'cnpj'
                 ? formatCpfCnpjMask(rawKey, payoutPixForm.pix_key_type)
                 : rawKey;
-        const savedDoc = (s.cajupay_pix_key_owner_document || '').replace(/\D/g, '');
+        const savedDoc = (s.cajupay_pix_key_owner_document || s.payout_pix_key_owner_document || '').replace(/\D/g, '');
         const hint = (props.caju_pix_owner_document_hint || '').replace(/\D/g, '');
         const doc = savedDoc || hint || '';
         payoutPixForm.key_owner_document = doc
@@ -559,7 +579,7 @@ const settlementCards = computed(() => {
 const hasPayoutPixRegistered = computed(() => {
     const s = props.payout_settings || {};
     if (props.payout_pix_setup === 'label_and_key') {
-        return !!(s.cajupay_pix_key_id || s.cajupay_pix_key);
+        return !!(s.cajupay_pix_key_id || s.cajupay_pix_key || s.payout_pix_key);
     }
     if (props.payout_pix_setup === 'key_and_receiver' || props.payout_pix_setup === 'pix_key_only') {
         const k = (s.payout_pix_key || s.spacepag_pix_key || s.woovi_pix_key || '').trim();
@@ -1044,9 +1064,17 @@ const inputClass =
                         <KycDocumentsForm
                             v-else
                             embedded
-                            :person_type="kyc_person_type"
+                            :person_type="pjConversionMode ? 'pj' : kyc_person_type"
                             :kyc_status="kyc_status || 'not_submitted'"
                             :rejection_reason="kyc_rejection_reason"
+                            :identity_document_type="kyc_identity_document_type"
+                            :company_legal_nature="pj_conversion?.company_legal_nature || kyc_company_legal_nature"
+                            :company_nature_suggestion="kyc_company_nature_suggestion"
+                            :uploaded_kinds="kyc_uploaded_kinds"
+                            :requirements="kyc_requirements"
+                            :conversion_mode="pjConversionMode"
+                            :conversion_status="pj_conversion?.status"
+                            :conversion_rejection_reason="pj_conversion?.rejection_reason"
                         />
                     </div>
                 </div>
@@ -1731,6 +1759,11 @@ const inputClass =
                                 :person_type="kyc_person_type"
                                 :kyc_status="kyc_status || 'not_submitted'"
                                 :rejection_reason="kyc_rejection_reason"
+                                :identity_document_type="kyc_identity_document_type"
+                                :company_legal_nature="kyc_company_legal_nature"
+                                :company_nature_suggestion="kyc_company_nature_suggestion"
+                                :uploaded_kinds="kyc_uploaded_kinds"
+                                :requirements="kyc_requirements"
                             />
                         </div>
                     </div>

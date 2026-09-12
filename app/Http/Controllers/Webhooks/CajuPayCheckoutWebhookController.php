@@ -21,6 +21,15 @@ class CajuPayCheckoutWebhookController extends Controller
 {
     private const SLUG = 'cajupay';
 
+    /** Janela HMAC padrão (docs CajuPay: 5 min). */
+    private const SIGNATURE_SKEW_SECONDS = 300;
+
+    /**
+     * MED costuma chegar atrasado / em retentativa com o mesmo t= da assinatura original.
+     * Janela ampliada só para med_* — paid/under_review seguem com 5 min.
+     */
+    private const MED_SIGNATURE_SKEW_SECONDS = 86400;
+
     /**
      * POST /webhooks/gateways/cajupay — webhooks CajuPay (PIX API, checkout SDK, cartão).
      *
@@ -58,7 +67,15 @@ class CajuPayCheckoutWebhookController extends Controller
             return response('invalid_signature_header', 400);
         }
 
-        if (abs(time() - $timestamp) > 300) {
+        $maxSkew = $this->signatureSkewSecondsForEvent($eventType);
+        if (abs(time() - $timestamp) > $maxSkew) {
+            Log::warning('CajuPayWebhook: stale_timestamp', [
+                'event' => $eventType,
+                'timestamp' => $timestamp,
+                'skew_seconds' => abs(time() - $timestamp),
+                'max_skew_seconds' => $maxSkew,
+            ]);
+
             return response('stale_timestamp', 401);
         }
 
@@ -151,6 +168,15 @@ class CajuPayCheckoutWebhookController extends Controller
             if ($dispatchId === '') {
                 return response('ok', 200);
             }
+            if (in_array($order->status, ['completed', 'disputed', 'refund_pending'], true)) {
+                PlatformOrderAdminService::applyGatewayRefund($order->fresh());
+            } else {
+                Log::info('CajuPayWebhook: refund ignorado pelo status', [
+                    'order_id' => $order->id,
+                    'status' => $order->status,
+                    'event' => $eventType,
+                ]);
+            }
             PaymentWebhookDispatcher::dispatch(self::SLUG, $dispatchId, 'checkout.payment.refunded', 'refunded', $webhookMeta);
 
             return response('ok', 200);
@@ -172,9 +198,20 @@ class CajuPayCheckoutWebhookController extends Controller
                 if ($paymentId !== '') {
                     CajuPayPaymentId::persistOnOrder($pixOrder, $paymentId);
                 }
-                if (in_array($pixOrder->status, ['completed', 'disputed'], true)) {
+                if (in_array($pixOrder->status, ['completed', 'disputed', 'refund_pending'], true)) {
                     PlatformOrderAdminService::applyGatewayRefund($pixOrder->fresh());
+                } else {
+                    Log::info('CajuPayWebhook: pix refund ignorado pelo status', [
+                        'order_id' => $pixOrder->id,
+                        'status' => $pixOrder->status,
+                        'event' => $eventType,
+                    ]);
                 }
+            } else {
+                Log::info('CajuPayWebhook: pix.payment.refunded sem pedido', [
+                    'event' => $eventType,
+                    'payment_id' => $paymentId,
+                ]);
             }
 
             return response('ok', 200);
@@ -289,6 +326,24 @@ class CajuPayCheckoutWebhookController extends Controller
             'pix.payment.med_lost',
             'pix.payment.med_cancelled',
         ], true);
+    }
+
+    private function isPixMedEvent(string $eventType): bool
+    {
+        return $this->isPixMedOpenedEvent($eventType) || $this->isPixMedResolvedEvent($eventType);
+    }
+
+    private function signatureSkewSecondsForEvent(string $eventType): int
+    {
+        if ($this->isPixMedEvent($eventType)) {
+            $configured = (int) config('services.cajupay.med_webhook_signature_skew_seconds', self::MED_SIGNATURE_SKEW_SECONDS);
+
+            return max(self::SIGNATURE_SKEW_SECONDS, $configured);
+        }
+
+        $configured = (int) config('services.cajupay.webhook_signature_skew_seconds', self::SIGNATURE_SKEW_SECONDS);
+
+        return max(60, $configured);
     }
 
     /**

@@ -22,9 +22,12 @@ import {
     Scale,
     PlayCircle,
     Headset,
+    DatabaseBackup,
     Puzzle,
     Globe,
     Building2,
+    BadgeCheck,
+    Cable,
 } from 'lucide-vue-next';
 import IntegrationCard from '@/components/IntegrationCard.vue';
 import EmailProviderSidebar from '@/components/EmailProviderSidebar.vue';
@@ -34,12 +37,14 @@ import DashboardBannersTab from '@/Pages/Settings/Tabs/DashboardBannersTab.vue';
 import DashboardTemplateTab from '@/Pages/Settings/Tabs/DashboardTemplateTab.vue';
 import LanguagesTab from '@/Pages/Settings/Tabs/LanguagesTab.vue';
 import SecurityTab from '@/Pages/Settings/Tabs/SecurityTab.vue';
+import KycTab from '@/Pages/Settings/Tabs/KycTab.vue';
 import DemoTab from '@/Pages/Settings/Tabs/DemoTab.vue';
 import LegalTab from '@/Pages/Settings/Tabs/LegalTab.vue';
 import SellerPanelSupportTab from '@/Pages/Settings/Tabs/SellerPanelSupportTab.vue';
+import BackupTab from '@/Pages/Settings/Tabs/BackupTab.vue';
 import PublicUrlTab from '@/Pages/Settings/Tabs/PublicUrlTab.vue';
 import PlatformDataTab from '@/Pages/Settings/Tabs/PlatformDataTab.vue';
-
+import SellerIntegrationsTab from '@/Pages/Settings/Tabs/SellerIntegrationsTab.vue';
 defineOptions({ layout: LayoutPlatform });
 
 const props = defineProps({
@@ -99,10 +104,26 @@ const props = defineProps({
         type: Object,
         default: () => ({}),
     },
+    seller_integrations_catalog: {
+        type: Array,
+        default: () => [],
+    },
+    backup_files: {
+        type: Array,
+        default: () => [],
+    },
+    backup_status: {
+        type: Object,
+        default: null,
+    },
+    backup_storage: {
+        type: Object,
+        default: () => ({}),
+    },
 });
 
 function allAllowedTabIds() {
-    const core = ['email', 'storage', 'personalizacao', 'banners_dashboard', 'template_dashboard', 'idiomas', 'traducoes', 'moedas', 'recursos', 'suporte_painel', 'seguranca', 'lgpd', 'dados_plataforma', 'url_publica', 'cron', 'update', 'demo'];
+    const core = ['email', 'storage', 'backup', 'personalizacao', 'banners_dashboard', 'template_dashboard', 'idiomas', 'traducoes', 'moedas', 'recursos', 'suporte_painel', 'seguranca', 'kyc', 'lgpd', 'integracoes', 'dados_plataforma', 'url_publica', 'cron', 'update', 'demo'];
     const extra = (props.settings_plugin_tabs || []).map((t) => t.id).filter(Boolean);
     return [...core, ...extra];
 }
@@ -184,7 +205,24 @@ const form = useForm({
     storage_s3_region: props.settings.storage_provider === 'r2' ? 'auto' : (props.settings.storage_s3_region ?? 'us-east-1'),
     storage_s3_endpoint: props.settings.storage_s3_endpoint ?? '',
     storage_s3_url: props.settings.storage_s3_url ?? '',
+    backup_enabled: props.settings.backup_enabled ?? '0',
+    backup_daily_at: props.settings.backup_daily_at ?? '03:00',
+    backup_retention_days: Number(props.settings.backup_retention_days ?? 7) || 7,
+    backup_destination_provider: props.settings.backup_destination_provider ?? 'local',
+    backup_destination_s3_key: props.settings.backup_destination_s3_key ?? '',
+    backup_destination_s3_secret: '',
+    backup_destination_s3_bucket: props.settings.backup_destination_s3_bucket ?? '',
+    backup_destination_s3_region: props.settings.backup_destination_provider === 'r2'
+        ? 'auto'
+        : (props.settings.backup_destination_s3_region ?? 'us-east-1'),
+    backup_destination_s3_endpoint: props.settings.backup_destination_s3_endpoint ?? '',
+    backup_destination_prefix: props.settings.backup_destination_prefix ?? 'backups/db',
+    backup_destination_secret_configured: Boolean(props.settings.backup_destination_secret_configured),
     physical_products_enabled: Boolean(props.settings.physical_products_enabled),
+    integration_webhook_enabled: props.settings.integration_webhook_enabled !== false,
+    integration_utmify_enabled: props.settings.integration_utmify_enabled !== false,
+    integration_spedy_enabled: props.settings.integration_spedy_enabled !== false,
+    integration_cademi_enabled: props.settings.integration_cademi_enabled !== false,
     checkout_turnstile_site_key: props.settings.checkout_turnstile_site_key ?? '',
     checkout_turnstile_secret_key: '',
     checkout_turnstile_secret_configured: Boolean(props.settings.checkout_turnstile_secret_configured),
@@ -210,6 +248,13 @@ const form = useForm({
     platform_cnpj: props.settings.platform_cnpj ?? '',
     platform_checkout_notice_enabled: props.settings.platform_checkout_notice_enabled ?? '0',
     platform_checkout_notice: props.settings.platform_checkout_notice ?? '',
+    kyc_allowed_identity_types: Array.isArray(props.settings.kyc_allowed_identity_types)
+        ? [...props.settings.kyc_allowed_identity_types]
+        : ['rg', 'cnh', 'passport'],
+    kyc_require_address_proof: props.settings.kyc_require_address_proof ?? '1',
+    kyc_require_selfie_with_document: props.settings.kyc_require_selfie_with_document ?? '1',
+    kyc_require_company_address_proof: props.settings.kyc_require_company_address_proof ?? '1',
+    kyc_require_company_constitution: props.settings.kyc_require_company_constitution ?? '1',
 });
 
 const showCloudR2Override = ref(false);
@@ -227,6 +272,7 @@ const sendTestSending = vueRef(false);
 const coreTabsStatic = [
     { id: 'email', label: 'E-mail', icon: Mail, group: 'comunicacao' },
     { id: 'storage', label: 'Storage', icon: HardDrive, group: 'operacao' },
+    { id: 'backup', label: 'Backup', icon: DatabaseBackup, group: 'operacao' },
     { id: 'personalizacao', label: 'Personalização', icon: Palette, group: 'aparencia' },
     { id: 'banners_dashboard', label: 'Banners do dashboard', icon: Images, group: 'aparencia' },
     { id: 'template_dashboard', label: 'Template do dashboard', icon: LayoutGrid, group: 'aparencia' },
@@ -236,7 +282,9 @@ const coreTabsStatic = [
     { id: 'recursos', label: 'Recursos', icon: Truck, group: 'operacao' },
     { id: 'suporte_painel', label: 'Suporte do painel', icon: Headset, group: 'operacao' },
     { id: 'seguranca', label: 'Segurança', icon: Shield, group: 'seguranca' },
+    { id: 'kyc', label: 'KYC', icon: BadgeCheck, group: 'seguranca' },
     { id: 'lgpd', label: 'LGPD', icon: Scale, group: 'seguranca' },
+    { id: 'integracoes', label: 'Integrações', icon: Cable, group: 'sistema' },
     { id: 'dados_plataforma', label: 'Dados da plataforma', icon: Building2, group: 'sistema' },
     { id: 'url_publica', label: 'URL pública', icon: Globe, group: 'sistema' },
     { id: 'cron', label: 'Cron', icon: Clock, group: 'sistema' },
@@ -684,6 +732,21 @@ function syncSecuritySettingsFromProps() {
     applySecuritySettingsFromSettings(page.props.settings);
 }
 
+function applyKycSettingsFromSettings(s) {
+    if (!s) return;
+    form.kyc_allowed_identity_types = Array.isArray(s.kyc_allowed_identity_types)
+        ? [...s.kyc_allowed_identity_types]
+        : ['rg', 'cnh', 'passport'];
+    form.kyc_require_address_proof = s.kyc_require_address_proof ?? '1';
+    form.kyc_require_selfie_with_document = s.kyc_require_selfie_with_document ?? '1';
+    form.kyc_require_company_address_proof = s.kyc_require_company_address_proof ?? '1';
+    form.kyc_require_company_constitution = s.kyc_require_company_constitution ?? '1';
+}
+
+function syncKycSettingsFromProps() {
+    applyKycSettingsFromSettings(page.props.settings);
+}
+
 function applySupportSettingsFromSettings(s) {
     if (!s) return;
     form.seller_panel_support_enabled = s.seller_panel_support_enabled ?? '0';
@@ -721,10 +784,32 @@ function buildSettingsPayload() {
             legal_cookie_banner_enabled: data.legal_cookie_banner_enabled,
         };
     }
+    if (activeTab.value === 'backup') {
+        return {
+            backup_enabled: data.backup_enabled,
+            backup_daily_at: data.backup_daily_at,
+            backup_retention_days: data.backup_retention_days,
+            backup_destination_provider: data.backup_destination_provider,
+            backup_destination_s3_key: data.backup_destination_s3_key,
+            backup_destination_s3_secret: data.backup_destination_s3_secret,
+            backup_destination_s3_bucket: data.backup_destination_s3_bucket,
+            backup_destination_s3_region: data.backup_destination_s3_region,
+            backup_destination_s3_endpoint: data.backup_destination_s3_endpoint,
+            backup_destination_prefix: data.backup_destination_prefix,
+        };
+    }
     if (activeTab.value === 'recursos') {
         return {
             physical_products_enabled: data.physical_products_enabled,
             auto_approve_products: data.auto_approve_products,
+        };
+    }
+    if (activeTab.value === 'integracoes') {
+        return {
+            integration_webhook_enabled: data.integration_webhook_enabled,
+            integration_utmify_enabled: data.integration_utmify_enabled,
+            integration_spedy_enabled: data.integration_spedy_enabled,
+            integration_cademi_enabled: data.integration_cademi_enabled,
         };
     }
     if (activeTab.value === 'seguranca') {
@@ -736,6 +821,15 @@ function buildSettingsPayload() {
             registration_email_verification_enabled: data.registration_email_verification_enabled,
             allow_new_infoproducers: data.allow_new_infoproducers,
             account_manager_auto_assign_mode: data.account_manager_auto_assign_mode,
+        };
+    }
+    if (activeTab.value === 'kyc') {
+        return {
+            kyc_allowed_identity_types: data.kyc_allowed_identity_types,
+            kyc_require_address_proof: data.kyc_require_address_proof,
+            kyc_require_selfie_with_document: data.kyc_require_selfie_with_document,
+            kyc_require_company_address_proof: data.kyc_require_company_address_proof,
+            kyc_require_company_constitution: data.kyc_require_company_constitution,
         };
     }
     if (activeTab.value === 'suporte_painel') {
@@ -840,6 +934,7 @@ function putSettings(payload, { onSuccess } = {}) {
                 syncEmailSettingsFromProps();
                 syncLegalSettingsFromProps();
                 syncSecuritySettingsFromProps();
+                syncKycSettingsFromProps();
                 syncSupportSettingsFromProps();
                 syncPlatformCompanySettingsFromProps();
             },
@@ -1269,6 +1364,25 @@ const selectClass =
                 </div>
             </Transition>
 
+            <!-- Aba Backup -->
+            <Transition
+                enter-active-class="transition duration-200 ease-out"
+                enter-from-class="opacity-0"
+                enter-to-class="opacity-100"
+                leave-active-class="transition duration-150 ease-in"
+                leave-from-class="opacity-100"
+                leave-to-class="opacity-0"
+            >
+                <div v-show="activeTab === 'backup'" class="space-y-6">
+                    <BackupTab
+                        :form="form"
+                        :files="backup_files"
+                        :status="backup_status"
+                        :storage="backup_storage"
+                    />
+                </div>
+            </Transition>
+
             <!-- Aba Traduções -->
             <Transition
                 enter-active-class="transition duration-200 ease-out"
@@ -1643,8 +1757,34 @@ const selectClass =
                 leave-from-class="opacity-100"
                 leave-to-class="opacity-0"
             >
+                <div v-show="activeTab === 'integracoes'" class="space-y-6">
+                    <SellerIntegrationsTab :form="form" :catalog="seller_integrations_catalog" />
+                </div>
+            </Transition>
+
+            <Transition
+                enter-active-class="transition duration-200 ease-out"
+                enter-from-class="opacity-0"
+                enter-to-class="opacity-100"
+                leave-active-class="transition duration-150 ease-in"
+                leave-from-class="opacity-100"
+                leave-to-class="opacity-0"
+            >
                 <div v-show="activeTab === 'seguranca'" class="space-y-6">
                     <SecurityTab :form="form" />
+                </div>
+            </Transition>
+
+            <Transition
+                enter-active-class="transition duration-200 ease-out"
+                enter-from-class="opacity-0"
+                enter-to-class="opacity-100"
+                leave-active-class="transition duration-150 ease-in"
+                leave-from-class="opacity-100"
+                leave-to-class="opacity-0"
+            >
+                <div v-show="activeTab === 'kyc'" class="space-y-6">
+                    <KycTab :form="form" />
                 </div>
             </Transition>
 

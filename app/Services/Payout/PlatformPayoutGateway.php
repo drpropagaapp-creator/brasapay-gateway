@@ -9,24 +9,26 @@ use App\Services\CajuPay\CajuPayAccountResolver;
 /**
  * Provedor de payout da plataforma (saque automático PIX).
  *
- * Gateways com API de cashout: CajuPay, Spacepag, Woovi e OnlyUp (plugin).
- * Preferência configurável em {@see Setting} `platform_payout_gateway` (`auto`, `cajupay`, `spacepag`, `woovi`, `onlyup`).
- * Em `auto`, a ordem fixa é CajuPay → Spacepag → Woovi → OnlyUp — o primeiro globalmente conectado vence.
+ * Gateways com API de cashout: CajuPay, Woovi, BSPay, Versell e OnlyUp (plugin).
+ * Preferência configurável em {@see Setting} `platform_payout_gateway`
+ * (`auto`, `cajupay`, `woovi`, `bspay`, `versell`, `onlyup`).
+ * Em `auto`, a ordem fixa é CajuPay → Woovi → BSPay → Versell → OnlyUp — o primeiro globalmente conectado vence.
+ * Spacepag permanece no código de payout legado, mas está fora da UI e da ordem automática.
  */
 class PlatformPayoutGateway
 {
     /** @var list<string> */
-    public const PAYOUT_ORDER = ['cajupay', 'spacepag', 'woovi', 'onlyup'];
+    public const PAYOUT_ORDER = ['cajupay', /* 'spacepag', */ 'woovi', 'bspay', 'versell', 'onlyup'];
 
     /**
      * Preferência salva no painel: automático ou forçar um dos gateways.
      *
-     * @return 'auto'|'cajupay'|'spacepag'|'woovi'|'onlyup'
+     * @return 'auto'|'cajupay'|'woovi'|'bspay'|'versell'|'onlyup'
      */
     public static function preference(): string
     {
         $v = Setting::get('platform_payout_gateway', null, null);
-        if (in_array($v, ['cajupay', 'spacepag', 'woovi', 'onlyup'], true)) {
+        if (in_array($v, ['cajupay', /* 'spacepag', */ 'woovi', 'bspay', 'versell', 'onlyup'], true)) {
             return $v;
         }
 
@@ -44,9 +46,16 @@ class PlatformPayoutGateway
                 continue;
             }
             $cred = GatewayCredential::resolveForPayment(null, $slug);
-            if ($cred !== null && $cred->is_connected) {
-                $connected[$slug] = true;
+            if ($cred === null || ! $cred->is_connected) {
+                continue;
             }
+            if ($slug === 'versell') {
+                $creds = $cred->getDecryptedCredentials();
+                if (! \App\Gateways\Versell\VersellCredentials::isCashOutReady($creds)) {
+                    continue;
+                }
+            }
+            $connected[$slug] = true;
         }
 
         if ($connected === []) {
