@@ -59,15 +59,13 @@ class AssetPayDriver implements GatewayDriver
         $customer = [
             'name' => $name,
             'email' => $email !== '' ? $email : 'cliente@nao-informado.com.br',
+            // customer.phone é obrigatório na AssetPay; fallback estável quando o checkout não coleta.
+            'phone' => $this->resolvePhone((string) ($consumer['phone'] ?? ''), $externalId),
             'document' => [
                 'type' => strlen($document) === 14 ? 'CNPJ' : 'CPF',
                 'number' => $document,
             ],
         ];
-        $phone = preg_replace('/\D/', '', (string) ($consumer['phone'] ?? ''));
-        if (is_string($phone) && strlen($phone) >= 10) {
-            $customer['phone'] = $phone;
-        }
         $ip = trim((string) ($consumer['ip'] ?? ''));
         if ($ip !== '' && filter_var($ip, FILTER_VALIDATE_IP)) {
             $customer['ip'] = $ip;
@@ -347,19 +345,59 @@ class AssetPayDriver implements GatewayDriver
         return 'RANDOM';
     }
 
+    private function resolvePhone(string $rawPhone, string $externalId): string
+    {
+        $digits = preg_replace('/\D/', '', $rawPhone);
+        $digits = is_string($digits) ? $digits : '';
+        if (strlen($digits) >= 10 && strlen($digits) <= 13) {
+            return $digits;
+        }
+
+        if (ctype_digit($externalId)) {
+            $fake = \App\Support\FakeConsumerData::getForGateway((int) $externalId);
+            $fallback = preg_replace('/\D/', '', (string) ($fake['phone'] ?? ''));
+            if (is_string($fallback) && strlen($fallback) >= 10) {
+                return $fallback;
+            }
+        }
+
+        return '11999999999';
+    }
+
     private function errorMessage(mixed $json, string $fallback): string
     {
         if (! is_array($json)) {
             return $fallback;
         }
+
+        $message = null;
         foreach (['message', 'error'] as $key) {
             $value = $json[$key] ?? null;
             if (is_string($value) && trim($value) !== '') {
-                return trim($value);
+                $message = trim($value);
+                break;
             }
         }
 
-        return $fallback;
+        // 422: anexa os detalhes por campo (ex.: "customer.phone é obrigatório").
+        $details = [];
+        $errors = $json['errors'] ?? null;
+        if (is_array($errors)) {
+            foreach ($errors as $fieldErrors) {
+                foreach ((array) $fieldErrors as $fieldError) {
+                    if (is_string($fieldError) && trim($fieldError) !== '') {
+                        $details[] = trim($fieldError);
+                    }
+                }
+            }
+        }
+        if ($details !== []) {
+            $suffix = implode(' ', array_slice($details, 0, 3));
+
+            return ($message !== null ? $message.' — ' : '').$suffix;
+        }
+
+        return $message ?? $fallback;
     }
 
     private function normalizeDocument(string $document): string
