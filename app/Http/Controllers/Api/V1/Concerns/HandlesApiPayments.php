@@ -79,6 +79,9 @@ trait HandlesApiPayments
                 'name' => $name,
                 'document' => preg_replace('/\D/', '', (string) ($customer['cpf'] ?? '')),
                 'email' => $email,
+                // Repassa ao gateway quando informado (ex.: AssetPay usa em antifraude);
+                // gateways que não usam ignoram, e a ausência tem fallback no driver.
+                'phone' => trim((string) ($customer['phone'] ?? '')),
             ],
             'cpf' => $customer['cpf'] ?? null,
             'phone' => $customer['phone'] ?? null,
