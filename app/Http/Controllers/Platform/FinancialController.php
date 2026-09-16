@@ -248,7 +248,7 @@ class FinancialController extends Controller
     public function updatePayoutGatewayPreference(Request $request): JsonResponse
     {
         $validated = $request->validate([
-            'preference' => ['required', 'string', 'in:auto,cajupay,woovi,bspay,versell,onlyup'],
+            'preference' => ['required', 'string', 'in:auto,cajupay,woovi,bspay,assetpay,versell,onlyup'],
         ]);
 
         $pref = $validated['preference'];
@@ -705,6 +705,55 @@ class FinancialController extends Controller
 
             return redirect()->route('plataforma.saques.index')
                 ->with('success', 'Saque enviado à BSPay. Será marcado como pago após confirmação do PIX (webhook).');
+        }
+
+        if ($slug === 'assetpay') {
+            $pixKey = PayoutUserSettings::pixKey($settings);
+            if ($pixKey === '') {
+                MerchantWithdrawalService::releasePayoutApproval($withdrawal);
+
+                return redirect()->route('plataforma.saques.index')
+                    ->with('error', 'O infoprodutor precisa cadastrar uma chave PIX para saque em Financeiro (painel do vendedor).');
+            }
+
+            $payout = new \App\Services\AssetPay\AssetPayPayoutService;
+            $result = $payout->sendWithdrawalToPix($withdrawal->fresh(), $owner);
+
+            if (! ($result['ok'] ?? false)) {
+                $prev = is_array($withdrawal->payout_meta) ? $withdrawal->payout_meta : [];
+                $withdrawal->update([
+                    'payout_provider' => 'assetpay',
+                    'payout_meta' => $prev + [
+                        'last_error' => $result['error'] ?? 'Erro desconhecido',
+                        'last_attempt_at' => now()->toIso8601String(),
+                    ],
+                ]);
+                MerchantWithdrawalService::releasePayoutApproval($withdrawal->fresh());
+                $this->notifyWithdrawalPayoutError($withdrawal, 'AssetPay: '.($result['error'] ?? 'Falha ao enviar o saque.'));
+
+                return redirect()->route('plataforma.saques.index')
+                    ->with('error', 'AssetPay: '.($result['error'] ?? 'Falha ao enviar o saque.'));
+            }
+
+            $withdrawal->update([
+                'payout_manual' => false,
+                'payout_provider' => 'assetpay',
+                'payout_external_id' => $result['transaction_id'] ?? null,
+                'payout_meta' => array_filter([
+                    'api_status' => 'pending',
+                    'requested_at' => now()->toIso8601String(),
+                ]),
+            ]);
+
+            \App\Jobs\ReconcileAssetPayWithdrawalJob::dispatch($withdrawal->fresh()->id)
+                ->delay(now()->addSeconds(90));
+
+            MerchantWithdrawalService::releasePayoutApproval($withdrawal->fresh());
+
+            PlatformAuditService::log('platform.withdrawal.approved', ['withdrawal_id' => $withdrawal->id, 'assetpay' => true, 'pending' => true], $request);
+
+            return redirect()->route('plataforma.saques.index')
+                ->with('success', 'Saque enviado à AssetPay. Será marcado como pago após confirmação do PIX (webhook).');
         }
 
         if ($slug === 'onlyup') {

@@ -147,6 +147,10 @@ class MedDisputesController extends Controller
                     $validated['text'],
                     $request->file('attachments', []) ?? []
                 );
+            } elseif (\App\Services\AssetPay\AssetPayMedService::isAssetPayDispute($dispute)) {
+                throw new \InvalidArgumentException(
+                    'Infrações da AssetPay não aceitam defesa via API: envie a defesa diretamente no painel da AssetPay (Dashboard → Infrações).'
+                );
             } else {
                 $this->medService->submitDefense(
                     $dispute,

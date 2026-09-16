@@ -80,6 +80,10 @@ class SellerMedDisputesController extends Controller
                     $validated['text'],
                     $request->file('attachments', []) ?? []
                 );
+            } elseif (\App\Services\AssetPay\AssetPayMedService::isAssetPayDispute($dispute)) {
+                throw new \InvalidArgumentException(
+                    'Infrações da AssetPay não aceitam defesa via API: a defesa é feita pela plataforma no painel da AssetPay. Entre em contato com o suporte.'
+                );
             } else {
                 $this->medService->submitDefense(
                     $dispute,

@@ -75,7 +75,7 @@ const props = defineProps({
     platform_minimum_withdrawal_brl: { type: Number, default: 0 },
     effective_minimum_withdrawal_brl: { type: Number, default: 0 },
     payout_gateway_min_brl: { type: Number, default: 0 },
-    /** @type {'auto'|'cajupay'|'woovi'|'bspay'|'versell'|'onlyup'} */
+    /** @type {'auto'|'cajupay'|'woovi'|'bspay'|'assetpay'|'versell'|'onlyup'} */
     payout_gateway_preference: { type: String, default: 'auto' },
     /** Slug efetivo usado hoje (pode diferir do preferido se este não estiver conectado). */
     payout_gateway_active: { type: String, default: null },
@@ -363,7 +363,7 @@ watch(
     () => props.payout_gateway_preference,
     (v) => {
         payoutPref.value =
-            v === 'cajupay' || v === 'woovi' || v === 'bspay' || v === 'versell' || v === 'onlyup' ? v : 'auto';
+            v === 'cajupay' || v === 'woovi' || v === 'bspay' || v === 'assetpay' || v === 'versell' || v === 'onlyup' ? v : 'auto';
     },
     { immediate: true }
 );
@@ -1307,6 +1307,7 @@ function submitSettlement() {
                                 <!-- <option value="spacepag">Forçar Spacepag</option> -->
                                 <option value="woovi">Forçar Woovi</option>
                                 <option value="bspay">Forçar BSPay</option>
+                                <option value="assetpay">Forçar AssetPay</option>
                                 <option value="versell">Forçar Versell</option>
                                 <option value="onlyup">Forçar OnlyUp</option>
                             </select>

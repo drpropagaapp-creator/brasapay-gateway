@@ -9,7 +9,9 @@ use App\Jobs\ReconcileCajuPayWithdrawalJob;
 use App\Jobs\ReconcileSpacepagWithdrawalJob;
 use App\Jobs\ReconcileVersellWithdrawalJob;
 use App\Jobs\ReconcileWooviWithdrawalJob;
+use App\Jobs\ReconcileAssetPayWithdrawalJob;
 use App\Models\Withdrawal;
+use App\Services\AssetPay\AssetPayPayoutService;
 use App\Services\Bspay\BspayPayoutService;
 use App\Services\CajuPay\CajuPayAccountResolver;
 use App\Services\CajuPay\CajuPayPayoutService;
@@ -50,6 +52,7 @@ class WithdrawalAutoPayoutService
             'spacepag' => $this->attemptSpacepag($withdrawal),
             'woovi' => $this->attemptWoovi($withdrawal),
             'bspay' => $this->attemptBspay($withdrawal),
+            'assetpay' => $this->attemptAssetPay($withdrawal),
             'versell' => $this->attemptVersell($withdrawal),
             'onlyup' => $this->attemptOnlyUp($withdrawal),
             default => ['ok' => false, 'skipped' => true, 'reason' => 'no_payout_gateway'],
@@ -363,6 +366,80 @@ class WithdrawalAutoPayoutService
         $prev = is_array($withdrawal->payout_meta) ? $withdrawal->payout_meta : [];
         $withdrawal->update([
             'payout_provider' => 'bspay',
+            'payout_meta' => $prev + [
+                'last_error' => $result['error'] ?? 'Erro desconhecido',
+                'last_attempt_at' => now()->toIso8601String(),
+                'auto' => true,
+            ],
+        ]);
+
+        return [
+            'ok' => false,
+            'skipped' => false,
+            'error' => $result['error'] ?? 'Falha ao enviar o saque via PIX.',
+        ];
+    }
+
+    /**
+     * AssetPay retorna pending no HTTP; conclusão via webhook withdrawal.completed ou reconciliação.
+     *
+     * @return array{ok: bool, skipped?: bool, reason?: string, error?: string, pending?: bool}
+     */
+    public function attemptAssetPay(Withdrawal $withdrawal): array
+    {
+        if ($withdrawal->status !== MerchantWithdrawalService::STATUS_PROCESSING) {
+            return ['ok' => false, 'skipped' => true, 'reason' => 'not_processing'];
+        }
+
+        $cred = GatewayCredential::resolveForPayment(null, 'assetpay');
+        if ($cred === null || ! $cred->is_connected) {
+            return ['ok' => false, 'skipped' => true, 'reason' => 'assetpay_not_configured'];
+        }
+
+        $tenantId = (int) $withdrawal->tenant_id;
+        $owner = User::query()
+            ->where('tenant_id', $tenantId)
+            ->where('role', User::ROLE_INFOPRODUTOR)
+            ->first();
+        if ($owner === null) {
+            $owner = User::query()->where('id', $tenantId)->where('role', User::ROLE_INFOPRODUTOR)->first();
+        }
+        if ($owner === null) {
+            return ['ok' => false, 'skipped' => true, 'reason' => 'no_owner'];
+        }
+
+        $settings = is_array($owner->payout_settings) ? $owner->payout_settings : [];
+        $fromWithdrawal = WithdrawalPayoutDestination::fromWithdrawal($withdrawal);
+        $pixKey = $fromWithdrawal['pix_key'] ?? PayoutUserSettings::pixKey($settings);
+        if ($pixKey === '') {
+            return ['ok' => false, 'skipped' => true, 'reason' => 'no_pix_key'];
+        }
+
+        $payout = new AssetPayPayoutService;
+        $result = $payout->sendWithdrawalToPix($withdrawal->fresh(), $owner);
+
+        if ($result['ok'] ?? false) {
+            $prev = is_array($withdrawal->payout_meta) ? $withdrawal->payout_meta : [];
+            $withdrawal->update([
+                'payout_manual' => false,
+                'payout_provider' => 'assetpay',
+                'payout_external_id' => $result['transaction_id'] ?? null,
+                'payout_meta' => array_merge($prev, array_filter([
+                    'api_status' => 'pending',
+                    'requested_at' => now()->toIso8601String(),
+                    'auto' => true,
+                ])),
+            ]);
+
+            ReconcileAssetPayWithdrawalJob::dispatch($withdrawal->fresh()->id)
+                ->delay(now()->addSeconds(90));
+
+            return ['ok' => true, 'pending' => true];
+        }
+
+        $prev = is_array($withdrawal->payout_meta) ? $withdrawal->payout_meta : [];
+        $withdrawal->update([
+            'payout_provider' => 'assetpay',
             'payout_meta' => $prev + [
                 'last_error' => $result['error'] ?? 'Erro desconhecido',
                 'last_attempt_at' => now()->toIso8601String(),

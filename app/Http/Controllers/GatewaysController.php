@@ -117,6 +117,9 @@ class GatewaysController extends Controller
         } elseif ($slug === 'linaopenx') {
             $webhookUrl = GatewayWebhookUrl::forGateway('linaopenx');
             $webhookHelp = 'Cadastre esta URL HTTPS no painel Lina (Embedded Payment / webhooks) para eventos de pagamento Open Finance (PAYMENT, consent, status). Método POST. Opcionais: assinatura HMAC nos headers X-Lina-Signature, X-Webhook-Signature ou X-Signature — cole o mesmo segredo no campo “Segredo do webhook” abaixo. Se não configurar segredo, o webhook ainda é aceito, mas a confirmação do pedido sempre reconsulta a API Lina.';
+        } elseif ($slug === 'assetpay') {
+            $webhookUrl = GatewayWebhookUrl::forGateway('assetpay');
+            $webhookHelp = 'A URL é enviada automaticamente em cada cobrança PIX e saque via postbackUrl (eventos transaction.* e withdrawal.*, incluindo infrações MED). Opcional: cadastre também no painel AssetPay (Dashboard → Webhooks) e cole o segredo HMAC no campo abaixo para assinatura. Para saques via API, cadastre o IP do servidor na whitelist (Dashboard → APIs → Whitelist de IP). Após o pagamento, o sistema confirma o status em GET /transactions/{id}.';
         } elseif ($slug === 'bspay') {
             $webhookUrl = GatewayWebhookUrl::forGateway('bspay');
             $webhookHelp = 'Cadastre esta URL HTTPS no painel BSPay (webhook/callback). A mesma URL também é enviada em cada PIX via postback_url e recebe cashin, cashout e MED (chargeback.opened/won/lost/canceled). Precisa ser pública (não localhost) e HTTPS.';

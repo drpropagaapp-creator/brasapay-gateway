@@ -48,6 +48,26 @@ return [
                 ['key' => 'webhook_postback_base_url', 'label' => 'URL base pública para webhooks (HTTPS, sem barra final)', 'type' => 'text', 'optional' => true],
             ],
         ],
+        'assetpay' => [
+            'slug' => 'assetpay',
+            'name' => 'AssetPay',
+            'image' => 'images/gateways/assetpay.svg',
+            'methods' => ['pix'],
+            'scope' => 'national',
+            'country' => 'br',
+            'country_name' => 'Brasil',
+            'country_flag' => 'brasil.png',
+            'signup_url' => 'https://assetpay.com.br',
+            'driver' => \App\Gateways\AssetPay\AssetPayDriver::class,
+            'credential_keys' => [
+                ['key' => 'secret_key', 'label' => 'Secret Key', 'type' => 'password'],
+                ['key' => 'public_key', 'label' => 'Public Key', 'type' => 'text'],
+                ['key' => 'webhook_secret', 'label' => 'Segredo do webhook (painel AssetPay, opcional)', 'type' => 'password', 'optional' => true],
+                ['key' => 'assetpay_payout_min_brl', 'label' => 'Mínimo líquido de payout (R$)', 'type' => 'text', 'optional' => true],
+                ['key' => 'assetpay_admin_fee_pix_brl', 'label' => 'Taxa PIX paga à AssetPay (R$)', 'type' => 'text', 'optional' => true],
+                ['key' => 'assetpay_admin_fee_payout_brl', 'label' => 'Taxa de saque paga à AssetPay (R$)', 'type' => 'text', 'optional' => true],
+            ],
+        ],
         'bspay' => [
             'slug' => 'bspay',
             'name' => 'BSPay',
@@ -351,6 +371,7 @@ return [
         // 'spacepag', // oculto da UI (Financeiro → Adquirentes) e da ordem de cobrança
         'woovi',
         'bspay',
+        'assetpay', // Cash In PIX + Cash Out + MED (infrações)
         'onlyup',
         'mercadopago',
         'pagarme',

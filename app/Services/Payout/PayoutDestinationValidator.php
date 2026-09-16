@@ -104,7 +104,7 @@ class PayoutDestinationValidator
             ];
         }
 
-        if (in_array($slug, ['spacepag', 'woovi', 'bspay', 'onlyup'], true)) {
+        if (in_array($slug, ['spacepag', 'woovi', 'bspay', 'assetpay', 'onlyup'], true)) {
             if (! in_array($pixKeyType, ['cpf', 'cnpj', 'email', 'phone', 'evp', 'random'], true)) {
                 return ['ok' => false, 'field' => 'pix_key_type', 'message' => 'Tipo de chave PIX inválido.'];
             }
@@ -169,7 +169,7 @@ class PayoutDestinationValidator
             return ['ok' => true];
         }
 
-        if (in_array($slug, ['spacepag', 'woovi', 'bspay', 'onlyup'], true)) {
+        if (in_array($slug, ['spacepag', 'woovi', 'bspay', 'assetpay', 'onlyup'], true)) {
             $pixKey = PayoutUserSettings::pixKey($settings);
             if ($pixKey === '') {
                 return [
