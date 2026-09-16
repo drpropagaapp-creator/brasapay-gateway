@@ -149,6 +149,10 @@ services:
       REDIS_HOST: ${GETFY_REDIS_HOST:-redis}
       DB_CONNECTION: ${GETFY_DB_CONNECTION:-pgsql}
       DB_HOST: ${GETFY_DB_HOST:-postgres}
+      DB_PORT: ${GETFY_DB_PORT:-5432}
+      DB_DATABASE: ${GETFY_DB_DATABASE:-getfy}
+      DB_USERNAME: ${GETFY_DB_USERNAME:-getfy}
+      DB_PASSWORD: ${GETFY_DB_PASSWORD:-getfy}
       GETFY_DOCKER: "true"
       GETFY_RUN_SETUP: "false"
       LOG_CHANNEL: ${LOG_CHANNEL:-stack}
@@ -183,6 +187,10 @@ services:
       REDIS_HOST: ${GETFY_REDIS_HOST:-redis}
       DB_CONNECTION: ${GETFY_DB_CONNECTION:-pgsql}
       DB_HOST: ${GETFY_DB_HOST:-postgres}
+      DB_PORT: ${GETFY_DB_PORT:-5432}
+      DB_DATABASE: ${GETFY_DB_DATABASE:-getfy}
+      DB_USERNAME: ${GETFY_DB_USERNAME:-getfy}
+      DB_PASSWORD: ${GETFY_DB_PASSWORD:-getfy}
       GETFY_DOCKER: "true"
       GETFY_RUN_SETUP: "false"
       LOG_CHANNEL: ${LOG_CHANNEL:-stack}
@@ -216,6 +224,12 @@ services:
       QUEUE_CONNECTION: ${GETFY_QUEUE_CONNECTION:-redis}
       REDIS_HOST: ${GETFY_REDIS_HOST:-redis}
       API_INBOUND_WEBHOOKS_ASYNC: "true"
+      DB_CONNECTION: ${GETFY_DB_CONNECTION:-pgsql}
+      DB_HOST: ${GETFY_DB_HOST:-postgres}
+      DB_PORT: ${GETFY_DB_PORT:-5432}
+      DB_DATABASE: ${GETFY_DB_DATABASE:-getfy}
+      DB_USERNAME: ${GETFY_DB_USERNAME:-getfy}
+      DB_PASSWORD: ${GETFY_DB_PASSWORD:-getfy}
       GETFY_DOCKER: "true"
       GETFY_RUN_SETUP: "false"
       LOG_CHANNEL: ${LOG_CHANNEL:-stack}
@@ -250,6 +264,10 @@ services:
       REDIS_HOST: ${GETFY_REDIS_HOST:-redis}
       DB_CONNECTION: ${GETFY_DB_CONNECTION:-pgsql}
       DB_HOST: ${GETFY_DB_HOST:-postgres}
+      DB_PORT: ${GETFY_DB_PORT:-5432}
+      DB_DATABASE: ${GETFY_DB_DATABASE:-getfy}
+      DB_USERNAME: ${GETFY_DB_USERNAME:-getfy}
+      DB_PASSWORD: ${GETFY_DB_PASSWORD:-getfy}
       GETFY_DOCKER: "true"
       GETFY_RUN_SETUP: "false"
       LOG_CHANNEL: ${LOG_CHANNEL:-stack}
@@ -284,6 +302,10 @@ services:
       REDIS_HOST: ${GETFY_REDIS_HOST:-redis}
       DB_CONNECTION: ${GETFY_DB_CONNECTION:-pgsql}
       DB_HOST: ${GETFY_DB_HOST:-postgres}
+      DB_PORT: ${GETFY_DB_PORT:-5432}
+      DB_DATABASE: ${GETFY_DB_DATABASE:-getfy}
+      DB_USERNAME: ${GETFY_DB_USERNAME:-getfy}
+      DB_PASSWORD: ${GETFY_DB_PASSWORD:-getfy}
       GETFY_DOCKER: "true"
       GETFY_RUN_SETUP: "false"
       LOG_CHANNEL: ${LOG_CHANNEL:-stack}
@@ -318,6 +340,10 @@ services:
       REDIS_HOST: ${GETFY_REDIS_HOST:-redis}
       DB_CONNECTION: ${GETFY_DB_CONNECTION:-pgsql}
       DB_HOST: ${GETFY_DB_HOST:-postgres}
+      DB_PORT: ${GETFY_DB_PORT:-5432}
+      DB_DATABASE: ${GETFY_DB_DATABASE:-getfy}
+      DB_USERNAME: ${GETFY_DB_USERNAME:-getfy}
+      DB_PASSWORD: ${GETFY_DB_PASSWORD:-getfy}
       GETFY_DOCKER: "true"
       GETFY_RUN_SETUP: "false"
       LOG_CHANNEL: ${LOG_CHANNEL:-stack}
@@ -352,6 +378,10 @@ services:
       REDIS_HOST: ${GETFY_REDIS_HOST:-redis}
       DB_CONNECTION: ${GETFY_DB_CONNECTION:-pgsql}
       DB_HOST: ${GETFY_DB_HOST:-postgres}
+      DB_PORT: ${GETFY_DB_PORT:-5432}
+      DB_DATABASE: ${GETFY_DB_DATABASE:-getfy}
+      DB_USERNAME: ${GETFY_DB_USERNAME:-getfy}
+      DB_PASSWORD: ${GETFY_DB_PASSWORD:-getfy}
       GETFY_DOCKER: "true"
       GETFY_RUN_SETUP: "false"
       LOG_CHANNEL: ${LOG_CHANNEL:-stack}
