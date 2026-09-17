@@ -154,6 +154,30 @@ final class GatewayInboundWebhookAuth
         return hash_equals($expected, $given);
     }
 
+    /**
+     * Reven: X-Signature = HMAC-SHA256 do corpo com o whsec_ do painel.
+     * Sem secret configurado ou sem header, aceita (a confirmação de pagamento
+     * sempre reconsulta a API antes de liberar o pedido).
+     */
+    public static function verifyReven(Request $request, ?int $tenantId): bool
+    {
+        $secret = self::webhookSecret('reven', $tenantId);
+        $signature = $request->header('X-Signature') ?: $request->header('X-Webhook-Signature');
+        $hasSignature = is_string($signature) && $signature !== '';
+
+        if ($secret === null || ! $hasSignature) {
+            return true;
+        }
+
+        $expected = hash_hmac('sha256', $request->getContent(), $secret);
+        $given = strtolower(trim($signature));
+        if (str_starts_with($given, 'sha256=')) {
+            $given = substr($given, 7);
+        }
+
+        return hash_equals($expected, $given);
+    }
+
     public static function webhookSecret(string $gatewaySlug, ?int $tenantId): ?string
     {
         $credential = GatewayCredential::resolveForPayment($tenantId, $gatewaySlug);

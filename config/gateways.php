@@ -73,6 +73,7 @@ return [
             'driver' => \App\Gateways\Reven\RevenDriver::class,
             'credential_keys' => [
                 ['key' => 'api_key', 'label' => 'API Key (X-Api-Key)', 'type' => 'password'],
+                ['key' => 'webhook_secret', 'label' => 'Webhook secret (whsec_… — verifica X-Signature dos webhooks)', 'type' => 'password', 'optional' => true],
             ],
         ],
         'assetpay' => [

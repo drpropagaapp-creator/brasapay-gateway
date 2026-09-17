@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Webhooks;
 
 use App\Http\Controllers\Controller;
 use App\Models\Order;
+use App\Support\GatewayInboundWebhookAuth;
 use App\Support\PaymentWebhookDispatcher;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -28,6 +29,10 @@ class RevenWebhookController extends Controller
         $order = $this->findOrder($request, $transactionId);
         if ($order === null) {
             return response()->json(['message' => 'Order not found'], 404);
+        }
+
+        if (! GatewayInboundWebhookAuth::verifyReven($request, $order->tenant_id)) {
+            return response()->json(['message' => 'Unauthorized'], 401);
         }
 
         $status = $this->extractStatus($request);
