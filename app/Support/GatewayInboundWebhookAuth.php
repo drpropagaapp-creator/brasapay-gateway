@@ -156,8 +156,13 @@ final class GatewayInboundWebhookAuth
 
     /**
      * Reven: X-Signature = HMAC-SHA256 do corpo com o whsec_ do painel.
-     * Sem secret configurado ou sem header, aceita (a confirmação de pagamento
-     * sempre reconsulta a API antes de liberar o pedido).
+     *
+     * Fail-open deliberado quando o header está ausente: os postbacks por
+     * callbackUrl (enviados em cada cobrança) podem vir sem assinatura, e
+     * rejeitá-los quebraria a confirmação instantânea. A integridade é
+     * garantida por controle compensatório: ProcessPaymentWebhook SEMPRE
+     * reconsulta a API da Reven antes de liberar o pedido (coberto por teste).
+     * Quando presente, a assinatura é validada e falha fechada se inválida.
      */
     public static function verifyReven(Request $request, ?int $tenantId): bool
     {
@@ -165,7 +170,16 @@ final class GatewayInboundWebhookAuth
         $signature = $request->header('X-Signature') ?: $request->header('X-Webhook-Signature');
         $hasSignature = is_string($signature) && $signature !== '';
 
-        if ($secret === null || ! $hasSignature) {
+        if ($secret === null) {
+            return true;
+        }
+        if (! $hasSignature) {
+            // Visibilidade para futuramente falhar fechado, se confirmarmos que
+            // todos os callbacks da Reven são assinados (doc §4.1).
+            Log::info('GatewayInboundWebhookAuth: webhook Reven sem X-Signature (secret configurado); aceito com reconfirmação obrigatória na API.', [
+                'tenant_id' => $tenantId,
+            ]);
+
             return true;
         }
 
