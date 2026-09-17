@@ -101,9 +101,17 @@ function generateDossier() {
             class="space-y-4 rounded-2xl border border-orange-200 bg-orange-50/50 p-6 dark:border-orange-900/50 dark:bg-orange-950/20"
             @submit.prevent="submitDefense"
         >
-            <h2 class="font-medium text-zinc-900 dark:text-white">Enviar defesa à CajuPay</h2>
+            <h2 class="font-medium text-zinc-900 dark:text-white">
+                {{ dispute.defense_via_acquirer_panel ? 'Registrar defesa (Xflow)' : 'Enviar defesa à CajuPay' }}
+            </h2>
             <p class="text-xs text-zinc-600 dark:text-zinc-400">
-                Descreva a entrega do produto/serviço. Até 10 anexos (PDF, JPG, PNG), 8 MiB cada.
+                <template v-if="dispute.defense_via_acquirer_panel">
+                    A Xflow não recebe defesa por API. Registre o texto aqui e envie a contestação no painel da Xflow
+                    (Disputas), dentro do prazo. Use o dossiê PDF como anexo.
+                </template>
+                <template v-else>
+                    Descreva a entrega do produto/serviço. Até 10 anexos (PDF, JPG, PNG), 8 MiB cada.
+                </template>
             </p>
             <textarea
                 v-model="form.text"

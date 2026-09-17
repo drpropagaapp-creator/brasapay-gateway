@@ -17,6 +17,12 @@ class UploadLimitsTest extends TestCase
         $this->assertSame(51200, UploadLimits::memberBuilderPdfMaxKb());
         $this->assertSame(50, UploadLimits::memberBuilderPdfMaxMb());
         $this->assertSame(50, UploadLimits::memberBuilderForFrontend()['pdf_max_mb']);
+        $this->assertSame(50, UploadLimits::memberBuilderForFrontend()['material_max_mb']);
+        $this->assertContains('pdf', UploadLimits::memberBuilderForFrontend()['material_extensions']);
+        $this->assertContains('docx', UploadLimits::memberBuilderForFrontend()['material_extensions']);
+        $this->assertNotContains('html', UploadLimits::memberBuilderForFrontend()['material_extensions']);
+        $this->assertNotContains('svg', UploadLimits::memberBuilderForFrontend()['material_extensions']);
+        $this->assertNotContains('doc', UploadLimits::memberBuilderForFrontend()['material_extensions']);
     }
 
     public function test_php_upload_error_message_mentions_limit(): void

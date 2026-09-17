@@ -2,6 +2,7 @@
 
 /**
  * Limites de upload do Member Builder (kilobytes na regra Laravel `max:`).
+ * pdf_max_kb vale para todos os materiais da aula (PDF, TXT, CSV, Office, ODF).
  */
 return [
     'image_max_kb' => (int) env('MEMBER_BUILDER_UPLOAD_IMAGE_MAX_KB', 10240),

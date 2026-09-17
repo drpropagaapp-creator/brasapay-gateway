@@ -46,4 +46,20 @@ class SecurityHeadersMetaPixelTest extends TestCase
         $this->assertStringContainsString('https://*.pagador.com.br', $csp);
         $this->assertStringContainsString('https://*.cieloecommerce.cielo.com.br', $csp);
     }
+
+    public function test_production_csp_allows_cajupay_rinne_card_element(): void
+    {
+        config(['app.env' => 'production']);
+
+        $response = $this->get('/');
+
+        $csp = (string) $response->headers->get('Content-Security-Policy');
+        $this->assertNotSame('', $csp);
+        $this->assertStringContainsString('https://pkgs.rinne.com.br', $csp);
+        $this->assertStringContainsString('https://*.rinne.com.br', $csp);
+        $this->assertStringContainsString('https://js.evervault.com', $csp);
+        $this->assertStringContainsString('https://*.evervault.com', $csp);
+        $this->assertStringContainsString('https://keys.evervault.com', $csp);
+        $this->assertStringContainsString('https://ui-components.evervault.com', $csp);
+    }
 }

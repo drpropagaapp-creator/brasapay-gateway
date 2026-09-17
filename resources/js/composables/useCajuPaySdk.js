@@ -5,7 +5,7 @@
  * O backend Getfy devolve o token público após `POST /checkout` + `POST /checkout/cajupay/sdk-session`.
  */
 
-const SDK_URL = 'https://cdn.cajupay.com.br/sdk/v1/cajupay-sdk.min.js?v=20260905';
+const SDK_URL = 'https://cdn.cajupay.com.br/sdk/v1/cajupay-sdk.min.js?v=20260916';
 const DEFAULT_API_BASE = 'https://api.cajupay.com.br';
 
 let sdkPromise = null;

@@ -464,8 +464,8 @@ watch(
 const paymentMethodMeta = {
     pix: { label: 'PIX', hint: 'Pagamento instantâneo', visual: 'pix' },
     card: { label: 'Cartão', hint: 'Crédito ou débito', visual: 'card' },
-    apple_pay: { label: 'Apple Pay', hint: 'Checkout: só iPhone/iPad (iOS)', visual: 'apple_pay' },
-    google_pay: { label: 'Google Pay', hint: 'Checkout: Android ou computador', visual: 'google_pay' },
+    apple_pay: { label: 'Apple Pay', hint: 'Wallet CajuPay em qualquer dispositivo', visual: 'apple_pay' },
+    google_pay: { label: 'Google Pay', hint: 'Wallet CajuPay em qualquer dispositivo', visual: 'google_pay' },
     boleto: { label: 'Boleto', hint: 'Compensação bancária', visual: 'boleto' },
     pix_auto: { label: 'PIX automático', hint: 'Débito recorrente na assinatura', visual: 'pix_auto' },
     open_finance: { label: 'Open Finance', hint: 'Pagamento autorizado no app do banco', visual: 'open_finance' },
@@ -1864,7 +1864,7 @@ function submit() {
                             v-if="paymentMethodCardsList.some((m) => m.key === 'apple_pay' || m.key === 'google_pay')"
                             class="text-[11px] leading-snug text-zinc-400 dark:text-zinc-500"
                         >
-                            Apple Pay e Google Pay no checkout respeitam o aparelho: Apple Pay só em iOS; Google Pay em Android ou desktop (não aparece no iPhone/iPad).
+                            Apple Pay e Google Pay aparecem juntos no checkout em qualquer aparelho, quando os dois estiverem ligados. O botão nativo só conclui se a carteira estiver disponível; caso contrário o pagador usa cartão.
                         </p>
                         <p
                             v-if="paymentMethodCardsList.length === 0"

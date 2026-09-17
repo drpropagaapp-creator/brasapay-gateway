@@ -14,6 +14,58 @@ class GatewayInboundWebhookAuthTest extends TestCase
         $request = Request::create('/webhooks/gateways/asaas', 'POST', [], [], [], [], '{"payment":{"id":"pay_1"}}');
 
         $this->assertFalse(GatewayInboundWebhookAuth::verifyHmacSha256Body($request, 'asaas', 1, 'X-Webhook-Signature'));
+        $this->assertFalse(GatewayInboundWebhookAuth::verifyAsaas($request, 1));
+    }
+
+    public function test_asaas_accepts_auth_token_header(): void
+    {
+        $secret = 'asaas-auth-token-32-chars-minimum';
+        $credential = GatewayCredential::create([
+            'tenant_id' => null,
+            'gateway_slug' => 'asaas',
+            'credentials' => '',
+            'is_connected' => true,
+        ]);
+        $credential->setEncryptedCredentials(['webhook_secret' => $secret]);
+        $credential->save();
+
+        $body = '{"event":"PAYMENT_RECEIVED","payment":{"id":"pay_1"}}';
+        $request = Request::create(
+            '/webhooks/gateways/asaas',
+            'POST',
+            [],
+            [],
+            [],
+            ['HTTP_ASAAS_ACCESS_TOKEN' => $secret],
+            $body
+        );
+
+        $this->assertTrue(GatewayInboundWebhookAuth::verifyAsaas($request, 1));
+    }
+
+    public function test_asaas_rejects_wrong_auth_token(): void
+    {
+        $secret = 'asaas-auth-token-32-chars-minimum';
+        $credential = GatewayCredential::create([
+            'tenant_id' => null,
+            'gateway_slug' => 'asaas',
+            'credentials' => '',
+            'is_connected' => true,
+        ]);
+        $credential->setEncryptedCredentials(['webhook_secret' => $secret]);
+        $credential->save();
+
+        $request = Request::create(
+            '/webhooks/gateways/asaas',
+            'POST',
+            [],
+            [],
+            [],
+            ['HTTP_ASAAS_ACCESS_TOKEN' => 'wrong-token'],
+            '{"payment":{"id":"pay_1"}}'
+        );
+
+        $this->assertFalse(GatewayInboundWebhookAuth::verifyAsaas($request, 1));
     }
 
     public function test_accepts_valid_hmac_when_secret_configured(): void

@@ -243,8 +243,10 @@ class StorageService
 
     /**
      * Store file with putFileAs.
+     *
+     * @param  array<string, mixed>  $extraOptions
      */
-    public function putFileAs(string $directory, UploadedFile $file, string $name): string
+    public function putFileAs(string $directory, UploadedFile $file, string $name, array $extraOptions = []): string
     {
         $directory = RemoteStorage::normalizeObjectKey($directory);
         $name = RemoteStorage::normalizeObjectKey($name);
@@ -262,7 +264,7 @@ class StorageService
                 $directory,
                 $file,
                 $name,
-                RemoteStorage::uploadOptionsForProvider($provider)
+                array_merge(RemoteStorage::uploadOptionsForProvider($provider), $extraOptions)
             );
         } catch (\Throwable $e) {
             Log::warning('storage.put_file_failed', [

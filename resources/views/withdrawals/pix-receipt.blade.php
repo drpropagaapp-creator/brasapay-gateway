@@ -56,6 +56,8 @@
         }
         .row .k { color: #a1a1aa; flex-shrink: 0; }
         .row .v { text-align: right; word-break: break-word; max-width: 62%; }
+        .payer-brand { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+        .payer-brand img { height: 28px; width: auto; max-width: 160px; object-fit: contain; display: block; background: #fff; border-radius: 6px; padding: 4px 8px; }
         .footer { margin-top: 28px; font-size: 11px; color: #71717a; line-height: 1.5; }
         .footer .row .v { font-family: ui-monospace, monospace; font-size: 10px; }
         .print-btn {
@@ -100,6 +102,11 @@
         @if(!empty($show_payer_section))
         <section>
             <h2>Quem pagou</h2>
+            @if(!empty($payer_logo))
+                <div class="payer-brand">
+                    <img src="{{ $payer_logo }}" alt="{{ $payer_institution }}">
+                </div>
+            @endif
             <div class="row"><span class="k">Nome</span><span class="v">{{ $payer_name }}</span></div>
             <div class="row"><span class="k">Documento</span><span class="v">{{ $payer_document }}</span></div>
             <div class="row"><span class="k">Instituição</span><span class="v">{{ $payer_institution }}</span></div>

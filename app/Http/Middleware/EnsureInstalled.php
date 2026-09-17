@@ -18,7 +18,8 @@ class EnsureInstalled
         if ($request->is('up') || $request->is('up/*') || $request->is('install') || $request->is('install/*')
             || $request->is('docker-setup') || $request->is('docker-setup/*')
             || $request->is('criar-admin') || $request->is('criar-admin/*')
-            || $request->is('manifest.json') || $request->is('painel-sw.js') || $request->is('firebase-messaging-sw.js')) {
+            || $request->is('manifest.json') || $request->is('painel-sw.js') || $request->is('firebase-messaging-sw.js')
+            || $request->is('.well-known/*')) {
             return $next($request);
         }
 

@@ -138,6 +138,7 @@ class VersellFoundationTest extends TestCase
                 && $request['client_id'] === 'ci_client'
                 && $request['client_secret'] === 'ci_secret'
                 && $request['grant_type'] === 'client_credentials'
+                && $request['scope'] === VersellHttpClient::CASH_IN_OAUTH_SCOPE
                 && ! isset($request['clientId']);
         });
     }

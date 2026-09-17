@@ -117,7 +117,12 @@ class RefundRequestService
         }
 
         try {
-            PlatformOrderAdminService::refundPaidOrDisputed($order->fresh());
+            $outcome = PlatformOrderAdminService::applyRefundAfterAcquirer(
+                $order->fresh(),
+                (string) ($gw['status'] ?? ''),
+                null,
+                'seller_manual_refund'
+            );
         } catch (\Throwable $e) {
             Log::error('RefundRequestService: falha ao estornar carteira.', [
                 'order_id' => $order->id,
@@ -146,7 +151,10 @@ class RefundRequestService
             Mail::to($customer->email)->send(new RefundDecisionCustomerMail($request->fresh(['order.product']), true, null));
         }
 
-        $this->logSellerDecision($seller, $request, SellerActivityLogService::REFUND_REQUEST_APPROVED);
+        $this->logSellerDecision($seller, $request, SellerActivityLogService::REFUND_REQUEST_APPROVED, [
+            'gateway_status' => $gw['status'] ?? null,
+            'pending_gateway' => $outcome === 'refund_pending' ? true : null,
+        ]);
     }
 
     public function reject(User $seller, RefundRequest $request, ?string $reason): void

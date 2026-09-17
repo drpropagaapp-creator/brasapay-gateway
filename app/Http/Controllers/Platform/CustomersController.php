@@ -3,16 +3,21 @@
 namespace App\Http\Controllers\Platform;
 
 use App\Http\Controllers\Controller;
+use App\Models\MemberStudentActivityLog;
 use App\Models\Order;
 use App\Models\Product;
 use App\Models\User;
+use App\Services\MemberStudentActivityLogService;
 use App\Services\PlatformAdminDeletionService;
 use App\Services\PlatformAuditService;
 use App\Support\Csv;
 use App\Support\PlatformCustomerDirectory;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Str;
 use Inertia\Inertia;
 use Inertia\Response;
 use InvalidArgumentException;
@@ -104,6 +109,7 @@ class CustomersController extends Controller
             'summary' => PlatformCustomerDirectory::purchaseSummary($user),
             'orders' => $orders,
             'pending_orders' => $pendingOrders,
+            'access_products' => $this->accessProductsFor($user),
             'filters' => $filters,
             'filter_options' => $filterOptions,
             'status_labels' => collect(PlatformCustomerDirectory::ORDER_STATUSES)
@@ -188,6 +194,169 @@ class CustomersController extends Controller
             ->with('success', $count > 0
                 ? "Histórico removido: {$count} pedido(s) excluído(s)."
                 : 'Este cliente não tinha pedidos para excluir.');
+    }
+
+    public function dossier(Request $request, User $user, Product $produto, MemberStudentActivityLogService $activityLog): JsonResponse
+    {
+        $this->assertCanViewCustomerAccessDossier($user, $produto);
+
+        PlatformAuditService::log('platform.customer.access_dossier.viewed', [
+            'user_id' => $user->id,
+            'product_id' => (string) $produto->id,
+        ], $request);
+
+        return response()->json($activityLog->dossierFor($user, $produto));
+    }
+
+    public function exportDossier(Request $request, User $user, Product $produto, MemberStudentActivityLogService $activityLog): StreamedResponse
+    {
+        $this->assertCanViewCustomerAccessDossier($user, $produto);
+
+        PlatformAuditService::log('platform.customer.access_dossier.exported', [
+            'user_id' => $user->id,
+            'product_id' => (string) $produto->id,
+            'format' => 'csv',
+        ], $request);
+
+        $filename = sprintf(
+            'dossie-%s-%s-%s.csv',
+            Str::slug((string) $user->name) ?: 'cliente',
+            Str::slug((string) $produto->name) ?: 'produto',
+            now()->format('Y-m-d')
+        );
+
+        return response()->streamDownload(function () use ($activityLog, $user, $produto) {
+            $out = fopen('php://output', 'w');
+            $activityLog->writeDossierCsv($out, $user, $produto);
+            fclose($out);
+        }, $filename, [
+            'Content-Type' => 'text/csv; charset=UTF-8',
+        ]);
+    }
+
+    public function exportDossierPdf(Request $request, User $user, Product $produto, MemberStudentActivityLogService $activityLog): \Illuminate\Http\Response
+    {
+        $this->assertCanViewCustomerAccessDossier($user, $produto);
+
+        PlatformAuditService::log('platform.customer.access_dossier.exported', [
+            'user_id' => $user->id,
+            'product_id' => (string) $produto->id,
+            'format' => 'pdf',
+        ], $request);
+
+        $filename = sprintf(
+            'dossie-%s-%s-%s.pdf',
+            Str::slug((string) $user->name) ?: 'cliente',
+            Str::slug((string) $produto->name) ?: 'produto',
+            now()->format('Y-m-d')
+        );
+
+        $binary = $activityLog->renderDossierPdf($user, $produto);
+
+        return response($binary, 200, [
+            'Content-Type' => 'application/pdf',
+            'Content-Disposition' => 'attachment; filename="'.$filename.'"',
+        ]);
+    }
+
+    private function assertCanViewCustomerAccessDossier(User $user, Product $produto): void
+    {
+        if (! PlatformCustomerDirectory::isViewableCustomer($user)) {
+            abort(404);
+        }
+
+        if (! $this->customerHasProductRelationship($user, $produto)) {
+            abort(404);
+        }
+    }
+
+    private function customerHasProductRelationship(User $user, Product $produto): bool
+    {
+        $productId = (string) $produto->id;
+
+        if (Schema::hasTable('product_user')) {
+            $enrolled = DB::table('product_user')
+                ->where('user_id', $user->id)
+                ->where(function ($q) use ($produto, $productId) {
+                    $q->where('product_id', $produto->id)
+                        ->orWhere('product_id', $productId);
+                })
+                ->exists();
+            if ($enrolled) {
+                return true;
+            }
+        }
+
+        $hasOrder = Order::query()
+            ->where('user_id', $user->id)
+            ->where(function ($q) use ($produto, $productId) {
+                $q->where('product_id', $produto->id)
+                    ->orWhere('product_id', $productId);
+                if (Schema::hasTable('order_items')) {
+                    $q->orWhereHas('orderItems', function ($items) use ($produto, $productId) {
+                        $items->where('product_id', $produto->id)
+                            ->orWhere('product_id', $productId);
+                    });
+                }
+            })
+            ->exists();
+        if ($hasOrder) {
+            return true;
+        }
+
+        if (! Schema::hasTable('member_student_activity_logs')) {
+            return false;
+        }
+
+        return MemberStudentActivityLog::query()
+            ->where('user_id', $user->id)
+            ->where('product_id', $productId)
+            ->exists();
+    }
+
+    /**
+     * @return list<array{id: string, name: string, type: string|null, enrolled_at: string|null, seller: array{id: int, name: string}|null}>
+     */
+    private function accessProductsFor(User $user): array
+    {
+        if (! Schema::hasTable('product_user')) {
+            return [];
+        }
+
+        $enrollments = DB::table('product_user')
+            ->where('user_id', $user->id)
+            ->orderByDesc('created_at')
+            ->get();
+
+        if ($enrollments->isEmpty()) {
+            return [];
+        }
+
+        $productIds = $enrollments->pluck('product_id')->unique()->filter()->values();
+        $products = Product::query()
+            ->withTrashed()
+            ->with(['tenantOwner:id,name'])
+            ->whereIn('id', $productIds)
+            ->get()
+            ->keyBy(fn (Product $product) => (string) $product->id);
+
+        return $enrollments->map(function ($row) use ($products) {
+            $productId = (string) $row->product_id;
+            $product = $products->get($productId);
+            $seller = $product?->tenantOwner;
+
+            return [
+                'id' => $productId,
+                'name' => $product?->name ?: 'Produto removido',
+                'type' => $product?->type,
+                'enrolled_at' => $row->created_at
+                    ? \Carbon\Carbon::parse($row->created_at)->toIso8601String()
+                    : null,
+                'seller' => $seller
+                    ? ['id' => $seller->id, 'name' => $seller->name]
+                    : null,
+            ];
+        })->values()->all();
     }
 
     /**
@@ -383,12 +552,19 @@ class CustomersController extends Controller
             $productName = $items[0]['name'];
         }
 
+        $productId = $order->product_id !== null && $order->product_id !== ''
+            ? (string) $order->product_id
+            : (isset($items[0]['product_id']) && $items[0]['product_id'] !== null && $items[0]['product_id'] !== ''
+                ? (string) $items[0]['product_id']
+                : null);
+
         $discount = PlatformCustomerDirectory::discountAmountFromOrder($order);
         $paid = round((float) $order->amount, 2);
 
         return [
             'id' => $order->id,
             'created_at' => $order->created_at?->toIso8601String(),
+            'product_id' => $productId,
             'product_name' => $productName,
             'items' => $items,
             'has_multiple_items' => count($items) > 1,
@@ -406,6 +582,7 @@ class CustomersController extends Controller
                 ? PlatformCustomerDirectory::safeChargeUrlFromOrder($order)
                 : null,
             'transactions_url' => route('plataforma.transacoes.index', ['q' => (string) $order->id]),
+            'has_access_dossier' => $productId !== null,
         ];
     }
 }

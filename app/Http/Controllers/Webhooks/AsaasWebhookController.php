@@ -3,9 +3,9 @@
 namespace App\Http\Controllers\Webhooks;
 
 use App\Http\Controllers\Controller;
-use App\Support\PaymentWebhookDispatcher;
 use App\Models\Order;
 use App\Support\GatewayInboundWebhookAuth;
+use App\Support\PaymentWebhookDispatcher;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -14,7 +14,7 @@ class AsaasWebhookController extends Controller
 {
     /**
      * Handle Asaas webhook (POST /webhooks/gateways/asaas).
-     * Payload: event (PAYMENT_RECEIVED, PAYMENT_CONFIRMED, PAYMENT_OVERDUE, etc.), payment (object with id).
+     * Auth: header asaas-access-token = authToken do webhook no painel Asaas.
      * Always respond 200 when order not found to avoid retries.
      */
     public function handle(Request $request): JsonResponse
@@ -32,30 +32,46 @@ class AsaasWebhookController extends Controller
         $order = Order::where('gateway', 'asaas')->where('gateway_id', $transactionId)->first();
         if (! $order) {
             Log::debug('AsaasWebhook: order not found', ['gateway_id' => $transactionId]);
+
             return response()->json(['received' => true]);
         }
 
-        if (! GatewayInboundWebhookAuth::verifyHmacSha256Body($request, 'asaas', $order->tenant_id, 'X-Webhook-Signature', 'X-Signature')) {
+        if (! GatewayInboundWebhookAuth::verifyAsaas($request, $order->tenant_id)) {
             return response()->json(['message' => 'Unauthorized'], 401);
         }
 
-        $eventType = strtoupper((string) $request->input('event', ''));
-        $event = 'order.pending';
-        $mappedStatus = 'pending';
-
-        if (in_array($eventType, ['PAYMENT_RECEIVED', 'PAYMENT_CONFIRMED'], true)) {
-            $event = 'order.paid';
-            $mappedStatus = 'paid';
-        } elseif (in_array($eventType, ['PAYMENT_CANCELLED', 'PAYMENT_REFUNDED'], true)) {
-            $event = 'order.cancelled';
-            $mappedStatus = 'cancelled';
-        } elseif (in_array($eventType, ['PAYMENT_OVERDUE'], true)) {
-            $event = 'order.pending';
-            $mappedStatus = 'pending';
-        }
+        [$event, $mappedStatus] = $this->mapEvent(strtoupper((string) $request->input('event', '')));
 
         PaymentWebhookDispatcher::dispatch('asaas', $transactionId, $event, $mappedStatus, $request->all());
 
         return response()->json(['received' => true]);
+    }
+
+    /**
+     * @return array{0: string, 1: string}
+     */
+    private function mapEvent(string $eventType): array
+    {
+        if (in_array($eventType, ['PAYMENT_RECEIVED', 'PAYMENT_CONFIRMED'], true)) {
+            return ['order.paid', 'paid'];
+        }
+
+        if (in_array($eventType, ['PAYMENT_DELETED'], true)) {
+            return ['order.cancelled', 'cancelled'];
+        }
+
+        if (in_array($eventType, ['PAYMENT_REFUNDED', 'PAYMENT_PARTIALLY_REFUNDED'], true)) {
+            return ['order.refunded', 'refunded'];
+        }
+
+        if (in_array($eventType, ['PAYMENT_CHARGEBACK_REQUESTED', 'PAYMENT_CHARGEBACK_DISPUTE'], true)) {
+            return ['order.disputed', 'disputed'];
+        }
+
+        if (in_array($eventType, ['PAYMENT_REPROVED_BY_RISK_ANALYSIS', 'PAYMENT_CREDIT_CARD_CAPTURE_REFUSED'], true)) {
+            return ['order.rejected', 'rejected'];
+        }
+
+        return ['order.pending', 'pending'];
     }
 }

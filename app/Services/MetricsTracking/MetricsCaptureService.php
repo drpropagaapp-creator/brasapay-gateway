@@ -146,7 +146,7 @@ class MetricsCaptureService
             $session->save();
         }
 
-        $isClick = in_array($eventName, [MetricsEvent::LINK_CLICKED, MetricsEvent::PAGE_VIEW, MetricsEvent::CHECKOUT_VIEW], true);
+        $isClick = in_array($eventName, MetricsEvent::clickEventNames(), true);
 
         $event = MetricsEvent::query()->create([
             'event_id' => $eventId,
@@ -415,6 +415,8 @@ class MetricsCaptureService
         $status = $conversionStatus ?? match ($eventName) {
             MetricsEvent::PAYMENT_APPROVED => 'approved',
             MetricsEvent::PIX_CREATED => 'pix_created',
+            MetricsEvent::BOLETO_CREATED => 'boleto_created',
+            MetricsEvent::CHECKOUT_FORM_STARTED => 'checkout_form_started',
             MetricsEvent::PAYMENT_REFUSED => 'refused',
             MetricsEvent::PAYMENT_REFUNDED => 'refunded',
             MetricsEvent::CHARGEBACK_RECEIVED => 'chargeback',

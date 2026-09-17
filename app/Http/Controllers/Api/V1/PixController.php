@@ -171,7 +171,12 @@ class PixController extends Controller
             ]);
         }
 
-        PlatformOrderAdminService::refundPaidOrDisputed($orderModel);
+        PlatformOrderAdminService::applyRefundAfterAcquirer(
+            $orderModel,
+            (string) ($bridgeResult['status'] ?? ''),
+            null,
+            'seller_manual_refund'
+        );
         $orderModel = $orderModel->fresh();
         $this->logApiRefund($app, $orderModel, $bridgeResult);
 
@@ -179,6 +184,9 @@ class PixController extends Controller
             'order_id' => $orderModel->id,
             'status' => $orderModel->status,
             'gateway_refund' => $bridgeResult,
+            'message' => $orderModel->status === 'refund_pending'
+                ? ($bridgeResult['note'] ?? 'Reembolso Pix em processamento.')
+                : null,
         ]);
     }
 

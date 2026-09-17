@@ -3,6 +3,7 @@
 namespace App\Services\Versell;
 
 use App\Gateways\Versell\VersellCredentials;
+use App\Models\SubscriptionPlan;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -103,7 +104,8 @@ class VersellPixRecorrenteService
         string $dataInicial,
         string $dataFinal,
         string $contrato = '',
-        string $objeto = 'Assinatura'
+        string $objeto = 'Assinatura',
+        string $periodicidade = 'MENSAL'
     ): array {
         $document = preg_replace('/\D/', '', (string) ($consumer['document'] ?? '')) ?: '';
         if (strlen($document) < 11) {
@@ -128,12 +130,12 @@ class VersellPixRecorrenteService
             'calendario' => [
                 'dataInicial' => $dataInicial,
                 'dataFinal' => $dataFinal,
-                'periodicidade' => 'MENSAL',
+                'periodicidade' => $this->normalizePeriodicidade($periodicidade),
             ],
             'valor' => [
                 'valorRec' => number_format(round($valorRec, 2), 2, '.', ''),
             ],
-            'politicaRetentativa' => 'NAO_PERMITE',
+            'politicaRetentativa' => 'PERMITE_3R_7D',
             'ativacao' => [
                 'dadosJornada' => [
                     'txid' => $txidCob,
@@ -168,6 +170,36 @@ class VersellPixRecorrenteService
         return $this->jsonOrFail($response, 'consultar recorrência');
     }
 
+    public function isRecorrenciaAprovada(string $idRec): bool
+    {
+        $data = $this->getRecurrence($idRec);
+
+        return strtoupper(trim((string) ($data['status'] ?? ''))) === 'APROVADA';
+    }
+
+    /**
+     * GET /cobr/{txid}
+     *
+     * @return array<string, mixed>
+     */
+    public function getCobranca(string $txid): array
+    {
+        $response = $this->request('GET', '/cobr/'.rawurlencode($txid), null);
+
+        return $this->jsonOrFail($response, 'consultar cobrança recorrente');
+    }
+
+    public static function periodicidadeFromInterval(?string $interval): string
+    {
+        return match ($interval) {
+            SubscriptionPlan::INTERVAL_WEEKLY => 'SEMANAL',
+            SubscriptionPlan::INTERVAL_QUARTERLY => 'TRIMESTRAL',
+            SubscriptionPlan::INTERVAL_SEMI_ANNUAL => 'SEMESTRAL',
+            SubscriptionPlan::INTERVAL_ANNUAL => 'ANUAL',
+            default => 'MENSAL',
+        };
+    }
+
     /**
      * PUT /cobr/{txid} ou POST /cobr.
      *
@@ -187,14 +219,7 @@ class VersellPixRecorrenteService
             'valor' => ['original' => number_format(round($valor, 2), 2, '.', '')],
             'calendario' => ['dataDeVencimento' => $dataDeVencimento],
             'ajusteDiaUtil' => true,
-            'devedor' => array_filter([
-                'nome' => $devedor['name'] ?? $devedor['nome'] ?? null,
-                'email' => $devedor['email'] ?? null,
-                'logradouro' => $devedor['logradouro'] ?? null,
-                'cidade' => $devedor['cidade'] ?? null,
-                'uf' => $devedor['uf'] ?? null,
-                'cep' => $devedor['cep'] ?? null,
-            ]),
+            'devedor' => $this->buildCobrDevedor($devedor),
         ];
         if ($infoAdicional !== '') {
             $body['infoAdicional'] = $infoAdicional;
@@ -213,6 +238,53 @@ class VersellPixRecorrenteService
         }
 
         return $data;
+    }
+
+    /**
+     * PATCH /rec/{idRec} — cancela a recorrência no PSP.
+     *
+     * @return array<string, mixed>
+     */
+    public function cancelRecurrence(string $idRec): array
+    {
+        $response = $this->request('PATCH', '/rec/'.rawurlencode($idRec), [
+            'status' => 'CANCELADA',
+        ]);
+
+        return $this->jsonOrFail($response, 'cancelar recorrência', [409]);
+    }
+
+    /**
+     * PATCH /cobr/{txid} — cancela cobrança recorrente ainda não liquidada.
+     *
+     * @return array<string, mixed>
+     */
+    public function cancelCobranca(string $txid): array
+    {
+        $response = $this->request('PATCH', '/cobr/'.rawurlencode($txid), [
+            'status' => 'CANCELADA',
+        ]);
+
+        return $this->jsonOrFail($response, 'cancelar cobrança recorrente', [409]);
+    }
+
+    /**
+     * POST /cobr/{txid}/retentativa/{data}
+     *
+     * @return array<string, mixed>
+     */
+    public function requestRetentativa(string $txid, ?string $data = null): array
+    {
+        $day = $data !== null && preg_match('/^\d{4}-\d{2}-\d{2}$/', $data) === 1
+            ? $data
+            : now()->toDateString();
+        $response = $this->request(
+            'POST',
+            '/cobr/'.rawurlencode($txid).'/retentativa/'.$day,
+            null
+        );
+
+        return $this->jsonOrFail($response, 'solicitar retentativa');
     }
 
     /**
@@ -244,11 +316,12 @@ class VersellPixRecorrenteService
 
     /**
      * @param  \Illuminate\Http\Client\Response  $response
+     * @param  list<int>  $alsoOk
      * @return array<string, mixed>
      */
-    private function jsonOrFail($response, string $action): array
+    private function jsonOrFail($response, string $action, array $alsoOk = []): array
     {
-        if (! $response->successful()) {
+        if (! $response->successful() && ! in_array($response->status(), $alsoOk, true)) {
             $problem = VersellProblemDetails::fromResponse($response->json(), $response->status(), $response->body());
             Log::warning('VersellPixRecorrenteService rejected', [
                 'gateway' => 'versell',
@@ -262,5 +335,37 @@ class VersellPixRecorrenteService
         $data = $response->json();
 
         return is_array($data) ? $data : [];
+    }
+
+    /**
+     * @param  array{name?: string, nome?: string, document?: string, cpf?: string, cnpj?: string, email?: string, logradouro?: string, cidade?: string, uf?: string, cep?: string}  $devedor
+     * @return array<string, string>
+     */
+    private function buildCobrDevedor(array $devedor): array
+    {
+        $document = preg_replace('/\D/', '', (string) ($devedor['document'] ?? $devedor['cpf'] ?? $devedor['cnpj'] ?? '')) ?: '';
+        $body = array_filter([
+            'nome' => $devedor['name'] ?? $devedor['nome'] ?? null,
+            'email' => $devedor['email'] ?? null,
+            'logradouro' => $devedor['logradouro'] ?? null,
+            'cidade' => $devedor['cidade'] ?? null,
+            'uf' => $devedor['uf'] ?? null,
+            'cep' => $devedor['cep'] ?? null,
+        ]);
+        if (strlen($document) === 14) {
+            $body['cnpj'] = $document;
+        } elseif (strlen($document) >= 11) {
+            $body['cpf'] = substr($document, 0, 11);
+        }
+
+        return $body;
+    }
+
+    private function normalizePeriodicidade(string $periodicidade): string
+    {
+        $value = strtoupper(trim($periodicidade));
+        $allowed = ['SEMANAL', 'MENSAL', 'TRIMESTRAL', 'SEMESTRAL', 'ANUAL'];
+
+        return in_array($value, $allowed, true) ? $value : 'MENSAL';
     }
 }

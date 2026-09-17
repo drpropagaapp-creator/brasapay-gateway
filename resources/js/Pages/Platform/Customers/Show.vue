@@ -1,9 +1,10 @@
 <script setup>
-import { computed, reactive, watch } from 'vue';
+import { computed, reactive, ref, watch } from 'vue';
 import { Link, router } from '@inertiajs/vue3';
 import LayoutPlatform from '@/Layouts/LayoutPlatform.vue';
 import Button from '@/components/ui/Button.vue';
-import { ArrowLeft } from 'lucide-vue-next';
+import CustomerAccessDossierSidebar from '@/components/platform/CustomerAccessDossierSidebar.vue';
+import { ArrowLeft, ClipboardList, Package } from 'lucide-vue-next';
 import { htmlToText } from '@/lib/sanitizeHtml';
 
 defineOptions({ layout: LayoutPlatform });
@@ -14,12 +15,15 @@ const props = defineProps({
     summary: { type: Object, required: true },
     orders: { type: Object, required: true },
     pending_orders: { type: Array, default: () => [] },
+    access_products: { type: Array, default: () => [] },
     filters: { type: Object, default: () => ({}) },
     filter_options: { type: Object, default: () => ({ products: [], sellers: [], payment_methods: [] }) },
     status_labels: { type: Object, default: () => ({}) },
 });
 
 const NOT_INFORMED = 'Não informado';
+const accessSidebarOpen = ref(false);
+const accessProductId = ref(null);
 
 const form = reactive({
     status: props.filters?.status ?? '',
@@ -116,6 +120,29 @@ const summaryCards = computed(() => [
     { label: 'Primeira compra', value: formatDate(props.summary?.first_purchase_at) },
     { label: 'Última compra', value: formatDate(props.summary?.last_purchase_at) },
 ]);
+
+function openAccessDossier(productId = null) {
+    accessProductId.value = productId || null;
+    accessSidebarOpen.value = true;
+}
+
+function closeAccessDossier() {
+    accessSidebarOpen.value = false;
+    accessProductId.value = null;
+}
+
+function formatEnrolledAt(iso) {
+    if (!iso) return null;
+    try {
+        return new Date(iso).toLocaleString('pt-BR', {
+            day: '2-digit',
+            month: '2-digit',
+            year: 'numeric',
+        });
+    } catch (_) {
+        return null;
+    }
+}
 </script>
 
 <template>
@@ -404,7 +431,17 @@ const summaryCards = computed(() => [
                             </td>
                             <td class="px-3 py-2">{{ display(o.status_label) }}</td>
                             <td class="px-3 py-2">
-                                <a :href="o.transactions_url" class="text-[var(--color-primary)] hover:underline">Ver pedido</a>
+                                <div class="flex flex-col gap-1 whitespace-nowrap sm:flex-row sm:items-center sm:gap-3">
+                                    <a :href="o.transactions_url" class="text-[var(--color-primary)] hover:underline">Ver pedido</a>
+                                    <button
+                                        v-if="o.has_access_dossier"
+                                        type="button"
+                                        class="text-left text-[var(--color-primary)] hover:underline"
+                                        @click="openAccessDossier(o.product_id)"
+                                    >
+                                        Ver Acessos
+                                    </button>
+                                </div>
                             </td>
                         </tr>
                     </tbody>
@@ -435,5 +472,50 @@ const summaryCards = computed(() => [
                 />
             </nav>
         </section>
+
+        <section class="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900/60">
+            <h2 class="text-sm font-semibold uppercase tracking-wide text-zinc-500">Produtos com acesso</h2>
+            <p class="mt-2 text-sm text-zinc-500">
+                Mesmo dossiê que o seller vê em Alunos: matrícula, progresso e linha do tempo (IP, aulas e downloads).
+            </p>
+            <p v-if="!access_products.length" class="mt-4 text-sm text-zinc-500">
+                Nenhuma matrícula encontrada para este cliente.
+            </p>
+            <div v-else class="mt-4 space-y-2">
+                <button
+                    v-for="p in access_products"
+                    :key="p.id"
+                    type="button"
+                    class="flex w-full items-center justify-between gap-2 rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-left hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-800/50 dark:hover:bg-zinc-800"
+                    @click="openAccessDossier(p.id)"
+                >
+                    <span class="flex min-w-0 items-center gap-2">
+                        <Package class="h-4 w-4 shrink-0 text-zinc-500" />
+                        <span class="min-w-0">
+                            <span class="block truncate text-sm font-medium text-zinc-900 dark:text-white">{{ p.name }}</span>
+                            <span class="block truncate text-xs text-zinc-500">
+                                <template v-if="p.seller?.name">{{ p.seller.name }}</template>
+                                <template v-if="formatEnrolledAt(p.enrolled_at)">
+                                    <template v-if="p.seller?.name"> · </template>
+                                    desde {{ formatEnrolledAt(p.enrolled_at) }}
+                                </template>
+                            </span>
+                        </span>
+                    </span>
+                    <span class="inline-flex shrink-0 items-center gap-1 text-xs font-medium text-[var(--color-primary)]">
+                        <ClipboardList class="h-3.5 w-3.5" />
+                        Ver Acessos
+                    </span>
+                </button>
+            </div>
+        </section>
+
+        <CustomerAccessDossierSidebar
+            :open="accessSidebarOpen"
+            :customer="customer"
+            :products="access_products"
+            :initial-product-id="accessProductId"
+            @close="closeAccessDossier"
+        />
     </div>
 </template>

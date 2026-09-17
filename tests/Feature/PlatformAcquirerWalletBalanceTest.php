@@ -67,7 +67,7 @@ class PlatformAcquirerWalletBalanceTest extends TestCase
 
         $rows = app(AcquirerWalletBalanceService::class)->list();
         $this->assertSame(
-            ['cajupay', 'bspay', 'efi', 'woovi', 'mercadopago', 'stripe', 'versell'],
+            ['cajupay', 'bspay', 'efi', 'woovi', 'mercadopago', 'stripe', 'versell', 'xflow', 'okto'],
             collect($rows)->pluck('slug')->all()
         );
         $this->assertTrue(collect($rows)->every(fn (array $row) => $row['status'] === 'inactive'));
@@ -338,6 +338,27 @@ class PlatformAcquirerWalletBalanceTest extends TestCase
         $this->assertSame(1294.3, $bySlug['woovi']['available']);
     }
 
+    public function test_xflow_uses_balance_endpoint_in_cents(): void
+    {
+        $this->seedCredential('xflow', [
+            'public_key' => 'pk_live_xflow',
+            'secret_key' => 'sk_live_xflow',
+        ]);
+
+        Http::fake([
+            'app.xflowpayments.com/api/v1/balance' => Http::response([
+                'available' => 482040,
+                'reserved' => 1000,
+                'currency' => 'BRL',
+            ], 200),
+        ]);
+
+        $bySlug = collect(app(AcquirerWalletBalanceService::class)->list())->keyBy('slug');
+
+        $this->assertSame('ok', $bySlug['xflow']['status']);
+        $this->assertSame(4820.4, $bySlug['xflow']['available']);
+    }
+
     public function test_parsers_cover_known_payload_shapes(): void
     {
         $service = app(AcquirerWalletBalanceService::class);
@@ -421,6 +442,19 @@ class PlatformAcquirerWalletBalanceTest extends TestCase
                 ['eventDate' => '2026-01-01', 'balanceAmount' => ['available' => 10]],
                 ['eventDate' => '2026-01-02', 'balanceAmount' => ['available' => 80]],
             ],
+        ]));
+        $this->assertSame(123.45, $service->parseXflowAvailable([
+            'available' => 12345,
+            'reserved' => 0,
+            'currency' => 'BRL',
+        ]));
+        $this->assertSame(50.0, $service->parseXflowAvailable([
+            'balance' => ['available' => 5000, 'reserved' => 0, 'currency' => 'BRL'],
+        ]));
+        $this->assertSame(29800.0, $service->parseOktoAvailable([
+            'availableBalance' => 29800.00,
+            'totalBalance' => 30000.00,
+            'pendingBalance' => -200.00,
         ]));
     }
 

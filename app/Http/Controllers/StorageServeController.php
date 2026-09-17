@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Support\MemberLessonMaterialUpload;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
@@ -33,14 +34,23 @@ class StorageServeController extends Controller
             abort(404);
         }
 
-        $mime = match (strtolower(pathinfo($realFile, PATHINFO_EXTENSION))) {
+        $extension = strtolower(pathinfo($realFile, PATHINFO_EXTENSION));
+        if (MemberLessonMaterialUpload::isAllowedExtension($extension)) {
+            return response()->file($realFile, [
+                'Content-Type' => MemberLessonMaterialUpload::serveMimeForExtension($extension),
+                'Content-Disposition' => MemberLessonMaterialUpload::attachmentDisposition(basename($realFile)),
+                'X-Content-Type-Options' => 'nosniff',
+                'Cache-Control' => 'private, no-store',
+            ]);
+        }
+
+        $mime = match ($extension) {
             'png' => 'image/png',
             'jpg', 'jpeg' => 'image/jpeg',
             'gif' => 'image/gif',
             'webp' => 'image/webp',
             'svg' => 'image/svg+xml',
             'ico' => 'image/x-icon',
-            'pdf' => 'application/pdf',
             'css' => 'text/css',
             'js' => 'application/javascript',
             'woff2' => 'font/woff2',

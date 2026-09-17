@@ -271,11 +271,25 @@ class VersellMedService
             }
 
             if (! $response->successful()) {
+                $json = $response->json();
+                $problem = VersellProblemDetails::fromResponse(
+                    is_array($json) ? $json : null,
+                    $response->status(),
+                    (string) $response->body()
+                );
+                Log::warning('VersellMed: listagem de infrações recusada', [
+                    'gateway' => 'versell',
+                    'status' => $problem['status'] ?? $response->status(),
+                    'title' => $problem['title'],
+                    'error' => $problem['message'],
+                    'page' => $page,
+                ]);
                 $errors++;
                 break;
             }
 
             $json = $response->json();
+            $json = is_array($json) ? $json : [];
             $rows = is_array($json['data'] ?? null) ? $json['data'] : [];
             foreach ($rows as $row) {
                 if (! is_array($row)) {

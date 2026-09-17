@@ -16,7 +16,7 @@ use App\Services\MinimumChargeService;
 use App\Services\PaymentService;
 use App\Services\PlatformCardInstallments;
 use App\Services\SubscriptionRenewalService;
-use App\Services\Versell\VersellPixRecorrenteService;
+use App\Services\Versell\VersellPixAutoRenewalService;
 use App\Support\CheckoutCardContract;
 use App\Support\FakeConsumerData;
 use Illuminate\Http\RedirectResponse;
@@ -293,6 +293,24 @@ class RenewalController extends Controller
                     : ! empty($credentials['certificate_path']);
 
                 if ($ready) {
+                    if ($pixAutoGateway === 'versell') {
+                        $renewal = app(VersellPixAutoRenewalService::class);
+                        [$nextStart, $nextEnd] = $renewal->nextPeriod($subscription, $plan);
+                        $existing = $renewal->findPendingRenewal($subscription, $nextEnd->toDateString());
+                        if ($existing !== null && trim((string) $existing->gateway_id) !== '') {
+                            return redirect()->route('renewal.show', $request->input('token'))
+                                ->with('info', 'O débito PIX automático já está agendado. Você receberá a confirmação quando o pagamento for processado.');
+                        }
+
+                        $scheduled = $renewal->ensureNextCobr($subscription);
+                        if ($scheduled !== null && trim((string) $scheduled->gateway_id) !== '') {
+                            return redirect()->route('renewal.show', $request->input('token'))
+                                ->with('info', 'O débito PIX automático foi agendado. Você receberá a confirmação quando o pagamento for processado.');
+                        }
+
+                        return back()->with('error', 'Não foi possível agendar o PIX automático. A recorrência precisa estar aprovada pelo pagador.');
+                    }
+
                     $order = Order::create(array_merge($orderPayload, [
                         'status' => 'pending',
                         'gateway' => $pixAutoGateway,
@@ -300,7 +318,7 @@ class RenewalController extends Controller
                         'payment_method' => 'pix_auto',
                         'metadata' => [
                             'checkout_payment_method' => 'pix_auto',
-                            ($pixAutoGateway === 'versell' ? 'versell_pix_auto_id_rec' : 'efi_pix_auto_id_rec') => $subscription->gateway_subscription_id,
+                            'efi_pix_auto_id_rec' => $subscription->gateway_subscription_id,
                         ],
                     ]));
                     event(new OrderPending($order));
@@ -314,11 +332,7 @@ class RenewalController extends Controller
                             'name' => $user->name ?? $user->email,
                             'email' => $user->email,
                         ];
-                        if ($pixAutoGateway === 'versell') {
-                            $service = new VersellPixRecorrenteService($credentials);
-                        } else {
-                            $service = new EfiPixRecorrenteService($credentials);
-                        }
+                        $service = new EfiPixRecorrenteService($credentials);
                         $service->createCobrancaRecorrente(
                             $idRec,
                             $amount,

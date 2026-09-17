@@ -10,7 +10,28 @@ use Tests\Concerns\InteractsWithGatewayWebhooks;
 abstract class TestCase extends BaseTestCase
 {
     use InteractsWithGatewayWebhooks;
-    use RefreshDatabase;
+    use RefreshDatabase {
+        refreshTestDatabase as refreshTestDatabaseUnsafe;
+    }
+
+    /**
+     * Nunca rodar migrate:fresh no Postgres local (ex.: getfy no Docker).
+     */
+    protected function refreshTestDatabase()
+    {
+        $connection = (string) config('database.default');
+        $driver = (string) config("database.connections.{$connection}.driver");
+        $database = (string) config("database.connections.{$connection}.database");
+        $isSqliteMemory = $driver === 'sqlite' && ($database === ':memory:' || $database === '');
+
+        if (! $isSqliteMemory) {
+            throw new \RuntimeException(
+                "Testes recusados: RefreshDatabase limparia {$driver}/{$database}. Use sqlite :memory: (phpunit.xml) para preservar o banco local."
+            );
+        }
+
+        $this->refreshTestDatabaseUnsafe();
+    }
 
     /**
      * Em SQLite (phpunit) a coluna products.id continua inteira; o boot do model usaria UUID (migração só no MySQL).

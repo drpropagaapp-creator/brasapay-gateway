@@ -149,7 +149,8 @@ function onProductChange(e) {
                 <AuroraStatCard label="Visitantes únicos" :value="String(summary.unique_visitors || 0)" :icon="Users" />
                 <AuroraStatCard label="Sessões" :value="String(summary.sessions || 0)" :icon="MousePointerClick" />
                 <AuroraStatCard label="Cliques" :value="String(summary.clicks || 0)" :icon="MousePointerClick" />
-                <AuroraStatCard label="Checkouts iniciados" :value="String(summary.checkouts_started || 0)" :icon="ShoppingCart" />
+                <AuroraStatCard label="Checkouts iniciados" :value="String(summary.checkouts_form_started || 0)" :icon="ShoppingCart" />
+                <AuroraStatCard label="Pedidos submetidos" :value="String(summary.checkouts_started || 0)" :icon="ShoppingCart" />
                 <AuroraStatCard label="PIX gerados" :value="String(summary.pix_created || 0)" :icon="QrCode" />
                 <AuroraStatCard label="Conversões" :value="String(summary.conversions_approved || 0)" :icon="BadgeCheck" />
                 <AuroraStatCard label="Taxa de conversão" :value="`${summary.conversion_rate || 0}%`" :icon="Percent" />

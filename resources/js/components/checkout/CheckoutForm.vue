@@ -233,31 +233,9 @@ const props = defineProps({
     platformCheckoutNotice: { type: String, default: '' },
 });
 
-/** iPhone / iPod / iPad (inclui iPadOS com UA de desktop). */
-function isCheckoutIosDevice() {
-    if (typeof navigator === 'undefined') return false;
-    const ua = navigator.userAgent || '';
-    if (/iPad|iPhone|iPod/i.test(ua)) return true;
-    return navigator.platform === 'MacIntel' && (navigator.maxTouchPoints ?? 0) > 1;
-}
-
-function isCheckoutAndroidDevice() {
-    if (typeof navigator === 'undefined') return false;
-    return /Android/i.test(navigator.userAgent || '');
-}
-
-/** Apple Pay só no iOS; Google Pay em Android ou desktop (oculto no iOS). */
+/** Apple Pay e Google Pay aparecem em qualquer aparelho; o botão nativo decide a disponibilidade. */
 const checkoutPaymentMethodsForDevice = computed(() => {
-    const list = Array.isArray(props.availablePaymentMethods) ? [...props.availablePaymentMethods] : [];
-    if (typeof navigator === 'undefined') return list;
-    const ios = isCheckoutIosDevice();
-    const android = isCheckoutAndroidDevice();
-    const showGooglePay = android || (!ios && !android);
-    return list.filter((m) => {
-        if (m.id === 'apple_pay') return ios;
-        if (m.id === 'google_pay') return showGooglePay;
-        return true;
-    });
+    return Array.isArray(props.availablePaymentMethods) ? [...props.availablePaymentMethods] : [];
 });
 
 function tf(key, fallback = '') {
@@ -2158,6 +2136,10 @@ function submit() {
                 .then(async (res) => {
                     const data = res?.data;
                     const isJson = data && typeof data === 'object' && !Array.isArray(data);
+                    if (isJson && data.success && data.requires_action && typeof data.redirect_url === 'string' && data.redirect_url) {
+                        window.location.assign(data.redirect_url);
+                        return;
+                    }
                     if (isJson && data.success && isCardPaymentApprovedStatus(data.status) && data.redirect_url) {
                         await completeApprovedPurchase(data.order_id, data.redirect_url, 'approved');
                     } else if (isJson && !data.success) {

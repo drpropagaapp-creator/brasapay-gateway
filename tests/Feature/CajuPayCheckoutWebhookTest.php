@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Events\OrderCompleted;
+use App\Http\Middleware\EnsureInstalled;
 use App\Models\GatewayCredential;
 use App\Models\Order;
 use App\Models\Product;
@@ -15,6 +16,12 @@ use Tests\TestCase;
 
 class CajuPayCheckoutWebhookTest extends TestCase
 {
+    protected function setUp(): void
+    {
+        parent::setUp();
+        $this->withoutMiddleware(EnsureInstalled::class);
+    }
+
     public function test_checkout_webhook_rejects_invalid_signature(): void
     {
         $raw = json_encode([
@@ -101,7 +108,10 @@ class CajuPayCheckoutWebhookTest extends TestCase
         ], $raw);
 
         $response->assertOk();
-        $this->assertSame('completed', $order->fresh()->status);
+        $fresh = $order->fresh();
+        $this->assertSame('completed', $fresh->status);
+        $this->assertSame($sessionId, $fresh->gateway_id);
+        $this->assertSame('charge-test-uuid', $fresh->metadata['cajupay_payment_id'] ?? null);
         Event::assertDispatched(OrderCompleted::class);
     }
 
@@ -141,7 +151,8 @@ class CajuPayCheckoutWebhookTest extends TestCase
 
         $this->assertSame('completed', $order->fresh()->status);
         $this->assertSame('cajupay', $order->fresh()->gateway);
-        $this->assertSame('charge-pending-1', $order->fresh()->gateway_id);
+        $this->assertSame($sessionId, $order->fresh()->gateway_id);
+        $this->assertSame('charge-pending-1', $order->fresh()->metadata['cajupay_payment_id'] ?? null);
         Event::assertDispatched(OrderCompleted::class);
         $this->assertNull(Cache::get('cajupay_checkout_webhook_pending:'.$sessionId));
     }
@@ -198,5 +209,16 @@ class CajuPayCheckoutWebhookTest extends TestCase
 
         $this->assertSame('completed', $order->fresh()->status);
         Event::assertDispatched(OrderCompleted::class);
+    }
+
+    public function test_apple_pay_domain_association_file_is_public(): void
+    {
+        $path = public_path('.well-known/apple-developer-merchantid-domain-association');
+        $this->assertFileExists($path);
+        $this->assertGreaterThan(0, (int) filesize($path));
+
+        $response = $this->get('https://example.test/.well-known/apple-developer-merchantid-domain-association');
+        $response->assertOk();
+        $this->assertNotSame('', $response->getContent());
     }
 }

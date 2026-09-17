@@ -33,6 +33,7 @@ use App\Services\GamificationService;
 use App\Services\MemberProgressService;
 use App\Services\TeamAccessService;
 use App\Support\MemberAreaPwaIconUrls;
+use App\Support\MemberLessonMaterialUpload;
 use App\Support\PublicAppUrl;
 use App\Support\UploadLimits;
 use Illuminate\Validation\Rule;
@@ -526,17 +527,24 @@ class MemberBuilderController extends Controller
         $maxMb = UploadLimits::memberBuilderPdfMaxMb();
         UploadLimits::assertUploadedFileIsValid($request->file('file'), $maxMb);
         $request->validate([
-            'file' => ['required', 'file', 'mimetypes:application/pdf', 'max:'.$maxKb],
+            'file' => ['required', 'file', 'max:'.$maxKb],
         ], [
             'file.required' => 'Nenhum arquivo enviado.',
-            'file.mimetypes' => 'O arquivo deve ser um material em formato PDF.',
-            'file.max' => "O PDF deve ter no máximo {$maxMb} MB.",
+            'file.max' => "O arquivo deve ter no máximo {$maxMb} MB.",
         ]);
         $file = $request->file('file');
-        $name = $file->getClientOriginalName();
-        $safeName = preg_replace('/[^a-zA-Z0-9._-]/', '_', pathinfo($name, PATHINFO_FILENAME)) . '.pdf';
+        $resolved = MemberLessonMaterialUpload::assertValid($file);
+        $safeName = MemberLessonMaterialUpload::safeStoredName(
+            (string) $file->getClientOriginalName(),
+            $resolved['extension']
+        );
         $storage = app(StorageService::class);
-        $path = $storage->putFileAs('member-area/' . $produto->id, $file, $safeName);
+        $path = $storage->putFileAs(
+            'member-area/' . $produto->id,
+            $file,
+            $safeName,
+            MemberLessonMaterialUpload::storageUploadOptions($safeName, $resolved['mime'])
+        );
         return response()->json(['url' => $storage->url($path), 'path' => $path]);
     }
 

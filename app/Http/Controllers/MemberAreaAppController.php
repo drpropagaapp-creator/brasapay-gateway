@@ -21,6 +21,7 @@ use App\Services\MemberAreaResolver;
 use App\Services\MemberCommentService;
 use App\Services\MemberModuleAccessService;
 use App\Services\MemberProgressService;
+use App\Services\MemberStudentActivityLogService;
 use App\Services\StorageService;
 use App\Support\MemberAreaAdminPreview;
 use Illuminate\Http\JsonResponse;
@@ -35,13 +36,15 @@ class MemberAreaAppController extends Controller
         protected MemberProgressService $progressService,
         protected MemberAreaResolver $resolver,
         protected GamificationService $gamificationService,
-        protected MemberModuleAccessService $moduleAccess
+        protected MemberModuleAccessService $moduleAccess,
+        protected MemberStudentActivityLogService $studentActivity,
     ) {}
 
     public function show(Request $request, string $slug): Response
     {
         $product = $this->getProduct($request);
         $user = $request->user();
+        $this->studentActivity->recordVisitOncePerSession($user, $product, $request);
         $now = now();
         $config = $this->memberAreaConfigForApp($product);
         $sections = $product->memberSections()->with(['modules.lessons', 'modules.relatedProduct'])->orderBy('position')->get();
@@ -84,6 +87,7 @@ class MemberAreaAppController extends Controller
     {
         $product = $this->getProduct($request);
         $user = $request->user();
+        $this->studentActivity->recordVisitOncePerSession($user, $product, $request);
         $now = now();
         $sections = $product->memberSections()->with('modules.lessons')->orderBy('position')->get();
 
@@ -123,6 +127,7 @@ class MemberAreaAppController extends Controller
             abort(404);
         }
         $user = $request->user();
+        $this->studentActivity->recordVisitOncePerSession($user, $product, $request);
         $now = now();
         $moduleLock = $this->moduleAccess->moduleLockPayload($module, $product, $user, $now);
         if (($moduleLock['is_locked'] ?? false) === true && ($moduleLock['lock_reason'] ?? null) !== 'expired') {
@@ -163,13 +168,15 @@ class MemberAreaAppController extends Controller
         $currentLessonData = null;
         if ($currentLesson) {
             $this->progressService->ensureLessonStarted($currentLesson, $user);
+            $this->studentActivity->recordLessonViewedOncePerSession($user, $product, $currentLesson, $request);
             $currentLesson->load('module.section');
+            $studentFiles = $this->studentFacingLessonFiles($request, $slug, $currentLesson);
             $currentLessonData = [
                 'id' => $currentLesson->id,
                 'title' => $currentLesson->title,
                 'type' => $currentLesson->type,
-                'content_url' => $currentLesson->content_url,
-                'content_files' => $currentLesson->content_files,
+                'content_url' => $this->studentFacingLessonContentUrl($request, $slug, $currentLesson, $studentFiles),
+                'content_files' => $studentFiles,
                 'link_title' => $currentLesson->link_title,
                 'content_text' => \App\Support\HtmlSanitizer::sanitize($currentLesson->content_text),
                 'duration_seconds' => $currentLesson->duration_seconds,
@@ -253,6 +260,7 @@ class MemberAreaAppController extends Controller
             abort(404);
         }
         $user = $request->user();
+        $this->studentActivity->recordVisitOncePerSession($user, $product, $request);
         $now = now();
         $lesson->load('module');
         if ($lesson->module && $lesson->module->product_id === $product->id) {
@@ -272,14 +280,16 @@ class MemberAreaAppController extends Controller
                 ->with('error', $lessonLock['lock_message'] ?? 'Aula ainda não liberada.');
         }
         $this->progressService->ensureLessonStarted($lesson, $user);
+        $this->studentActivity->recordLessonViewedOncePerSession($user, $product, $lesson, $request);
         $lesson->load('module.section');
 
+        $studentFiles = $this->studentFacingLessonFiles($request, $slug, $lesson);
         $lessonPayload = [
             'id' => $lesson->id,
             'title' => $lesson->title,
             'type' => $lesson->type,
-            'content_url' => $lesson->content_url,
-            'content_files' => $lesson->content_files,
+            'content_url' => $this->studentFacingLessonContentUrl($request, $slug, $lesson, $studentFiles),
+            'content_files' => $studentFiles,
             'link_title' => $lesson->link_title,
             'content_text' => \App\Support\HtmlSanitizer::sanitize($lesson->content_text),
             'duration_seconds' => $lesson->duration_seconds,
@@ -349,7 +359,11 @@ class MemberAreaAppController extends Controller
             }
             return back()->with('error', $lessonLock['lock_message'] ?? 'Conteúdo indisponível.');
         }
+        $alreadyCompleted = $this->isLessonCompleted($user->id, $lesson->id);
         $this->progressService->markLessonCompleted($lesson->id, $user);
+        if (! $alreadyCompleted) {
+            $this->studentActivity->recordLessonCompleted($user, $product, $lesson, $request);
+        }
 
         $newlyUnlocked = $this->gamificationService->checkAndUnlock($product, $user);
         if ($newlyUnlocked !== []) {
@@ -362,6 +376,119 @@ class MemberAreaAppController extends Controller
         $percent = $this->progressService->completionPercent($product, $user);
 
         return response()->json(['success' => true, 'progress_percent' => $percent, 'newly_unlocked_achievements' => $newlyUnlocked]);
+    }
+
+    public function downloadLessonMaterial(Request $request, string $slug, MemberLesson $lesson, int $index): RedirectResponse
+    {
+        $user = $request->user();
+        if (! $user) {
+            abort(401);
+        }
+        $product = $this->getProduct($request);
+        if ($lesson->product_id !== $product->id) {
+            abort(404);
+        }
+        $now = now();
+        $lesson->loadMissing('module');
+        $lessonLock = $this->moduleAccess->lessonLockPayload($lesson, $lesson->module, $product, $user, $now);
+        if (($lessonLock['is_locked'] ?? false) === true) {
+            abort(403, $lessonLock['lock_message'] ?? 'Conteúdo indisponível.');
+        }
+
+        $files = $this->normalizeLessonContentFiles($lesson);
+        $file = $files[$index] ?? null;
+        if ($file === null) {
+            abort(404, 'Material não encontrado.');
+        }
+
+        $this->studentActivity->recordMaterialDownload(
+            $user,
+            $product,
+            $lesson,
+            $request,
+            $index,
+            (string) ($file['name'] ?? 'Material')
+        );
+
+        $url = trim((string) ($file['url'] ?? ''));
+        if ($url === '') {
+            abort(404, 'Material não encontrado.');
+        }
+        if (str_starts_with($url, '/')) {
+            return redirect()->to($url);
+        }
+        if (filter_var($url, FILTER_VALIDATE_URL)) {
+            return redirect()->away($url);
+        }
+
+        abort(404, 'Material não encontrado.');
+    }
+
+    /**
+     * @return list<array{url: string, name: string}>
+     */
+    private function normalizeLessonContentFiles(MemberLesson $lesson): array
+    {
+        $list = is_array($lesson->content_files) ? $lesson->content_files : [];
+        $out = [];
+        foreach ($list as $item) {
+            if (is_string($item)) {
+                $url = trim($item);
+                if ($url !== '') {
+                    $out[] = ['url' => $url, 'name' => 'Material'];
+                }
+                continue;
+            }
+            if (! is_array($item)) {
+                continue;
+            }
+            $url = trim((string) ($item['url'] ?? ''));
+            if ($url === '') {
+                continue;
+            }
+            $name = trim((string) ($item['name'] ?? ''));
+            $out[] = ['url' => $url, 'name' => $name !== '' ? $name : 'Material'];
+        }
+        if ($out === [] && is_string($lesson->content_url) && trim($lesson->content_url) !== '') {
+            $out[] = ['url' => trim($lesson->content_url), 'name' => 'Material'];
+        }
+
+        return $out;
+    }
+
+    /**
+     * @return list<array{url: string, name: string}>
+     */
+    private function studentFacingLessonFiles(Request $request, string $slug, MemberLesson $lesson): array
+    {
+        $files = $this->normalizeLessonContentFiles($lesson);
+        foreach ($files as $i => $file) {
+            $files[$i]['url'] = $this->lessonMaterialDownloadPath($request, $slug, (int) $lesson->id, $i);
+        }
+
+        return $files;
+    }
+
+    /**
+     * @param  list<array{url: string, name: string}>  $studentFiles
+     */
+    private function studentFacingLessonContentUrl(Request $request, string $slug, MemberLesson $lesson, array $studentFiles): ?string
+    {
+        if (($lesson->type ?? '') === MemberLesson::TYPE_PDF) {
+            return $studentFiles[0]['url'] ?? ($lesson->content_url ?: null);
+        }
+
+        return $lesson->content_url ?: null;
+    }
+
+    private function lessonMaterialDownloadPath(Request $request, string $slug, int $lessonId, int $index): string
+    {
+        $suffix = '/aula/'.$lessonId.'/material/'.$index;
+        if ($this->isHostMemberAreaRequest($request)) {
+            return $suffix;
+        }
+
+        return '/m/'.$slug.$suffix;
     }
 
     public function storeLessonComment(Request $request, string $slug, MemberLesson $lesson): JsonResponse|RedirectResponse

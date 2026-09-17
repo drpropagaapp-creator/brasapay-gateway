@@ -39,6 +39,7 @@ class MetricsCollectController extends Controller
         $allowed = [
             MetricsEvent::PAGE_VIEW,
             MetricsEvent::CHECKOUT_VIEW,
+            MetricsEvent::CHECKOUT_FORM_STARTED,
             MetricsEvent::CHECKOUT_STARTED,
             MetricsEvent::LINK_CLICKED,
             MetricsEvent::PIX_CREATED,

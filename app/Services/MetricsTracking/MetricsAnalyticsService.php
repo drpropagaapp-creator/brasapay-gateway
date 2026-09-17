@@ -199,18 +199,21 @@ class MetricsAnalyticsService
         $sessions = $this->sessionsQuery($tenantId, $start, $end, $filters, $platformScope);
         $events = $this->eventsQuery($tenantId, $start, $end, $filters, $platformScope);
 
-        $uniqueVisitors = (clone $sessions)->distinct('visitor_key')->count('visitor_key');
-        $sessionsCount = (clone $sessions)->count();
-        $clicks = (int) (clone $sessions)->sum('clicks_count');
-        if ($clicks === 0) {
-            $clicks = (clone $events)->whereIn('event_name', [
-                MetricsEvent::PAGE_VIEW, MetricsEvent::CHECKOUT_VIEW, MetricsEvent::LINK_CLICKED,
-            ])->count();
+        $uniqueVisitors = $this->distinctVisitorCount($events);
+        $sessionsCount = (int) (clone $events)->whereNotNull('session_key')->distinct()->count('session_key');
+        if ($sessionsCount === 0) {
+            $sessionsCount = (clone $sessions)->count();
+        }
+        if ($uniqueVisitors === 0) {
+            $uniqueVisitors = (int) (clone $sessions)->whereNotNull('visitor_key')->distinct()->count('visitor_key');
         }
 
+        $clicks = (clone $events)->whereIn('event_name', MetricsEvent::clickEventNames())->count();
         $checkoutViews = (clone $events)->where('event_name', MetricsEvent::CHECKOUT_VIEW)->count();
+        $checkoutsFormStarted = (clone $events)->where('event_name', MetricsEvent::CHECKOUT_FORM_STARTED)->count();
         $checkoutsStarted = (clone $events)->where('event_name', MetricsEvent::CHECKOUT_STARTED)->count();
         $pixCreated = (clone $events)->where('event_name', MetricsEvent::PIX_CREATED)->count();
+        $paymentsInitiated = (clone $events)->whereIn('event_name', MetricsEvent::paymentInitiatedEventNames())->count();
         $approved = (clone $events)->where('event_name', MetricsEvent::PAYMENT_APPROVED)->count();
         $refunded = (clone $events)->where('event_name', MetricsEvent::PAYMENT_REFUNDED)->count();
         $refused = (clone $events)->where('event_name', MetricsEvent::PAYMENT_REFUSED)->count();
@@ -236,7 +239,9 @@ class MetricsAnalyticsService
             $refunded,
             $gross,
             $net,
-            $avgSeconds
+            $avgSeconds,
+            $checkoutsFormStarted,
+            $paymentsInitiated,
         );
     }
 
@@ -276,8 +281,10 @@ class MetricsAnalyticsService
                 $daily['sessions'] += (int) $r->sessions;
                 $daily['clicks'] += (int) $r->clicks;
                 $daily['checkout_views'] += (int) $r->checkout_views;
+                $daily['checkouts_form_started'] += (int) ($r->checkouts_form_started ?? 0);
                 $daily['checkouts_started'] += (int) $r->checkouts_started;
                 $daily['pix_created'] += (int) $r->pix_created;
+                $daily['payments_initiated'] += (int) ($r->payments_initiated ?? 0);
                 $daily['conversions_approved'] += (int) $r->payments_approved;
                 $daily['payments_refused'] += (int) $r->payments_refused;
                 $daily['refunds'] += (int) $r->refunds;
@@ -296,9 +303,9 @@ class MetricsAnalyticsService
         $multiDay = $rangeStart->toDateString() !== $rangeEnd->toDateString();
         $liveUnique = null;
         if ($multiDay || $needLive) {
-            $liveUnique = (int) $this->sessionsQuery($tenantId, $start, $end, $filters, $platformScope)
-                ->distinct('visitor_key')
-                ->count('visitor_key');
+            $liveUnique = $this->distinctVisitorCount(
+                $this->eventsQuery($tenantId, $start, $end, $filters, $platformScope)
+            );
         }
 
         if ($needLive && $hasDaily) {
@@ -308,8 +315,10 @@ class MetricsAnalyticsService
                 'sessions' => $daily['sessions'] + $live['sessions'],
                 'clicks' => $daily['clicks'] + $live['clicks'],
                 'checkout_views' => $daily['checkout_views'] + $live['checkout_views'],
+                'checkouts_form_started' => $daily['checkouts_form_started'] + (int) ($live['checkouts_form_started'] ?? 0),
                 'checkouts_started' => $daily['checkouts_started'] + $live['checkouts_started'],
                 'pix_created' => $daily['pix_created'] + $live['pix_created'],
+                'payments_initiated' => $daily['payments_initiated'] + (int) ($live['payments_initiated'] ?? 0),
                 'conversions_approved' => $daily['conversions_approved'] + $live['conversions_approved'],
                 'payments_refused' => $daily['payments_refused'] + $live['payments_refused'],
                 'refunds' => $daily['refunds'] + $live['refunds'],
@@ -338,7 +347,9 @@ class MetricsAnalyticsService
                 $merged['refunds'],
                 $merged['gross_revenue'],
                 $merged['net_revenue'],
-                $avgSeconds
+                $avgSeconds,
+                $merged['checkouts_form_started'],
+                $merged['payments_initiated'],
             );
         }
 
@@ -360,7 +371,9 @@ class MetricsAnalyticsService
             $daily['refunds'],
             $daily['gross_revenue'],
             $daily['net_revenue'],
-            $avgSeconds
+            $avgSeconds,
+            $daily['checkouts_form_started'],
+            $daily['payments_initiated'],
         );
     }
 
@@ -374,8 +387,10 @@ class MetricsAnalyticsService
             'sessions' => 0,
             'clicks' => 0,
             'checkout_views' => 0,
+            'checkouts_form_started' => 0,
             'checkouts_started' => 0,
             'pix_created' => 0,
+            'payments_initiated' => 0,
             'conversions_approved' => 0,
             'payments_refused' => 0,
             'refunds' => 0,
@@ -402,6 +417,8 @@ class MetricsAnalyticsService
         float $gross,
         float $net,
         float $avgSeconds,
+        int $checkoutsFormStarted = 0,
+        int $paymentsInitiated = 0,
     ): array {
         $conversionRate = $uniqueVisitors > 0 ? round(($approved / $uniqueVisitors) * 100, 2) : 0.0;
         $ticket = $approved > 0 ? round($gross / $approved, 2) : 0.0;
@@ -413,8 +430,10 @@ class MetricsAnalyticsService
             'sessions' => $sessionsCount,
             'clicks' => $clicks,
             'checkout_views' => $checkoutViews,
+            'checkouts_form_started' => $checkoutsFormStarted,
             'checkouts_started' => $checkoutsStarted,
             'pix_created' => $pixCreated,
+            'payments_initiated' => $paymentsInitiated,
             'conversions_approved' => $approved,
             'payments_refused' => $refused,
             'refunds' => $refunded,
@@ -714,7 +733,7 @@ class MetricsAnalyticsService
             }
             $name = (string) $row->event_name;
             $total = (int) $row->total;
-            if (in_array($name, [MetricsEvent::PAGE_VIEW, MetricsEvent::CHECKOUT_VIEW, MetricsEvent::LINK_CLICKED], true)) {
+            if (in_array($name, MetricsEvent::clickEventNames(), true)) {
                 $map[$b]['clicks'] += $total;
             }
             if ($name === MetricsEvent::PAYMENT_APPROVED) {
@@ -726,20 +745,10 @@ class MetricsAnalyticsService
             }
         }
 
-        $sessionCol = match ($groupBy) {
-            'hour' => SqlDialect::hourExpression('first_touch_at'),
-            'week' => $driver === 'pgsql'
-                ? "to_char(date_trunc('week', first_touch_at), 'YYYY-MM-DD')"
-                : "DATE_FORMAT(DATE_SUB(first_touch_at, INTERVAL WEEKDAY(first_touch_at) DAY), '%Y-%m-%d')",
-            'month' => $driver === 'pgsql'
-                ? "to_char(first_touch_at, 'YYYY-MM')"
-                : "DATE_FORMAT(first_touch_at, '%Y-%m')",
-            default => SqlDialect::dateExpression('first_touch_at'),
-        };
-
-        $visitorRows = $this->sessionsQuery($tenantId, $start, $end, $filters, $platformScope)
-            ->selectRaw("{$sessionCol} as bucket")
+        $visitorRows = $this->eventsQuery($tenantId, $start, $end, $filters, $platformScope)
+            ->selectRaw("{$col} as bucket")
             ->selectRaw('COUNT(DISTINCT visitor_key) as visitors')
+            ->whereNotNull('visitor_key')
             ->groupBy('bucket')
             ->get();
 
@@ -776,20 +785,23 @@ class MetricsAnalyticsService
      */
     public function funnel(?int $tenantId, ?Carbon $start, ?Carbon $end, array $filters = [], bool $platformScope = false): array
     {
-        $summary = $this->summary($tenantId, $start, $end, $filters, $platformScope);
+        $events = $this->eventsQuery($tenantId, $start, $end, $filters, $platformScope);
+
+        $visitors = $this->distinctVisitorCount($events);
+        $approvedUnique = $this->distinctVisitorCount($events, [MetricsEvent::PAYMENT_APPROVED]);
 
         $steps = [
-            ['key' => 'visitors', 'label' => 'Visitantes', 'value' => $summary['unique_visitors']],
-            ['key' => 'clicks', 'label' => 'Cliques', 'value' => $summary['clicks']],
-            ['key' => 'checkout_views', 'label' => 'Visualizações de checkout', 'value' => $summary['checkout_views']],
-            ['key' => 'checkouts_started', 'label' => 'Checkouts iniciados', 'value' => $summary['checkouts_started']],
-            ['key' => 'pix_created', 'label' => 'PIX gerados', 'value' => $summary['pix_created']],
-            ['key' => 'approved', 'label' => 'Pagamentos aprovados', 'value' => $summary['conversions_approved']],
+            ['key' => 'visitors', 'label' => 'Visitantes', 'value' => $visitors],
+            ['key' => 'checkout_views', 'label' => 'Visualizações de checkout', 'value' => $this->distinctVisitorCount($events, [MetricsEvent::CHECKOUT_VIEW])],
+            ['key' => 'checkouts_form_started', 'label' => 'Checkouts iniciados', 'value' => $this->distinctVisitorCount($events, [MetricsEvent::CHECKOUT_FORM_STARTED])],
+            ['key' => 'checkouts_started', 'label' => 'Pedidos submetidos', 'value' => $this->distinctVisitorCount($events, [MetricsEvent::CHECKOUT_STARTED])],
+            ['key' => 'payments_initiated', 'label' => 'Pagamentos iniciados', 'value' => $this->distinctVisitorCount($events, MetricsEvent::paymentInitiatedEventNames())],
+            ['key' => 'approved', 'label' => 'Pagamentos aprovados', 'value' => $approvedUnique],
         ];
 
         $out = [];
         $prev = null;
-        foreach ($steps as $i => $step) {
+        foreach ($steps as $step) {
             $drop = null;
             if ($prev !== null && $prev > 0) {
                 $drop = round((1 - ($step['value'] / $prev)) * 100, 2);
@@ -806,8 +818,23 @@ class MetricsAnalyticsService
 
         return [
             'steps' => $out,
-            'final_conversion_rate' => $summary['conversion_rate'],
+            'final_conversion_rate' => $visitors > 0
+                ? round(($approvedUnique / $visitors) * 100, 2)
+                : 0.0,
         ];
+    }
+
+    /**
+     * @param  list<string>|null  $eventNames
+     */
+    private function distinctVisitorCount(Builder $events, ?array $eventNames = null): int
+    {
+        $q = clone $events;
+        if ($eventNames !== null) {
+            $q->whereIn('event_name', $eventNames);
+        }
+
+        return (int) $q->whereNotNull('visitor_key')->distinct()->count('visitor_key');
     }
 
     /**
@@ -848,13 +875,16 @@ class MetricsAnalyticsService
             ->selectRaw("{$dimExpr} as dim")
             ->selectRaw('COUNT(DISTINCT visitor_key) as visitors')
             ->selectRaw('COUNT(*) as sessions')
-            ->selectRaw('COALESCE(SUM(clicks_count),0) as clicks')
             ->groupBy('dim')
             ->get()
             ->keyBy('dim');
 
+        $clickPlaceholders = implode(',', array_fill(0, count(MetricsEvent::clickEventNames()), '?'));
         $eventRows = $this->eventsQuery($tenantId, $start, $end, $filters, $platformScope)
             ->selectRaw("{$dimExpr} as dim")
+            ->selectRaw('COUNT(DISTINCT visitor_key) as visitors')
+            ->selectRaw("SUM(CASE WHEN event_name IN ({$clickPlaceholders}) THEN 1 ELSE 0 END) as clicks", MetricsEvent::clickEventNames())
+            ->selectRaw('SUM(CASE WHEN event_name = ? THEN 1 ELSE 0 END) as checkouts_form_started', [MetricsEvent::CHECKOUT_FORM_STARTED])
             ->selectRaw('SUM(CASE WHEN event_name = ? THEN 1 ELSE 0 END) as checkouts_started', [MetricsEvent::CHECKOUT_STARTED])
             ->selectRaw('SUM(CASE WHEN event_name = ? THEN 1 ELSE 0 END) as pix_created', [MetricsEvent::PIX_CREATED])
             ->selectRaw('SUM(CASE WHEN event_name = ? THEN 1 ELSE 0 END) as approved', [MetricsEvent::PAYMENT_APPROVED])
@@ -886,10 +916,10 @@ class MetricsAnalyticsService
         foreach ($keys as $key) {
             $s = $sessionRows->get($key);
             $e = $eventRows->get($key);
-            $visitors = (int) ($s->visitors ?? 0);
-            $clicks = (int) ($s->clicks ?? 0);
-            $approved = (int) ($e->approved ?? 0);
-            $revenue = (float) ($e->revenue ?? 0);
+            $visitors = (int) ($e?->visitors ?? $s?->visitors ?? 0);
+            $clicks = (int) ($e?->clicks ?? 0);
+            $approved = (int) ($e?->approved ?? 0);
+            $revenue = (float) ($e?->revenue ?? 0);
             $label = (string) $key;
             if ($dimension === 'product_id' && isset($productNames[$key])) {
                 $label = (string) $productNames[$key];
@@ -902,8 +932,8 @@ class MetricsAnalyticsService
                 'label' => $label,
                 'visitors' => $visitors,
                 'clicks' => $clicks,
-                'checkouts_started' => (int) ($e->checkouts_started ?? 0),
-                'pix_created' => (int) ($e->pix_created ?? 0),
+                'checkouts_started' => (int) ($e?->checkouts_started ?? 0),
+                'pix_created' => (int) ($e?->pix_created ?? 0),
                 'approved' => $approved,
                 'conversion_rate' => $visitors > 0 ? round(($approved / $visitors) * 100, 2) : 0.0,
                 'revenue' => round($revenue, 2),

@@ -25,7 +25,7 @@ class CajuPaySdkCheckoutService
         bool $isSubscription,
         string $method
     ): array {
-        if ($method !== 'card') {
+        if (! in_array($method, ['card', 'apple_pay', 'google_pay'], true)) {
             return ['allow_card_installments' => false, 'card_max_installments' => 1];
         }
 

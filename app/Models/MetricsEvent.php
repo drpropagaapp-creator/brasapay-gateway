@@ -11,9 +11,13 @@ class MetricsEvent extends Model
 
     public const CHECKOUT_VIEW = 'checkout_view';
 
+    public const CHECKOUT_FORM_STARTED = 'checkout_form_started';
+
     public const CHECKOUT_STARTED = 'checkout_started';
 
     public const PIX_CREATED = 'pix_created';
+
+    public const BOLETO_CREATED = 'boleto_created';
 
     public const PAYMENT_APPROVED = 'payment_approved';
 
@@ -121,5 +125,44 @@ class MetricsEvent extends Model
         return $tenantId === null
             ? $query->whereNull('tenant_id')
             : $query->where('tenant_id', $tenantId);
+    }
+
+    /**
+     * Cliques reais (CTA / landing). checkout_view não entra.
+     *
+     * @return list<string>
+     */
+    public static function clickEventNames(): array
+    {
+        return [self::PAGE_VIEW, self::LINK_CLICKED];
+    }
+
+    /**
+     * Intenção de pagamento, independente do método (PIX, boleto, cartão).
+     *
+     * @return list<string>
+     */
+    public static function paymentInitiatedEventNames(): array
+    {
+        return [self::PIX_CREATED, self::BOLETO_CREATED, self::PAYMENT_PENDING];
+    }
+
+    /**
+     * @return list<string>
+     */
+    public static function dashboardLogEventNames(): array
+    {
+        return [
+            self::PAGE_VIEW,
+            self::LINK_CLICKED,
+            self::CHECKOUT_VIEW,
+            self::CHECKOUT_FORM_STARTED,
+            self::CHECKOUT_STARTED,
+            self::PIX_CREATED,
+            self::BOLETO_CREATED,
+            self::PAYMENT_PENDING,
+            self::PAYMENT_APPROVED,
+            self::PAYMENT_REFUNDED,
+        ];
     }
 }

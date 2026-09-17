@@ -70,7 +70,7 @@ class CajuPayWebhookBootstrapTest extends TestCase
             $body = $request->data();
 
             return ($body['event_types'] ?? null) === ['payout.*']
-                || ($body['event_types'] ?? null) === ['checkout.payment.*', 'pix.payment.*'];
+                || ($body['event_types'] ?? null) === ['checkout.payment.*', 'card.payment.*', 'pix.payment.*'];
         });
     }
 }

@@ -113,6 +113,8 @@ class DemoPlatformData
                 ['id' => 'demo-mercadopago', 'slug' => 'mercadopago', 'nome' => 'Mercado Pago', 'conta' => null, 'image' => 'images/gateways/mercado-pago.webp', 'status' => 'ok', 'available' => round(4100.00 + ($seed % 250), 2), 'currency' => 'BRL', 'error' => null],
                 ['id' => 'demo-stripe', 'slug' => 'stripe', 'nome' => 'Stripe', 'conta' => null, 'image' => 'images/gateways/stripe.png', 'status' => 'ok', 'available' => round(880.50 + ($seed % 120), 2), 'currency' => 'BRL', 'error' => null],
                 ['id' => 'demo-versell', 'slug' => 'versell', 'nome' => 'Versell', 'conta' => null, 'image' => 'images/gateways/versell-logo.svg', 'status' => 'ok', 'available' => round(15670.00 + ($seed % 600), 2), 'currency' => 'BRL', 'error' => null],
+                ['id' => 'demo-xflow', 'slug' => 'xflow', 'nome' => 'Xflow', 'conta' => null, 'image' => 'images/gateways/xflow_logo1.svg', 'status' => 'ok', 'available' => round(4820.40 + ($seed % 220), 2), 'currency' => 'BRL', 'error' => null],
+                ['id' => 'demo-okto', 'slug' => 'okto', 'nome' => 'Okto', 'conta' => null, 'image' => 'images/gateways/okto_payments.svg', 'status' => 'ok', 'available' => round(3510.70 + ($seed % 180), 2), 'currency' => 'BRL', 'error' => null],
             ],
             'top_sellers' => [
                 ['tenant_id' => 1, 'nome' => 'Academia Digital', 'email' => 'a@demo.local', 'quantidade' => 86, 'volume' => round($vendasTotais * 0.28, 2), 'ticket_medio' => 142.5],

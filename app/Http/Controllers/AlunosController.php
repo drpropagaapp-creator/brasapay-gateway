@@ -8,6 +8,7 @@ use App\Models\User;
 use App\Services\AccessEmailService;
 use App\Services\MemberAccessGrantService;
 use App\Services\MemberStudentAccountService;
+use App\Services\MemberStudentActivityLogService;
 use App\Services\SellerActivityLogService;
 use App\Services\TeamAccessService;
 use Illuminate\Http\JsonResponse;
@@ -17,6 +18,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Inertia\Inertia;
 use Inertia\Response;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class AlunosController extends Controller
 {
@@ -31,6 +33,24 @@ class AlunosController extends Controller
         }
 
         return Product::forTenant($tenantId)->pluck('id')->toArray();
+    }
+
+    private function assertCanViewStudentDossier(User $aluno, Product $produto): void
+    {
+        $tenantId = auth()->user()->tenant_id;
+        if (! $aluno->isCliente()) {
+            abort(404);
+        }
+        if ($produto->tenant_id !== $tenantId) {
+            abort(404);
+        }
+        $allowedIds = $this->tenantProductIds($tenantId);
+        if (! in_array($produto->id, $allowedIds, true) && ! in_array((string) $produto->id, array_map('strval', $allowedIds), true)) {
+            abort(404);
+        }
+        if (! $aluno->products()->where('products.id', $produto->id)->exists()) {
+            abort(404);
+        }
     }
 
     private function baseAlunosQuery(?int $tenantId)
@@ -89,7 +109,7 @@ class AlunosController extends Controller
         }
 
         $alunos = (clone $baseAlunosQuery)
-            ->with(['products' => fn ($q) => $q->forTenant($tenantId)->select('products.id', 'products.name')])
+            ->with(['products' => fn ($q) => $q->forTenant($tenantId)->select('products.id', 'products.name', 'products.type')])
             ->withCount(['products as products_count' => function ($q) use ($tenantId) {
                 if ($tenantId === null) {
                     $q->whereNull('tenant_id');
@@ -105,7 +125,7 @@ class AlunosController extends Controller
                 'name' => $u->name,
                 'email' => $u->email,
                 'products_count' => $u->products_count,
-                'products' => $u->products->map(fn ($p) => ['id' => $p->id, 'name' => $p->name]),
+                'products' => $u->products->map(fn ($p) => ['id' => $p->id, 'name' => $p->name, 'type' => $p->type]),
             ]);
 
         $produtos = Product::forTenant($tenantId)->withCount('users')->orderBy('name')->get();
@@ -161,12 +181,58 @@ class AlunosController extends Controller
         if (! $aluno->products()->forTenant($tenantId)->exists()) {
             abort(404);
         }
-        $aluno->load(['products' => fn ($q) => $q->forTenant($tenantId)->select('products.id', 'products.name')]);
+        $aluno->load(['products' => fn ($q) => $q->forTenant($tenantId)->select('products.id', 'products.name', 'products.type')]);
         return response()->json([
             'id' => $aluno->id,
             'name' => $aluno->name,
             'email' => $aluno->email,
-            'products' => $aluno->products->map(fn ($p) => ['id' => $p->id, 'name' => $p->name]),
+            'products' => $aluno->products->map(fn ($p) => ['id' => $p->id, 'name' => $p->name, 'type' => $p->type]),
+        ]);
+    }
+
+    public function dossier(User $aluno, Product $produto, MemberStudentActivityLogService $activityLog): JsonResponse
+    {
+        $this->assertCanViewStudentDossier($aluno, $produto);
+
+        return response()->json($activityLog->dossierFor($aluno, $produto));
+    }
+
+    public function exportDossier(User $aluno, Product $produto, MemberStudentActivityLogService $activityLog): StreamedResponse
+    {
+        $this->assertCanViewStudentDossier($aluno, $produto);
+
+        $filename = sprintf(
+            'dossie-%s-%s-%s.csv',
+            Str::slug((string) $aluno->name) ?: 'aluno',
+            Str::slug((string) $produto->name) ?: 'produto',
+            now()->format('Y-m-d')
+        );
+
+        return response()->streamDownload(function () use ($activityLog, $aluno, $produto) {
+            $out = fopen('php://output', 'w');
+            $activityLog->writeDossierCsv($out, $aluno, $produto);
+            fclose($out);
+        }, $filename, [
+            'Content-Type' => 'text/csv; charset=UTF-8',
+        ]);
+    }
+
+    public function exportDossierPdf(User $aluno, Product $produto, MemberStudentActivityLogService $activityLog): \Illuminate\Http\Response
+    {
+        $this->assertCanViewStudentDossier($aluno, $produto);
+
+        $filename = sprintf(
+            'dossie-%s-%s-%s.pdf',
+            Str::slug((string) $aluno->name) ?: 'aluno',
+            Str::slug((string) $produto->name) ?: 'produto',
+            now()->format('Y-m-d')
+        );
+
+        $binary = $activityLog->renderDossierPdf($aluno, $produto);
+
+        return response($binary, 200, [
+            'Content-Type' => 'application/pdf',
+            'Content-Disposition' => 'attachment; filename="'.$filename.'"',
         ]);
     }
 

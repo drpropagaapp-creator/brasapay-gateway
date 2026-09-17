@@ -3,6 +3,8 @@
 namespace App\Http\Controllers;
 
 use App\Models\CheckoutSession;
+use App\Models\MetricsEvent;
+use App\Services\MetricsTracking\MetricsCaptureService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -36,8 +38,14 @@ class CheckoutTrackingController extends Controller
             return response()->json(['success' => true]);
         }
 
+        $formAlreadyStarted = $session->form_started_at !== null;
+
         try {
             $this->applyTrackingUpdates($session, $validated, $step);
+            $session->refresh();
+            if (! $formAlreadyStarted && $session->form_started_at !== null) {
+                $this->captureCheckoutFormStarted($request, $session);
+            }
         } catch (\Throwable $e) {
             Log::warning('checkout.track failed', [
                 'session_id' => $session->id,
@@ -84,6 +92,28 @@ class CheckoutTrackingController extends Controller
         }
 
         $session->update($updates);
+    }
+
+    private function captureCheckoutFormStarted(Request $request, CheckoutSession $session): void
+    {
+        try {
+            app(MetricsCaptureService::class)->capture($request, [
+                'event_name' => MetricsEvent::CHECKOUT_FORM_STARTED,
+                'event_id' => 'chk-form:'.$session->session_token,
+                'session_key' => $session->metrics_session_key,
+                'product_id' => $session->product_id,
+                'tenant_id' => $session->tenant_id,
+                'offer_id' => $session->product_offer_id,
+                'plan_id' => $session->subscription_plan_id,
+                'checkout_session_id' => $session->id,
+                'affiliate_ref' => $session->affiliate_ref,
+            ]);
+        } catch (\Throwable $e) {
+            Log::warning('metrics.checkout_form_started_failed', [
+                'checkout_session_id' => $session->id,
+                'message' => $e->getMessage(),
+            ]);
+        }
     }
 
     /**

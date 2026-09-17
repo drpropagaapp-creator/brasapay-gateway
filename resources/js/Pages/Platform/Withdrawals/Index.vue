@@ -33,6 +33,10 @@ const props = defineProps({
         type: Boolean,
         default: false,
     },
+    manual_payout_acquirers: {
+        type: Array,
+        default: () => [],
+    },
 });
 
 const withdrawalFilterChips = [
@@ -55,6 +59,7 @@ const stepUpWithdrawalId = ref(null);
 const stepUpManual = ref(false);
 const stepUpRequirePin = ref(false);
 const stepUpHasExternalPayout = ref(false);
+const stepUpAskAcquirer = ref(false);
 
 function selectWithdrawalFilter(withdrawalStatus) {
     router.get(
@@ -91,11 +96,12 @@ function bucketLabel(b) {
     return map[b] || b || '—';
 }
 
-function openApproveStepUp(id, manual = false) {
+function openApproveStepUp(id, manual = false, askAcquirer = false) {
     stepUpWithdrawalId.value = id;
     stepUpManual.value = manual;
     stepUpAction.value = 'approve';
     stepUpRequirePin.value = Boolean(props.require_manual_approval_pin) && Boolean(props.has_manual_approval_pin);
+    stepUpAskAcquirer.value = Boolean(manual) && Boolean(askAcquirer);
     stepUpOpen.value = true;
 }
 
@@ -105,6 +111,7 @@ function openRejectStepUp(id, hasExternalPayout = false) {
     stepUpManual.value = false;
     stepUpRequirePin.value = false;
     stepUpHasExternalPayout.value = hasExternalPayout;
+    stepUpAskAcquirer.value = false;
     stepUpOpen.value = true;
 }
 
@@ -117,6 +124,14 @@ const totpEnabled = computed(() => Boolean(page.props.auth?.user?.totp_enabled))
 const payoutBarrierMissing = computed(
     () => !totpEnabled.value && !Boolean(props.has_manual_approval_pin)
 );
+const acquirerOptions = computed(() => {
+    const fromProps = Array.isArray(props.manual_payout_acquirers) ? props.manual_payout_acquirers : [];
+    if (fromProps.length) {
+        return fromProps;
+    }
+    const fromPage = page.props.manual_payout_acquirers;
+    return Array.isArray(fromPage) ? fromPage : [];
+});
 
 const stepUpDescription = computed(() => {
     if (stepUpAction.value === 'reject' && stepUpHasExternalPayout.value) {
@@ -133,6 +148,11 @@ const stepUpDescription = computed(() => {
         return 'Cadastre o 2FA em Meu perfil ou o PIN de operação em Financeiro > Saques. Pelo menos uma barreira é obrigatória para pagar saques.';
     }
     if (stepUpManual.value) {
+        if (stepUpAskAcquirer.value) {
+            return totpEnabled.value
+                ? 'Informe a origem do PIX e confirme com 2FA que o pagamento já foi enviado fora do sistema.'
+                : 'Informe a origem do PIX, o PIN de operação e confirme que o pagamento já foi enviado fora do sistema.';
+        }
         return totpEnabled.value
             ? 'Confirme com 2FA que o PIX já foi enviado fora do sistema.'
             : 'Informe o PIN de operação e confirme que o PIX já foi enviado fora do sistema.';
@@ -160,6 +180,7 @@ function onStepUpConfirm(payload) {
                 totp_code: payload.totp_code,
                 manual_approval_pin: payload.manual_approval_pin,
                 manual_confirm_external: payload.manual_confirm_external,
+                payout_acquirer: payload.payout_acquirer || undefined,
             },
             {
                 preserveScroll: true,
@@ -319,7 +340,7 @@ const paginationLinks = computed(() => props.withdrawals?.links ?? []);
                     O envio do PIX costuma ser <strong>automático</strong> ao solicitar no Financeiro. Em
                     <strong>Aguardando gateway</strong>, use <strong>Reconciliar</strong> (consulta a CajuPay) ou
                     <strong>Confirmar pago</strong> se o PIX já liquidou lá. Use <strong>Pago manual</strong> só quando
-                    o pagamento foi feito por fora, sem ID no gateway.
+                    o pagamento foi feito por fora, sem ID no gateway — informe a adquirente (ou conta externa) para o comprovante.
                 </p>
             </div>
             <div class="overflow-x-auto">
@@ -380,7 +401,7 @@ const paginationLinks = computed(() => props.withdrawals?.links ?? []);
                                             v-if="w.status === 'paid' && w.payout_manual"
                                             class="text-[10px] font-medium uppercase tracking-wide text-violet-600 dark:text-violet-400"
                                         >
-                                            Pago manual
+                                            Pago manual{{ w.payout_acquirer_label ? ` · ${w.payout_acquirer_label}` : '' }}
                                         </span>
                                     </div>
                                 </td>
@@ -443,7 +464,7 @@ const paginationLinks = computed(() => props.withdrawals?.links ?? []);
                                         <Button type="button" size="sm" @click="openApproveStepUp(w.id, false)">
                                             Pago (CajuPay)
                                         </Button>
-                                        <Button type="button" size="sm" variant="secondary" @click="openApproveStepUp(w.id, true)">
+                                        <Button type="button" size="sm" variant="secondary" @click="openApproveStepUp(w.id, true, true)">
                                             Pago manual
                                         </Button>
                                         <Button
@@ -542,6 +563,8 @@ const paginationLinks = computed(() => props.withdrawals?.links ?? []);
             :require-totp="totpEnabled"
             :require-pin="stepUpRequirePin && stepUpAction === 'approve'"
             :require-external-confirm="stepUpManual"
+            :require-acquirer="Boolean(stepUpAskAcquirer)"
+            :acquirers="acquirerOptions"
             :title="stepUpAction === 'reject' ? 'Cancelar saque' : stepUpManual ? 'Aprovar manualmente' : 'Aprovar saque'"
             :description="stepUpDescription"
             :confirm-label="stepUpAction === 'reject' ? 'Cancelar e estornar' : 'Aprovar'"

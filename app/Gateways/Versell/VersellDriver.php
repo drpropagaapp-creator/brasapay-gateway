@@ -186,18 +186,23 @@ class VersellDriver implements GatewayDriver
     public function getTransactionStatus(string $transactionId, array $credentials): ?string
     {
         $payload = $this->fetchCob($transactionId, $credentials);
-        if ($payload === null) {
+        if ($payload !== null) {
+            $status = strtoupper(trim((string) ($payload['status'] ?? '')));
+
+            return match ($status) {
+                'CONCLUIDA' => 'paid',
+                'ATIVA' => 'pending',
+                'REMOVIDA_PELO_USUARIO_RECEBEDOR', 'REMOVIDA_PELO_PSP' => 'cancelled',
+                default => $this->inferStatusFromPixArray($payload) ?? 'pending',
+            };
+        }
+
+        $cobr = $this->fetchCobr($transactionId, $credentials);
+        if ($cobr === null) {
             return null;
         }
 
-        $status = strtoupper(trim((string) ($payload['status'] ?? '')));
-
-        return match ($status) {
-            'CONCLUIDA' => 'paid',
-            'ATIVA' => 'pending',
-            'REMOVIDA_PELO_USUARIO_RECEBEDOR', 'REMOVIDA_PELO_PSP' => 'cancelled',
-            default => $this->inferStatusFromPixArray($payload) ?? 'pending',
-        };
+        return $this->mapCobrStatus($cobr);
     }
 
     /**
@@ -418,6 +423,80 @@ class VersellDriver implements GatewayDriver
         $payload = $response->json();
 
         return is_array($payload) ? $payload : null;
+    }
+
+    /**
+     * @param  array<string, mixed>  $credentials
+     * @return array<string, mixed>|null
+     */
+    private function fetchCobr(string $transactionId, array $credentials): ?array
+    {
+        $txid = trim($transactionId);
+        if ($txid === '') {
+            return null;
+        }
+
+        try {
+            $response = $this->client->request(
+                VersellCredentials::API_CASH_IN,
+                $credentials,
+                'GET',
+                '/cobr/'.$txid
+            );
+        } catch (\Throwable $e) {
+            Log::warning('VersellDriver fetchCobr failed', [
+                'gateway' => 'versell',
+                'txid' => $txid,
+                'error' => mb_substr($e->getMessage(), 0, 300),
+            ]);
+
+            return null;
+        }
+
+        if ($response->status() === 404 || ! $response->successful()) {
+            if ($response->status() !== 404) {
+                Log::warning('VersellDriver fetchCobr http error', [
+                    'gateway' => 'versell',
+                    'txid' => $txid,
+                    'status' => $response->status(),
+                ]);
+            }
+
+            return null;
+        }
+
+        $payload = $response->json();
+
+        return is_array($payload) ? $payload : null;
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    private function mapCobrStatus(array $payload): string
+    {
+        $status = strtoupper(trim((string) ($payload['status'] ?? '')));
+        if (in_array($status, ['CONCLUIDA', 'LIQUIDADA', 'PAID', 'PAGO'], true)) {
+            return 'paid';
+        }
+        if (in_array($status, ['EXPIRADA', 'REJEITADA', 'CANCELADA'], true)) {
+            return 'cancelled';
+        }
+
+        $tentativas = $payload['tentativas'] ?? null;
+        if (is_array($tentativas)) {
+            foreach ($tentativas as $t) {
+                if (! is_array($t)) {
+                    continue;
+                }
+                $tStatus = strtoupper(trim((string) ($t['status'] ?? '')));
+                if (in_array($tStatus, ['PAGA', 'PAID', 'CONCLUIDA', 'LIQUIDADA'], true)) {
+                    return 'paid';
+                }
+            }
+        }
+
+        return 'pending';
     }
 
     /**

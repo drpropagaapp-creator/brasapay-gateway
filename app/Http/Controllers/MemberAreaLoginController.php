@@ -6,6 +6,7 @@ use App\Models\Product;
 use App\Models\User;
 use App\Services\MemberAccessGrantService;
 use App\Services\MemberAreaMagicAccessToken;
+use App\Services\MemberStudentActivityLogService;
 use App\Services\StorageService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -18,6 +19,7 @@ class MemberAreaLoginController extends Controller
     public function __construct(
         protected MemberAreaMagicAccessToken $magicTokens,
         protected MemberAccessGrantService $memberAccessGrant,
+        protected MemberStudentActivityLogService $studentActivity,
     ) {}
 
     public function showLoginForm(Request $request, string $slug): Response|RedirectResponse
@@ -76,6 +78,8 @@ class MemberAreaLoginController extends Controller
             return back()->withErrors(['email' => 'Você não tem acesso a esta área.'])->onlyInput('email');
         }
 
+        $this->studentActivity->recordLogin(Auth::user(), $product, $request);
+
         return redirect()->intended($this->memberAreaHomePath($request, $slug));
     }
 
@@ -100,6 +104,7 @@ class MemberAreaLoginController extends Controller
         }
         Auth::login($user, $request->boolean('remember'));
         $request->session()->regenerate();
+        $this->studentActivity->recordLogin($user, $product, $request);
 
         return redirect()->intended($this->memberAreaHomePath($request, $slug));
     }
@@ -127,6 +132,7 @@ class MemberAreaLoginController extends Controller
         if (is_string($magicToken) && $magicToken !== '') {
             $this->magicTokens->consume($magicToken, $product);
         }
+        $this->studentActivity->recordLogin($user, $product, $request);
 
         return redirect()->intended($this->memberAreaHomePath($request, $slug));
     }
@@ -153,6 +159,7 @@ class MemberAreaLoginController extends Controller
         if (is_string($magicToken) && $magicToken !== '') {
             $this->magicTokens->consume($magicToken, $product);
         }
+        $this->studentActivity->recordLogin($user, $product, $request);
 
         return redirect()->to('/');
     }

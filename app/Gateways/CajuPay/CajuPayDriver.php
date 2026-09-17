@@ -3,6 +3,7 @@
 namespace App\Gateways\CajuPay;
 
 use App\Gateways\Contracts\GatewayDriver;
+use App\Services\CajuPay\CajuPayWebhookBootstrapService;
 use App\Support\BrazilianDocuments;
 use App\Support\CajuPayPaymentId;
 use App\Support\CardInstallments;
@@ -719,12 +720,13 @@ class CajuPayDriver implements GatewayDriver
         ];
 
         $maxInstallments = CardInstallments::normalizeMax((int) ($options['card_max_installments'] ?? 1));
-        $allowInstallments = $allowCard
-            && $defaultMethod === 'card'
+        $cardFamily = $allowCard || in_array($defaultMethod, ['card', 'apple_pay', 'google_pay'], true);
+        $allowInstallments = $cardFamily
             && ! empty($options['allow_card_installments'])
             && $maxInstallments >= 2;
         // Sempre enviar o par: omitir false faz a Caju cair no teto da conta (Admin).
-        if ($allowCard) {
+        // Cartão, Apple Pay e Google Pay compartilham installment_options no SDK.
+        if ($cardFamily) {
             $body['allow_card_installments'] = $allowInstallments;
             $body['card_max_installments'] = $allowInstallments ? $maxInstallments : 1;
         }
@@ -758,13 +760,22 @@ class CajuPayDriver implements GatewayDriver
         }
 
         $idempotencyKey = 'getfy-sdk-'.$externalId.'-'.Str::lower(Str::random(8));
+        $headers = ['Idempotency-Key' => Str::limit($idempotencyKey, 200, '')];
+        $response = null;
+        for ($attempt = 0; $attempt < 3; $attempt++) {
+            $response = $this->httpForCredentials($credentials)
+                ->withHeaders($headers)
+                ->post('/api/sdk/v1/checkout/sessions', $body);
+            if ($response->successful() || ! in_array($response->status(), [429, 503], true)) {
+                break;
+            }
+            if ($attempt < 2) {
+                usleep(200_000 * (2 ** $attempt));
+            }
+        }
 
-        $response = $this->httpForCredentials($credentials)
-            ->withHeaders(['Idempotency-Key' => Str::limit($idempotencyKey, 200, '')])
-            ->post('/api/sdk/v1/checkout/sessions', $body);
-
-        if (! $response->successful()) {
-            $msg = $response->body();
+        if ($response === null || ! $response->successful()) {
+            $msg = $response?->body() ?? '';
             if (strlen($msg) > 300) {
                 $msg = substr($msg, 0, 300).'…';
             }
@@ -1166,7 +1177,7 @@ class CajuPayDriver implements GatewayDriver
             throw new \RuntimeException('CajuPay: URL do webhook vazia.');
         }
 
-        $eventTypes = $eventTypes ?? ['checkout.payment.*', 'pix.payment.*'];
+        $eventTypes = $eventTypes ?? CajuPayWebhookBootstrapService::CHECKOUT_EVENT_TYPES;
         if ($eventTypes === []) {
             throw new \RuntimeException('CajuPay: event_types do webhook vazio.');
         }

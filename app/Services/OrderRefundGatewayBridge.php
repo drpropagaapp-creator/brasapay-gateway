@@ -6,6 +6,8 @@ use App\Gateways\CajuPay\CajuPayDriver;
 use App\Gateways\Cielo\CieloDriver;
 use App\Gateways\GatewayRegistry;
 use App\Gateways\Versell\VersellDriver;
+use App\Gateways\Okto\OktoDriver;
+use App\Gateways\Xflow\XflowDriver;
 use App\Models\Order;
 use App\Support\CajuPayPaymentId;
 use App\Support\GatewayPaymentCredentials;
@@ -41,6 +43,8 @@ class OrderRefundGatewayBridge
             'cajupay' => $this->tryCajuPayRefund($driver, $order, $credentials),
             'versell' => $this->tryVersellRefund($driver, $order, $credentials),
             'cielo' => $this->tryCieloRefund($driver, $order, $credentials),
+            'xflow' => $this->tryXflowRefund($driver, $order, $credentials),
+            'okto' => $this->tryOktoRefund($driver, $order, $credentials),
             default => ['status' => 'skipped', 'note' => 'Estorno automático não implementado para este gateway; conclua no adquirente se necessário.'],
         };
     }
@@ -115,6 +119,64 @@ class OrderRefundGatewayBridge
             return $this->mapDriverRefundResult($order, $result, 'versell');
         } catch (\Throwable $e) {
             return $this->mapRefundException($order, 'versell', $e);
+        }
+    }
+
+    /**
+     * @param  array<string, mixed>  $credentials
+     * @return array{status: string, note: ?string, error_code?: string}
+     */
+    private function tryXflowRefund(object $driver, Order $order, array $credentials): array
+    {
+        if (! $driver instanceof XflowDriver) {
+            return ['status' => 'skipped', 'note' => 'Driver Xflow indisponível para reembolso.'];
+        }
+
+        $chargeId = is_string($order->gateway_id) ? trim($order->gateway_id) : '';
+        if ($chargeId === '') {
+            return ['status' => 'skipped', 'note' => 'Sem ID de cobrança Xflow no pedido.'];
+        }
+
+        try {
+            $result = $driver->refundTransaction(
+                $credentials,
+                $chargeId,
+                (float) $order->amount,
+                (string) $order->id
+            );
+
+            return $this->mapDriverRefundResult($order, $result, 'xflow');
+        } catch (\Throwable $e) {
+            return $this->mapRefundException($order, 'xflow', $e);
+        }
+    }
+
+    /**
+     * @param  array<string, mixed>  $credentials
+     * @return array{status: string, note: ?string, error_code?: string}
+     */
+    private function tryOktoRefund(object $driver, Order $order, array $credentials): array
+    {
+        if (! $driver instanceof OktoDriver) {
+            return ['status' => 'skipped', 'note' => 'Driver Okto indisponível para reembolso.'];
+        }
+
+        $chargeId = is_string($order->gateway_id) ? trim($order->gateway_id) : '';
+        if ($chargeId === '') {
+            return ['status' => 'skipped', 'note' => 'Sem ID de cobrança Okto no pedido.'];
+        }
+
+        try {
+            $result = $driver->refundTransaction(
+                $credentials,
+                $chargeId,
+                (float) $order->amount,
+                (string) $order->id
+            );
+
+            return $this->mapDriverRefundResult($order, $result, 'okto');
+        } catch (\Throwable $e) {
+            return $this->mapRefundException($order, 'okto', $e);
         }
     }
 
@@ -197,6 +259,35 @@ class OrderRefundGatewayBridge
                     return [
                         'status' => 'gateway_pending',
                         'note' => $result['message'] ?? 'Estorno enviado à Cielo; aguardando confirmação.',
+                    ];
+                }
+            }
+
+            if ($gatewaySlug === 'xflow') {
+                if (! empty($result['refund_id'])) {
+                    $meta['xflow_refund_id'] = (string) $result['refund_id'];
+                }
+                $meta['xflow_refund_status'] = $raw['status'] ?? (! empty($result['pending']) ? 'pending' : 'completed');
+                $meta['xflow_refund_pending'] = ! empty($result['pending']);
+                $order->update(['metadata' => $meta]);
+
+                if (! empty($result['pending'])) {
+                    return [
+                        'status' => 'gateway_pending',
+                        'note' => $result['message'] ?? 'Estorno enviado à Xflow; aguardando confirmação.',
+                    ];
+                }
+            }
+
+            if ($gatewaySlug === 'okto') {
+                $meta['okto_refund_status'] = $raw['status'] ?? (! empty($result['pending']) ? 'reversing' : 'reversed');
+                $meta['okto_refund_pending'] = ! empty($result['pending']);
+                $order->update(['metadata' => $meta]);
+
+                if (! empty($result['pending'])) {
+                    return [
+                        'status' => 'gateway_pending',
+                        'note' => $result['message'] ?? 'Estorno enviado à Okto; aguardando webhook reversed.',
                     ];
                 }
             }

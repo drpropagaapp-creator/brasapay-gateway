@@ -49,6 +49,19 @@ trait InteractsWithGatewayWebhooks
     /**
      * @param  array<string, mixed>  $payload
      */
+    protected function postAsaasWebhook(array $payload, string $authToken): \Illuminate\Testing\TestResponse
+    {
+        $raw = json_encode($payload, JSON_THROW_ON_ERROR);
+
+        return $this->call('POST', '/webhooks/gateways/asaas', [], [], [], [
+            'CONTENT_TYPE' => 'application/json',
+            'HTTP_ASAAS_ACCESS_TOKEN' => $authToken,
+        ], $raw);
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     */
         protected function postSignedBspayWebhook(array $payload, string $secret, ?int $timestamp = null, string $event = 'cashin.confirmed'): \Illuminate\Testing\TestResponse
         {
             $raw = json_encode($payload, JSON_THROW_ON_ERROR);

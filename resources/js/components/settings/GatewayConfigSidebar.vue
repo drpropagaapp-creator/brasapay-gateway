@@ -4,8 +4,9 @@ import axios from 'axios';
 import { usePage } from '@inertiajs/vue3';
 import Button from '@/components/ui/Button.vue';
 import PlatformStepUpModal from '@/components/platform/PlatformStepUpModal.vue';
-import { X, ExternalLink, Copy, Check } from 'lucide-vue-next';
+import { X, ExternalLink, Copy, Check, MessageCircle } from 'lucide-vue-next';
 import PixInOutBadges from '@/components/settings/PixInOutBadges.vue';
+import { buildWhatsAppUrl } from '@/lib/whatsappUrl';
 
 const props = defineProps({
     open: { type: Boolean, default: false },
@@ -166,6 +167,26 @@ function fileConfiguredLabel(field) {
     if (kind === 'private_key') return 'Private key configurada.';
     return 'Arquivo em uso.';
 }
+
+const supportContacts = computed(() => {
+    const rows = gateway.value?.support_contacts;
+    if (!Array.isArray(rows)) {
+        return [];
+    }
+
+    return rows
+        .map((contact) => {
+            const href = buildWhatsAppUrl(contact?.whatsapp);
+            if (!href) {
+                return null;
+            }
+            const name = String(contact?.name ?? '').trim();
+            const role = String(contact?.role ?? '').trim();
+
+            return { name, role, href };
+        })
+        .filter(Boolean);
+});
 
 function secretConfiguredHint(field) {
     if ((field?.type || '') !== 'password') return null;
@@ -462,17 +483,37 @@ const canTestConnection = computed(() => {
                 </div>
 
                 <div v-else-if="gateway" class="flex flex-1 flex-col overflow-y-auto p-4">
-                    <!-- Criar conta -->
-                    <a
-                        v-if="gateway.signup_url"
-                        :href="gateway.signup_url"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        class="mb-6 flex items-center gap-2 rounded-xl border-2 border-[var(--color-primary)] bg-[var(--color-primary)]/10 px-4 py-3 text-sm font-medium text-[var(--color-primary)] transition hover:bg-[var(--color-primary)]/20"
+                    <div
+                        v-if="gateway.signup_url || supportContacts.length"
+                        class="mb-6 space-y-2"
                     >
-                        <ExternalLink class="h-4 w-4 shrink-0" />
-                        Criar conta no {{ gateway.name }}
-                    </a>
+                        <a
+                            v-if="gateway.signup_url"
+                            :href="gateway.signup_url"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            class="flex items-center gap-2 rounded-xl border-2 border-[var(--color-primary)] bg-[var(--color-primary)]/10 px-4 py-3 text-sm font-medium text-[var(--color-primary)] transition hover:bg-[var(--color-primary)]/20"
+                        >
+                            <ExternalLink class="h-4 w-4 shrink-0" />
+                            Criar conta no {{ gateway.name }}
+                        </a>
+                        <a
+                            v-for="contact in supportContacts"
+                            :key="contact.href"
+                            :href="contact.href"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            class="flex items-center gap-2 rounded-xl border-2 border-emerald-600/40 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-800 transition hover:bg-emerald-100 dark:border-emerald-500/30 dark:bg-emerald-950/40 dark:text-emerald-200 dark:hover:bg-emerald-950/70"
+                        >
+                            <MessageCircle class="h-4 w-4 shrink-0" />
+                            <span class="min-w-0">
+                                WhatsApp {{ contact.name || 'suporte' }}
+                                <span v-if="contact.role" class="font-normal text-emerald-700/80 dark:text-emerald-300/80">
+                                    — {{ contact.role }}
+                                </span>
+                            </span>
+                        </a>
+                    </div>
 
                     <!-- URL do webhook para configurar no painel do gateway -->
                     <div
@@ -579,6 +620,16 @@ const canTestConnection = computed(() => {
                                     />
                                     <span class="text-sm text-zinc-600 dark:text-zinc-400">Sim (somente para testes)</span>
                                 </label>
+                            </template>
+                            <template v-else-if="field.type === 'textarea'">
+                                <textarea
+                                    v-model="credentialValues[field.key]"
+                                    rows="5"
+                                    :placeholder="field.label"
+                                    :class="inputClass + ' font-mono text-xs'"
+                                    autocomplete="off"
+                                    spellcheck="false"
+                                />
                             </template>
                             <template v-else>
                                 <input

@@ -18,8 +18,7 @@ use App\Support\CajuPayCheckoutMetadata;
 use App\Support\GatewayPaymentCredentials;
 use App\Support\MercadoPagoCredentialCandidates;
 use App\Services\EfiPixRecorrenteService;
-use App\Services\Versell\VersellPixRecorrenteService;
-use App\Gateways\Versell\VersellCredentials;
+use App\Services\Versell\VersellPixAutoRenewalService;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Bus\Queueable;
@@ -99,13 +98,21 @@ class ProcessPaymentWebhook implements ShouldQueue
             || ($this->gatewaySlug === 'cajupay' && in_array($this->event, ['checkout.payment.disputed', 'card.payment.disputed'], true));
         if ($isDisputeEvent && in_array($this->status, ['disputed', 'chargeback'], true)) {
             if (in_array($order->status, ['completed', 'pending'], true)) {
-                try {
-                    app(\App\Services\CajuPay\CajuPayMedService::class)->syncOpenedFromCheckoutDispute($order, [
-                        'gateway_event' => $this->event,
-                        'status' => $this->status,
-                    ]);
-                } catch (\InvalidArgumentException) {
-                    //
+                if ($this->gatewaySlug === 'cajupay') {
+                    try {
+                        app(\App\Services\CajuPay\CajuPayMedService::class)->syncOpenedFromCheckoutDispute($order, [
+                            'gateway_event' => $this->event,
+                            'status' => $this->status,
+                        ]);
+                    } catch (\InvalidArgumentException) {
+                        //
+                    }
+                } else {
+                    try {
+                        PlatformOrderAdminService::markDisputed($order);
+                    } catch (\InvalidArgumentException) {
+                        //
+                    }
                 }
             }
 
@@ -178,7 +185,8 @@ class ProcessPaymentWebhook implements ShouldQueue
             ->where(function ($q) use ($tid) {
                 $q->where('metadata->cajupay_checkout_session_id', $tid)
                     ->orWhere('metadata->cajupay_session_token', $tid)
-                    ->orWhere('metadata->cajupay_sdk_token', $tid);
+                    ->orWhere('metadata->cajupay_sdk_token', $tid)
+                    ->orWhere('metadata->cajupay_payment_id', $tid);
             })
             ->first();
     }
@@ -330,6 +338,8 @@ class ProcessPaymentWebhook implements ShouldQueue
                     event(new OrderRejected($order));
                 } elseif ($this->gatewaySlug === 'linaopenx' && ($apiStatus === null || $apiStatus === 'pending')) {
                     $this->releasePaidBranchForRetry(10, 'lina_reconfirm_pending', $order, $apiStatus);
+                } elseif ($this->gatewaySlug === 'versell' && $order->payment_method === 'pix_auto' && ($apiStatus === null || $apiStatus === 'pending')) {
+                    $this->releasePaidBranchForRetry(10, 'versell_pix_auto_reconfirm', $order, $apiStatus);
                 }
 
                 return;
@@ -361,6 +371,9 @@ class ProcessPaymentWebhook implements ShouldQueue
                                 'current_period_end' => $order->period_end,
                             ]);
                             event(new SubscriptionRenewed($sub->fresh()));
+                            if ($this->gatewaySlug === 'versell') {
+                                $this->scheduleVersellPixAutoNextCobr($order, $sub->fresh());
+                            }
                         }
                     } elseif (! Subscription::where('user_id', $order->user_id)->where('product_id', $order->product_id)->where('subscription_plan_id', $plan->id)->where('status', Subscription::STATUS_ACTIVE)->exists()) {
                         [$periodStart, $periodEnd] = $plan->getCurrentPeriod();
@@ -388,7 +401,7 @@ class ProcessPaymentWebhook implements ShouldQueue
                         if ($idRec !== null && $this->gatewaySlug === 'efi') {
                             $this->createEfiPixAutoCobrForNextPeriod($order, $subscription, $plan);
                         } elseif ($idRec !== null && $this->gatewaySlug === 'versell') {
-                            $this->createVersellPixAutoCobrForNextPeriod($order, $subscription, $plan);
+                            $this->scheduleVersellPixAutoNextCobr($order, $subscription);
                         }
                     }
                 }
@@ -621,45 +634,14 @@ class ProcessPaymentWebhook implements ShouldQueue
         }
     }
 
-    private function createVersellPixAutoCobrForNextPeriod(Order $order, Subscription $subscription, $plan): void
+    private function scheduleVersellPixAutoNextCobr(Order $order, Subscription $subscription): void
     {
-        $credential = GatewayCredential::resolveForPayment($order->tenant_id, 'versell');
-        if (! $credential) {
-            return;
-        }
-        $credentials = $credential->getDecryptedCredentials();
-        if (! VersellCredentials::isCashInReady($credentials)) {
-            return;
-        }
-
-        $idRec = $subscription->gateway_subscription_id;
-        if ($idRec === null || $idRec === '') {
-            return;
-        }
-
-        $amount = (float) $plan->price;
-        $periodEnd = $subscription->current_period_end;
-        $dataDeVencimento = $periodEnd ? $periodEnd->format('Y-m-d') : now()->addMonth()->format('Y-m-d');
-
-        $devedor = [
-            'name' => $order->user ? $order->user->name : null ?? $order->email,
-            'email' => $order->email,
-        ];
-
         try {
-            $service = new VersellPixRecorrenteService($credentials);
-            $service->createCobrancaRecorrente(
-                $idRec,
-                $amount,
-                $dataDeVencimento,
-                null,
-                $devedor,
-                'Renovação assinatura - Pedido #'.$order->id
-            );
+            app(VersellPixAutoRenewalService::class)->ensureNextCobr($subscription, $order);
         } catch (\Throwable $e) {
             Log::warning('ProcessPaymentWebhook: falha ao criar cobr PIX automático Versell', [
                 'order_id' => $order->id,
-                'idRec' => $idRec,
+                'idRec' => $subscription->gateway_subscription_id,
                 'message' => $e->getMessage(),
             ]);
         }

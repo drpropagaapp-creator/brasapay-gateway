@@ -22,6 +22,8 @@ return [
         'pushinpay' => env('WEBHOOK_RECONFIRM_FAIL_POLICY_PUSHINPAY', 'reject'),
         'asaas' => env('WEBHOOK_RECONFIRM_FAIL_POLICY_ASAAS', 'reject'),
         'woovi' => env('WEBHOOK_RECONFIRM_FAIL_POLICY_WOOVI', 'reject'),
+        'xflow' => env('WEBHOOK_RECONFIRM_FAIL_POLICY_XFLOW', 'reject'),
+        'okto' => env('WEBHOOK_RECONFIRM_FAIL_POLICY_OKTO', 'reject'),
         'efi' => env('WEBHOOK_RECONFIRM_FAIL_POLICY_EFI'),
         'stripe' => env('WEBHOOK_RECONFIRM_FAIL_POLICY_STRIPE'),
         'onlyup' => env('WEBHOOK_RECONFIRM_FAIL_POLICY_ONLYUP', 'reject'),

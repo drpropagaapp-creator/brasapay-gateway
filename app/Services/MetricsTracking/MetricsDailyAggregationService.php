@@ -135,18 +135,21 @@ class MetricsDailyAggregationService
             $events->where('product_id', $productId);
         }
 
-        $uniqueVisitors = (int) (clone $sessions)->distinct('visitor_key')->count('visitor_key');
-        $sessionsCount = (int) (clone $sessions)->count();
-        $clicks = (int) (clone $sessions)->sum('clicks_count');
-        if ($clicks === 0) {
-            $clicks = (int) (clone $events)->whereIn('event_name', [
-                MetricsEvent::PAGE_VIEW, MetricsEvent::CHECKOUT_VIEW, MetricsEvent::LINK_CLICKED,
-            ])->count();
+        $uniqueVisitors = (int) (clone $events)->whereNotNull('visitor_key')->distinct()->count('visitor_key');
+        $sessionsCount = (int) (clone $events)->whereNotNull('session_key')->distinct()->count('session_key');
+        if ($uniqueVisitors === 0) {
+            $uniqueVisitors = (int) (clone $sessions)->distinct('visitor_key')->count('visitor_key');
         }
+        if ($sessionsCount === 0) {
+            $sessionsCount = (int) (clone $sessions)->count();
+        }
+        $clicks = (int) (clone $events)->whereIn('event_name', MetricsEvent::clickEventNames())->count();
 
         $checkoutViews = (int) (clone $events)->where('event_name', MetricsEvent::CHECKOUT_VIEW)->count();
+        $checkoutsFormStarted = (int) (clone $events)->where('event_name', MetricsEvent::CHECKOUT_FORM_STARTED)->count();
         $checkoutsStarted = (int) (clone $events)->where('event_name', MetricsEvent::CHECKOUT_STARTED)->count();
         $pixCreated = (int) (clone $events)->where('event_name', MetricsEvent::PIX_CREATED)->count();
+        $paymentsInitiated = (int) (clone $events)->whereIn('event_name', MetricsEvent::paymentInitiatedEventNames())->count();
         $approved = (int) (clone $events)->where('event_name', MetricsEvent::PAYMENT_APPROVED)->count();
         $refused = (int) (clone $events)->where('event_name', MetricsEvent::PAYMENT_REFUSED)->count();
         $refunds = (int) (clone $events)->where('event_name', MetricsEvent::PAYMENT_REFUNDED)->count();
@@ -169,8 +172,10 @@ class MetricsDailyAggregationService
             'sessions' => $sessionsCount,
             'clicks' => $clicks,
             'checkout_views' => $checkoutViews,
+            'checkouts_form_started' => $checkoutsFormStarted,
             'checkouts_started' => $checkoutsStarted,
             'pix_created' => $pixCreated,
+            'payments_initiated' => $paymentsInitiated,
             'payments_approved' => $approved,
             'payments_refused' => $refused,
             'refunds' => $refunds,

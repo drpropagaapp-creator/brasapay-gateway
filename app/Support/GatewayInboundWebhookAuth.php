@@ -45,6 +45,29 @@ final class GatewayInboundWebhookAuth
     }
 
     /**
+     * Asaas: authToken configurado no webhook, enviado no header asaas-access-token.
+     */
+    public static function verifyAsaas(Request $request, ?int $tenantId): bool
+    {
+        $secret = self::webhookSecret('asaas', $tenantId);
+        if ($secret === null) {
+            Log::warning('GatewayInboundWebhookAuth: webhook_secret não configurado', [
+                'gateway' => 'asaas',
+                'tenant_id' => $tenantId,
+            ]);
+
+            return false;
+        }
+
+        $token = $request->header('asaas-access-token') ?? $request->header('Asaas-Access-Token');
+        if (! is_string($token) || $token === '') {
+            return false;
+        }
+
+        return hash_equals($secret, $token);
+    }
+
+    /**
      * OpenPix/Woovi: Authorization header com valor igual ao webhook_secret ou HMAC.
      */
     public static function verifyWoovi(Request $request, ?int $tenantId): bool

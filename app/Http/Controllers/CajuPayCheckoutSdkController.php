@@ -73,7 +73,14 @@ class CajuPayCheckoutSdkController extends Controller
             'cajupay_wallet' => $wallet,
             'cajupay_sdk_session_created_at' => now()->toIso8601String(),
         ]);
-        $order->update(['metadata' => $meta]);
+        $orderUpdates = ['metadata' => $meta];
+        if ($order->gateway !== 'cajupay') {
+            $orderUpdates['gateway'] = 'cajupay';
+        }
+        if (trim((string) ($order->gateway_id ?? '')) === '') {
+            $orderUpdates['gateway_id'] = $created['checkout_session_id'];
+        }
+        $order->update($orderUpdates);
 
         $methods = $created['raw']['methods_available'] ?? $created['raw']['payment_methods'] ?? null;
 

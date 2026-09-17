@@ -20,6 +20,7 @@
                 'image_max_mb' => 10,
                 'badge_max_mb' => 5,
                 'pdf_max_mb' => 50,
+                'material_max_mb' => 50,
             ],
             'platform_app_name' => $platform_app_name ?? config('getfy.app_name', config('app.name')),
         ];

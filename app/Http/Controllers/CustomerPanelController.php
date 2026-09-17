@@ -5,6 +5,8 @@ namespace App\Http\Controllers;
 use App\Models\Order;
 use App\Models\Product;
 use App\Models\RefundRequest;
+use App\Models\User;
+use App\Services\DeliverableAccessLinkService;
 use App\Services\MemberAreaResolver;
 use App\Services\RefundRequestService;
 use App\Services\StorageService;
@@ -36,10 +38,10 @@ class CustomerPanelController extends Controller
         foreach ($orders as $order) {
             if ($order->orderItems->isNotEmpty()) {
                 foreach ($order->orderItems as $line) {
-                    $items[] = $this->purchaseRowFromOrder($order, $line->product, (float) $line->amount, (int) $line->position, $resolver);
+                    $items[] = $this->purchaseRowFromOrder($order, $line->product, (float) $line->amount, (int) $line->position, $resolver, $user);
                 }
             } else {
-                $items[] = $this->purchaseRowFromOrder($order, $order->product, (float) $order->amount, 0, $resolver);
+                $items[] = $this->purchaseRowFromOrder($order, $order->product, (float) $order->amount, 0, $resolver, $user);
             }
         }
 
@@ -57,7 +59,7 @@ class CustomerPanelController extends Controller
             ->get();
 
         foreach ($grantedProducts as $product) {
-            $items[] = $this->grantedAccessRow($product, $resolver);
+            $items[] = $this->grantedAccessRow($product, $resolver, $user);
         }
 
         return Inertia::render('Cliente/Index', [
@@ -105,10 +107,11 @@ class CustomerPanelController extends Controller
         ?Product $product,
         float $lineAmount,
         int $position,
-        MemberAreaResolver $resolver
+        MemberAreaResolver $resolver,
+        User $user
     ): array {
         $productId = $product?->id ?? $order->product_id;
-        $accessUrl = $this->productAccessUrl($product, $resolver);
+        $accessUrl = $this->productAccessUrl($product, $resolver, $user);
 
         return [
             'purchase_key' => $order->id.'-'.($productId ?? 'main').'-'.$position,
@@ -141,9 +144,9 @@ class CustomerPanelController extends Controller
      *
      * @return array<string, mixed>
      */
-    private function grantedAccessRow(Product $product, MemberAreaResolver $resolver): array
+    private function grantedAccessRow(Product $product, MemberAreaResolver $resolver, User $user): array
     {
-        $accessUrl = $this->productAccessUrl($product, $resolver);
+        $accessUrl = $this->productAccessUrl($product, $resolver, $user);
         $grantedAt = $product->pivot?->created_at;
 
         return [
@@ -172,7 +175,7 @@ class CustomerPanelController extends Controller
         ];
     }
 
-    private function productAccessUrl(?Product $product, MemberAreaResolver $resolver): ?string
+    private function productAccessUrl(?Product $product, MemberAreaResolver $resolver, User $user): ?string
     {
         if ($product === null) {
             return null;
@@ -182,14 +185,8 @@ class CustomerPanelController extends Controller
             return $resolver->baseUrlForProduct($product);
         }
 
-        if (in_array($product->type, [
-            Product::TYPE_LINK,
-            Product::TYPE_AREA_MEMBROS_EXTERNA,
-            Product::TYPE_APLICATIVO,
-        ], true)) {
-            $link = $product->checkout_config['deliverable_link'] ?? null;
-
-            return is_string($link) && trim($link) !== '' ? trim($link) : null;
+        if (in_array($product->type, DeliverableAccessLinkService::trackedProductTypes(), true)) {
+            return app(DeliverableAccessLinkService::class)->trackedUrl($user, $product);
         }
 
         return null;

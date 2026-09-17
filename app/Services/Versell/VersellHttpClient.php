@@ -19,6 +19,9 @@ class VersellHttpClient
 
     public const CASH_OUT_BASE_URL = 'https://pagamentos.basspago.com.br/api/v2';
 
+    /** Escopos Cash In + Pix Automático (mesmo token mTLS). */
+    public const CASH_IN_OAUTH_SCOPE = 'cob.read cob.write pix.read pix.write webhook.read webhook.write rec.read rec.write cobr.read cobr.write webhookrec.read webhookrec.write webhookcobr.read webhookcobr.write payloadlocation.read payloadlocation.write payloadlocationrec.read payloadlocationrec.write';
+
     private const CASH_IN_TOKEN_SKEW_SECONDS = 40;
 
     private const CASH_OUT_TOKEN_SKEW_SECONDS = 90;
@@ -255,6 +258,7 @@ class VersellHttpClient
                 'client_id' => (string) $block['client_id'],
                 'client_secret' => (string) $block['client_secret'],
                 'grant_type' => 'client_credentials',
+                'scope' => self::CASH_IN_OAUTH_SCOPE,
             ]);
     }
 

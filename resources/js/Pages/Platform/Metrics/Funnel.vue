@@ -43,8 +43,8 @@ const maxValue = computed(() => Math.max(...(props.funnel.steps || []).map((s) =
             <div :class="[innerPanelClass, 'p-6']">
                 <p class="mb-6 text-sm text-zinc-600 dark:text-zinc-300">
                     Conversão final:
-                    <strong class="text-zinc-900 dark:text-white">{{ summary.conversion_rate || 0 }}%</strong>
-                    (aprovadas ÷ visitantes únicos)
+                    <strong class="text-zinc-900 dark:text-white">{{ funnel.final_conversion_rate || summary.conversion_rate || 0 }}%</strong>
+                    (visitantes únicos que pagaram ÷ visitantes únicos). Cada etapa conta pessoas, não eventos.
                 </p>
                 <div class="space-y-4">
                     <div v-for="(step, idx) in (funnel.steps || [])" :key="step.key">

@@ -9,7 +9,7 @@ use Illuminate\Support\Facades\Log;
 class CajuPayWebhookBootstrapService
 {
     /** @var list<string> */
-    public const CHECKOUT_EVENT_TYPES = ['checkout.payment.*', 'pix.payment.*'];
+    public const CHECKOUT_EVENT_TYPES = ['checkout.payment.*', 'card.payment.*', 'pix.payment.*'];
 
     /** @var list<string> */
     public const PAYOUT_EVENT_TYPES = ['payout.*'];

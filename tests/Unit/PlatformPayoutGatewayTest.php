@@ -219,4 +219,64 @@ class PlatformPayoutGatewayTest extends TestCase
         GatewayCredential::query()->whereIn('gateway_slug', ['cajupay', 'bspay'])->delete();
         Setting::set('platform_payout_gateway', null, null);
     }
+
+    public function test_xflow_wins_when_only_xflow_connected(): void
+    {
+        $cred = GatewayCredential::query()->firstOrNew([
+            'tenant_id' => null,
+            'gateway_slug' => 'xflow',
+        ]);
+        $cred->is_connected = true;
+        $cred->setEncryptedCredentials([
+            'public_key' => 'pk_live_x',
+            'secret_key' => 'sk_live_x',
+        ]);
+        $cred->save();
+
+        $this->assertSame('xflow', PlatformPayoutGateway::activeSlug());
+
+        GatewayCredential::query()->where('gateway_slug', 'xflow')->delete();
+    }
+
+    public function test_preference_xflow_overrides_order_when_others_connected(): void
+    {
+        Setting::set('platform_payout_gateway', 'xflow', null);
+
+        foreach (['cajupay', 'xflow'] as $slug) {
+            $cred = GatewayCredential::query()->firstOrNew([
+                'tenant_id' => null,
+                'gateway_slug' => $slug,
+            ]);
+            $cred->is_connected = true;
+            $cred->setEncryptedCredentials([
+                'public_key' => 'pk_'.$slug,
+                'secret_key' => 'sk_'.$slug,
+            ]);
+            $cred->save();
+        }
+
+        $this->assertSame('xflow', PlatformPayoutGateway::activeSlug());
+        $this->assertSame('xflow', PlatformPayoutGateway::preference());
+
+        GatewayCredential::query()->whereIn('gateway_slug', ['cajupay', 'xflow'])->delete();
+        Setting::set('platform_payout_gateway', null, null);
+    }
+
+    public function test_okto_wins_when_only_okto_connected(): void
+    {
+        $cred = GatewayCredential::query()->firstOrNew([
+            'tenant_id' => null,
+            'gateway_slug' => 'okto',
+        ]);
+        $cred->is_connected = true;
+        $cred->setEncryptedCredentials([
+            'access_token' => 'okto-token',
+            'sandbox' => true,
+        ]);
+        $cred->save();
+
+        $this->assertSame('okto', PlatformPayoutGateway::activeSlug());
+
+        GatewayCredential::query()->where('gateway_slug', 'okto')->delete();
+    }
 }

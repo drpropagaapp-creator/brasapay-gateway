@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Events\OrderCancelled;
 use App\Events\OrderRefunded;
+use App\Models\AffiliateCommission;
 use App\Models\Order;
 use App\Models\RefundRequest;
 use App\Models\TenantWallet;
@@ -86,6 +87,74 @@ class PlatformOrderAdminService
         DB::transaction(function () use ($order, $manualRefundMeta, $debitReason) {
             self::applyLocalRefundEffects($order, $manualRefundMeta, $debitReason, 'refund_pending', fireRefundedEvent: false);
         });
+    }
+
+    /**
+     * Após a adquirente aceitar o estorno: efetiva agora ou deixa em refund_pending (Xflow 202).
+     *
+     * @param  array<string, mixed>|null  $manualRefundMeta
+     * @return 'refunded'|'refund_pending'
+     */
+    public static function applyRefundAfterAcquirer(
+        Order $order,
+        string $gatewayStatus,
+        ?array $manualRefundMeta = null,
+        string $debitReason = 'platform_manual_refund',
+    ): string {
+        if (strtolower(trim((string) $order->gateway)) === 'xflow' && $gatewayStatus === 'gateway_pending') {
+            self::beginPendingGatewayRefund($order, $manualRefundMeta, $debitReason);
+
+            return 'refund_pending';
+        }
+
+        self::refundPaidOrDisputed($order, $manualRefundMeta, $debitReason);
+
+        return 'refunded';
+    }
+
+    /**
+     * PSP recusou o estorno (ex.: transaction.refund_failed): devolve o saldo e reabre o pedido pago.
+     *
+     * @param  array<string, mixed>|null  $metadataPatch
+     */
+    public static function abortPendingGatewayRefund(Order $order, ?array $metadataPatch = null): void
+    {
+        if ($order->status !== 'refund_pending') {
+            if ($metadataPatch !== null) {
+                $meta = is_array($order->metadata) ? $order->metadata : [];
+                $order->update(['metadata' => array_merge($meta, $metadataPatch)]);
+            }
+
+            return;
+        }
+
+        DB::transaction(function () use ($order, $metadataPatch) {
+            self::restoreRefundDebits($order);
+            $meta = is_array($order->metadata) ? $order->metadata : [];
+            if ($metadataPatch !== null) {
+                $meta = array_merge($meta, $metadataPatch);
+            }
+            $order->update([
+                'status' => 'completed',
+                'metadata' => $meta,
+            ]);
+        });
+
+        if (Schema::hasTable('affiliate_commissions')) {
+            AffiliateCommission::query()
+                ->where('order_id', $order->id)
+                ->where('status', AffiliateCommission::STATUS_REFUNDED)
+                ->get()
+                ->each(function (AffiliateCommission $commission) {
+                    $commission->update([
+                        'status' => $commission->wallet_transaction_id
+                            ? AffiliateCommission::STATUS_APPROVED
+                            : AffiliateCommission::STATUS_PENDING,
+                    ]);
+                });
+        }
+
+        $order->fresh()?->grantPurchasedProductAccessToBuyer();
     }
 
     /**
@@ -352,6 +421,97 @@ class PlatformOrderAdminService
                 'reason' => $debitReason,
             ],
         ]);
+    }
+
+    /**
+     * Devolve à carteira os débitos de estorno ainda não restaurados.
+     */
+    private static function restoreRefundDebits(Order $order): void
+    {
+        if (! Schema::hasTable('tenant_wallets') || ! Schema::hasTable('wallet_transactions')) {
+            return;
+        }
+        if (! Schema::hasColumn('tenant_wallets', 'available_pix')) {
+            return;
+        }
+
+        $debits = WalletTransaction::query()
+            ->where('order_id', $order->id)
+            ->where('type', WalletTransaction::TYPE_DEBIT_REFUND)
+            ->orderBy('id')
+            ->get()
+            ->filter(function (WalletTransaction $tx) {
+                $m = is_array($tx->meta) ? $tx->meta : [];
+
+                return empty($m['restored_at']);
+            });
+
+        if ($debits->isEmpty()) {
+            return;
+        }
+
+        foreach ($debits->groupBy('tenant_id') as $tenantId => $tenantDebits) {
+            self::restoreRefundDebitsForTenant($order, (int) $tenantId, $tenantDebits);
+        }
+    }
+
+    /**
+     * @param  \Illuminate\Support\Collection<int, WalletTransaction>  $debits
+     */
+    private static function restoreRefundDebitsForTenant(Order $order, int $tenantId, Collection $debits): void
+    {
+        if ($tenantId < 1 || $debits->isEmpty()) {
+            return;
+        }
+
+        DB::transaction(function () use ($order, $tenantId, $debits) {
+            $wallet = TenantWallet::query()->where('tenant_id', $tenantId)->lockForUpdate()->first();
+            if ($wallet === null) {
+                return;
+            }
+
+            foreach ($debits as $debit) {
+                $meta = is_array($debit->meta) ? $debit->meta : [];
+                if (! empty($meta['restored_at'])) {
+                    continue;
+                }
+
+                $net = (float) $debit->amount_net;
+                $bucket = (string) $debit->bucket;
+                $availCol = 'available_'.$bucket;
+                if (! in_array($availCol, ['available_pix', 'available_card', 'available_boleto'], true)) {
+                    $availCol = 'available_pix';
+                    $bucket = 'pix';
+                }
+
+                if ($net > 0) {
+                    $wallet->{$availCol} = round((float) ($wallet->{$availCol} ?? 0) + $net, 2);
+                }
+
+                $debit->update(['meta' => array_merge($meta, [
+                    'restored_at' => now()->toIso8601String(),
+                    'restore_reason' => 'acquirer_refund_failed',
+                ])]);
+
+                WalletTransaction::query()->create([
+                    'tenant_id' => $tenantId,
+                    'order_id' => $order->id,
+                    'withdrawal_id' => null,
+                    'bucket' => $bucket,
+                    'type' => WalletTransaction::TYPE_ADMIN_ADJUSTMENT,
+                    'amount_gross' => round((float) $debit->amount_gross, 2),
+                    'amount_fee' => 0,
+                    'amount_net' => round($net, 2),
+                    'meta' => [
+                        'reason' => 'acquirer_refund_failed',
+                        'reverses_wallet_transaction_id' => $debit->id,
+                    ],
+                ]);
+            }
+
+            self::recalcWalletAggregates($wallet);
+            $wallet->save();
+        });
     }
 
     /**

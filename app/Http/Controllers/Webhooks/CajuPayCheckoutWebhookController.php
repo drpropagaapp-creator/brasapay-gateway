@@ -127,18 +127,31 @@ class CajuPayCheckoutWebhookController extends Controller
             return response('ok', 200);
         }
 
-        if ($order !== null && $paymentId !== '' && $order->gateway_id !== $paymentId) {
-            try {
-                $order->update([
-                    'gateway' => self::SLUG,
-                    'gateway_id' => $paymentId,
-                ]);
-                $order->refresh();
-            } catch (\Throwable $e) {
-                Log::debug('CajuPayWebhook: falha ao atualizar gateway_id', [
-                    'order_id' => $order->id,
-                    'error' => $e->getMessage(),
-                ]);
+        if ($order !== null) {
+            $updates = [];
+            if ($order->gateway !== self::SLUG) {
+                $updates['gateway'] = self::SLUG;
+            }
+            if ($checkoutSessionId !== '' && trim((string) ($order->gateway_id ?? '')) === '') {
+                $updates['gateway_id'] = $checkoutSessionId;
+            }
+            if ($paymentId !== '') {
+                $meta = is_array($order->metadata) ? $order->metadata : [];
+                if (($meta['cajupay_payment_id'] ?? '') !== $paymentId) {
+                    $meta['cajupay_payment_id'] = $paymentId;
+                    $updates['metadata'] = $meta;
+                }
+            }
+            if ($updates !== []) {
+                try {
+                    $order->update($updates);
+                    $order->refresh();
+                } catch (\Throwable $e) {
+                    Log::debug('CajuPayWebhook: falha ao persistir ids CajuPay', [
+                        'order_id' => $order->id,
+                        'error' => $e->getMessage(),
+                    ]);
+                }
             }
         }
 

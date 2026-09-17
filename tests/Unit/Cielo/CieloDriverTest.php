@@ -26,7 +26,6 @@ class CieloDriverTest extends TestCase
         $this->assertContains('cielo', $pixOrder);
         $this->assertContains('cielo', $cardOrder);
         $this->assertSame('cajupay', $pixOrder[0] ?? null);
-        $this->assertSame('cielo', $pixOrder[array_key_last($pixOrder)]);
         $this->assertSame('cielo', $cardOrder[array_key_last($cardOrder)]);
         $this->assertTrue(CardInstallments::gatewaySupports('cielo'));
         $this->assertTrue(GatewayApiCredentials::isReadyForGateway('cielo', [

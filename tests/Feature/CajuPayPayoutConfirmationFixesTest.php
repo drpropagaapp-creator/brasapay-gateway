@@ -310,4 +310,184 @@ class CajuPayPayoutConfirmationFixesTest extends TestCase
             ->where('type', WalletTransaction::TYPE_WITHDRAWAL_COMPLETE)
             ->count());
     }
+
+    public function test_manual_approval_requires_payout_acquirer(): void
+    {
+        if (! Schema::hasTable('withdrawals') || ! Schema::hasTable('wallet_transactions')) {
+            $this->markTestSkipped('withdrawals/wallet_transactions');
+        }
+
+        WithdrawalPolicyService::setManualApprovalPin('1234');
+
+        $admin = User::factory()->create([
+            'role' => User::ROLE_PLATFORM_ADMIN,
+            'tenant_id' => null,
+        ]);
+
+        $seller = User::factory()->create(['role' => User::ROLE_INFOPRODUTOR]);
+        $seller->forceFill(['tenant_id' => $seller->id])->save();
+
+        $withdrawal = Withdrawal::query()->create([
+            'tenant_id' => $seller->id,
+            'user_id' => $seller->id,
+            'amount' => 20,
+            'fee_amount' => 0,
+            'net_amount' => 20,
+            'bucket' => 'pix',
+            'status' => 'pending',
+            'currency' => 'BRL',
+        ]);
+
+        $response = $this->actingAs($admin)->post(
+            route('plataforma.financeiro.saques.approve', $withdrawal),
+            [
+                'payout_manual' => true,
+                'manual_confirm_external' => true,
+                'manual_approval_pin' => '1234',
+            ]
+        );
+
+        $response->assertRedirect(route('plataforma.saques.index'));
+        $response->assertSessionHas('error', 'Selecione a adquirente usada no PIX ou a opção pagamento por conta externa.');
+        $this->assertSame('pending', $withdrawal->fresh()->status);
+    }
+
+    public function test_manual_approval_rejects_unknown_acquirer(): void
+    {
+        if (! Schema::hasTable('withdrawals') || ! Schema::hasTable('wallet_transactions')) {
+            $this->markTestSkipped('withdrawals/wallet_transactions');
+        }
+
+        WithdrawalPolicyService::setManualApprovalPin('1234');
+
+        $admin = User::factory()->create([
+            'role' => User::ROLE_PLATFORM_ADMIN,
+            'tenant_id' => null,
+        ]);
+
+        $seller = User::factory()->create(['role' => User::ROLE_INFOPRODUTOR]);
+        $seller->forceFill(['tenant_id' => $seller->id])->save();
+
+        $withdrawal = Withdrawal::query()->create([
+            'tenant_id' => $seller->id,
+            'user_id' => $seller->id,
+            'amount' => 23,
+            'fee_amount' => 0,
+            'net_amount' => 23,
+            'bucket' => 'pix',
+            'status' => 'pending',
+            'currency' => 'BRL',
+        ]);
+
+        $response = $this->actingAs($admin)->post(
+            route('plataforma.financeiro.saques.approve', $withdrawal),
+            [
+                'payout_manual' => true,
+                'manual_confirm_external' => true,
+                'manual_approval_pin' => '1234',
+                'payout_acquirer' => 'not-a-gateway',
+            ]
+        );
+
+        $response->assertRedirect(route('plataforma.saques.index'));
+        $response->assertSessionHas('error', 'Selecione a adquirente usada no PIX ou a opção pagamento por conta externa.');
+        $this->assertSame('pending', $withdrawal->fresh()->status);
+    }
+
+    public function test_manual_approval_stores_selected_acquirer_for_receipt(): void
+    {
+        if (! Schema::hasTable('withdrawals') || ! Schema::hasTable('wallet_transactions')) {
+            $this->markTestSkipped('withdrawals/wallet_transactions');
+        }
+
+        WithdrawalPolicyService::setManualApprovalPin('1234');
+
+        $admin = User::factory()->create([
+            'role' => User::ROLE_PLATFORM_ADMIN,
+            'tenant_id' => null,
+        ]);
+
+        $seller = User::factory()->create(['role' => User::ROLE_INFOPRODUTOR]);
+        $seller->forceFill(['tenant_id' => $seller->id])->save();
+
+        $withdrawal = Withdrawal::query()->create([
+            'tenant_id' => $seller->id,
+            'user_id' => $seller->id,
+            'amount' => 21,
+            'fee_amount' => 0,
+            'net_amount' => 21,
+            'bucket' => 'pix',
+            'status' => 'pending',
+            'currency' => 'BRL',
+        ]);
+
+        $response = $this->actingAs($admin)->post(
+            route('plataforma.financeiro.saques.approve', $withdrawal),
+            [
+                'payout_manual' => true,
+                'manual_confirm_external' => true,
+                'manual_approval_pin' => '1234',
+                'payout_acquirer' => 'woovi',
+            ]
+        );
+
+        $response->assertRedirect(route('plataforma.saques.index'));
+        $response->assertSessionHas('success');
+        $fresh = $withdrawal->fresh();
+        $this->assertSame('paid', $fresh->status);
+        $this->assertSame('woovi', $fresh->payout_provider);
+        $this->assertSame('woovi', $fresh->payout_meta['manual_payout_acquirer'] ?? null);
+
+        $receipt = $this->actingAs($admin)->get(route('plataforma.saques.receipt', $fresh));
+        $receipt->assertOk();
+        $receipt->assertSee('Woovi', false);
+    }
+
+    public function test_manual_approval_stores_external_account_source(): void
+    {
+        if (! Schema::hasTable('withdrawals') || ! Schema::hasTable('wallet_transactions')) {
+            $this->markTestSkipped('withdrawals/wallet_transactions');
+        }
+
+        WithdrawalPolicyService::setManualApprovalPin('1234');
+
+        $admin = User::factory()->create([
+            'role' => User::ROLE_PLATFORM_ADMIN,
+            'tenant_id' => null,
+        ]);
+
+        $seller = User::factory()->create(['role' => User::ROLE_INFOPRODUTOR]);
+        $seller->forceFill(['tenant_id' => $seller->id])->save();
+
+        $withdrawal = Withdrawal::query()->create([
+            'tenant_id' => $seller->id,
+            'user_id' => $seller->id,
+            'amount' => 22,
+            'fee_amount' => 0,
+            'net_amount' => 22,
+            'bucket' => 'pix',
+            'status' => 'pending',
+            'currency' => 'BRL',
+        ]);
+
+        $response = $this->actingAs($admin)->post(
+            route('plataforma.financeiro.saques.approve', $withdrawal),
+            [
+                'payout_manual' => true,
+                'manual_confirm_external' => true,
+                'manual_approval_pin' => '1234',
+                'payout_acquirer' => 'external',
+            ]
+        );
+
+        $response->assertRedirect(route('plataforma.saques.index'));
+        $fresh = $withdrawal->fresh();
+        $this->assertSame('paid', $fresh->status);
+        $this->assertSame('external', $fresh->payout_provider);
+        $this->assertSame('external', $fresh->payout_meta['manual_payout_acquirer'] ?? null);
+
+        $receipt = $this->actingAs($admin)->get(route('plataforma.saques.receipt', $fresh));
+        $receipt->assertOk();
+        $receipt->assertSee('Conta externa', false);
+    }
 }

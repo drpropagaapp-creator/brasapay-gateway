@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Http\Middleware\EnsureInstalled;
 use App\Models\GatewayCredential;
 use App\Models\Order;
 use App\Models\User;
@@ -10,6 +11,12 @@ use Tests\TestCase;
 
 class CajuPaySdkCheckoutSessionTest extends TestCase
 {
+    protected function setUp(): void
+    {
+        parent::setUp();
+        $this->withoutMiddleware(EnsureInstalled::class);
+    }
+
     public function test_sdk_session_creates_and_updates_order_metadata(): void
     {
         config(['services.cajupay.base_url' => 'https://api.cajupay.com.br']);
@@ -65,5 +72,7 @@ class CajuPaySdkCheckoutSessionTest extends TestCase
         $this->assertIsArray($meta);
         $this->assertSame('sess-uuid-123', $meta['cajupay_checkout_session_id'] ?? null);
         $this->assertSame('tok_public_abc', $meta['cajupay_sdk_token'] ?? null);
+        $this->assertSame('sess-uuid-123', $order->fresh()->gateway_id);
+        $this->assertSame('cajupay', $order->fresh()->gateway);
     }
 }

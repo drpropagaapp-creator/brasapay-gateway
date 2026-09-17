@@ -6,6 +6,7 @@ use App\Models\CheckoutSession;
 use App\Models\Order;
 use App\Models\Product;
 use App\Models\User;
+use App\Services\DeliverableAccessLinkService;
 use App\Support\PublicAppUrl;
 use Illuminate\Support\Facades\URL;
 
@@ -95,11 +96,10 @@ class IntegraxMessageBuilder
             return $login;
         }
 
-        if ($product->type === Product::TYPE_LINK) {
-            $config = $product->checkout_config ?? [];
-            $link = $config['deliverable_link'] ?? '';
+        if ($product->type === Product::TYPE_LINK && $user) {
+            $tracked = app(DeliverableAccessLinkService::class)->trackedUrl($user, $product);
 
-            return is_string($link) && $link !== '' ? $link : $login;
+            return $tracked ?: $login;
         }
 
         // Área de membros: login da plataforma (aluno vê todos os produtos).

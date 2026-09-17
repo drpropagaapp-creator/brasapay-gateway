@@ -35,7 +35,7 @@ final class UploadLimits
     }
 
     /**
-     * @return array{image_max_mb: int, badge_max_mb: int, pdf_max_mb: int}
+     * @return array{image_max_mb: int, badge_max_mb: int, pdf_max_mb: int, material_max_mb: int, material_extensions: list<string>, material_accept: string}
      */
     public static function memberBuilderForFrontend(): array
     {
@@ -43,6 +43,9 @@ final class UploadLimits
             'image_max_mb' => self::memberBuilderImageMaxMb(),
             'badge_max_mb' => self::memberBuilderBadgeMaxMb(),
             'pdf_max_mb' => self::memberBuilderPdfMaxMb(),
+            'material_max_mb' => self::memberBuilderPdfMaxMb(),
+            'material_extensions' => MemberLessonMaterialUpload::allowedExtensions(),
+            'material_accept' => MemberLessonMaterialUpload::htmlAccept(),
         ];
     }
 

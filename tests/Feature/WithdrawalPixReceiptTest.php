@@ -287,4 +287,108 @@ class WithdrawalPixReceiptTest extends TestCase
         $response->assertDontSee('logo-escuro.png', false);
         $response->assertDontSee('>'.$data['app_name'].'</span>', false);
     }
+
+    public function test_admin_receipt_uses_manual_acquirer_instead_of_cajupay_fallback(): void
+    {
+        $admin = User::factory()->create([
+            'role' => User::ROLE_PLATFORM_ADMIN,
+            'tenant_id' => null,
+        ]);
+        $merchant = $this->createMerchant();
+        $withdrawal = $this->createPaidWithdrawal($merchant, [
+            'payout_provider' => 'woovi',
+            'payout_manual' => true,
+            'payout_external_id' => null,
+            'payout_meta' => [
+                'destination_snapshot' => [
+                    'receiver_name' => $merchant->name,
+                    'pix_key' => 'seller@example.com',
+                ],
+                'manual_payout_acquirer' => 'woovi',
+            ],
+        ]);
+
+        $data = app(WithdrawalPixReceiptService::class)->viewData($withdrawal, includePayerSection: true);
+
+        $this->assertSame('Woovi', $data['payer_name']);
+        $this->assertSame('Woovi', $data['payer_institution']);
+        $this->assertNotSame('', $data['payer_logo']);
+        $this->assertStringContainsString('woovi', strtolower($data['payer_logo']));
+
+        $response = $this->actingAs($admin)->get(route('plataforma.saques.receipt', $withdrawal));
+        $response->assertOk();
+        $response->assertSee('Woovi', false);
+        $response->assertSee('Quem pagou', false);
+    }
+
+    public function test_admin_receipt_uses_external_account_label(): void
+    {
+        $admin = User::factory()->create([
+            'role' => User::ROLE_PLATFORM_ADMIN,
+            'tenant_id' => null,
+        ]);
+        $merchant = $this->createMerchant();
+        $withdrawal = $this->createPaidWithdrawal($merchant, [
+            'payout_provider' => WithdrawalPixReceiptService::MANUAL_PAYOUT_EXTERNAL,
+            'payout_manual' => true,
+            'payout_external_id' => null,
+            'payout_meta' => [
+                'destination_snapshot' => [
+                    'receiver_name' => $merchant->name,
+                    'pix_key' => 'seller@example.com',
+                ],
+                'manual_payout_acquirer' => WithdrawalPixReceiptService::MANUAL_PAYOUT_EXTERNAL,
+            ],
+        ]);
+
+        $data = app(WithdrawalPixReceiptService::class)->viewData($withdrawal, includePayerSection: true);
+
+        $this->assertSame('Conta externa', $data['payer_name']);
+        $this->assertSame('Conta externa', $data['payer_institution']);
+        $this->assertSame('', $data['payer_logo']);
+
+        $response = $this->actingAs($admin)->get(route('plataforma.saques.receipt', $withdrawal));
+        $response->assertOk();
+        $response->assertSee('Conta externa', false);
+    }
+
+    public function test_legacy_manual_provider_is_treated_as_external_account(): void
+    {
+        $merchant = $this->createMerchant();
+        $withdrawal = $this->createPaidWithdrawal($merchant, [
+            'payout_provider' => 'manual',
+            'payout_manual' => true,
+            'payout_external_id' => null,
+            'payout_meta' => [
+                'destination_snapshot' => [
+                    'receiver_name' => $merchant->name,
+                    'pix_key' => 'seller@example.com',
+                ],
+            ],
+        ]);
+
+        $data = app(WithdrawalPixReceiptService::class)->viewData($withdrawal, includePayerSection: true);
+
+        $this->assertSame('Conta externa', $data['payer_name']);
+        $this->assertSame('Conta externa', $data['payer_institution']);
+        $this->assertSame('Conta externa', $this->receiptServiceLabel($withdrawal));
+    }
+
+    public function test_manual_payout_source_options_include_external_and_acquirers(): void
+    {
+        $options = app(WithdrawalPixReceiptService::class)->manualPayoutSourceOptions();
+        $slugs = array_column($options, 'slug');
+
+        $this->assertSame(WithdrawalPixReceiptService::MANUAL_PAYOUT_EXTERNAL, $slugs[0] ?? null);
+        $this->assertSame('Pagamento por conta externa', $options[0]['name'] ?? null);
+        $this->assertContains('cajupay', $slugs);
+        $this->assertContains('woovi', $slugs);
+    }
+
+    private function receiptServiceLabel(Withdrawal $withdrawal): ?string
+    {
+        $item = app(WithdrawalPixReceiptService::class)->mapWithdrawalListItem($withdrawal);
+
+        return $item['payout_acquirer_label'] ?? null;
+    }
 }

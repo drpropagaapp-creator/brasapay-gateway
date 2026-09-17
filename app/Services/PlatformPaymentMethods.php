@@ -88,8 +88,8 @@ class PlatformPaymentMethods
             ['key' => 'card', 'label' => 'Cartão de crédito', 'hint' => 'Checkout com cartão'],
             ['key' => 'boleto', 'label' => 'Boleto', 'hint' => 'Boleto bancário'],
             ['key' => 'pix_auto', 'label' => 'PIX automático', 'hint' => 'Assinaturas com débito recorrente'],
-            ['key' => 'apple_pay', 'label' => 'Apple Pay', 'hint' => 'Wallet via CajuPay (iOS)'],
-            ['key' => 'google_pay', 'label' => 'Google Pay', 'hint' => 'Wallet via CajuPay (Android/desktop)'],
+            ['key' => 'apple_pay', 'label' => 'Apple Pay', 'hint' => 'Wallet via CajuPay (qualquer dispositivo)'],
+            ['key' => 'google_pay', 'label' => 'Google Pay', 'hint' => 'Wallet via CajuPay (qualquer dispositivo)'],
             ['key' => 'open_finance', 'label' => 'Open Finance', 'hint' => 'Pagamento autorizado no app do banco'],
             ['key' => 'paypal', 'label' => 'PayPal', 'hint' => 'Carteira PayPal (não altera PIX/cartão das outras adquirentes)'],
         ];

@@ -50,17 +50,41 @@ const props = defineProps({
     /** Limites exibidos no UI (valores reais vêm do backend / .env). */
     upload_limits: {
         type: Object,
-        default: () => ({ image_max_mb: 10, badge_max_mb: 5, pdf_max_mb: 50 }),
+        default: () => ({
+            image_max_mb: 10,
+            badge_max_mb: 5,
+            pdf_max_mb: 50,
+            material_max_mb: 50,
+            material_extensions: ['pdf', 'txt', 'csv', 'rtf', 'docx', 'xlsx', 'pptx', 'odt', 'ods', 'odp'],
+            material_accept: '.pdf,.txt,.csv,.rtf,.docx,.xlsx,.pptx,.odt,.ods,.odp,application/pdf,text/plain,text/csv',
+        }),
     },
     /** Nome da aplicação (Personalização global/plataforma), usado no preview do certificado. */
     platform_app_name: { type: String, default: '' },
 });
 
-const uploadLimits = computed(() => ({
-    image_max_mb: props.upload_limits?.image_max_mb ?? 10,
-    badge_max_mb: props.upload_limits?.badge_max_mb ?? 5,
-    pdf_max_mb: props.upload_limits?.pdf_max_mb ?? 50,
-}));
+const DEFAULT_MATERIAL_EXTENSIONS = ['pdf', 'txt', 'csv', 'rtf', 'docx', 'xlsx', 'pptx', 'odt', 'ods', 'odp'];
+
+const uploadLimits = computed(() => {
+    const materialMax = props.upload_limits?.material_max_mb ?? props.upload_limits?.pdf_max_mb ?? 50;
+    const extensions = Array.isArray(props.upload_limits?.material_extensions) && props.upload_limits.material_extensions.length
+        ? props.upload_limits.material_extensions.map((ext) => String(ext).toLowerCase())
+        : DEFAULT_MATERIAL_EXTENSIONS;
+    return {
+        image_max_mb: props.upload_limits?.image_max_mb ?? 10,
+        badge_max_mb: props.upload_limits?.badge_max_mb ?? 5,
+        pdf_max_mb: props.upload_limits?.pdf_max_mb ?? 50,
+        material_max_mb: materialMax,
+        material_extensions: extensions,
+        material_accept: props.upload_limits?.material_accept
+            || extensions.map((ext) => `.${ext}`).join(','),
+    };
+});
+
+function lessonMaterialExtension(fileName) {
+    const match = /\.([a-z0-9]+)$/i.exec(fileName || '');
+    return match ? match[1].toLowerCase() : '';
+}
 
 function memberBuilderImageUploadError(e, fallbackLabel = 'imagem') {
     const err = e?.response?.data?.errors?.file?.[0];
@@ -72,8 +96,8 @@ function memberBuilderImageUploadError(e, fallbackLabel = 'imagem') {
 function memberBuilderPdfUploadError(e) {
     const err = e?.response?.data?.errors?.file?.[0];
     if (err) return err;
-    const m = uploadLimits.value.pdf_max_mb;
-    return e?.response?.data?.message || `Erro ao enviar material. Tamanho máx. ${m} MB.`;
+    const m = uploadLimits.value.material_max_mb;
+    return e?.response?.data?.message || `Erro ao enviar material. Tamanho máx. ${m} MB. Use PDF, TXT, CSV, RTF, DOCX, XLSX, PPTX ou OpenDocument.`;
 }
 
 const csrfToken = () => document.querySelector('meta[name="csrf-token"]')?.content ?? '';
@@ -770,13 +794,14 @@ async function onLessonPdfChange(event) {
         if (!Array.isArray(modulosLessonForm.value.content_files)) modulosLessonForm.value.content_files = [];
         for (const file of files) {
             if (!file) continue;
-            if (file.type !== 'application/pdf') {
-                alert('Selecione apenas arquivos em formato PDF.');
+            const extension = lessonMaterialExtension(file.name);
+            if (!uploadLimits.value.material_extensions.includes(extension)) {
+                alert(`O arquivo "${file.name}" não é um formato permitido. Use PDF, TXT, CSV, RTF, DOCX, XLSX, PPTX ou OpenDocument.`);
                 continue;
             }
-            const pdfMaxBytes = uploadLimits.value.pdf_max_mb * 1024 * 1024;
-            if (file.size > pdfMaxBytes) {
-                alert(`O PDF "${file.name}" excede o limite de ${uploadLimits.value.pdf_max_mb} MB.`);
+            const materialMaxBytes = uploadLimits.value.material_max_mb * 1024 * 1024;
+            if (file.size > materialMaxBytes) {
+                alert(`O arquivo "${file.name}" excede o limite de ${uploadLimits.value.material_max_mb} MB.`);
                 continue;
             }
             const formData = new FormData();
@@ -2891,7 +2916,7 @@ const inputClass = 'block w-full rounded-lg border border-zinc-300 bg-white px-3
                                                 </p>
                                             </div>
                                             <div v-if="modulosLessonForm.type === 'pdf'" class="space-y-2">
-                                                <input ref="lessonPdfFileInput" type="file" accept=".pdf,application/pdf" multiple class="hidden" @change="onLessonPdfChange" />
+                                                <input ref="lessonPdfFileInput" type="file" :accept="uploadLimits.material_accept" multiple class="hidden" @change="onLessonPdfChange" />
                                                 <label class="block text-xs font-medium text-zinc-600 dark:text-zinc-400">Enviar arquivo (material)</label>
                                                 <div class="flex flex-wrap items-center gap-2">
                                                     <Button type="button" size="sm" variant="outline" :disabled="lessonPdfUploading" @click="lessonPdfFileInput?.click()">
@@ -2912,7 +2937,7 @@ const inputClass = 'block w-full rounded-lg border border-zinc-300 bg-white px-3
                                                         <button type="button" class="shrink-0 text-red-600 hover:underline" @click="removeLessonPdfAt(i)">Remover</button>
                                                     </div>
                                                 </div>
-                                                <p class="text-xs text-zinc-500 dark:text-zinc-400">Ou use a URL acima se o material estiver hospedado em outro site. Máx. {{ uploadLimits.pdf_max_mb }} MB.</p>
+                                                <p class="text-xs text-zinc-500 dark:text-zinc-400">Formatos: PDF, TXT, CSV, RTF, Word (DOCX), Excel (XLSX), PowerPoint (PPTX) e OpenDocument. Ou use a URL acima se o material estiver hospedado em outro site. Máx. {{ uploadLimits.material_max_mb }} MB.</p>
                                             </div>
                                             <div v-if="modulosLessonForm.type === 'text'">
                                                 <label class="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">Texto</label>

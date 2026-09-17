@@ -143,8 +143,8 @@ class CajuPaySdkSessionCreateTest extends TestCase
             false,
             'apple_pay'
         );
-        $this->assertFalse($wallet['allow_card_installments']);
-        $this->assertSame(1, $wallet['card_max_installments']);
+        $this->assertTrue($wallet['allow_card_installments']);
+        $this->assertSame(6, $wallet['card_max_installments']);
 
         $on = CajuPaySdkCheckoutService::cardInstallmentSessionOptions(
             ['card_installments' => ['enabled' => true, 'max' => 6]],
@@ -172,6 +172,40 @@ class CajuPaySdkSessionCreateTest extends TestCase
         $this->assertSame(
             'https://loja.exemplo.com/c/curso',
             CajuPayBrowserSdk::partnerCheckoutUrl($request)
+        );
+    }
+
+    public function test_create_sdk_session_sends_installments_for_apple_pay(): void
+    {
+        Http::fake([
+            'https://api.cajupay.com.br/api/sdk/v1/checkout/sessions' => function ($request) {
+                $body = $request->data();
+                $this->assertTrue($body['allow_apple_pay'] ?? false);
+                $this->assertTrue($body['allow_card'] ?? false);
+                $this->assertTrue($body['allow_card_installments'] ?? false);
+                $this->assertSame(6, $body['card_max_installments'] ?? null);
+                $this->assertSame('apple_pay', $body['default_method'] ?? null);
+
+                return Http::response([
+                    'token' => 'tok_wallet',
+                    'checkout_session_id' => 'sess-wallet',
+                ], 201);
+            },
+        ]);
+
+        $driver = new CajuPayDriver;
+        $driver->createSdkCheckoutSession(
+            ['public_key' => 'pk_test', 'secret_key' => 'sk_test'],
+            9900,
+            'Pedido #1',
+            'ext-wallet',
+            [],
+            ['apple_pay', 'card'],
+            'apple_pay',
+            [
+                'allow_card_installments' => true,
+                'card_max_installments' => 6,
+            ]
         );
     }
 }

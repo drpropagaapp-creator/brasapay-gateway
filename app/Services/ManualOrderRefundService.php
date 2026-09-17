@@ -111,7 +111,12 @@ class ManualOrderRefundService
         }
 
         try {
-            PlatformOrderAdminService::refundPaidOrDisputed($order, $manualRefundMeta, $debitReason);
+            $outcome = PlatformOrderAdminService::applyRefundAfterAcquirer(
+                $order,
+                (string) ($gw['status'] ?? ''),
+                $manualRefundMeta,
+                $debitReason
+            );
         } catch (\Throwable $e) {
             $this->logSellerRefundFailureIfNeeded(
                 $order,
@@ -122,7 +127,21 @@ class ManualOrderRefundService
             );
             throw $e;
         }
-        $this->recordApprovedRefundRequest($order->fresh(), $actor, $reason, $gw);
+        $this->recordApprovedRefundRequest(
+            $order->fresh(),
+            $actor,
+            $reason,
+            $gw,
+            pendingGateway: $outcome === 'refund_pending'
+        );
+
+        if ($outcome === 'refund_pending') {
+            return [
+                'success' => true,
+                'message' => $gw['note'] ?? 'Reembolso enviado; aguardando confirmação na adquirente.',
+                'gateway_status' => 'gateway_pending',
+            ];
+        }
 
         return [
             'success' => true,

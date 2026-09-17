@@ -408,6 +408,7 @@ async function startCheckoutMetaTracking() {
     try {
         trackMetricsEvent({
             event_name: 'checkout_view',
+            event_id: `chk-view:${props.checkout_session_token}`,
             product_id: props.product?.id,
             tenant_id: props.product?.tenant_id,
             offer_id: props.offer?.id,

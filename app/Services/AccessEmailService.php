@@ -18,6 +18,7 @@ class AccessEmailService
 {
     public function __construct(
         protected TenantMailConfigService $mailConfig,
+        protected DeliverableAccessLinkService $deliverableAccessLinks,
     ) {}
 
     public function sendForOrder(Order $order, bool $force = false): AccessEmailSendResult
@@ -142,7 +143,9 @@ class AccessEmailService
             $bodyHtml = $this->buildExternalMemberAreaPendingBody($customerName, $product->name);
         } elseif ($product->type === Product::TYPE_LINK) {
             $subject = 'Seu acesso a '.$product->name;
-            $externalLink = $this->resolveLinkAcesso($product);
+            $externalLink = $order->user
+                ? ($this->deliverableAccessLinks->trackedUrl($order->user, $product) ?? '')
+                : '';
             $bodyHtml = $this->buildLinkProductAccessBody(
                 $customerName,
                 $product->name,
@@ -456,7 +459,11 @@ class AccessEmailService
             return $this->resolvePlatformLoginLink();
         }
 
-        return $this->resolveLinkAcesso($product);
+        if ($user && $this->deliverableAccessLinks->tracks($product)) {
+            return $this->deliverableAccessLinks->trackedUrl($user, $product) ?? '';
+        }
+
+        return '';
     }
 
     public function sendForUserProduct(User $user, Product $product): AccessEmailSendResult
@@ -501,7 +508,7 @@ class AccessEmailService
             $bodyHtml = $this->buildLinkProductAccessBody(
                 $customerName,
                 $product->name,
-                $this->resolveLinkAcesso($product),
+                $this->deliverableAccessLinks->trackedUrl($user, $product) ?? '',
                 $this->resolvePlatformLoginLink(),
                 $customerEmail,
                 $linkEsqueciSenha,
@@ -616,7 +623,7 @@ class AccessEmailService
             ? '<p style="margin:0 0 12px;font-size:16px;line-height:1.6;color:#334155;"><strong>Acesso externo ao produto</strong></p>'
                 .'<p style="margin:0 0 16px;font-size:15px;line-height:1.6;color:#334155;">Use o link abaixo para abrir o conteúdo:</p>'
                 .'<p style="margin:0 0 12px;text-align:center;"><a href="'.e($externalLink).'" style="display:inline-block;padding:14px 28px;background:#0ea5e9;color:#ffffff;text-decoration:none;font-weight:600;font-size:16px;border-radius:8px;">Acessar conteúdo</a></p>'
-                .'<p style="margin:0 0 28px;font-size:13px;line-height:1.5;color:#64748b;word-break:break-all;">Ou copie e cole no navegador:<br/><a href="'.e($externalLink).'" style="color:#0ea5e9;">'.e($externalLink).'</a></p>'
+                .'<p style="margin:0 0 28px;font-size:13px;line-height:1.5;color:#64748b;word-break:break-all;">Este link é pessoal e registra cada acesso. Se encaminhar, o clique também fica no seu histórico.<br/><a href="'.e($externalLink).'" style="color:#0ea5e9;">'.e($externalLink).'</a></p>'
             : '<p style="margin:0 0 28px;font-size:15px;line-height:1.6;color:#64748b;">O link externo deste produto ainda não foi configurado. Entre em contato com o suporte do vendedor.</p>';
 
         return '<table width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:600px;margin:0 auto;font-family:\'Segoe UI\',Tahoma,sans-serif;background:#f8fafc;padding:32px 24px;">'

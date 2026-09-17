@@ -2,11 +2,17 @@
 
 namespace App\Http\Controllers\Webhooks;
 
+use App\Events\OrderRejected;
+use App\Events\SubscriptionCancelled;
 use App\Http\Controllers\Controller;
 use App\Models\Order;
+use App\Models\Subscription;
+use App\Services\Versell\VersellPixAutoLifecycleService;
+use App\Services\Versell\VersellPixAutoRenewalService;
 use App\Support\PaymentWebhookDispatcher;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -113,19 +119,34 @@ class VersellWebhookController extends Controller
                 ->orderByDesc('id')
                 ->first();
 
+            $subscription = Subscription::query()
+                ->where('gateway_subscription_id', $idRec)
+                ->orderByDesc('id')
+                ->first();
+
+            if ($order === null && $subscription !== null) {
+                $order = Order::query()
+                    ->where('gateway', 'versell')
+                    ->where('user_id', $subscription->user_id)
+                    ->where('product_id', $subscription->product_id)
+                    ->where('payment_method', 'pix_auto')
+                    ->orderByDesc('id')
+                    ->first();
+            }
+
             if ($order === null) {
                 Log::info('VersellWebhook pixAutoRec: order not found', [
                     'idRec' => $idRec,
                     'status' => $status,
                 ]);
-
-                continue;
+            } else {
+                $meta = is_array($order->metadata) ? $order->metadata : [];
+                $meta['versell_pix_auto_rec_status'] = $status !== '' ? $status : null;
+                $meta['versell_pix_auto_rec_at'] = now()->toIso8601String();
+                $order->update(['metadata' => array_filter($meta, fn ($v) => $v !== null && $v !== '')]);
             }
 
-            $meta = is_array($order->metadata) ? $order->metadata : [];
-            $meta['versell_pix_auto_rec_status'] = $status !== '' ? $status : null;
-            $meta['versell_pix_auto_rec_at'] = now()->toIso8601String();
-            $order->update(['metadata' => array_filter($meta, fn ($v) => $v !== null && $v !== '')]);
+            $this->applyRecStatus($idRec, $status, $order, $subscription);
         }
 
         return response()->json(['received' => true]);
@@ -171,12 +192,31 @@ class VersellWebhookController extends Controller
                 ->first();
 
             if ($order === null) {
+                $idRec = trim((string) ($item['idRec'] ?? ''));
+                if ($idRec !== '') {
+                    $subscription = Subscription::query()
+                        ->where('gateway_subscription_id', $idRec)
+                        ->whereIn('status', [Subscription::STATUS_ACTIVE, Subscription::STATUS_PAST_DUE])
+                        ->orderByDesc('id')
+                        ->first();
+                    if ($subscription !== null) {
+                        $order = app(VersellPixAutoRenewalService::class)
+                            ->attachExistingCobr($subscription, $txid, $idRec);
+                    }
+                }
+            }
+
+            if ($order === null) {
                 Log::info('VersellWebhook pixAutoCobr: order not found', ['txid' => $txid]);
 
                 continue;
             }
 
             if (! $this->cobrLooksPaid($item)) {
+                if ($this->cobrLooksExpired($item)) {
+                    app(VersellPixAutoLifecycleService::class)->retryExpiredCobr($order);
+                }
+
                 continue;
             }
 
@@ -229,6 +269,70 @@ class VersellWebhookController extends Controller
         }
 
         return false;
+    }
+
+    /**
+     * @param  array<string, mixed>  $item
+     */
+    private function cobrLooksExpired(array $item): bool
+    {
+        return strtoupper(trim((string) ($item['status'] ?? ''))) === 'EXPIRADA';
+    }
+
+    private function applyRecStatus(string $idRec, string $status, ?Order $order, ?Subscription $subscription): void
+    {
+        if ($status === 'APROVADA') {
+            if ($subscription === null && $order !== null && $order->status === 'completed') {
+                $subscription = Subscription::query()
+                    ->where('user_id', $order->user_id)
+                    ->where('product_id', $order->product_id)
+                    ->where('subscription_plan_id', $order->subscription_plan_id)
+                    ->whereIn('status', [Subscription::STATUS_ACTIVE, Subscription::STATUS_PAST_DUE])
+                    ->orderByDesc('id')
+                    ->first();
+            }
+            if ($subscription !== null) {
+                app(VersellPixAutoRenewalService::class)->ensureNextCobr($subscription, $order);
+            }
+
+            return;
+        }
+
+        if (in_array($status, ['REJEITADA', 'EXPIRADA'], true) && $order !== null && $order->status === 'pending' && ! $order->is_renewal) {
+            $order->update(['status' => 'rejected']);
+            event(new OrderRejected($order));
+
+            return;
+        }
+
+        if ($status !== 'CANCELADA') {
+            return;
+        }
+
+        $toCancel = $subscription;
+        if ($toCancel === null) {
+            $toCancel = Subscription::query()
+                ->where('gateway_subscription_id', $idRec)
+                ->whereIn('status', [Subscription::STATUS_ACTIVE, Subscription::STATUS_PAST_DUE])
+                ->orderByDesc('id')
+                ->first();
+        }
+        Cache::put(
+            VersellPixAutoLifecycleService::skipRemoteCancelKey($idRec),
+            1,
+            VersellPixAutoLifecycleService::SKIP_REMOTE_CANCEL_TTL_SECONDS
+        );
+        if ($toCancel !== null && in_array($toCancel->status, [Subscription::STATUS_ACTIVE, Subscription::STATUS_PAST_DUE], true)) {
+            $toCancel->update(['status' => Subscription::STATUS_CANCELLED]);
+            event(new SubscriptionCancelled($toCancel->fresh()));
+        }
+
+        Order::query()
+            ->where('gateway', 'versell')
+            ->where('payment_method', 'pix_auto')
+            ->where('status', 'pending')
+            ->where('metadata->versell_pix_auto_id_rec', $idRec)
+            ->update(['status' => 'cancelled']);
     }
 
     /**

@@ -81,14 +81,7 @@ class CoproducerMetricsTrackingController extends Controller
         $search = trim((string) $request->query('q', ''));
 
         $query = $this->analytics->eventsQuery(null, $start, $end, $filters, true)
-            ->whereIn('event_name', [
-                MetricsEvent::PAGE_VIEW,
-                MetricsEvent::CHECKOUT_VIEW,
-                MetricsEvent::LINK_CLICKED,
-                MetricsEvent::CHECKOUT_STARTED,
-                MetricsEvent::PIX_CREATED,
-                MetricsEvent::PAYMENT_APPROVED,
-            ])
+            ->whereIn('event_name', MetricsEvent::dashboardLogEventNames())
             ->with(['product:id,name'])
             ->orderByDesc('occurred_at');
 

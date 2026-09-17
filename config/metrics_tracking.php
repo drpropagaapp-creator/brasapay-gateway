@@ -40,4 +40,10 @@ return [
     'cookie_session' => 'gf_msid',
     'cookie_visitor' => 'gf_vid',
     'cookie_days' => 30,
+
+    /**
+     * Reusa o mesmo checkout_session_token (e portanto o mesmo chk-view)
+     * se o visitante recarregar o checkout dentro desta janela.
+     */
+    'checkout_session_reuse_minutes' => (int) env('METRICS_CHECKOUT_SESSION_REUSE_MINUTES', 30),
 ];

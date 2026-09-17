@@ -213,7 +213,10 @@ return Application::configure(basePath: dirname(__DIR__))
         $schedule->command('withdrawals:reconcile-bspay --limit=80 --min-age-minutes=0')->everyMinute();
         $schedule->command('withdrawals:reconcile-cajupay --limit=80 --min-age-minutes=0')->everyTwoMinutes();
         $schedule->command('withdrawals:reconcile-versell --limit=80 --min-age-minutes=0')->everyTwoMinutes();
+        $schedule->command('withdrawals:reconcile-xflow --limit=80 --min-age-minutes=0')->everyMinute();
+        $schedule->command('withdrawals:reconcile-okto --limit=80 --min-age-minutes=0')->everyMinute();
         $schedule->command('versell:reconcile-infractions --hours=72')->everyFiveMinutes()->withoutOverlapping(10);
+        $schedule->command('versell:reconcile-pix-auto --limit=80')->everyFiveMinutes()->withoutOverlapping(10);
         $schedule->command('settlement:release')->everyFiveMinutes();
         $schedule->command('schedule:heartbeat')->everyMinute();
         $schedule->command('push:process-schedule')->everyMinute();
@@ -226,6 +229,9 @@ return Application::configure(basePath: dirname(__DIR__))
         $schedule->command($logsPrune)->everySixHours();
         $schedule->command('queue:prune-failed --hours=168')->dailyAt('04:00');
         $schedule->command('inbound-webhooks:prune --days=14')->dailyAt('04:15');
+        $schedule->command('model:prune', [
+            '--model' => [\App\Models\MemberStudentActivityLog::class],
+        ])->dailyAt('04:20');
         $schedule->job(new \App\Jobs\QueueHeartbeatJob)->everyMinute();
     })
     ->create();

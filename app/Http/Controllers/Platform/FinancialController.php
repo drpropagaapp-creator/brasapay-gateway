@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Platform;
 
+use App\Gateways\GatewayRegistry;
 use App\Http\Controllers\Concerns\ProvidesPlatformGatewayProps;
 use App\Http\Controllers\Concerns\RequiresPlatformStepUp;
 use App\Http\Controllers\Controller;
@@ -9,6 +10,8 @@ use App\Jobs\ReconcileBspayWithdrawalJob;
 use App\Jobs\ReconcileCajuPayWithdrawalJob;
 use App\Jobs\ReconcileSpacepagWithdrawalJob;
 use App\Jobs\ReconcileWooviWithdrawalJob;
+use App\Jobs\ReconcileXflowWithdrawalJob;
+use App\Jobs\ReconcileOktoWithdrawalJob;
 use Plugins\OnlyUp\OnlyUpPayoutService;
 use Plugins\OnlyUp\ReconcileOnlyUpWithdrawalJob;
 use App\Http\Controllers\Platform\CajuPayAccountsController;
@@ -20,6 +23,8 @@ use App\Services\CajuPay\CajuPayPayoutService;
 use App\Services\CajuPay\CajuPayWithdrawalReconcileService;
 use App\Services\Spacepag\SpacepagPayoutService;
 use App\Services\Woovi\WooviPayoutService;
+use App\Services\Xflow\XflowPayoutService;
+use App\Services\Okto\OktoPayoutService;
 use App\Services\EffectiveMerchantFees;
 use App\Support\CardInstallmentEconomics;
 use App\Support\PercentDecimal;
@@ -29,6 +34,7 @@ use App\Services\PixGoAccess;
 use App\Services\PlatformCardInstallments;
 use App\Services\MerchantWithdrawalService;
 use App\Services\MinimumChargeService;
+use App\Services\WithdrawalPixReceiptService;
 use App\Services\Payout\PayoutUserSettings;
 use App\Services\Payout\PlatformPayoutGateway;
 use App\Services\Payout\GatewayPayoutEconomics;
@@ -248,7 +254,7 @@ class FinancialController extends Controller
     public function updatePayoutGatewayPreference(Request $request): JsonResponse
     {
         $validated = $request->validate([
-            'preference' => ['required', 'string', 'in:auto,cajupay,woovi,bspay,assetpay,versell,onlyup'],
+            'preference' => ['required', 'string', 'in:auto,cajupay,woovi,bspay,assetpay,versell,xflow,okto,onlyup'],
         ]);
 
         $pref = $validated['preference'];
@@ -462,6 +468,7 @@ class FinancialController extends Controller
             'totp_code' => ['nullable', 'string', 'max:16'],
             'manual_approval_pin' => ['nullable', 'string', 'max:'.WithdrawalPolicyService::MANUAL_APPROVAL_PIN_MAX_LENGTH, 'regex:/^\d*$/'],
             'manual_confirm_external' => ['nullable', 'boolean'],
+            'payout_acquirer' => ['nullable', 'string', 'max:32'],
         ]);
         $manual = (bool) ($validated['payout_manual'] ?? false);
 
@@ -471,6 +478,16 @@ class FinancialController extends Controller
         }
 
         $this->validateWithdrawalPayoutStepUp($request, 'plataforma.saques.index');
+
+        $hadExternal = trim((string) ($withdrawal->payout_external_id ?? '')) !== '';
+        $manualAcquirer = null;
+        if ($manual && ! $hadExternal) {
+            $manualAcquirer = $this->validatedManualPayoutAcquirer($validated['payout_acquirer'] ?? null);
+            if ($manualAcquirer === null) {
+                return redirect()->route('plataforma.saques.index')
+                    ->with('error', 'Selecione a adquirente usada no PIX ou a opção pagamento por conta externa.');
+            }
+        }
 
         if (! $manual && trim((string) ($withdrawal->payout_external_id ?? '')) !== '') {
             return redirect()->route('plataforma.saques.index')
@@ -489,7 +506,6 @@ class FinancialController extends Controller
             $meta = is_array($withdrawal->payout_meta) ? $withdrawal->payout_meta : [];
             $meta['manual_confirmed_by'] = $request->user()?->id;
             $meta['manual_confirmed_at'] = now()->toIso8601String();
-            $hadExternal = trim((string) ($withdrawal->payout_external_id ?? '')) !== '';
             if ($hadExternal) {
                 $meta['manual_confirmed_while_awaiting_gateway'] = true;
             }
@@ -497,9 +513,12 @@ class FinancialController extends Controller
                 'payout_manual' => true,
                 'payout_meta' => $meta,
             ];
-            // Sem envio prévio ao gateway: marca provedor como manual. Se já há external_id, preserva cajupay/etc.
-            if (! $hadExternal) {
-                $update['payout_provider'] = 'manual';
+            // Sem envio prévio ao gateway: grava a adquirente (ou conta externa) para o comprovante.
+            // Se já há external_id, preserva cajupay/etc.
+            if (! $hadExternal && is_string($manualAcquirer) && $manualAcquirer !== '') {
+                $meta['manual_payout_acquirer'] = $manualAcquirer;
+                $update['payout_meta'] = $meta;
+                $update['payout_provider'] = $manualAcquirer;
             }
             $withdrawal->update($update);
             MerchantWithdrawalService::markPaid($withdrawal->fresh());
@@ -508,6 +527,7 @@ class FinancialController extends Controller
                 'withdrawal_id' => $withdrawal->id,
                 'manual' => true,
                 'awaiting_gateway' => $hadExternal,
+                'payout_acquirer' => $manualAcquirer,
             ], $request);
 
             return redirect()->route('plataforma.saques.index')
@@ -705,6 +725,105 @@ class FinancialController extends Controller
 
             return redirect()->route('plataforma.saques.index')
                 ->with('success', 'Saque enviado à BSPay. Será marcado como pago após confirmação do PIX (webhook).');
+        }
+
+        if ($slug === 'xflow') {
+            $pixKey = PayoutUserSettings::pixKey($settings);
+            if ($pixKey === '') {
+                MerchantWithdrawalService::releasePayoutApproval($withdrawal);
+
+                return redirect()->route('plataforma.saques.index')
+                    ->with('error', 'O infoprodutor precisa cadastrar uma chave PIX para saque em Financeiro (painel do vendedor).');
+            }
+
+            $payout = new XflowPayoutService;
+            $result = $payout->sendWithdrawalToPix($withdrawal->fresh(), $owner);
+
+            if (! ($result['ok'] ?? false)) {
+                $prev = is_array($withdrawal->payout_meta) ? $withdrawal->payout_meta : [];
+                $withdrawal->update([
+                    'payout_provider' => 'xflow',
+                    'payout_meta' => $prev + [
+                        'last_error' => $result['error'] ?? 'Erro desconhecido',
+                        'last_attempt_at' => now()->toIso8601String(),
+                    ],
+                ]);
+                MerchantWithdrawalService::releasePayoutApproval($withdrawal->fresh());
+                $this->notifyWithdrawalPayoutError($withdrawal, 'Xflow: '.($result['error'] ?? 'Falha ao enviar o saque.'));
+
+                return redirect()->route('plataforma.saques.index')
+                    ->with('error', 'Xflow: '.($result['error'] ?? 'Falha ao enviar o saque.'));
+            }
+
+            $withdrawal->update([
+                'payout_manual' => false,
+                'payout_provider' => 'xflow',
+                'payout_external_id' => $result['transaction_id'] ?? null,
+                'payout_meta' => array_filter([
+                    'api_status' => 'pending',
+                    'pending_approval' => ($result['pending_approval'] ?? false) ? true : null,
+                    'requested_at' => now()->toIso8601String(),
+                ]),
+            ]);
+
+            ReconcileXflowWithdrawalJob::dispatch($withdrawal->fresh()->id)
+                ->delay(now()->addSeconds(90));
+
+            MerchantWithdrawalService::releasePayoutApproval($withdrawal->fresh());
+
+            PlatformAuditService::log('platform.withdrawal.approved', ['withdrawal_id' => $withdrawal->id, 'xflow' => true, 'pending' => true], $request);
+
+            return redirect()->route('plataforma.saques.index')
+                ->with('success', 'Saque enviado à Xflow. Será marcado como pago após confirmação do PIX (webhook).');
+        }
+
+        if ($slug === 'okto') {
+            $pixKey = PayoutUserSettings::pixKey($settings);
+            if ($pixKey === '') {
+                MerchantWithdrawalService::releasePayoutApproval($withdrawal);
+
+                return redirect()->route('plataforma.saques.index')
+                    ->with('error', 'O infoprodutor precisa cadastrar uma chave PIX para saque em Financeiro (painel do vendedor).');
+            }
+
+            $payout = new OktoPayoutService;
+            $result = $payout->sendWithdrawalToPix($withdrawal->fresh(), $owner);
+
+            if (! ($result['ok'] ?? false)) {
+                $prev = is_array($withdrawal->payout_meta) ? $withdrawal->payout_meta : [];
+                $withdrawal->update([
+                    'payout_provider' => 'okto',
+                    'payout_meta' => $prev + [
+                        'last_error' => $result['error'] ?? 'Erro desconhecido',
+                        'last_attempt_at' => now()->toIso8601String(),
+                    ],
+                ]);
+                MerchantWithdrawalService::releasePayoutApproval($withdrawal->fresh());
+                $this->notifyWithdrawalPayoutError($withdrawal, 'Okto: '.($result['error'] ?? 'Falha ao enviar o saque.'));
+
+                return redirect()->route('plataforma.saques.index')
+                    ->with('error', 'Okto: '.($result['error'] ?? 'Falha ao enviar o saque.'));
+            }
+
+            $withdrawal->update([
+                'payout_manual' => false,
+                'payout_provider' => 'okto',
+                'payout_external_id' => $result['transaction_id'] ?? null,
+                'payout_meta' => array_filter([
+                    'api_status' => 'pending',
+                    'requested_at' => now()->toIso8601String(),
+                ]),
+            ]);
+
+            ReconcileOktoWithdrawalJob::dispatch($withdrawal->fresh()->id)
+                ->delay(now()->addSeconds(90));
+
+            MerchantWithdrawalService::releasePayoutApproval($withdrawal->fresh());
+
+            PlatformAuditService::log('platform.withdrawal.approved', ['withdrawal_id' => $withdrawal->id, 'okto' => true, 'pending' => true], $request);
+
+            return redirect()->route('plataforma.saques.index')
+                ->with('success', 'Saque enviado à Okto. Será marcado como pago após confirmação do PIX (webhook).');
         }
 
         if ($slug === 'assetpay') {
@@ -1024,5 +1143,18 @@ class FinancialController extends Controller
     private function notifyWithdrawalPayoutError(Withdrawal $withdrawal, string $reason): void
     {
         app(PlatformEmailNotifications::class)->withdrawalPayoutError($withdrawal->fresh(), $reason);
+    }
+
+    private function validatedManualPayoutAcquirer(mixed $raw): ?string
+    {
+        $slug = strtolower(trim((string) $raw));
+        if ($slug === WithdrawalPixReceiptService::MANUAL_PAYOUT_EXTERNAL) {
+            return $slug;
+        }
+        if ($slug !== '' && GatewayRegistry::isAllowedAcquirer($slug) && GatewayRegistry::get($slug) !== null) {
+            return $slug;
+        }
+
+        return null;
     }
 }

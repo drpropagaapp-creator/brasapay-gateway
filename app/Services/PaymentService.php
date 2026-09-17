@@ -179,6 +179,9 @@ class PaymentService
                 if (isset($result['client_secret'])) {
                     $return['client_secret'] = $result['client_secret'];
                 }
+                if (isset($result['redirect_url']) && is_string($result['redirect_url']) && $result['redirect_url'] !== '') {
+                    $return['redirect_url'] = $result['redirect_url'];
+                }
                 if (isset($result['status_detail'])) {
                     $return['status_detail'] = $result['status_detail'];
                 }

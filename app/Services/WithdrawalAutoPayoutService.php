@@ -10,6 +10,8 @@ use App\Jobs\ReconcileSpacepagWithdrawalJob;
 use App\Jobs\ReconcileVersellWithdrawalJob;
 use App\Jobs\ReconcileWooviWithdrawalJob;
 use App\Jobs\ReconcileAssetPayWithdrawalJob;
+use App\Jobs\ReconcileXflowWithdrawalJob;
+use App\Jobs\ReconcileOktoWithdrawalJob;
 use App\Models\Withdrawal;
 use App\Services\AssetPay\AssetPayPayoutService;
 use App\Services\Bspay\BspayPayoutService;
@@ -22,11 +24,13 @@ use App\Services\Withdrawal\WithdrawalPolicyService;
 use App\Services\Spacepag\SpacepagPayoutService;
 use App\Services\Versell\VersellPayoutService;
 use App\Services\Woovi\WooviPayoutService;
+use App\Services\Xflow\XflowPayoutService;
+use App\Services\Okto\OktoPayoutService;
 use Plugins\OnlyUp\OnlyUpPayoutService;
 use Plugins\OnlyUp\ReconcileOnlyUpWithdrawalJob;
 
 /**
- * Envia saque ao provedor PIX configurado (CajuPay, Spacepag, Woovi, BSPay, Versell ou OnlyUp) após solicitação do infoprodutor.
+ * Envia saque ao provedor PIX configurado (CajuPay, Spacepag, Woovi, BSPay, Versell, Xflow, Okto ou OnlyUp) após solicitação do infoprodutor.
  */
 class WithdrawalAutoPayoutService
 {
@@ -54,6 +58,8 @@ class WithdrawalAutoPayoutService
             'bspay' => $this->attemptBspay($withdrawal),
             'assetpay' => $this->attemptAssetPay($withdrawal),
             'versell' => $this->attemptVersell($withdrawal),
+            'xflow' => $this->attemptXflow($withdrawal),
+            'okto' => $this->attemptOkto($withdrawal),
             'onlyup' => $this->attemptOnlyUp($withdrawal),
             default => ['ok' => false, 'skipped' => true, 'reason' => 'no_payout_gateway'],
         };
@@ -535,6 +541,155 @@ class WithdrawalAutoPayoutService
         $prev = is_array($withdrawal->payout_meta) ? $withdrawal->payout_meta : [];
         $withdrawal->update([
             'payout_provider' => 'versell',
+            'payout_meta' => $prev + [
+                'last_error' => $result['error'] ?? 'Erro desconhecido',
+                'last_attempt_at' => now()->toIso8601String(),
+                'auto' => true,
+            ],
+        ]);
+
+        return [
+            'ok' => false,
+            'skipped' => false,
+            'error' => $result['error'] ?? 'Falha ao enviar o saque via PIX.',
+        ];
+    }
+
+    /**
+     * Xflow retorna pending no HTTP; conclusão via webhook withdrawal.completed ou reconciliação.
+     *
+     * @return array{ok: bool, skipped?: bool, reason?: string, error?: string, pending?: bool}
+     */
+    public function attemptXflow(Withdrawal $withdrawal): array
+    {
+        if ($withdrawal->status !== MerchantWithdrawalService::STATUS_PROCESSING) {
+            return ['ok' => false, 'skipped' => true, 'reason' => 'not_processing'];
+        }
+
+        $cred = GatewayCredential::resolveForPayment(null, 'xflow');
+        if ($cred === null || ! $cred->is_connected) {
+            return ['ok' => false, 'skipped' => true, 'reason' => 'xflow_not_configured'];
+        }
+
+        $tenantId = (int) $withdrawal->tenant_id;
+        $owner = User::query()
+            ->where('tenant_id', $tenantId)
+            ->where('role', User::ROLE_INFOPRODUTOR)
+            ->first();
+        if ($owner === null) {
+            $owner = User::query()->where('id', $tenantId)->where('role', User::ROLE_INFOPRODUTOR)->first();
+        }
+        if ($owner === null) {
+            return ['ok' => false, 'skipped' => true, 'reason' => 'no_owner'];
+        }
+
+        $settings = is_array($owner->payout_settings) ? $owner->payout_settings : [];
+        $fromWithdrawal = WithdrawalPayoutDestination::fromWithdrawal($withdrawal);
+        $pixKey = $fromWithdrawal['pix_key'] ?? PayoutUserSettings::pixKey($settings);
+        if ($pixKey === '') {
+            return ['ok' => false, 'skipped' => true, 'reason' => 'no_pix_key'];
+        }
+
+        $payout = new XflowPayoutService;
+        $result = $payout->sendWithdrawalToPix($withdrawal->fresh(), $owner);
+
+        if ($result['ok'] ?? false) {
+            $prev = is_array($withdrawal->payout_meta) ? $withdrawal->payout_meta : [];
+            $withdrawal->update([
+                'payout_manual' => false,
+                'payout_provider' => 'xflow',
+                'payout_external_id' => $result['transaction_id'] ?? null,
+                'payout_meta' => array_merge($prev, array_filter([
+                    'api_status' => 'pending',
+                    'pending_approval' => ($result['pending_approval'] ?? false) ? true : null,
+                    'requested_at' => now()->toIso8601String(),
+                    'auto' => true,
+                ])),
+            ]);
+
+            ReconcileXflowWithdrawalJob::dispatch($withdrawal->fresh()->id)
+                ->delay(now()->addSeconds(90));
+
+            return ['ok' => true, 'pending' => true];
+        }
+
+        $prev = is_array($withdrawal->payout_meta) ? $withdrawal->payout_meta : [];
+        $withdrawal->update([
+            'payout_provider' => 'xflow',
+            'payout_meta' => $prev + [
+                'last_error' => $result['error'] ?? 'Erro desconhecido',
+                'last_attempt_at' => now()->toIso8601String(),
+                'auto' => true,
+            ],
+        ]);
+
+        return [
+            'ok' => false,
+            'skipped' => false,
+            'error' => $result['error'] ?? 'Falha ao enviar o saque via PIX.',
+        ];
+    }
+
+    /**
+     * Okto retorna created/processing; conclusão via webhook Transfer.success ou reconciliação.
+     *
+     * @return array{ok: bool, skipped?: bool, reason?: string, error?: string, pending?: bool}
+     */
+    public function attemptOkto(Withdrawal $withdrawal): array
+    {
+        if ($withdrawal->status !== MerchantWithdrawalService::STATUS_PROCESSING) {
+            return ['ok' => false, 'skipped' => true, 'reason' => 'not_processing'];
+        }
+
+        $cred = GatewayCredential::resolveForPayment(null, 'okto');
+        if ($cred === null || ! $cred->is_connected) {
+            return ['ok' => false, 'skipped' => true, 'reason' => 'okto_not_configured'];
+        }
+
+        $tenantId = (int) $withdrawal->tenant_id;
+        $owner = User::query()
+            ->where('tenant_id', $tenantId)
+            ->where('role', User::ROLE_INFOPRODUTOR)
+            ->first();
+        if ($owner === null) {
+            $owner = User::query()->where('id', $tenantId)->where('role', User::ROLE_INFOPRODUTOR)->first();
+        }
+        if ($owner === null) {
+            return ['ok' => false, 'skipped' => true, 'reason' => 'no_owner'];
+        }
+
+        $settings = is_array($owner->payout_settings) ? $owner->payout_settings : [];
+        $fromWithdrawal = WithdrawalPayoutDestination::fromWithdrawal($withdrawal);
+        $pixKey = $fromWithdrawal['pix_key'] ?? PayoutUserSettings::pixKey($settings);
+        if ($pixKey === '') {
+            return ['ok' => false, 'skipped' => true, 'reason' => 'no_pix_key'];
+        }
+
+        $payout = new OktoPayoutService;
+        $result = $payout->sendWithdrawalToPix($withdrawal->fresh(), $owner);
+
+        if ($result['ok'] ?? false) {
+            $prev = is_array($withdrawal->payout_meta) ? $withdrawal->payout_meta : [];
+            $withdrawal->update([
+                'payout_manual' => false,
+                'payout_provider' => 'okto',
+                'payout_external_id' => $result['transaction_id'] ?? null,
+                'payout_meta' => array_merge($prev, array_filter([
+                    'api_status' => 'pending',
+                    'requested_at' => now()->toIso8601String(),
+                    'auto' => true,
+                ])),
+            ]);
+
+            ReconcileOktoWithdrawalJob::dispatch($withdrawal->fresh()->id)
+                ->delay(now()->addSeconds(90));
+
+            return ['ok' => true, 'pending' => true];
+        }
+
+        $prev = is_array($withdrawal->payout_meta) ? $withdrawal->payout_meta : [];
+        $withdrawal->update([
+            'payout_provider' => 'okto',
             'payout_meta' => $prev + [
                 'last_error' => $result['error'] ?? 'Erro desconhecido',
                 'last_attempt_at' => now()->toIso8601String(),

@@ -56,7 +56,8 @@ class AccessEmailLinkProductTest extends TestCase
 
         Mail::assertSent(AccessGrantedMail::class, function (AccessGrantedMail $mail) use ($user) {
             $this->assertStringContainsString('Acesso externo ao produto', $mail->htmlBody);
-            $this->assertStringContainsString('https://conteudo.externo.test/meu-curso', $mail->htmlBody);
+            $this->assertStringNotContainsString('https://conteudo.externo.test/meu-curso', $mail->htmlBody);
+            $this->assertMatchesRegularExpression('#/a/[a-z0-9]{12}#', $mail->htmlBody);
             $this->assertStringContainsString('Acesse seus produtos na plataforma', $mail->htmlBody);
             $this->assertStringContainsString('/login', $mail->htmlBody);
             $this->assertStringContainsString('Esqueci minha senha', $mail->htmlBody);
@@ -66,8 +67,9 @@ class AccessEmailLinkProductTest extends TestCase
             return true;
         });
 
-        // Página de obrigado / botão de acesso continua no entregável externo.
+        // Página de obrigado / botão de acesso usa o encaminhamento da plataforma, não a URL crua.
         $accessLink = app(AccessEmailService::class)->getAccessLinkForOrder($order->fresh());
-        $this->assertSame('https://conteudo.externo.test/meu-curso', $accessLink);
+        $this->assertStringNotContainsString('conteudo.externo.test', $accessLink);
+        $this->assertMatchesRegularExpression('#/a/[a-z0-9]{12}$#', $accessLink);
     }
 }

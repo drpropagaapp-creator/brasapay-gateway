@@ -78,10 +78,16 @@ class AsaasDriver implements GatewayDriver
     private function ensureCustomer(array $credentials, array $consumer, string $externalId): string
     {
         $baseUrl = $this->getBaseUrl($credentials);
-        $document = preg_replace('/\D/', '', $consumer['document'] ?? '');
-        if (strlen($document) < 11) {
-            $document = '00000000000';
+        $document = preg_replace('/\D/', '', $consumer['document'] ?? '') ?? '';
+        if (strlen($document) !== 11 && strlen($document) !== 14) {
+            throw new \RuntimeException('Asaas: CPF ou CNPJ válido é obrigatório.');
         }
+
+        $existingId = $this->findCustomerIdByDocument($credentials, $baseUrl, $document);
+        if ($existingId !== null) {
+            return $existingId;
+        }
+
         $mobilePhone = $this->normalizePhoneForAsaas($consumer['phone'] ?? '');
         $body = [
             'name' => trim($consumer['name'] ?? '') ?: 'Cliente',
@@ -109,12 +115,6 @@ class AsaasDriver implements GatewayDriver
             if (! empty($address['neighborhood'])) {
                 $body['province'] = $address['neighborhood'];
             }
-            if (! empty($address['city'])) {
-                $body['city'] = $address['city'];
-            }
-            if (! empty($address['federal_unit'])) {
-                $body['state'] = strtoupper(substr((string) $address['federal_unit'], 0, 2));
-            }
         }
         $response = $this->http($credentials)->post($baseUrl . '/customers', $body);
         if (! $response->successful()) {
@@ -128,7 +128,59 @@ class AsaasDriver implements GatewayDriver
         if (empty($id)) {
             throw new \RuntimeException('Asaas: resposta sem ID do cliente.');
         }
+
         return (string) $id;
+    }
+
+    /**
+     * @param  array<string, string>  $credentials
+     */
+    private function findCustomerIdByDocument(array $credentials, string $baseUrl, string $document): ?string
+    {
+        try {
+            $response = $this->http($credentials)->get($baseUrl . '/customers', [
+                'cpfCnpj' => $document,
+                'limit' => 1,
+            ]);
+        } catch (\Throwable $e) {
+            Log::debug('AsaasDriver findCustomerIdByDocument error', ['message' => $e->getMessage()]);
+
+            return null;
+        }
+        if (! $response->successful()) {
+            return null;
+        }
+        $id = $response->json('data.0.id');
+        if (! is_string($id) || $id === '') {
+            return null;
+        }
+
+        return $id;
+    }
+
+    /**
+     * Mapeia status da cobrança Asaas para o status interno do checkout.
+     */
+    public static function mapPaymentStatus(?string $status, bool $deleted = false): ?string
+    {
+        if ($deleted) {
+            return 'cancelled';
+        }
+        if (! is_string($status) || $status === '') {
+            return null;
+        }
+        $s = strtoupper($status);
+        if (in_array($s, ['CONFIRMED', 'RECEIVED', 'RECEIVED_IN_CASH'], true)) {
+            return 'paid';
+        }
+        if (in_array($s, ['REFUNDED', 'REFUND_REQUESTED', 'REFUND_IN_PROGRESS', 'CHARGEBACK_REQUESTED', 'CHARGEBACK_DISPUTE'], true)) {
+            return 'cancelled';
+        }
+        if (in_array($s, ['PENDING', 'OVERDUE', 'AWAITING_RISK_ANALYSIS', 'AWAITING_CHARGEBACK_REVERSAL', 'DUNNING_REQUESTED', 'DUNNING_RECEIVED'], true)) {
+            return 'pending';
+        }
+
+        return 'pending';
     }
 
     /**
@@ -241,13 +293,22 @@ class AsaasDriver implements GatewayDriver
         if (empty($paymentId)) {
             throw new \RuntimeException('Asaas: resposta sem identificador do boleto.');
         }
-        $pdfUrl = $data['bankSlipUrl'] ?? '';
+        $pdfUrl = is_string($data['bankSlipUrl'] ?? null) ? $data['bankSlipUrl'] : '';
         $dueDateStr = $data['dueDate'] ?? $dueDate;
         if (is_string($dueDateStr) && strlen($dueDateStr) >= 10) {
             $dueDateStr = substr($dueDateStr, 0, 10);
         }
+        if ($pdfUrl === '') {
+            $fullPayment = $this->http($credentials)->get($baseUrl . '/payments/' . $paymentId);
+            if ($fullPayment->successful()) {
+                $fullData = $fullPayment->json();
+                $pdfUrl = is_string($fullData['bankSlipUrl'] ?? null)
+                    ? $fullData['bankSlipUrl']
+                    : (is_string($fullData['invoiceUrl'] ?? null) ? $fullData['invoiceUrl'] : '');
+            }
+        }
         $barcode = '';
-        $idFieldResponse = $this->http($credentials)->get($baseUrl . '/lean/payments/' . $paymentId . '/identificationField');
+        $idFieldResponse = $this->http($credentials)->get($baseUrl . '/payments/' . $paymentId . '/identificationField');
         if ($idFieldResponse->successful()) {
             $idFieldData = $idFieldResponse->json();
             $barcode = $idFieldData['identificationField'] ?? $idFieldData['barCode'] ?? '';
@@ -281,9 +342,9 @@ class AsaasDriver implements GatewayDriver
         if (! is_array($address) || empty($address['zip_code']) || ! isset($address['street_number'])) {
             throw new \RuntimeException('Asaas: endereço completo é obrigatório para pagamento com cartão.');
         }
-        $document = preg_replace('/\D/', '', $consumer['document'] ?? '');
-        if (strlen($document) < 11) {
-            $document = '00000000000';
+        $document = preg_replace('/\D/', '', $consumer['document'] ?? '') ?? '';
+        if (strlen($document) !== 11 && strlen($document) !== 14) {
+            throw new \RuntimeException('Asaas: CPF ou CNPJ válido é obrigatório.');
         }
         $postalCode = preg_replace('/\D/', '', $address['zip_code'] ?? '');
         if (strlen($postalCode) > 8) {
@@ -350,19 +411,19 @@ class AsaasDriver implements GatewayDriver
         if (empty($paymentId)) {
             throw new \RuntimeException('Asaas: resposta sem identificador do pagamento.');
         }
-        $status = $data['status'] ?? null;
-        $mapped = 'pending';
-        if (is_string($status)) {
-            $s = strtoupper($status);
-            if (in_array($s, ['CONFIRMED', 'RECEIVED'], true)) {
-                $mapped = 'paid';
-            } elseif (in_array($s, ['CANCELLED', 'REFUNDED'], true)) {
-                $mapped = 'cancelled';
-            }
+        $challengeUrl = $data['threeDSecureChallengeUrl'] ?? null;
+        if (is_string($challengeUrl) && trim($challengeUrl) !== '') {
+            return [
+                'transaction_id' => (string) $paymentId,
+                'status' => 'requires_action',
+                'redirect_url' => trim($challengeUrl),
+            ];
         }
+        $mapped = self::mapPaymentStatus(is_string($data['status'] ?? null) ? $data['status'] : null) ?? 'pending';
+
         return [
             'transaction_id' => (string) $paymentId,
-            'status' => $mapped,
+            'status' => $mapped === 'cancelled' ? 'rejected' : $mapped,
         ];
     }
 
@@ -385,18 +446,9 @@ class AsaasDriver implements GatewayDriver
                 return null;
             }
             $data = $response->json();
-            $status = $data['status'] ?? null;
-            if (! is_string($status)) {
-                return null;
-            }
-            $s = strtoupper($status);
-            if (in_array($s, ['CONFIRMED', 'RECEIVED'], true)) {
-                return 'paid';
-            }
-            if (in_array($s, ['CANCELLED', 'REFUNDED', 'OVERDUE'], true)) {
-                return 'cancelled';
-            }
-            return 'pending';
+            $deleted = ($data['deleted'] ?? false) === true;
+
+            return self::mapPaymentStatus(is_string($data['status'] ?? null) ? $data['status'] : null, $deleted);
         } catch (\Throwable $e) {
             Log::debug('AsaasDriver getTransactionStatus error', [
                 'transaction_id' => $transactionId,

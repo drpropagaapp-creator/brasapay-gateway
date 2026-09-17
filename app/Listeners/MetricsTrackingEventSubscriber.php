@@ -2,6 +2,7 @@
 
 namespace App\Listeners;
 
+use App\Events\BoletoGenerated;
 use App\Events\OrderCancelled;
 use App\Events\OrderCompleted;
 use App\Events\OrderPending;
@@ -23,6 +24,7 @@ class MetricsTrackingEventSubscriber
     public function subscribe($events): void
     {
         $events->listen(PixGenerated::class, [self::class, 'onPixGenerated']);
+        $events->listen(BoletoGenerated::class, [self::class, 'onBoletoGenerated']);
         $events->listen(OrderPending::class, [self::class, 'onOrderPending']);
         $events->listen(OrderCompleted::class, [self::class, 'onOrderCompleted']);
         $events->listen(OrderRefunded::class, [self::class, 'onOrderRefunded']);
@@ -33,6 +35,11 @@ class MetricsTrackingEventSubscriber
     public function onPixGenerated(PixGenerated $event): void
     {
         $this->capture->recordOrderEvent($event->order, MetricsEvent::PIX_CREATED, 'pix_created');
+    }
+
+    public function onBoletoGenerated(BoletoGenerated $event): void
+    {
+        $this->capture->recordOrderEvent($event->order, MetricsEvent::BOLETO_CREATED, 'boleto_created');
     }
 
     public function onOrderPending(OrderPending $event): void

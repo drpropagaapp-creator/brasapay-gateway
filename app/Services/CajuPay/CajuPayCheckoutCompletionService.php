@@ -5,7 +5,6 @@ namespace App\Services\CajuPay;
 use App\Jobs\ProcessPaymentWebhook;
 use App\Models\Order;
 use App\Support\CajuPayCheckoutMetadata;
-use App\Support\CajuPayPaymentId;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 
@@ -75,7 +74,9 @@ class CajuPayCheckoutCompletionService
         }
 
         $meta = is_array($order->metadata) ? $order->metadata : [];
-        if (CajuPayPaymentId::looksLikeUuid($chargeId)) {
+        $sessionId = CajuPayCheckoutMetadata::checkoutSessionId($order);
+        $currentGatewayId = trim((string) ($order->gateway_id ?? ''));
+        if ($chargeId !== '' && ($sessionId === null || $chargeId !== $sessionId)) {
             $meta['cajupay_payment_id'] = $chargeId;
         }
         $pickedInstallments = CajuPayCheckoutMetadata::installmentsFromPayload($payload);
@@ -83,9 +84,16 @@ class CajuPayCheckoutCompletionService
             $meta['installments'] = $pickedInstallments;
         }
 
+        $nextGatewayId = $currentGatewayId;
+        if ($sessionId !== null && ($currentGatewayId === '' || $currentGatewayId === $sessionId)) {
+            $nextGatewayId = $sessionId;
+        } elseif ($currentGatewayId === '') {
+            $nextGatewayId = $sessionId ?? $chargeId;
+        }
+
         $order->update([
             'gateway' => 'cajupay',
-            'gateway_id' => $chargeId,
+            'gateway_id' => $nextGatewayId !== '' ? $nextGatewayId : $chargeId,
             'metadata' => $meta,
         ]);
 
@@ -126,7 +134,8 @@ class CajuPayCheckoutCompletionService
             return false;
         }
 
-        $chargeId = (string) ($order->gateway_id ?? '');
+        $meta = is_array($order->metadata) ? $order->metadata : [];
+        $chargeId = trim((string) ($meta['cajupay_payment_id'] ?? ''));
         if ($chargeId === '') {
             $chargeId = CajuPayCheckoutMetadata::checkoutSessionId($order) ?? ('session-'.$order->id);
         }

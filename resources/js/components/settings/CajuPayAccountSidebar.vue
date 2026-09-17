@@ -5,7 +5,8 @@ import { usePage } from '@inertiajs/vue3';
 import Button from '@/components/ui/Button.vue';
 import PlatformStepUpModal from '@/components/platform/PlatformStepUpModal.vue';
 import PixInOutBadges from '@/components/settings/PixInOutBadges.vue';
-import { X, Copy, Check, RefreshCw, ChevronLeft, Plus, ExternalLink } from 'lucide-vue-next';
+import { X, Copy, Check, RefreshCw, ChevronLeft, Plus, ExternalLink, MessageCircle } from 'lucide-vue-next';
+import { buildWhatsAppUrl } from '@/lib/whatsappUrl';
 
 const props = defineProps({
     open: { type: Boolean, default: false },
@@ -65,6 +66,26 @@ function totpErrorMessage(err) {
 }
 
 const gatewayName = computed(() => props.gateway?.name || 'CajuPay');
+
+const supportContacts = computed(() => {
+    const rows = props.gateway?.support_contacts;
+    if (!Array.isArray(rows)) {
+        return [];
+    }
+
+    return rows
+        .map((contact) => {
+            const href = buildWhatsAppUrl(contact?.whatsapp);
+            if (!href) {
+                return null;
+            }
+            const name = String(contact?.name ?? '').trim();
+            const role = String(contact?.role ?? '').trim();
+
+            return { name, role, href };
+        })
+        .filter(Boolean);
+});
 
 const imageUrl = computed(() => {
     const img = props.gateway?.image;
@@ -350,16 +371,37 @@ function close() {
 
                 <!-- Lista de contas -->
                 <div v-if="view === 'list'" class="flex flex-1 flex-col overflow-y-auto p-4">
-                    <a
-                        v-if="gateway?.signup_url"
-                        :href="gateway.signup_url"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        class="mb-4 flex items-center gap-2 rounded-xl border-2 border-[var(--color-primary)] bg-[var(--color-primary)]/10 px-4 py-3 text-sm font-medium text-[var(--color-primary)] transition hover:bg-[var(--color-primary)]/20"
+                    <div
+                        v-if="gateway?.signup_url || supportContacts.length"
+                        class="mb-4 space-y-2"
                     >
-                        <ExternalLink class="h-4 w-4 shrink-0" />
-                        Criar conta no {{ gatewayName }}
-                    </a>
+                        <a
+                            v-if="gateway?.signup_url"
+                            :href="gateway.signup_url"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            class="flex items-center gap-2 rounded-xl border-2 border-[var(--color-primary)] bg-[var(--color-primary)]/10 px-4 py-3 text-sm font-medium text-[var(--color-primary)] transition hover:bg-[var(--color-primary)]/20"
+                        >
+                            <ExternalLink class="h-4 w-4 shrink-0" />
+                            Criar conta no {{ gatewayName }}
+                        </a>
+                        <a
+                            v-for="contact in supportContacts"
+                            :key="contact.href"
+                            :href="contact.href"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            class="flex items-center gap-2 rounded-xl border-2 border-emerald-600/40 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-800 transition hover:bg-emerald-100 dark:border-emerald-500/30 dark:bg-emerald-950/40 dark:text-emerald-200 dark:hover:bg-emerald-950/70"
+                        >
+                            <MessageCircle class="h-4 w-4 shrink-0" />
+                            <span class="min-w-0">
+                                WhatsApp {{ contact.name || 'suporte' }}
+                                <span v-if="contact.role" class="font-normal text-emerald-700/80 dark:text-emerald-300/80">
+                                    — {{ contact.role }}
+                                </span>
+                            </span>
+                        </a>
+                    </div>
 
                     <p class="mb-4 text-sm text-zinc-600 dark:text-zinc-400">
                         Gerencie múltiplas contas com credenciais e webhooks independentes. A conta padrão é usada quando o infoprodutor não tiver vínculo individual.

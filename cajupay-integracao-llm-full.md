@@ -1,5 +1,5 @@
 # CajuPay — Documentação completa para LLMs
-> Gerado em 2026-09-05T14:31:04.763Z. Não edite à mão — rode `npm run build:llm-docs` no frontend.
+> Gerado em 2026-09-16T22:16:14.164Z. Não edite à mão — rode `npm run build:llm-docs` no frontend.
 > Pacote modular: https://cajupay.com.br/docs/llm/
 ---
 
@@ -18,7 +18,7 @@
 4. **Cartão e wallets exigem HTTPS** na página do checkout em produção; HTTP local costuma falhar (PSP / formulário embed).
 5. **PCI:** PAN/CVV não passam pelo backend do integrador — use o SDK CajuPay (`embeddedOnly`) ou API server-side PIX.
 6. **Rotas tipo `/checkout/cajupay/*` não existem na CajuPay** — o integrador implementa wrappers no próprio backend; a API nativa é `/api/sdk/v1/...` e `/api/payments/pix`.
-7. **Wallets:** filtrar Apple Pay (iOS) vs Google Pay (Android/desktop); passar `defaultMethod` igual ao botão clicado; ocultar botão "Pagar" do host quando wallet estiver selecionada.
+7. **Wallets:** mostrar Apple Pay e Google Pay juntos em qualquer dispositivo quando o link/sessão tiver os dois flags; passar `defaultMethod` igual ao botão clicado; ocultar botão "Pagar" do host quando wallet estiver selecionada.
 8. Ao gerar código, inclua tratamento de `methods_available`, webhooks HMAC e materialização de pedido **antes** do webhook de pagamento aprovado.
 9. **PIX:** webhook outbound + job de reconciliação em background (`GET /api/payments` no servidor, ~1–2 min) — módulo **21**.
 10. **Telefone em PIX:** inclua `consumer.phone` (E.164) por padrão em `POST /api/payments/pix` — necessário para SMS de Recovery/Acesso; alias `payer_phone` na raiz.
@@ -98,6 +98,10 @@ Não use rotas fictícias; mapeie session-first no meu backend.
 3. Guarde `checkout_session_id` como `gateway_id` do pedido **antes** do pagamento concluir — e **não** troque depois pelo `charge_id`.
 4. Trate a corrida webhook×confirm-order: **buffer** de `checkout.payment.paid` se o pedido ainda não existir (módulo 11).
 5. Separe trilha PIX (API) de trilha SDK (cartão/wallets).
+
+## Isolamento operacional (plataforma)
+
+A CajuPay isola **capacidade por `pay_account`** (RPS + concorrência; tiers `standard`/`whale`) no hot path de criar pagamento. Ledger/carteira continuam únicos. Detalhes internos: `docs/isolamento-operacional.md`. Integradores podem receber `429` (`account_rate_limited` / `account_concurrency_limited`) ou `503` (`capacity_unavailable`) em picos — retentar com backoff.
 
 ## Quando usar este módulo
 
@@ -534,6 +538,7 @@ async function mountForMethod(method, sessionToken) {
 2. Use `embeddedOnly: true` e passe **`defaultMethod`** igual ao botão clicado no UI do host.
 3. Use `setPayer()` quando o pagador alterar dados — **nunca** remonte só por mudança de e-mail.
 4. Slugs de método: `card`, `apple_pay`, `google_pay` — **nunca** `applepay` / `googlepay`.
+5. Se o host usa CSP, oriente a autorizar os domínios da seção **Content-Security-Policy** (cartão quebra sem `*.rinne.com.br` / `*.evervault.com`).
 
 ## Quando usar este módulo
 
@@ -640,6 +645,7 @@ const controller = await sdk.mountCheckout("#cajupay-method", {
   defaultMethod: "card",            // OBRIGATÓRIO se o host escolhe o método
   embeddedOnly: true,
   locale: "auto",                   // ou "en", "es", "pt-BR" — idioma do iframe de cartão + rótulos do SDK
+  // cardElementLayout: "stacked",  // default — nº full width; validade+CVV na 2ª linha (`inline` = 1 linha)
   preparePaymentUIOnMount: true,    // default efetivo: priming após mount
   initialPayer: {                   // opcional — só pré-preenchimento visual
     name: "",
@@ -654,6 +660,10 @@ const controller = await sdk.mountCheckout("#cajupay-method", {
   onError: ({ error }) => { /* ... */ },
 });
 ```
+
+| Opção | Default | Notas |
+|-------|---------|-------|
+| `cardElementLayout` | `"stacked"` | Só Card Element Rinne. `stacked` = número full + validade/CVV; `inline` = 3 campos numa linha. Nome do titular fica no host. |
 
 ### Controller
 
@@ -725,6 +735,39 @@ Se omitir `defaultMethod`, o SDK usa o **primeiro** de `methods_available` (gera
 
 Valide `methods_available` via `GET .../sessions/{token}` **antes** do mount.
 
+## Content-Security-Policy (CSP)
+
+Se o site do parceiro usa CSP, **autorise os domínios abaixo**. Sem isso o formulário de cartão (iframe/scripts) quebra — PIX e wallets costumam funcionar, mas o Card Element não.
+
+### Diretivas recomendadas
+
+```http
+Content-Security-Policy:
+  script-src 'self' https://cdn.cajupay.com.br https://pkgs.rinne.com.br https://*.rinne.com.br https://js.evervault.com https://*.evervault.com;
+  script-src-elem 'self' https://cdn.cajupay.com.br https://pkgs.rinne.com.br https://*.rinne.com.br https://js.evervault.com https://*.evervault.com;
+  connect-src 'self' https://api.cajupay.com.br https://*.cajupay.com.br https://pkgs.rinne.com.br https://api.rinne.com.br https://*.rinne.com.br https://js.evervault.com https://keys.evervault.com https://api.evervault.com https://*.evervault.com;
+  frame-src 'self' https://*.cajupay.com.br https://pkgs.rinne.com.br https://*.rinne.com.br https://js.evervault.com https://ui-components.evervault.com https://*.evervault.com;
+```
+
+(Ajuste `'self'` e o restante da política do host; mescle com as regras já existentes.)
+
+| Diretiva | Origens |
+|----------|---------|
+| `script-src` / `script-src-elem` | `https://cdn.cajupay.com.br`, `https://pkgs.rinne.com.br`, `https://*.rinne.com.br`, `https://js.evervault.com`, `https://*.evervault.com` |
+| `connect-src` | `https://api.cajupay.com.br`, `https://*.cajupay.com.br`, `https://pkgs.rinne.com.br`, `https://api.rinne.com.br`, `https://*.rinne.com.br`, `https://js.evervault.com`, `https://keys.evervault.com`, `https://api.evervault.com`, `https://*.evervault.com` |
+| `frame-src` | `https://*.cajupay.com.br`, `https://pkgs.rinne.com.br`, `https://*.rinne.com.br`, `https://js.evervault.com`, `https://ui-components.evervault.com`, `https://*.evervault.com` |
+
+### URLs explícitas carregadas hoje
+
+| Uso | URL |
+|-----|-----|
+| SDK | `https://cdn.cajupay.com.br/sdk/v1/cajupay-sdk.min.js` |
+| API | `https://api.cajupay.com.br` |
+| Card Element (loader) | `https://pkgs.rinne.com.br/rinne-js` |
+| Campos PCI | `https://js.evervault.com/v2` (+ `keys` / `api` / `ui-components` em `*.evervault.com`) |
+
+**Nota:** Apple Pay / Google Pay usam botão nativo do browser (Payment Request) e em geral **não** pedem domínio CSP extra além do SDK CajuPay. O que costuma quebrar cartão com CSP incompleta é o loader do Card Element + iframe PCI (`rinne` / `evervault`). Em sandbox/local, se a API ou CDN for outro host, inclua esse host em `connect-src` / `script-src`.
+
 ## Erros comuns
 
 | Sintoma | Correção |
@@ -732,6 +775,7 @@ Valide `methods_available` via `GET .../sessions/{token}` **antes** do mount.
 | Formulário de cartão ao clicar Google Pay | `defaultMethod: "google_pay"` |
 | `method_not_available` | Método não está em `methods_available` |
 | Cartão some ao digitar e-mail | Usar `setPayer`, não remount |
+| Inputs de cartão em branco / script bloqueado / iframe vazio | CSP: liberar `cdn.cajupay.com.br`, `*.rinne.com.br`, `*.evervault.com` (ver seção CSP) |
 
 ## Checklist
 
@@ -740,6 +784,7 @@ Valide `methods_available` via `GET .../sessions/{token}` **antes** do mount.
 - [ ] `defaultMethod` sincronizado com UI
 - [ ] `setPayer` antes de confirms relevantes
 - [ ] `locale` na sessão e/ou `mountCheckout` alinhado ao idioma do checkout
+- [ ] Se houver CSP no host: `script-src` / `connect-src` / `frame-src` com os domínios da seção CSP
 
 ---
 
@@ -754,7 +799,8 @@ Valide `methods_available` via `GET .../sessions/{token}` **antes** do mount.
 2. HTTPS obrigatório em produção.
 3. Mantenha **Cartão** visível como fallback quando wallets estiverem na mesma página.
 4. **Nunca** mencione nomes de adquirentes/processadores internos (marque branca). Fale em “Cartão Brasil”, “formulário seguro CajuPay” ou “token de cartão”.
-5. Cartão Brasil no embed: **só crédito**; **não** invente seletor débito nem toggle de 3DS no comprador. 3DS vem de `threeds_mode` efetivo (`off`|`required`) + step-up pós soft decline. Parcelamento de cartão ≠ Pix Parcelado.
+5. **Uma integração.** O admin define o processador de cartão de cada seller. O integrador usa sempre o SDK oficial (`mountCheckout`). Não ramifique por `form_mode`, não monte formulário próprio e não implemente 3DS. O mesmo código funciona para qualquer seller.
+6. Cartão Brasil no embed: **só crédito**; **não** invente seletor débito nem toggle de 3DS no comprador. 3DS é aberto pelo SDK quando a política ou o banco exige. Parcelamento de cartão ≠ Pix Parcelado.
 
 ## Quando usar este módulo
 
@@ -772,8 +818,9 @@ Há dois trilhos públicos (não misturar no mesmo botão):
 - Sempre **crédito** no checkout embutido (`payment_type: "credit"`). Não há seletor crédito/débito para o comprador (cartões BR dual não permitem auto-detect confiável).
 - À vista ou **parcelado sem juros ao comprador** (ver seção Parcelamento).
 - `save_card` gera `card_token` para cobranças futuras (assinaturas).
-- **EMV 3DS** é política de plataforma + lojista no link — o comprador **nunca** liga/desliga 3DS (ver seção 3DS).
-- Em produção **não** envie número de cartão (PAN) à API — só `payment_token` do formulário ou `card_token` salvo (o 3DS, quando ativo, usa o PAN só no browser via MPI).
+- **EMV 3DS** é política de plataforma + lojista no link — o comprador **nunca** liga/desliga 3DS (ver seção 3DS). O SDK abre o challenge; o integrador não coleta CAVV/ECI.
+- Em produção **não** envie número de cartão (PAN) à API — só `payment_token` do formulário seguro (SDK) ou `card_token` salvo.
+- **Não escolha o processador.** Quem define se o seller usa um processador ou outro é o admin. Integre uma vez com o SDK.
 
 Não confundir com **Pix Parcelado** (`product_ref=pix_parcelado` / módulo `24-pix-parcelado`) — produto distinto.
 
@@ -785,7 +832,7 @@ Sem juros ao comprador: o total é dividido em N parcelas iguais. Taxa extra do 
 |--------|-----------------|
 | **Admin plataforma** | Habilita parcelamento; `max_installments`; `min_installment_amount_cents` (piso por parcela, default R$ 5,00). |
 | **Link de pagamento** | `allow_card_installments`, `card_max_installments` (teto deste link ≤ plataforma). |
-| **Checkout / confirm** | Seletor no SDK quando há ≥2 opções; envie `installments` (1..N). |
+| **Checkout / confirm** | Seletor no SDK quando há ≥2 opções; envie `installments` (1..N). As mesmas `installment_options` alimentam **cartão, Apple Pay e Google Pay**. |
 
 **API:**
 
@@ -794,6 +841,7 @@ Sem juros ao comprador: o total é dividido em N parcelas iguais. Taxa extra do 
 - `N = min(max plataforma, max do link se houver)` e `amount/N >= min_installment_amount_cents`.
 - Erro `invalid_installments` (422) se N fora das opções.
 - Sempre crédito: parcelamento só no trilho credit; não existe “débito parcelado” no checkout atual.
+- Wallets: se `installment_options` ≥ 2, o SDK mostra o seletor antes do botão nativo e envia `installments` no confirm.
 
 **Criar link (exemplo):**
 
@@ -802,6 +850,8 @@ Sem juros ao comprador: o total é dividido em N parcelas iguais. Taxa extra do 
   "amount_cents": 9900,
   "currency": "BRL",
   "allow_card": true,
+  "allow_apple_pay": true,
+  "allow_google_pay": true,
   "allow_card_installments": true,
   "card_max_installments": 6
 }
@@ -809,27 +859,32 @@ Sem juros ao comprador: o total é dividido em N parcelas iguais. Taxa extra do 
 
 ## 3DS (EMV) — Cartão Brasil
 
-Política em duas camadas. O checkout só recebe modo efetivo `off` ou `required` (nunca `optional` no browser).
+O checkout só recebe modo efetivo `off` ou `required` (nunca `optional` no browser).
 
 | Admin plataforma `threeds_mode` | Efeito |
 |---------------------------------|--------|
-| `off` | Nenhum checkout **força** 3DS na 1ª tentativa. O SDK ainda pode fazer **step-up** após soft decline. |
-| `optional` | O **seller** escolhe por link com `require_card_threeds: true`. Sem o flag, efetivo = `off` (com step-up possível). |
-| `required` | Todos os checkouts de cartão exigem 3DS na 1ª tentativa (ignora o flag do link). |
+| `off` | Sem 3DS forçado na 1ª tentativa (step-up após soft decline ainda pode ocorrer no trilho SOP). |
+| `optional` | `required` só se o link/seller marcar `require_card_threeds`. |
+| `required` | Confirm sempre pede 3DS (`require_3ds: true` na Rinne / challenge no SDK). |
 
 | Quem | O que faz |
 |------|-----------|
-| Plataforma (Admin → Cartão BR) | Define `threeds_mode` + credenciais MPI (ClientId/Secret/EC/MCC). |
+| Plataforma (admin) | Define o processador do seller e `threeds_mode`. |
 | Seller (link / wizard) | Se plataforma = `optional`, marca `require_card_threeds` no link. |
-| Comprador | **Não** vê toggle de 3DS. O “modal” do challenge é do **banco / BP.Mpi**, não UI CajuPay. |
+| Comprador | **Não** vê toggle de 3DS. Se o banco exigir, o SDK abre o challenge em modal. |
+| Integrador | **Não** implementa 3DS. Não envie `external_authentication`. Não monte iframe de autenticação. |
 
-Resposta pública / next_action inclui `threeds_mode: "off" | "required"`. Em `required`, o confirm do SDK envia `external_authentication` (CAVV/ECI/…) do MPI. Sem autenticação quando exigida → `authentication_required`.
+**Rinne (Cartão Brasil atual):** o SDK **não** faz MPI antes do confirm. Com política efetiva `required`, o confirm envia `require_3ds: true`; se a Rinne responder `AWAITING_3DS` / `requires_action`, o SDK cria a sessão 3DS e abre o modal. **Frictionless** pode ir direto a `APPROVED` sem UI mesmo com `required` — comportamento do emissor, não falha do embed.
+
+**Não** envie `require_3ds: false` do host para desligar a policy: o servidor **ignora** downgrade quando metadata/plataforma é `required`.
+
+Resposta pública / `next_action` inclui `threeds_mode: "off" | "required"`. Sem autenticação quando a Rinne exige → o SDK trata o challenge; não invente UI.
 
 ### Challenge vs step-up
 
-1. **Pré-auth (`required`)**: SDK abre MPI **antes** do 1º `confirm-card`.
-2. **Step-up (pós-decline)**: 1ª tentativa sem Cavv (modo efetivo `off`) ou após soft decline recuperável (`authentication_required`, códigos tipo `1A`/`65`/`N7`/`GF`/`70`). SDK mostra “Confirme a autenticação do banco…”, roda MPI em modo challenge **uma vez**, **retokeniza** o SOP (`PaymentToken` é single-use) e reenvia `confirm-card` com `external_authentication`.
-3. Cartão não enrolled / falha de challenge → erro white-label (sem nome de adquirente); sem loop infinito.
+1. **Rinne (`required`)**: confirm com `require_3ds` → challenge **depois** do confirm se `AWAITING_3DS`.
+2. **SOP (legado)**: pré-auth MPI **antes** do 1º confirm quando `required`; step-up após soft decline.
+3. Cartão não elegível / falha de challenge → erro white-label (sem nome de processador); sem loop infinito.
 
 ```json
 {
@@ -838,7 +893,7 @@ Resposta pública / next_action inclui `threeds_mode: "off" | "required"`. Em `r
 }
 ```
 
-Integradores DIY (sem SDK): se `threeds_mode === "required"`, obtenha sessão MPI pública, autentique no browser e envie `external_authentication` no confirm. Em soft decline, trate `authentication_required` com o mesmo fluxo de step-up (novo token SOP + auth). Prefira o SDK embutido.
+**Não faça DIY de 3DS nem de formulário de cartão.** Formulário próprio e autenticação manual só cobrem parte das contas e quebram quando o admin troca o processador do seller. O caminho suportado — que funciona para qualquer seller — é o SDK oficial.
 
 **Bundle:** após alterar o SDK, rebuild (`bun build` do `cdn-entry` + alias) e publique `cajupay-sdk.min.js` no CDN versionado.
 
@@ -873,7 +928,9 @@ Exemplos:
 | `4000000000000010` | Também termina em **0** → tende a aprovar no Simulado |
 | PAN que termina em **2** (ex. muitos cartões “Stripe-like”) | Recusa — **não** use para teste feliz |
 
-CVV e validade: qualquer futuro válido (ex. `123`, `12/30` ou `12/2030`). Nome do titular: letras ASCII (acentos são normalizados no SOP).
+CVV e validade: qualquer futuro válido (ex. `123`, `12/30` ou `12/2030`). Nome do titular: letras (o SDK normaliza acentos).
+
+Os números de sandbox acima valem para contas no simulador por último dígito. Em outras contas de teste o admin pode exigir PANs específicos de 3DS (ex. `4242 4242 4242 4242` para challenge e `4111 1101 1663 8870` para frictionless; valor terminando em `00` tende a aprovar). **Não ramifique o código** — use o SDK; só o cartão de teste muda conforme a conta.
 
 **Validade no SDK:** digite `MM/AA`; o SDK expande para `MM/AAAA` na tokenização.
 
@@ -911,11 +968,19 @@ async function startCardCheckout(sessionToken) {
     embeddedOnly: true,
     defaultMethod: "card",
     locale: "auto",
+    // cardElementLayout: "stacked", // default (Rinne). Use "inline" para nº|validade|CVV numa linha
     preparePaymentUIOnMount: true,
     onStatus: (ev) => {
       if (ev.phase === "awaiting_card_details") {
         document.getElementById("btn-pay-card").disabled = false;
       }
+      if (ev.phase === "completed") {
+        // UX imediata — liberar pedido no webhook checkout.payment.paid (+ polling)
+      }
+    },
+    onSuccess: ({ session }) => {
+      // session.payment_status === "paid" após cobrança aprovada
+      console.log("card approved", session.payment_status);
     },
   });
 }
@@ -1017,6 +1082,7 @@ A vitrine coincide com a moeda de liquidação na conta conectada (ex.: `MZN` di
 | 1ª confirm tratada como falha | `awaiting_card_details` é sucesso |
 | Pagamento sem pedido no webhook | `confirm-order` antes da 2ª confirm |
 | Cartão em branco após e-mail | `setPayer`, não remount |
+| Formulário de cartão em branco / script ou iframe bloqueado | CSP do host: liberar domínios do módulo **05** (seção Content-Security-Policy) |
 
 ## Checklist
 
@@ -1027,7 +1093,9 @@ A vitrine coincide com a moeda de liquidação na conta conectada (ex.: `MZN` di
 - [ ] Webhook `checkout.payment.paid` (módulo 11)
 - [ ] Cartão Brasil: apenas BRL; sem PAN na API em produção
 - [ ] Parcelamento: respeitar `installment_options` / caps do link
-- [ ] 3DS: não inventar UI de toggle/challenge próprio; challenge = MPI/banco; seguir `threeds_mode` + step-up do SDK
+- [ ] 3DS: não inventar UI de toggle/challenge próprio; o SDK abre o modal do banco; não envie `external_authentication`
+- [ ] Não ramificar por `form_mode` nem por processador; o admin escolhe o processador do seller
+- [ ] CSP: se o site usa Content-Security-Policy, autorizar `cdn.cajupay.com.br`, `api.cajupay.com.br`, `*.rinne.com.br`, `*.evervault.com` (detalhes no módulo **05**)
 
 ## API merchant — tokenização sem SDK (Cartão Brasil)
 
@@ -1086,7 +1154,7 @@ Resposta típica (sem método de pagamento ainda):
   "currency": "brl",
   "payment_type": "credit",
   "requires_action": "collect_payment_method",
-  "form_mode": "sop",
+  "form_mode": "secure",
   "form_access_token": "<token_curto>",
   "form_environment": "production",
   "card_form_token": "<mesmo_token>",
@@ -1104,61 +1172,21 @@ Resposta típica (sem método de pagamento ainda):
 | `id` | ID da cobrança (`confirm` / `GET`) |
 | `form_access_token` | Token do formulário seguro no browser (expira; não logar em claro) |
 | `form_environment` | `sandbox` ou `production` — escolhe o script do formulário |
-| `form_mode` | `sop` = formulário seguro CajuPay |
+| `form_mode` | Campo **interno do SDK**. Ignore. Não ramifique. Valores opacos (`secure`, `sop`, `stripe`). |
 | `installment_options` | Opções de parcelamento (sem juros); omitido se só 1x |
-| `threeds_mode` | Em fluxos de link/sessão: `off` ou `required` (efetivo). `off` = sem MPI na 1ª tentativa; step-up ainda possível após soft decline. |
+| `threeds_mode` | Em fluxos de link/sessão: `off` ou `required` (efetivo). O SDK autentica quando necessário. |
 
 **Consultar opções:** `GET /v1/card/installment-options?amount_cents=9900` (auth merchant). Checkout é sempre crédito. No confirm envie `installments` (1..N); erro `invalid_installments` se inválido.
 
 Token avulso (sem criar charge): `POST /v1/card/form/access-token` → `{ "form_access_token", "environment", "expires_in?" }`. No fluxo normal o create já devolve o token.
 
-### 2) Tokenizar no browser (formulário seguro)
+### 2) Tokenizar no browser (só via SDK)
 
-O parceiro pode:
+**Caminho suportado:** `CajuPaySDK.mountCheckout` com `embeddedOnly: true`. O SDK lê `form_mode` internamente e monta o formulário certo daquela conta. Você não carrega script de cartão, não desenha os campos de PAN/CVV e não implementa 3DS.
 
-1. **Recomendado:** usar só o SDK nos campos (`embeddedOnly`) — ver seção acima; ou  
-2. **DIY:** carregar o script do formulário seguro conforme `form_environment` e obter `PaymentToken`.
+O create da cobrança devolve `payment_token` / `form_access_token` para o SDK. Não logue esses valores. O `PaymentToken` resultante é de **uso único**. Não armazene PAN; no máximo guarde `card_token` depois do confirm com `save_card`.
 
-Scripts (HTTPS obrigatório em produção):
-
-| `form_environment` | Script |
-|--------------------|--------|
-| `sandbox` | `https://transactionsandbox.pagador.com.br/post/Scripts/silentorderpost-1.0.min.js` |
-| `production` | `https://transaction.pagador.com.br/post/Scripts/silentorderpost-1.0.min.js` |
-
-Campos HTML (classes exigidas pelo script). Layout sugerido (igual ao SDK): número | validade | CVV na primeira linha; nome do titular embaixo.
-
-```html
-<input class="bp-sop-cardnumber" autocomplete="cc-number" inputmode="numeric" placeholder="ACCT-000003" />
-<input class="bp-sop-cardexpirationdate" autocomplete="cc-exp" placeholder="MM/AA" maxlength="5" />
-<input class="bp-sop-cardcvvc" autocomplete="cc-csc" />
-<input class="bp-sop-cardholdername" autocomplete="cc-name" />
-<input type="hidden" class="bp-sop-cardtype" value="creditCard" />
-```
-
-**Validade:** na UI use máscara `MM/AA` (ex. `12/30`). Antes de chamar `sendRequest` / confirm, normalize para `MM/YYYY` (ex. `12/2030`) — o formulário seguro espera ano com 4 dígitos. O SDK CajuPay faz essa expansão automaticamente.
-Tokenização (conceito — mesmo contrato do SDK):
-
-```javascript
-// após carregar o script acima
-bp.SilentOrder.sendRequest({
-  accessToken: form_access_token,       // da resposta do create
-  environment: form_environment,        // "sandbox" | "production"
-  language: "PT",
-  enableBinQuery: true,
-  enableVerifyCard: false,
-  enableTokenize: true,                 // true se quiser card_token (save_card)
-  onSuccess: (res) => {
-    // res.PaymentToken  → enviar ao seu backend
-    // res.CardToken     → se enableTokenize (cartão salvo)
-    // res.Brand, res.CardLast4Digits
-  },
-  onError: (res) => { /* falha de tokenização */ },
-  onInvalid: (res) => { /* validação de campos */ },
-});
-```
-
-O `PaymentToken` é de **uso único** para aquela cobrança. Não armazene PAN; no máximo guarde `card_token` retornado depois do confirm com `save_card`.
+Não monte um formulário próprio. Isso só cobre parte das contas e quebra quando o admin muda o processador do seller.
 
 ### 3) Confirmar cobrança (servidor)
 
@@ -1183,7 +1211,7 @@ Content-Type: application/json
 }
 ```
 
-Sucesso típico: `status` = `succeeded` (captura automática) ou `authorized` (se `capture: false` no create). Com `save_card: true`, a resposta pode incluir `card_token` para recorrência. Parcelamento sem juros: o total é dividido; `installments` deve estar em `installment_options` / `GET /v1/card/installment-options`. Se o fluxo exigir 3DS, inclua `external_authentication` (CAVV, ECI, version, reference_id, …) obtido no browser via MPI.
+Sucesso típico: `status` = `succeeded` (captura automática) ou `authorized` (se `capture: false` no create). Com `save_card: true`, a resposta pode incluir `card_token` para recorrência. Parcelamento sem juros: o total é dividido; `installments` deve estar em `installment_options` / `GET /v1/card/installment-options`. **Não envie `external_authentication`.** O SDK trata o 3DS e reconfirma sozinho.
 
 ### 4) Cobrança com cartão já salvo
 
@@ -1223,29 +1251,26 @@ Se a cobrança já autorizar no create (token presente), o confirm pode ser desn
 
 ## INSTRUÇÕES PARA O MODELO
 
-1. Mostrar Apple Pay **somente** em dispositivos iOS (iPhone/iPad) — ver módulo 09.
+1. Mostrar Apple Pay em qualquer dispositivo quando `allow_apple_pay` estiver ligado. Não filtrar por iPhone.
 2. **Oculte** o botão "Pagar" do host — o SDK renderiza o botão nativo Apple Pay.
 3. Materialize o pedido no host **antes** da 1ª `confirm()` (priming).
 4. `defaultMethod: "apple_pay"` — slug com underscore.
-5. HTTPS + domínio do checkout registrado na conta conectada.
+5. HTTPS na página de checkout. O botão nativo só aparece quando o aparelho e o domínio suportam Apple Pay; caso contrário, ofereça cartão.
+6. Se `installment_options` tiver ≥ 2 opções, o SDK mostra seletor de parcelas **antes** do botão nativo; o confirm envia `installments: N`.
+7. Domínio próprio: **baixar** o arquivo Apple association da CajuPay, publicar em `/.well-known/…` e pedir ativação ao **suporte CajuPay**.
 
 ## Quando usar este módulo
 
 Checkout embed com Apple Pay em ecossistema Apple.
 
-## Dispositivos suportados (UX)
+## Visibilidade
 
-| Mostrar Apple Pay | Ocultar |
-|-------------------|---------|
-| iPhone, iPad, iPod | Google Pay |
-| iPadOS 13+ com UA desktop (`MacIntel` + `maxTouchPoints > 1`) | Google Pay |
-
-**Nota:** Apple Pay no Mac Safari com Wallet configurado pode funcionar tecnicamente, mas o padrão recomendado do host é **não** tratar Mac como iOS — ofereça Cartão ou Google Pay no desktop.
+Mostre Apple Pay junto com Google Pay e Cartão em qualquer aparelho, se o seller ligou esses métodos. O botão nativo só conclui o pagamento quando o navegador e a carteira suportam; não esconda a opção por user-agent.
 
 ## Fluxo wallet
 
 ```
-1. Pagador seleciona Apple Pay (botão já filtrado por isIosDevice)
+1. Pagador seleciona Apple Pay (a opção aparece em qualquer dispositivo)
 2. POST seu-backend/cajupay/session (allow_card: true, allow_apple_pay: true)
 3. Validar methods_available inclui apple_pay
 4. mountCheckout(..., defaultMethod: "apple_pay")
@@ -1295,7 +1320,13 @@ await controller.confirm(); // priming — botão Apple Pay aparece
 
 O botão nativo Apple Pay e mensagens do SDK no slot seguem o mesmo `locale` do embed (cartão + wallet compartilham configuração — módulo 05). Não existe locale separado para wallet.
 
-Wallets implicam `allow_card: true` na CajuPay mesmo que você envie só Apple Pay — necessário para fallback se a wallet falhar.
+Uma integração só. Apple Pay é um meio próprio: envie `allow_apple_pay: true` na sessão ou no link. Não depende de `allow_card` nem de um segundo endpoint. O admin libera o cartão para a conta poder cobrar Apple Pay. A taxa é a da conta (`apple_pay`; se não houver, a do cartão) — global e por seller. Challenge 3DS, quando ocorrer, é o mesmo do cartão.
+
+Wallets implicam `allow_card: true` — necessário para fallback se a wallet falhar.
+
+## Parcelamento
+
+Quando o link tem `allow_card_installments` (ou a charge/sessão devolve `installment_options` com ≥ 2 opções), o SDK exibe o seletor de parcelas **acima** do botão Apple Pay. O pagador escolhe N e o confirm envia `installments: N` (mesmo contrato do cartão). Débito permanece 1x. Não invente um endpoint de parcelamento só para wallet.
 
 ## probeWallet (opcional, recomendado)
 
@@ -1312,9 +1343,27 @@ if (!probe.available) hideApplePayButton(probe.reason);
 
 Razões: `insecure_context`, `no_wallet_in_browser`, `wallet_not_in_can_make_payment`, `dom_unavailable`.
 
-## Domínio do checkout
+## HTTPS e domínio Apple Pay
 
-O SDK envia `X-CajuPay-Checkout-Host` (hostname da página). A API registra o domínio na conta conectada do processador para Payment Request. Sem verificação, `canMakePayment` pode falhar.
+A página precisa ser HTTPS. Se o botão nativo não aparecer, caia para cartão.
+
+### Arquivo de associação (obrigatório em domínio próprio)
+
+**Baixar (oficial CajuPay):**  
+https://cajupay.com.br/.well-known/apple-developer-merchantid-domain-association
+
+```bash
+# exemplo: baixar e guardar com o nome exigido pela Apple
+curl -fsSL -o apple-developer-merchantid-domain-association \
+  https://cajupay.com.br/.well-known/apple-developer-merchantid-domain-association
+```
+
+1. **Baixe** o arquivo no link acima (navegador: “Salvar como…”, ou `curl` acima). Não invente o conteúdo.
+2. Publique **sem extensão** em:
+   `https://<seu-dominio>/.well-known/apple-developer-merchantid-domain-association`
+3. Sirva em HTTPS com Content-Type `application/octet-stream` (ou `text/plain`), **sem** redirect HTML / login.
+4. **Fale com o suporte CajuPay** para ativar o domínio na conta do seller. Não registre o domínio sozinho na Apple/Stripe — a ativação é feita pela CajuPay.
+5. Checkout embutido em páginas `cajupay.com.br` (links hospedados) já está coberto; o passo acima é para embed no site do parceiro/seller.
 
 ## Erros comuns
 
@@ -1322,16 +1371,19 @@ O SDK envia `X-CajuPay-Checkout-Host` (hostname da página). A API registra o do
 |----------|----------|
 | Dois botões de pagar | Ocultar submit do host |
 | Formulário de cartão em vez de Apple Pay | `defaultMethod: "apple_pay"` |
-| Apple Pay no Android | Filtrar com `isIosDevice()` |
+| Apple Pay escondido no Android | Não filtrar por dispositivo; mostre a opção e deixe o botão nativo decidir |
 | Webhook sem pedido | confirm-order antes do priming |
 
 ## Checklist
 
-- [ ] Só exibir em iOS (módulo 09)
+- [ ] Exibir em qualquer dispositivo quando `allow_apple_pay` estiver ligado
 - [ ] Botão Pagar do host **oculto**
 - [ ] `defaultMethod: "apple_pay"`
 - [ ] Pedido antes do priming
-- [ ] HTTPS + domínio verificado
+- [ ] HTTPS
+- [ ] Parcelamento: respeitar `installment_options` no fluxo wallet (mesmo N do cartão)
+- [ ] Domínio próprio: arquivo `.well-known/apple-developer-merchantid-domain-association` + suporte CajuPay
+- [ ] Não criar integração extra de wallet; o SDK oficial monta o botão
 
 ---
 
@@ -1342,29 +1394,25 @@ O SDK envia `X-CajuPay-Checkout-Host` (hostname da página). A API registra o do
 
 ## INSTRUÇÕES PARA O MODELO
 
-1. Mostrar Google Pay em **Android** e **desktop** (Chrome, Edge) — **não** em iOS.
+1. Mostrar Google Pay em qualquer dispositivo quando `allow_google_pay` estiver ligado. Não filtrar por Android.
 2. **Oculte** o botão "Pagar" do host quando Google Pay estiver selecionado.
 3. `defaultMethod: "google_pay"` (com underscore).
 4. Use `probeWallet` antes de exibir o botão na UI.
 5. Materialize pedido no host antes do priming.
+6. Se `installment_options` ≥ 2, o SDK mostra seletor de parcelas antes do botão nativo; confirm com `installments: N`.
 
 ## Quando usar este módulo
 
 Checkout embed com Google Pay fora do ecossistema iOS.
 
-## Dispositivos suportados (UX)
+## Visibilidade
 
-| Mostrar Google Pay | Ocultar |
-|--------------------|---------|
-| Android | Apple Pay |
-| Windows / Mac / Linux — Chrome, Edge, Chromium | Apple Pay |
-
-Safari no Mac **não** é o alvo principal do Google Pay neste padrão — ofereça Cartão.
+Mostre Google Pay junto com Apple Pay e Cartão em qualquer aparelho, se o seller ligou esses métodos. Não esconda a opção no iPhone. O botão nativo só conclui quando o navegador suporta.
 
 ## Fluxo (igual Apple Pay, método diferente)
 
 ```
-1. Pagador seleciona Google Pay (lista já filtrada — sem iOS)
+1. Pagador seleciona Google Pay (a opção aparece em qualquer dispositivo)
 2. POST session com allow_google_pay: true, allow_card: true
 3. Validar "google_pay" em methods_available
 4. mountCheckout(..., defaultMethod: "google_pay")
@@ -1413,6 +1461,14 @@ async function shouldShowGooglePay(nextAction) {
 
 Obtenha `publishableKey` e `connectedAccount` após primeiro `confirm` ou de `next_action` da sessão pública.
 
+## Disponibilidade e taxa
+
+Uma integração só. Google Pay é um meio próprio: envie `allow_google_pay: true` na sessão ou no link. Não depende de `allow_card`. O admin libera o cartão para a conta poder cobrar Google Pay. A taxa é a da conta (`google_pay`; se não houver, a do cartão), global e por seller. Cartão salvo no Google pode pedir o mesmo challenge 3DS do cartão.
+
+## Parcelamento
+
+Mesmo contrato do cartão e do Apple Pay: com `allow_card_installments` no link (ou `installment_options` na charge/sessão), o SDK mostra o seletor antes do botão Google Pay e envia `installments: N` no confirm. Débito = 1x.
+
 ## Sessão servidor
 
 ```json
@@ -1446,127 +1502,66 @@ Google Pay não está disponível para esta conta no momento. Use Cartão.
 | Problema | Correção |
 |----------|----------|
 | Clicou Google Pay, viu cartão | `defaultMethod: "google_pay"` |
-| `method_not_available` no confirm | Conta sem wallet / taxas / KYC cartão |
-| Google Pay no iPhone | Filtrar com `isIosDevice()` |
+| `method_not_available` no confirm | Cartão ainda não liberado para a conta |
+| Google Pay escondido no iPhone | Não filtrar por dispositivo; mostre a opção e deixe o botão nativo decidir |
 
 ## Checklist
 
-- [ ] Ocultar em iOS
+- [ ] Exibir em qualquer dispositivo quando `allow_google_pay` estiver ligado
 - [ ] `probeWallet` antes do botão na lista de métodos
 - [ ] Botão Pagar do host oculto
 - [ ] confirm-order antes do priming
 - [ ] HTTPS
+- [ ] Parcelamento: respeitar `installment_options` no fluxo wallet
 
 ---
 
 <!-- module: 09-wallets-device-detection -->
 
 
-# Detecção de dispositivo (Apple Pay vs Google Pay)
+# Apple Pay e Google Pay em qualquer dispositivo
 
 ## INSTRUÇÕES PARA O MODELO
 
-1. **Nunca** mostre Apple Pay e Google Pay ao mesmo tempo na lista de métodos.
-2. iOS → só Apple Pay (+ Cartão). Não-iOS → só Google Pay (+ Cartão).
-3. Combine detecção de UA com `probeWallet` antes de exibir o botão.
+1. **Não** filtre Apple Pay por iPhone nem Google Pay por Android.
+2. Se o link ou a sessão tiver os dois flags, mostre as duas opções em qualquer aparelho, junto com Cartão quando estiver ligado.
+3. O botão nativo decide se a carteira está disponível. Se não estiver, ofereça Cartão. Não esconda a opção pelo user-agent.
 
 ## Quando usar este módulo
 
-Qualquer checkout que ofereça ambas as wallets.
+Qualquer checkout que ofereça Apple Pay e/ou Google Pay.
 
 ## Regra de visibilidade
 
-| Ambiente | Mostrar | Ocultar |
-|----------|---------|---------|
-| iPhone / iPad / iPod / iPadOS desktop UA | **Apple Pay** | Google Pay |
-| Android, Windows, Mac, Linux (Chrome, etc.) | **Google Pay** | Apple Pay |
-| Todos | **Cartão** (fallback) | — |
+| Método ligado no link | O que mostrar |
+|-----------------------|---------------|
+| `allow_apple_pay` | Apple Pay em iPhone, Android, desktop e tablet |
+| `allow_google_pay` | Google Pay em iPhone, Android, desktop e tablet |
+| `allow_card` | Cartão, independente das wallets |
 
-## isIosDevice() — copiar
+Não use `isIosDevice()` para esconder uma wallet da outra.
 
-```javascript
-export function isIosDevice() {
-  const ua = navigator.userAgent || "";
-  if (/iPhone|iPod|iPad/i.test(ua)) return true;
-  // iPadOS 13+ "Request Desktop Website"
-  if (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1) return true;
-  return false; // Mac Safari com Apple Pay NÃO entra nesta regra por padrão
-}
-```
-
-## Filtrar métodos no checkout
+## Fluxo
 
 ```javascript
-function filterPaymentMethodsForDevice(allMethods) {
-  // allMethods: [{ id: "card" }, { id: "apple_pay" }, { id: "google_pay" }, ...]
-  if (isIosDevice()) {
-    return allMethods.filter((m) => m.id !== "google_pay");
-  }
-  return allMethods.filter((m) => m.id !== "apple_pay");
+function visibleWalletMethods(methodsAvailable) {
+  // methods_available já vem filtrado pelo que o seller ligou.
+  // Não remova apple_pay no Android nem google_pay no iPhone.
+  return methodsAvailable.filter((m) => m !== "stripe");
 }
 ```
 
-## Fluxo recomendado na UI
+## Quando o botão nativo não abre
 
-```mermaid
-flowchart TD
-  start[ListaMetodosConta] --> filter[filterPaymentMethodsForDevice]
-  filter --> ios{iOS?}
-  ios -->|sim| showAP[Mostrar ApplePay + Card]
-  ios -->|nao| showGP[Mostrar GooglePay + Card]
-  showAP --> probeAP[probeWallet apple_pay]
-  showGP --> probeGP[probeWallet google_pay]
-  probeAP --> uiAP[Botao Apple Pay se available]
-  probeGP --> uiGP[Botao Google Pay se available]
-```
-
-## Botão Pagar do host
-
-```javascript
-function isWalletSdkMethod(method) {
-  return method === "apple_pay" || method === "google_pay";
-}
-
-function onMethodSelected(method) {
-  document.getElementById("btn-pay-host").style.display =
-    isWalletSdkMethod(method) ? "none" : "block";
-}
-```
-
-## methods_available da API
-
-Mesmo com filtro de UI, valide a resposta pública:
-
-```javascript
-const session = await fetch(
-  `https://api.cajupay.com.br/api/sdk/public/checkout/sessions/${token}`
-).then((r) => r.json());
-
-if (!session.methods_available?.includes(chosenMethod)) {
-  alert("Método indisponível para esta conta. Escolha Cartão.");
-  return;
-}
-```
-
-## Mac Safari + Apple Pay (opcional avançado)
-
-Integradores podem **estender** a regra para detectar Safari no Mac com Apple Pay — não faz parte do padrão mínimo. O padrão mínimo evita prometer Apple Pay em Chrome no Mac.
+Isso não é motivo para omitir o método da lista. Mantenha a opção e, se a carteira não estiver no aparelho, o pagador usa Cartão.
 
 ## Erros comuns
 
-| Anti-pattern | Correção |
-|--------------|----------|
-| Apple Pay no Android | `isIosDevice()` |
-| Google Pay no iPhone | Filtrar `apple_pay` fora de iOS |
-| Dois botões pagar com wallet | Ocultar submit do host |
-| Lista fixa sem probe | `probeWallet` + `methods_available` |
-
-## Checklist
-
-- [ ] Mutuamente exclusivo Apple Pay / Google Pay na UI
-- [ ] Cartão sempre como fallback
-- [ ] `probeWallet` antes de renderizar botão wallet
-- [ ] Botão Pagar do host oculto para wallets
+| Problema | Correção |
+|----------|----------|
+| Apple Pay só no iPhone | Remover filtro de user-agent |
+| Google Pay só no Android | Mostrar em todos os dispositivos |
+| Stripe na lista sem ter sido selecionado | Não tratar wallet como Stripe; `allow_stripe_card` não entra no checkout |
 
 ---
 
@@ -2172,14 +2167,33 @@ Eventos `subscription.*` e `boleto.*` — módulos **26** e **27**. Mesmo HMAC o
 ## INSTRUÇÕES PARA O MODELO
 
 1. Split divide o **líquido após taxa de venda** — não substitui taxas da plataforma.
-2. Passe `split_id` (UUID) no PIX ou na sessão SDK — taxas vêm do perfil split, não do body da cobrança.
-3. Comissão PIX → carteira `main`; cartão/wallets → carteira de cartão.
+2. **Um** perfil → campo `split_id`. **Vários** (2, 5, … até **10**) → array `splits`. Nunca `split_id` + `splits` no mesmo body (`conflicting_split`).
+3. Em `splits[]`, cada item é um destinatário: `{ "split_id": "…" }` (taxa do perfil) ou inline com `pay_account_id` + taxas.
+4. Limite = **10** itens no array (`too_many_splits` se passar). Não é limitado a 2.
+5. Comissão PIX → carteira `main`; cartão/wallets → carteira de cartão.
 
 ## Quando usar este módulo
 
-Marketplaces, checkouts white-label que cobram comissão de sub-merchants.
+Marketplaces / white-label com **uma ou várias** comissões no mesmo pagamento (até 10).
 
-## CRUD split
+## Como colocar VÁRIOS splits (2, 5, até 10)
+
+1. Crie (ou receba) N perfis no painel `/api` → Split → copie cada `split_id`.
+2. Na cobrança PIX ou sessão SDK, **não** use `"split_id": "..."`. Use o array (ex. 5):
+
+```json
+"splits": [
+  { "split_id": "SPLIT_ID_1" },
+  { "split_id": "SPLIT_ID_2" },
+  { "split_id": "SPLIT_ID_3" },
+  { "split_id": "SPLIT_ID_4" },
+  { "split_id": "SPLIT_ID_5" }
+]
+```
+
+Cada perfil já tem a própria taxa (% + fixo). O merchant que processa fica com o resto do líquido. O mesmo padrão vale para 2, 3, … 10 itens.
+
+## CRUD split (perfil = 1 comissão do dono)
 
 | Método | Rota | Escopo |
 |--------|------|--------|
@@ -2189,7 +2203,7 @@ Marketplaces, checkouts white-label que cobram comissão de sub-merchants.
 | PATCH | `/api/splits/{id}` | `{ "status": "inactive" }` |
 | GET | `/api/splits/earnings?limit=50` | comissões recebidas |
 
-Criar:
+Criar perfil:
 
 ```json
 {
@@ -2203,7 +2217,7 @@ Criar:
 
 ## Uso na cobrança
 
-**PIX:**
+**Um perfil (legado):**
 
 ```json
 {
@@ -2213,25 +2227,31 @@ Criar:
 }
 ```
 
-**SDK sessão:**
+**Vários perfis (ex. 3 — até 10):**
 
 ```json
 {
   "amount_cents": 10000,
-  "description": "Pedido",
-  "split_id": "550e8400-e29b-41d4-a716-446655440000"
+  "splits": [
+    { "split_id": "550e8400-e29b-41d4-a716-446655440000" },
+    { "split_id": "660e8400-e29b-41d4-a716-446655440001" },
+    { "split_id": "770e8400-e29b-41d4-a716-446655440002" }
+  ],
+  "consumer": { "name": "...", "email": "...", "document": "...", "phone": "+5511999999999" }
 }
 ```
 
+**SDK sessão:** mesmos campos em `POST /api/sdk/v1/checkout/sessions`.
+
 ## Erros
 
-`split_not_found`, `split_inactive`, `split_exceeds_net`, `split_name_exists`, `invalid_percent_bps`.
+`split_not_found`, `split_inactive`, `split_exceeds_net`, `split_name_exists`, `invalid_percent_bps`, `conflicting_split`, `too_many_splits`, `invalid_split_entry`, `duplicate_split_participant`, `invalid_pay_account_id`.
 
 ## Checklist
 
-- [ ] Split criado no painel `/api` → Split
-- [ ] `split_id` repassado aos sub-integradores
-- [ ] Tratamento de `split_exceeds_net` no host
+- [ ] N `split_id` obtidos no painel (N ≤ 10)
+- [ ] Cobrança com `splits: [{ "split_id": "…" }, …]` — sem `split_id` no topo
+- [ ] Tratamento de `split_exceeds_net` / `conflicting_split` / `too_many_splits`
 
 ---
 
@@ -2468,10 +2488,10 @@ Revise o código gerado contra esta lista antes de considerar a integração com
 | 3 | `defaultMethod` errado ou omitido | Igual ao botão UI (`card` / `apple_pay` / `google_pay`) |
 | 4 | `min-height` no `#cajupay-method` | Faixa branca — remover |
 | 5 | Sem webhook em produção (cartão) | Cadastrar + worker RabbitMQ |
-| 6 | Apple Pay no Android / Google Pay no iPhone | `isIosDevice()` + filtro |
+| 6 | Esconder Apple Pay no Android ou Google Pay no iPhone | Mostrar as duas wallets em qualquer dispositivo |
 | 7 | Dois botões pagar com wallet | Ocultar submit do host |
 | 8 | `initial_payer` com dados fake | Só dados reais ou omitir |
-| 9 | Wallets sem `allow_card` na sessão | API promove — manter true no body |
+| 9 | Tratar Apple Pay/Google Pay como Stripe | Wallets são flags próprias (`allow_apple_pay` / `allow_google_pay`); Stripe não entra no checkout |
 | 10 | Ignorar `methods_available` | Validar antes do mount |
 | 11 | Tratar `awaiting_card_details` como erro na 1ª confirm | É sucesso / priming |
 | 12 | Confundir `token` SDK com `polling_token` | IDs separados |
@@ -2483,6 +2503,8 @@ Revise o código gerado contra esta lista antes de considerar a integração com
 | 18 | Omitir `partner_checkout_url` em produção | Enviar URL HTTPS do checkout no site do parceiro (compliance) |
 | 19 | Omitir `consumer.phone` em PIX | Incluir telefone E.164 na criação (`consumer.phone` ou `payer_phone`) — Recovery/Acesso SMS |
 | 20 | Cobrança abaixo de R$ 2,00 | `amount_cents` ≥ 200 em toda criação via API (PIX, links, sessão SDK) |
+| 21 | Ramificar checkout por `form_mode` ou por processador | Sempre `mountCheckout`; o admin escolhe o processador do seller |
+| 22 | Formulário de cartão próprio ou 3DS/MPI no código do parceiro | O SDK monta o formulário e o challenge |
 
 ## Checklist de produção — SDK embed
 
@@ -4418,9 +4440,9 @@ curl -X POST "https://api.cajupay.com.br/api/antifraud/cases/CASE_UUID/defense" 
 <!-- module: 26-subscriptions -->
 
 
-# Assinaturas (PIX Automático + boleto recorrente)
+# Assinaturas (PIX Automático + boleto + cartão)
 
-Produto CajuPay de assinaturas. PIX à vista continua em `POST /api/payments/pix`.
+Produto CajuPay de assinaturas. PIX à vista continua em `POST /api/payments/pix`. Cartão avulso em `POST /api/card/charges`.
 
 ## Escopos
 
@@ -4438,15 +4460,15 @@ Base: `https://api.cajupay.com.br`
 | Método | Rota | Notas |
 |--------|------|-------|
 | `GET` | `/api/subscriptions/summary` | Totais + MRR mensal estimado |
-| `POST` | `/api/subscriptions` | Header **`Idempotency-Key` obrigatório** |
+| `POST` | `/api/subscriptions` | Header **`Idempotency-Key` obrigatório**; `method: pix_automatic\|boleto\|card` |
 | `GET` | `/api/subscriptions` | Query: `status`, `method`, `q`, `limit`, `offset` |
 | `GET` | `/api/subscriptions/{id}` | |
 | `POST` | `/api/subscriptions/{id}/cancel` | Cancela na adquirente e localmente; cancela cobranças/payments pendentes |
 | `PATCH` | `/api/subscriptions/{id}` | Body `{ "value_cents": N }` |
-| `GET` | `/api/subscriptions/{id}/charges` | Parcelas / CobR (também tenta sync se webhook atrasou) |
-| `POST` | `/api/subscriptions/{id}/sync` | Consulta status na adquirente e liquida CobRs pagas (fallback sem webhook) |
-| `POST` | `/api/subscriptions/{id}/charges/{chargeID}/retry` | Retry CobR |
-| `POST` | `/api/subscriptions/{id}/charges/{chargeID}/refund` | Reembolso da parcela paga. Estorna ledger e marca payment `refunded`. |
+| `GET` | `/api/subscriptions/{id}/charges` | Parcelas / CobR / ciclos de cartão |
+| `POST` | `/api/subscriptions/{id}/sync` | PIX/boleto: liquida CobRs; cartão: espelha cobranças do card-service |
+| `POST` | `/api/subscriptions/{id}/charges/{chargeID}/retry` | Retry CobR (PIX/boleto) |
+| `POST` | `/api/subscriptions/{id}/charges/{chargeID}/refund` | Reembolso da parcela paga (PIX/boleto) |
 
 ## Criar — PIX Automático
 
@@ -4522,13 +4544,55 @@ Rate limit da adquirente: HTTP **429**, `error: "rate_limited"`, header `Retry-A
 
 `BIMONTHLY` permitido só em boleto recorrente. Também exige `Idempotency-Key`.
 
+## Criar — cartão (Cielo RecurrentPayment)
+
+Usa o mesmo contrato `/api/subscriptions` com `method: "card"`. A 1ª cobrança é autorizada/capturada na hora; ciclos seguintes são agendados pela Cielo e ingeridos no ledger via webhook/poll do card-service.
+
+Pré-requisito: `card_token` de um cartão já tokenizado (`save_card` em cobrança anterior no checkout).
+
+```http
+Idempotency-Key: pedido-12345-card-sub
+```
+
+```json
+{
+  "method": "card",
+  "name": "Plano Pro Cartão",
+  "value_cents": 9900,
+  "frequency": "MONTHLY",
+  "correlation_id": "pedido-12345",
+  "card_token": "abc123token",
+  "card_brand": "Visa",
+  "security_code": "123",
+  "customer": {
+    "name": "Maria Silva",
+    "tax_id": "12345678909",
+    "email": "maria@exemplo.com",
+    "phone": "5511999999999"
+  }
+}
+```
+
+| Campo | Obrigatório | Notas |
+|-------|-------------|-------|
+| `card_token` | sim | Token Cielo / MIT |
+| `card_brand` | não | Visa, Master, Elo… |
+| `security_code` | não | CVV quando a adquirente exigir |
+| `frequency` | sim | `WEEKLY`, `MONTHLY`, `BIMONTHLY`, `QUARTERLY`, `SEMIANNUALLY`, `ANNUALLY` (`WEEKLY` → intervalo diário 7 na Cielo) |
+
+Resposta inclui `provider: "cielo"`, `card_recurrence_id`, `card_recurrent_payment_id`, `card_brand`, `card_last4`. Status típico: `active` se a 1ª cobrança `succeeded`; caso contrário `pending_approval` / `cancelled`.
+
+`GET /api/subscriptions/{id}/charges` lista os ciclos (1ª + seguintes) com `card_charge_id`. Cancelar desativa o RecurrentPayment na Cielo. `PATCH` valor atualiza o valor dos ciclos futuros.
+
+**Não** use `POST /api/card/recurrences` como contrato público de Assinaturas — prefira `/api/subscriptions` com `method: "card"` (mesmos escopos, webhooks e painel `/assinaturas`).
+
 ## Webhooks outbound
 
 | Evento | Quando |
 |--------|--------|
-| `subscription.approved` | Pagador autorizou PIX Automático **ou** 1ª CobR paga curou adesão (`pending_approval` → `active`) |
+| `subscription.approved` | Pagador autorizou PIX Automático **ou** 1ª CobR paga curou adesão **ou** 1ª cobrança de cartão ativa |
 | `subscription.rejected` | Recusa / revogação |
-| `subscription.charge.created` | CobR / parcela criada |
+| `subscription.charge.created` | CobR / parcela / ciclo criado |
 | `subscription.charge.paid` | Parcela paga (+ settlement ledger) |
 | `subscription.charge.failed` | Parcela rejeitada |
 | `subscription.charge.refunded` | Reembolso |
@@ -4557,11 +4621,13 @@ Cobranças **PIX Automático** pagas:
 
 Boleto (avulso ou recorrente) **não** usa hold antifraude nem o hold de 4h na v1.
 
+Ciclos de **cartão** seguem o settlement do card-service (agenda de parcelas / hold de plataforma conforme conta).
+
 `GET /api/wallet/balance?kind=main` inclui `pending_release_cents` (hold de 4h) e `held_cents` (antifraude).
 
 ## Painel
 
-Seller: `/assinaturas` — listagem, detalhe, QR/EMV, sync, cancelar, reembolso de parcela.
+Seller: `/assinaturas` — listagem unificada (PIX + cartão), detalhe, QR/EMV (PIX), cancelar, alterar valor, histórico de cobranças. **Criação** só via link de pagamento ou `POST /api/subscriptions` (não há “Nova assinatura” no painel).
 
 ---
 

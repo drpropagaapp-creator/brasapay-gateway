@@ -11,6 +11,7 @@ use App\Services\Med\MedPolicyService;
 use App\Services\Med\MedResolutionService;
 use App\Services\Bspay\BspayMedService;
 use App\Services\Versell\VersellMedService;
+use App\Services\Xflow\XflowMedService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -23,6 +24,7 @@ class MedDisputesController extends Controller
         protected CajuPayMedService $medService,
         protected VersellMedService $versellMedService,
         protected BspayMedService $bspayMedService,
+        protected XflowMedService $xflowMedService,
         protected MedResolutionService $resolutionService,
         protected MedDefenseDossierService $dossierService,
         protected MedPolicyService $policy,
@@ -151,6 +153,10 @@ class MedDisputesController extends Controller
                 throw new \InvalidArgumentException(
                     'Infrações da AssetPay não aceitam defesa via API: envie a defesa diretamente no painel da AssetPay (Dashboard → Infrações).'
                 );
+            } elseif (XflowMedService::isXflowDispute($dispute)) {
+                $this->xflowMedService->submitDefense($dispute, $validated['text']);
+
+                return back()->with('success', 'Defesa registrada. Envie também no painel da Xflow (Disputas), dentro do prazo — a API não recebe a contestação.');
             } else {
                 $this->medService->submitDefense(
                     $dispute,
@@ -218,6 +224,7 @@ class MedDisputesController extends Controller
             'resolution_note' => $dispute->resolution_note,
             'has_dossier' => $this->dossierService->isAvailable($dispute),
             'is_open' => $dispute->isOpen(),
+            'defense_via_acquirer_panel' => XflowMedService::isXflowDispute($dispute),
             'order_origin' => $order ? $this->policy->orderOriginLabel($order) : null,
             'tenant' => $owner ? [
                 'id' => $owner->id,

@@ -1,5 +1,5 @@
 <script setup>
-import { ref, watch } from 'vue';
+import { computed, ref, watch } from 'vue';
 import Button from '@/components/ui/Button.vue';
 
 const props = defineProps({
@@ -10,6 +10,8 @@ const props = defineProps({
     requireTotp: { type: Boolean, default: true },
     requirePin: { type: Boolean, default: false },
     requireExternalConfirm: { type: Boolean, default: false },
+    requireAcquirer: { type: Boolean, default: false },
+    acquirers: { type: Array, default: () => [] },
     confirmLabel: { type: String, default: 'Confirmar' },
     loading: { type: Boolean, default: false },
     confirmDisabled: { type: Boolean, default: false },
@@ -22,6 +24,7 @@ const MANUAL_APPROVAL_PIN_MAX_LENGTH = 6;
 const totpCode = ref('');
 const manualPin = ref('');
 const externalConfirm = ref(false);
+const selectedAcquirer = ref('');
 
 function sanitizeManualApprovalPinInput(value) {
     return String(value ?? '').replace(/\D/g, '').slice(0, MANUAL_APPROVAL_PIN_MAX_LENGTH);
@@ -38,15 +41,26 @@ watch(
             totpCode.value = '';
             manualPin.value = '';
             externalConfirm.value = false;
+            selectedAcquirer.value = '';
         }
     }
 );
 
+const submitBlocked = computed(
+    () =>
+        props.loading ||
+        props.confirmDisabled ||
+        (props.requireExternalConfirm && !externalConfirm.value) ||
+        (props.requireAcquirer && !selectedAcquirer.value)
+);
+
 function submit() {
+    if (submitBlocked.value) return;
     emit('confirm', {
         totp_code: totpCode.value,
         manual_approval_pin: manualPin.value,
         manual_confirm_external: externalConfirm.value,
+        payout_acquirer: selectedAcquirer.value,
     });
 }
 </script>
@@ -58,7 +72,7 @@ function submit() {
         @click.self="emit('close')"
     >
         <div
-            class="w-full max-w-md rounded-xl border border-zinc-200 bg-white p-5 shadow-xl dark:border-zinc-700 dark:bg-zinc-900"
+            class="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-xl border border-zinc-200 bg-white p-5 shadow-xl dark:border-zinc-700 dark:bg-zinc-900"
             role="dialog"
             aria-modal="true"
         >
@@ -73,6 +87,32 @@ function submit() {
             </p>
 
             <div class="mt-4 space-y-3">
+                <div v-if="requireAcquirer">
+                    <label class="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300" for="payout-acquirer-select">
+                        De onde saiu o PIX?
+                    </label>
+                    <p class="mb-2 text-xs text-zinc-500 dark:text-zinc-400">
+                        Escolha a adquirente para o comprovante. Se o PIX saiu de uma conta fora do sistema, use pagamento por conta externa.
+                    </p>
+                    <select
+                        id="payout-acquirer-select"
+                        v-model="selectedAcquirer"
+                        class="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
+                    >
+                        <option value="" disabled>Selecione a origem do pagamento</option>
+                        <option
+                            v-for="acquirer in acquirers"
+                            :key="acquirer.slug"
+                            :value="acquirer.slug"
+                        >
+                            {{ acquirer.name }}
+                        </option>
+                    </select>
+                    <p v-if="!acquirers.length" class="mt-1 text-xs text-red-600 dark:text-red-400">
+                        Nenhuma opção carregada. Recarregue a página de saques e tente de novo.
+                    </p>
+                </div>
+
                 <div v-if="requireTotp">
                     <label class="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
                         Código 2FA
@@ -120,7 +160,7 @@ function submit() {
                 <Button type="button" variant="secondary" @click="emit('close')">
                     Cancelar
                 </Button>
-                <Button type="button" :disabled="loading || confirmDisabled" @click="submit">
+                <Button type="button" :disabled="submitBlocked" @click="submit">
                     {{ confirmLabel }}
                 </Button>
             </div>

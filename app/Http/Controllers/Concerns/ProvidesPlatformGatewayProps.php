@@ -58,6 +58,7 @@ trait ProvidesPlatformGatewayProps
                 'country_flag' => $g['country_flag'] ?? null,
                 'countries' => $g['countries'] ?? null,
                 'signup_url' => $g['signup_url'] ?? null,
+                'support_contacts' => $g['support_contacts'] ?? [],
                 'is_configured' => $isCajuPayMulti
                     ? $cajupayStatus['is_configured']
                     : ($cred !== null),

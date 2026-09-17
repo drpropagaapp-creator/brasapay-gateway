@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Gateways\GatewayRegistry;
 use App\Models\BrandingSetting;
 use App\Models\User;
 use App\Models\WalletTransaction;
@@ -17,6 +18,8 @@ use Illuminate\Support\Facades\Schema;
 
 class WithdrawalPixReceiptService
 {
+    public const MANUAL_PAYOUT_EXTERNAL = 'external';
+
     public function isAvailable(Withdrawal $withdrawal): bool
     {
         $status = strtolower(trim((string) $withdrawal->status));
@@ -159,22 +162,29 @@ class WithdrawalPixReceiptService
         $net = (float) ($withdrawal->net_amount ?? 0);
         $amount = $net > 0 ? $net : (float) ($withdrawal->amount ?? 0);
 
+        $acquirer = $this->resolveAcquirerFromWithdrawal($withdrawal);
+        $cajupayAccountName = $withdrawal->payout_provider === 'cajupay' ? $account?->name : null;
+
         $payerName = '—';
         $payerDocument = '—';
         $payerInstitution = '—';
+        $payerLogo = '';
         if ($includePayerSection) {
             $payerName = $this->firstNonEmpty(
                 $receipt['payer_name'] ?? null,
                 $receipt['provider'] ?? null,
-                $account?->name,
+                $acquirer['name'] !== '' ? $acquirer['name'] : null,
+                $cajupayAccountName,
                 config('app.name', 'Getfy')
             );
             $payerDocument = $this->formatDocument($receipt['payer_document'] ?? null);
             $payerInstitution = $this->firstNonEmpty(
                 $receipt['payer_institution'] ?? null,
                 $receipt['provider'] ?? null,
-                $account?->name
+                $acquirer['name'] !== '' ? $acquirer['name'] : null,
+                $cajupayAccountName
             );
+            $payerLogo = $acquirer['logo'];
         }
 
         $receiverName = $this->firstNonEmpty(
@@ -227,6 +237,7 @@ class WithdrawalPixReceiptService
             'payer_name' => $payerName,
             'payer_document' => $payerDocument,
             'payer_institution' => $payerInstitution,
+            'payer_logo' => $payerLogo,
             'receiver_name' => $receiverName,
             'receiver_document' => $receiverDocument,
             'receiver_institution' => $receiverInstitution,
@@ -236,6 +247,36 @@ class WithdrawalPixReceiptService
             'withdrawal_id' => $withdrawal->id,
             'show_payer_section' => $includePayerSection,
         ];
+    }
+
+    /**
+     * Adquirentes do sistema + opção de pagamento por conta externa (aprovação manual).
+     *
+     * @return list<array{slug: string, name: string, image: ?string}>
+     */
+    public function manualPayoutSourceOptions(): array
+    {
+        $options = [[
+            'slug' => self::MANUAL_PAYOUT_EXTERNAL,
+            'name' => 'Pagamento por conta externa',
+            'image' => null,
+        ]];
+
+        foreach (GatewayRegistry::allowedAcquirers() as $g) {
+            $slug = (string) ($g['slug'] ?? '');
+            if ($slug === '') {
+                continue;
+            }
+            $image = $g['image'] ?? null;
+            $resolved = is_string($image) ? GatewayRegistry::resolveImageUrl($image) : null;
+            $options[] = [
+                'slug' => $slug,
+                'name' => (string) ($g['name'] ?? $slug),
+                'image' => $this->publicAssetUrl($resolved),
+            ];
+        }
+
+        return $options;
     }
 
     /**
@@ -257,6 +298,7 @@ class WithdrawalPixReceiptService
             'created_at' => $w->created_at?->toIso8601String(),
             'payout_manual' => (bool) $w->payout_manual,
             'payout_provider' => $w->payout_provider,
+            'payout_acquirer_label' => $this->acquirerLabelForWithdrawal($w),
             'payout_external_id' => $w->payout_external_id,
             'payout_last_error' => is_array($w->payout_meta) ? ($w->payout_meta['last_error'] ?? null) : null,
             'payout_last_attempt_at' => is_array($w->payout_meta) ? ($w->payout_meta['last_attempt_at'] ?? null) : null,
@@ -270,6 +312,68 @@ class WithdrawalPixReceiptService
             'api_application_name' => $w->apiApplication?->name,
             'can_download_receipt' => $this->isAvailable($w),
         ];
+    }
+
+    /**
+     * @return array{slug: string, name: string, logo: string, is_external: bool}
+     */
+    private function resolveAcquirerFromWithdrawal(Withdrawal $withdrawal): array
+    {
+        $slug = strtolower(trim((string) ($withdrawal->payout_provider ?? '')));
+        $meta = is_array($withdrawal->payout_meta) ? $withdrawal->payout_meta : [];
+        if ($slug === '' || $slug === 'manual') {
+            $fromMeta = strtolower(trim((string) ($meta['manual_payout_acquirer'] ?? '')));
+            if ($fromMeta !== '') {
+                $slug = $fromMeta;
+            }
+        }
+
+        if ($slug === self::MANUAL_PAYOUT_EXTERNAL || $slug === 'manual') {
+            return [
+                'slug' => self::MANUAL_PAYOUT_EXTERNAL,
+                'name' => 'Conta externa',
+                'logo' => '',
+                'is_external' => true,
+            ];
+        }
+
+        if ($slug === '') {
+            return ['slug' => '', 'name' => '', 'logo' => '', 'is_external' => false];
+        }
+
+        $def = GatewayRegistry::get($slug);
+        if ($def === null) {
+            return ['slug' => $slug, 'name' => $slug, 'logo' => '', 'is_external' => false];
+        }
+
+        $image = is_string($def['image'] ?? null) ? GatewayRegistry::resolveImageUrl($def['image']) : null;
+
+        return [
+            'slug' => $slug,
+            'name' => (string) ($def['name'] ?? $slug),
+            'logo' => (string) ($this->publicAssetUrl($image) ?? ''),
+            'is_external' => false,
+        ];
+    }
+
+    private function acquirerLabelForWithdrawal(Withdrawal $w): ?string
+    {
+        $resolved = $this->resolveAcquirerFromWithdrawal($w);
+
+        return $resolved['name'] !== '' ? $resolved['name'] : null;
+    }
+
+    private function publicAssetUrl(?string $path): ?string
+    {
+        if ($path === null || trim($path) === '') {
+            return null;
+        }
+        $path = trim($path);
+        if (str_starts_with($path, 'http://') || str_starts_with($path, 'https://') || str_starts_with($path, '/')) {
+            return $path;
+        }
+
+        return '/'.$path;
     }
 
     private function resolveTenantOwner(int $tenantId): ?User

@@ -67,6 +67,7 @@ class WithdrawalsController extends Controller
             'require_manual_approval_pin' => $request->user() !== null
                 && WithdrawalPolicyService::requiresOperationPinFor($request->user()),
             'has_manual_approval_pin' => WithdrawalPolicyService::hasManualApprovalPin(),
+            'manual_payout_acquirers' => $this->receiptService->manualPayoutSourceOptions(),
         ]);
     }
 }

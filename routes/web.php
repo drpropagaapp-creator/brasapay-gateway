@@ -26,6 +26,26 @@ Route::get('/storage/{path}', \App\Http\Controllers\StorageServeController::clas
     ->where('path', '.+')
     ->name('storage.serve');
 
+Route::get('/.well-known/apple-developer-merchantid-domain-association', function () {
+    $path = public_path('.well-known/apple-developer-merchantid-domain-association');
+    if (is_file($path)) {
+        return response()->file($path, [
+            'Content-Type' => 'application/octet-stream',
+            'Cache-Control' => 'public, max-age=86400',
+        ]);
+    }
+
+    $remote = Http::timeout(10)->get('https://cajupay.com.br/.well-known/apple-developer-merchantid-domain-association');
+    if (! $remote->successful()) {
+        abort(404);
+    }
+
+    return response($remote->body(), 200, [
+        'Content-Type' => 'application/octet-stream',
+        'Cache-Control' => 'public, max-age=86400',
+    ]);
+})->name('well-known.apple-pay');
+
 // Instalador: fallback quando o servidor envia /install para o Laravel (ex: document root diferente de public/)
 Route::any('/install', [\App\Http\Controllers\InstallServeController::class, '__invoke'])
     ->defaults('path', null)
@@ -148,8 +168,12 @@ Route::middleware(['throttle:60,1', \App\Http\Middleware\LogInboundGatewayWebhoo
     Route::post('/webhooks/gateways/linaopenx', [\App\Http\Controllers\Webhooks\LinaOpenxWebhookController::class, 'handle'])->name('webhooks.linaopenx');
     Route::post('/webhooks/gateways/spacepag', [\App\Http\Controllers\Webhooks\SpacepagWebhookController::class, 'handle'])->name('webhooks.spacepag');
     Route::post('/webhooks/gateways/woovi', [\App\Http\Controllers\Webhooks\WooviWebhookController::class, 'handle'])->name('webhooks.woovi');
+    Route::post('/webhooks/gateways/xflow', [\App\Http\Controllers\Webhooks\XflowWebhookController::class, 'handle'])->name('webhooks.xflow');
+    Route::post('/webhooks/gateways/xflow/payout', [\App\Http\Controllers\Webhooks\XflowWebhookController::class, 'handle'])->name('webhooks.xflow.payout');
+    Route::post('/webhooks/gateways/xflow/disputes', [\App\Http\Controllers\Webhooks\XflowWebhookController::class, 'handle'])->name('webhooks.xflow.disputes');
     Route::post('/webhooks/gateways/bspay', [\App\Http\Controllers\Webhooks\BspayWebhookController::class, 'handle'])->name('webhooks.bspay');
     Route::post('/webhooks/gateways/assetpay', [\App\Http\Controllers\Webhooks\AssetPayWebhookController::class, 'handle'])->name('webhooks.assetpay');
+    Route::post('/webhooks/gateways/okto', [\App\Http\Controllers\Webhooks\OktoWebhookController::class, 'handle'])->name('webhooks.okto');
     Route::post('/webhooks/gateways/stripe', [\App\Http\Controllers\Webhooks\StripeWebhookController::class, 'handle'])->name('webhooks.stripe');
     Route::post('/webhooks/gateways/paypal', [\App\Http\Controllers\Webhooks\PayPalWebhookController::class, 'handle'])->name('webhooks.paypal');
     Route::post('/webhooks/gateways/efi/pix', [\App\Http\Controllers\Webhooks\EfiWebhookController::class, 'pix'])->name('webhooks.efi.pix');
@@ -258,6 +282,14 @@ Route::post('/checkout/validate-coupon', [\App\Http\Controllers\CheckoutControll
 Route::get('/checkout/upsell', [\App\Http\Controllers\UpsellController::class, 'upsellPage'])->name('checkout.upsell');
 Route::get('/checkout/downsell', [\App\Http\Controllers\UpsellController::class, 'downsellPage'])->name('checkout.downsell');
 Route::get('/checkout/obrigado', [\App\Http\Controllers\UpsellController::class, 'thankYouPage'])->name('checkout.thank-you');
+Route::get('/a/{ref}', [\App\Http\Controllers\DeliverableAccessController::class, 'show'])
+    ->where('ref', '[a-z0-9]{12}')
+    ->middleware('throttle:60,1')
+    ->name('deliverable.access');
+Route::get('/a/{ref}/go', [\App\Http\Controllers\DeliverableAccessController::class, 'go'])
+    ->where('ref', '[a-z0-9]{12}')
+    ->middleware('throttle:60,1')
+    ->name('deliverable.access.go');
 Route::post('/checkout/upsell/accept', [\App\Http\Controllers\UpsellController::class, 'acceptUpsell'])->name('checkout.upsell.accept')->middleware('throttle:30,1');
 Route::post('/checkout/upsell/decline', [\App\Http\Controllers\UpsellController::class, 'declineUpsell'])->name('checkout.upsell.decline')->middleware('throttle:30,1');
 Route::post('/checkout/downsell/accept', [\App\Http\Controllers\UpsellController::class, 'acceptDownsell'])->name('checkout.downsell.accept')->middleware('throttle:30,1');
@@ -604,6 +636,12 @@ Route::prefix('plataforma')->name('plataforma.')->group(function () {
             ->name('clientes.export')
             ->middleware('throttle:10,1');
         Route::get('/clientes/{user}', [\App\Http\Controllers\Platform\CustomersController::class, 'show'])->name('clientes.show');
+        Route::get('/clientes/{user}/produtos/{produto}/dossie', [\App\Http\Controllers\Platform\CustomersController::class, 'dossier'])
+            ->name('clientes.acessos.dossie');
+        Route::get('/clientes/{user}/produtos/{produto}/dossie/exportar', [\App\Http\Controllers\Platform\CustomersController::class, 'exportDossier'])
+            ->name('clientes.acessos.dossie.export');
+        Route::get('/clientes/{user}/produtos/{produto}/dossie/exportar.pdf', [\App\Http\Controllers\Platform\CustomersController::class, 'exportDossierPdf'])
+            ->name('clientes.acessos.dossie.export-pdf');
         Route::delete('/clientes/{user}', [\App\Http\Controllers\Platform\CustomersController::class, 'destroy'])
             ->name('clientes.destroy')
             ->middleware('throttle:30,1');
@@ -962,6 +1000,9 @@ Route::middleware(['auth', 'admin.tenant', 'seller.panel', 'stacker.license', 'r
         Route::put('/produtos/alunos/{aluno}', [\App\Http\Controllers\AlunosController::class, 'update'])->name('alunos.update')->where('aluno', '[0-9]+');
         Route::delete('/produtos/alunos/{aluno}', [\App\Http\Controllers\AlunosController::class, 'destroy'])->name('alunos.destroy')->where('aluno', '[0-9]+');
         Route::delete('/produtos/alunos/{aluno}/produtos/{produto}', [\App\Http\Controllers\AlunosController::class, 'removeProduct'])->name('alunos.remove-product')->where('aluno', '[0-9]+');
+        Route::get('/produtos/alunos/{aluno}/produtos/{produto}/dossie', [\App\Http\Controllers\AlunosController::class, 'dossier'])->name('alunos.dossier')->where('aluno', '[0-9]+');
+        Route::get('/produtos/alunos/{aluno}/produtos/{produto}/dossie/exportar', [\App\Http\Controllers\AlunosController::class, 'exportDossier'])->name('alunos.dossier.export')->where('aluno', '[0-9]+');
+        Route::get('/produtos/alunos/{aluno}/produtos/{produto}/dossie/exportar.pdf', [\App\Http\Controllers\AlunosController::class, 'exportDossierPdf'])->name('alunos.dossier.export-pdf')->where('aluno', '[0-9]+');
 
         // Member Builder (área de membros do produto)
         Route::get('/produtos/{produto}/member-builder', [\App\Http\Controllers\MemberBuilderController::class, 'index'])->name('member-builder.index');
@@ -1152,6 +1193,7 @@ Route::prefix('m/{slug}')->where(['slug' => '[a-zA-Z0-9]{6,16}'])->middleware('m
         Route::post('modulo/{module}/renovar-pix', [\App\Http\Controllers\MemberModuleRenewalController::class, 'createPix'])->middleware('throttle:10,1')->name('member-area-app.module.renew-pix');
         Route::get('modulo/{module}/renovar-pix/{order}', [\App\Http\Controllers\MemberModuleRenewalController::class, 'status'])->middleware('throttle:60,1')->name('member-area-app.module.renew-pix.status');
         Route::post('aula/{lesson}/complete', [\App\Http\Controllers\MemberAreaAppController::class, 'completeLesson'])->name('member-area-app.lesson.complete');
+        Route::get('aula/{lesson}/material/{index}', [\App\Http\Controllers\MemberAreaAppController::class, 'downloadLessonMaterial'])->whereNumber('index')->middleware('throttle:60,1')->name('member-area-app.lesson.material');
         Route::post('aula/{lesson}/comments', [\App\Http\Controllers\MemberAreaAppController::class, 'storeLessonComment'])->name('member-area-app.lesson.comments.store');
         Route::get('loja', [\App\Http\Controllers\MemberAreaAppController::class, 'loja'])->name('member-area-app.loja');
         Route::get('comunidade', [\App\Http\Controllers\MemberAreaAppController::class, 'comunidade'])->name('member-area-app.comunidade');
@@ -1205,6 +1247,7 @@ Route::middleware(['web', 'member.area.resolve.by.host'])->group(function () {
         Route::post('modulo/{module}/renovar-pix', [\App\Http\Controllers\MemberModuleRenewalController::class, 'createPix'])->middleware('throttle:10,1')->name('member-area-app.module.renew-pix.host');
         Route::get('modulo/{module}/renovar-pix/{order}', [\App\Http\Controllers\MemberModuleRenewalController::class, 'status'])->middleware('throttle:60,1')->name('member-area-app.module.renew-pix.status.host');
         Route::post('aula/{lesson}/complete', [\App\Http\Controllers\MemberAreaAppController::class, 'completeLesson'])->name('member-area-app.lesson.complete.host');
+        Route::get('aula/{lesson}/material/{index}', [\App\Http\Controllers\MemberAreaAppController::class, 'downloadLessonMaterial'])->whereNumber('index')->middleware('throttle:60,1')->name('member-area-app.lesson.material.host');
         Route::post('aula/{lesson}/comments', [\App\Http\Controllers\MemberAreaAppController::class, 'storeLessonComment'])->name('member-area-app.lesson.comments.store.host');
         Route::get('loja', [\App\Http\Controllers\MemberAreaAppController::class, 'loja'])->name('member-area-app.loja.host');
         Route::get('comunidade', [\App\Http\Controllers\MemberAreaAppController::class, 'comunidade'])->name('member-area-app.comunidade.host');
