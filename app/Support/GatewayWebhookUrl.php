@@ -35,6 +35,7 @@ final class GatewayWebhookUrl
             'onlyup' => '/webhooks/gateways/onlyup',
             'bspay' => '/webhooks/gateways/bspay',
             'assetpay' => '/webhooks/gateways/assetpay',
+            'reven' => '/webhooks/gateways/reven',
             'linaopenx' => '/webhooks/gateways/linaopenx',
             // Base URL Cash In (a Versell anexa /pix automaticamente ao notificar)
             'versell' => '/webhooks/gateways/versell',

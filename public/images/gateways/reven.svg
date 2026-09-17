@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 80" width="240" height="80">
+  <defs>
+    <linearGradient id="rvbg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0b1220"/>
+      <stop offset="1" stop-color="#14213b"/>
+    </linearGradient>
+    <linearGradient id="rvmark" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#38bdf8"/>
+      <stop offset="1" stop-color="#6366f1"/>
+    </linearGradient>
+  </defs>
+  <rect width="240" height="80" rx="14" fill="url(#rvbg)"/>
+  <!-- Marca: "R" geométrico com seta de fluxo -->
+  <g fill="none" stroke="url(#rvmark)" stroke-width="6" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M28 58 V24 h14 a10 10 0 0 1 0 20 h-14"/>
+    <path d="M42 44 L56 58"/>
+  </g>
+  <text x="74" y="50" font-family="ui-rounded, 'Segoe UI', system-ui, sans-serif" font-size="28" font-weight="700" letter-spacing="0.5" fill="#f1f5f9">reven</text>
+  <text x="158" y="50" font-family="ui-rounded, 'Segoe UI', system-ui, sans-serif" font-size="16" font-weight="400" letter-spacing="2.5" fill="#8b98ad">PAY</text>
+</svg>

@@ -60,6 +60,21 @@ return [
                 ['key' => 'webhook_postback_base_url', 'label' => 'URL base pública para webhooks (HTTPS, sem barra final)', 'type' => 'text', 'optional' => true],
             ],
         ],
+        'reven' => [
+            'slug' => 'reven',
+            'name' => 'Reven Payments',
+            'image' => 'images/gateways/reven.svg',
+            'methods' => ['pix'],
+            'scope' => 'national',
+            'country' => 'br',
+            'country_name' => 'Brasil',
+            'country_flag' => 'brasil.png',
+            'signup_url' => 'https://app.revenpayments.com.br',
+            'driver' => \App\Gateways\Reven\RevenDriver::class,
+            'credential_keys' => [
+                ['key' => 'api_key', 'label' => 'API Key (X-Api-Key)', 'type' => 'password'],
+            ],
+        ],
         'assetpay' => [
             'slug' => 'assetpay',
             'name' => 'AssetPay',
@@ -459,6 +474,7 @@ return [
         'woovi',
         'bspay',
         'assetpay', // Cash In PIX + Cash Out + MED (infrações)
+        'reven', // Cash In PIX (sem cash out na API)
         'onlyup',
         'mercadopago',
         'pagarme',
