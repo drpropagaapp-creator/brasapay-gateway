@@ -3,16 +3,22 @@
 namespace App\Gateways\Reven;
 
 use App\Gateways\Contracts\GatewayDriver;
-use Illuminate\Http\Client\PendingRequest;
+use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 
 /**
  * Reven Payments (app.revenpayments.com.br) — PIX cash-in.
  *
- * Autenticação: header X-Api-Key. Valores em REAIS (float).
- * A API de seller não expõe consulta por id: o status é resolvido
- * pela listagem GET /gateway/transactions (match por id).
+ * Autenticação: header X-Api-Key + assinatura anti-replay (§5 da doc de
+ * integração): X-Signature = HMAC-SHA256(api_key, "METHOD\n/api<path>\n<body>\n<ts_ms>\n<nonce>")
+ * em hex, com X-Timestamp em milissegundos (±5min) e X-Nonce único. O path
+ * do canônico leva o prefixo /api e NÃO inclui a query string; body = "" em GET.
+ * Workspaces sem requireSignature ignoram os headers extras.
+ *
+ * Valores em REAIS (float). A API de seller não expõe consulta por id: o
+ * status é resolvido pela listagem GET /gateway/transactions (match por id).
  *
  * @see https://app.revenpayments.com.br/api/docs
  */
@@ -25,10 +31,7 @@ class RevenDriver implements GatewayDriver
     public function testConnection(array $credentials): bool
     {
         try {
-            $response = $this->http($credentials)
-                ->timeout(10)
-                ->withOptions(['connect_timeout' => 5])
-                ->get($this->url('/gateway/transactions'), ['page' => 1, 'limit' => 1]);
+            $response = $this->send($credentials, 'GET', '/gateway/transactions', ['page' => 1, 'limit' => 1], null, 10, 5);
         } catch (\Throwable $e) {
             Log::debug('RevenDriver testConnection error', ['message' => $e->getMessage()]);
 
@@ -88,7 +91,7 @@ class RevenDriver implements GatewayDriver
         }
 
         try {
-            $response = $this->http($credentials)->post($this->url('/gateway/charges'), $body);
+            $response = $this->send($credentials, 'POST', '/gateway/charges', [], $body);
         } catch (\Throwable $e) {
             throw new \RuntimeException('Reven: falha de comunicação ao gerar cobrança PIX.', 0, $e);
         }
@@ -153,10 +156,7 @@ class RevenDriver implements GatewayDriver
     {
         for ($page = 1; $page <= self::STATUS_LOOKUP_MAX_PAGES; $page++) {
             try {
-                $response = $this->http($credentials)
-                    ->timeout(12)
-                    ->withOptions(['connect_timeout' => 5])
-                    ->get($this->url('/gateway/transactions'), ['page' => $page, 'limit' => 100]);
+                $response = $this->send($credentials, 'GET', '/gateway/transactions', ['page' => $page, 'limit' => 100], null, 12, 5);
             } catch (\Throwable $e) {
                 Log::warning('RevenDriver findTransactionRow error', [
                     'transaction_id' => $transactionId,
@@ -225,31 +225,61 @@ class RevenDriver implements GatewayDriver
         return match (strtoupper(trim($status))) {
             'PAID' => 'paid',
             'PENDING' => 'pending',
-            'FAILED', 'EXPIRED' => 'cancelled',
+            // MED = pago e depois contestado/revertido — nunca liberar como pago.
+            'FAILED', 'EXPIRED', 'MED' => 'cancelled',
             default => null,
         };
     }
 
     /**
+     * Envia a requisição assinada (§5): o canônico usa o path com prefixo /api,
+     * SEM query string, e o body cru exatamente como enviado ("" em GET).
+     *
      * @param  array<string, mixed>  $credentials
+     * @param  array<string, int|string>  $query
+     * @param  array<string, mixed>|null  $json
      */
-    private function http(array $credentials): PendingRequest
-    {
+    private function send(
+        array $credentials,
+        string $method,
+        string $path,
+        array $query = [],
+        ?array $json = null,
+        int $timeout = 20,
+        int $connectTimeout = 8
+    ): Response {
         $apiKey = trim((string) ($credentials['api_key'] ?? ''));
         if ($apiKey === '') {
             throw new \RuntimeException('Reven: configure a API Key da adquirente.');
         }
 
-        return Http::acceptJson()
-            ->asJson()
-            ->timeout(20)
-            ->withOptions(['connect_timeout' => 8])
-            ->withHeaders(['X-Api-Key' => $apiKey]);
-    }
+        $rawBody = $json === null ? '' : (string) json_encode($json, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        $timestamp = (string) (int) round(microtime(true) * 1000);
+        $nonce = (string) Str::uuid();
+        $canonical = strtoupper($method)."\n".'/api'.$path."\n".$rawBody."\n".$timestamp."\n".$nonce;
 
-    private function url(string $path): string
-    {
-        return rtrim(self::BASE_URL, '/').$path;
+        $pending = Http::acceptJson()
+            ->timeout($timeout)
+            ->withOptions(['connect_timeout' => $connectTimeout])
+            ->withHeaders([
+                'X-Api-Key' => $apiKey,
+                'X-Signature' => hash_hmac('sha256', $canonical, $apiKey),
+                'X-Timestamp' => $timestamp,
+                'X-Nonce' => $nonce,
+            ]);
+
+        if ($rawBody !== '') {
+            $pending = $pending->withBody($rawBody, 'application/json');
+        }
+
+        $options = $query !== [] ? ['query' => $query] : [];
+
+        $response = $pending->send(strtoupper($method), rtrim(self::BASE_URL, '/').$path, $options);
+        if (! $response instanceof Response) {
+            throw new \RuntimeException('Reven: resposta inesperada do cliente HTTP.');
+        }
+
+        return $response;
     }
 
     private function errorMessage(mixed $json, string $fallback): string
