@@ -10,6 +10,7 @@ import {
     X,
     Settings,
     Mail,
+    MessageCircle,
     MessageSquare,
     Smartphone,
     Wallet,
@@ -124,6 +125,7 @@ const navGroupsCore = [
             { name: 'Indique e Ganhe', href: '/plataforma/indique-e-ganhe', icon: Gift },
             { name: 'E-mail Marketing', href: '/plataforma/email-marketing', icon: Mail },
             { name: 'IntegraX SMS', href: '/plataforma/integrax', icon: MessageSquare },
+            { name: 'WhatsApp', href: '/plataforma/uazapi', icon: MessageCircle },
             { name: 'App', href: '/plataforma/app', icon: Smartphone },
         ],
     },
@@ -255,6 +257,9 @@ function isActive(href) {
     }
     if (href === '/plataforma/integrax') {
         return url === '/plataforma/integrax' || url.startsWith('/plataforma/integrax/');
+    }
+    if (href === '/plataforma/uazapi') {
+        return url === '/plataforma/uazapi' || url.startsWith('/plataforma/uazapi/');
     }
     return url === href || url.startsWith(`${href}/`);
 }

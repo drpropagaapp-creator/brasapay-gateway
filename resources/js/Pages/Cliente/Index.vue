@@ -243,6 +243,12 @@ async function copyValue(value, key) {
                             >
                                 Liberado
                             </span>
+                            <span
+                                v-if="row.is_renewal"
+                                class="rounded-full bg-sky-600/90 px-2 py-0.5 text-[10px] font-semibold text-white"
+                            >
+                                Renovação
+                            </span>
                         </div>
                     </div>
                     <div class="flex flex-1 flex-col gap-3 p-4">

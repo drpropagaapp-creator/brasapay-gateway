@@ -174,6 +174,16 @@ const defaultTranslations = () => ({
 });
 const defaultCurrencies = () => [...(props.settings.currencies ?? [])];
 
+function sellerIntegrationFormFields(source) {
+    const catalog = props.seller_integrations_catalog || [];
+    const fields = {};
+    for (const item of catalog) {
+        const key = `integration_${item.id}_enabled`;
+        fields[key] = Boolean(source?.[key]);
+    }
+    return fields;
+}
+
 const form = useForm({
     smtp_host: props.settings.smtp_host ?? '',
     smtp_port: props.settings.smtp_port ?? '587',
@@ -219,10 +229,7 @@ const form = useForm({
     backup_destination_prefix: props.settings.backup_destination_prefix ?? 'backups/db',
     backup_destination_secret_configured: Boolean(props.settings.backup_destination_secret_configured),
     physical_products_enabled: Boolean(props.settings.physical_products_enabled),
-    integration_webhook_enabled: props.settings.integration_webhook_enabled !== false,
-    integration_utmify_enabled: props.settings.integration_utmify_enabled !== false,
-    integration_spedy_enabled: props.settings.integration_spedy_enabled !== false,
-    integration_cademi_enabled: props.settings.integration_cademi_enabled !== false,
+    ...sellerIntegrationFormFields(props.settings),
     checkout_turnstile_site_key: props.settings.checkout_turnstile_site_key ?? '',
     checkout_turnstile_secret_key: '',
     checkout_turnstile_secret_configured: Boolean(props.settings.checkout_turnstile_secret_configured),
@@ -805,12 +812,7 @@ function buildSettingsPayload() {
         };
     }
     if (activeTab.value === 'integracoes') {
-        return {
-            integration_webhook_enabled: data.integration_webhook_enabled,
-            integration_utmify_enabled: data.integration_utmify_enabled,
-            integration_spedy_enabled: data.integration_spedy_enabled,
-            integration_cademi_enabled: data.integration_cademi_enabled,
-        };
+        return sellerIntegrationFormFields(data);
     }
     if (activeTab.value === 'seguranca') {
         return {

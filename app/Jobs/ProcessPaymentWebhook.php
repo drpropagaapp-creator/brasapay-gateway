@@ -5,8 +5,6 @@ namespace App\Jobs;
 use App\Events\OrderCancelled;
 use App\Events\OrderCompleted;
 use App\Events\OrderRejected;
-use App\Events\SubscriptionCreated;
-use App\Events\SubscriptionRenewed;
 use App\Gateways\GatewayRegistry;
 use App\Gateways\MercadoPago\MercadoPagoDriver;
 use App\Models\GatewayCredential;
@@ -354,59 +352,33 @@ class ProcessPaymentWebhook implements ShouldQueue
                 $completedPatch['payment_method'] = $this->inferPaymentMethodForOrder($order);
             }
             $order->update($completedPatch);
-            $order->grantPurchasedProductAccessToBuyer();
-            if ($order->subscription_plan_id) {
-                $plan = $order->subscriptionPlan;
-                if ($plan) {
-                    if ($order->is_renewal) {
-                        $sub = Subscription::where('user_id', $order->user_id)
-                            ->where('product_id', $order->product_id)
-                            ->where('subscription_plan_id', $plan->id)
-                            ->whereIn('status', [Subscription::STATUS_ACTIVE, Subscription::STATUS_PAST_DUE])
-                            ->first();
-                        if ($sub && $order->period_start && $order->period_end) {
-                            $sub->update([
-                                'status' => Subscription::STATUS_ACTIVE,
-                                'current_period_start' => $order->period_start,
-                                'current_period_end' => $order->period_end,
-                            ]);
-                            event(new SubscriptionRenewed($sub->fresh()));
-                            if ($this->gatewaySlug === 'versell') {
-                                $this->scheduleVersellPixAutoNextCobr($order, $sub->fresh());
-                            }
-                        }
-                    } elseif (! Subscription::where('user_id', $order->user_id)->where('product_id', $order->product_id)->where('subscription_plan_id', $plan->id)->where('status', Subscription::STATUS_ACTIVE)->exists()) {
-                        [$periodStart, $periodEnd] = $plan->getCurrentPeriod();
-                        $idRec = null;
-                        $metadata = $order->metadata ?? [];
-                        if (isset($metadata['efi_pix_auto_id_rec']) && $this->gatewaySlug === 'efi') {
-                            $idRec = $metadata['efi_pix_auto_id_rec'];
-                        } elseif (isset($metadata['versell_pix_auto_id_rec']) && $this->gatewaySlug === 'versell') {
-                            $idRec = $metadata['versell_pix_auto_id_rec'];
-                        } elseif (isset($metadata['pushinpay_subscription_id']) && $this->gatewaySlug === 'pushinpay') {
-                            $idRec = $metadata['pushinpay_subscription_id'];
-                        }
-                        $subscription = Subscription::create([
-                            'tenant_id' => $order->tenant_id,
-                            'user_id' => $order->user_id,
-                            'product_id' => $order->product_id,
-                            'subscription_plan_id' => $plan->id,
-                            'status' => Subscription::STATUS_ACTIVE,
-                            'current_period_start' => $periodStart,
-                            'current_period_end' => $periodEnd,
-                            'gateway_subscription_id' => $idRec,
-                        ]);
-                        event(new SubscriptionCreated($subscription));
 
-                        if ($idRec !== null && $this->gatewaySlug === 'efi') {
-                            $this->createEfiPixAutoCobrForNextPeriod($order, $subscription, $plan);
-                        } elseif ($idRec !== null && $this->gatewaySlug === 'versell') {
-                            $this->scheduleVersellPixAutoNextCobr($order, $subscription);
-                        }
+            $createExtra = [];
+            $metadata = is_array($order->metadata) ? $order->metadata : [];
+            if (isset($metadata['efi_pix_auto_id_rec']) && $this->gatewaySlug === 'efi') {
+                $createExtra['gateway_subscription_id'] = $metadata['efi_pix_auto_id_rec'];
+            } elseif (isset($metadata['versell_pix_auto_id_rec']) && $this->gatewaySlug === 'versell') {
+                $createExtra['gateway_subscription_id'] = $metadata['versell_pix_auto_id_rec'];
+            } elseif (isset($metadata['pushinpay_subscription_id']) && $this->gatewaySlug === 'pushinpay') {
+                $createExtra['gateway_subscription_id'] = $metadata['pushinpay_subscription_id'];
+            }
+
+            $sync = app(\App\Services\SubscriptionRenewalService::class)->syncFromPaidOrder($order, $createExtra);
+            $subscription = $sync['subscription'] ?? null;
+            if ($subscription) {
+                if (! empty($sync['renewed']) && $this->gatewaySlug === 'versell') {
+                    $this->scheduleVersellPixAutoNextCobr($order, $subscription);
+                } elseif (! empty($sync['created']) && ! empty($createExtra['gateway_subscription_id'])) {
+                    $plan = $order->subscriptionPlan ?? $subscription->subscriptionPlan;
+                    if ($this->gatewaySlug === 'efi' && $plan) {
+                        $this->createEfiPixAutoCobrForNextPeriod($order, $subscription, $plan);
+                    } elseif ($this->gatewaySlug === 'versell') {
+                        $this->scheduleVersellPixAutoNextCobr($order, $subscription);
                     }
                 }
             }
-            event(new OrderCompleted($order));
+
+            event(new OrderCompleted($order->fresh()));
         } finally {
             Cache::forget($lockKey);
         }

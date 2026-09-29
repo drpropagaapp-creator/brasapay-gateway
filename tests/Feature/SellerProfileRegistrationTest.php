@@ -3,7 +3,9 @@
 namespace Tests\Feature;
 
 use App\Http\Middleware\EnsureInstalled;
+use App\Models\SellerActivityLog;
 use App\Models\User;
+use App\Services\SellerActivityLogService;
 use Illuminate\Foundation\Http\Middleware\ValidateCsrfToken;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Schema;
@@ -120,5 +122,94 @@ class SellerProfileRegistrationTest extends TestCase
                 ->component('Profile/Index')
                 ->where('user.trade_name', 'Academia Digital')
             );
+    }
+
+    public function test_profile_can_update_whatsapp_and_logs_change(): void
+    {
+        if (! Schema::hasColumn('users', 'phone')) {
+            $this->markTestSkipped('phone column');
+        }
+
+        $seller = $this->seller();
+
+        $this->actingAs($seller)
+            ->from(route('profile.index'))
+            ->put(route('profile.update-whatsapp'), [
+                'phone' => '21987654321',
+                'name' => 'Tentativa de mudar nome',
+                'email' => 'outro.email@example.com',
+                'document' => '39053344705',
+            ])
+            ->assertRedirect(route('profile.index'));
+
+        $seller->refresh();
+        $this->assertSame('5521987654321', $seller->phone);
+        $this->assertSame('Maria Silva', $seller->name);
+        $this->assertSame('maria.perfil@example.com', $seller->email);
+        $this->assertSame('52998224725', $seller->document);
+
+        if (Schema::hasTable('seller_activity_logs')) {
+            $this->assertDatabaseHas('seller_activity_logs', [
+                'tenant_id' => $seller->id,
+                'actor_user_id' => $seller->id,
+                'action' => SellerActivityLogService::PROFILE_WHATSAPP_UPDATED,
+            ]);
+            $log = SellerActivityLog::query()
+                ->where('action', SellerActivityLogService::PROFILE_WHATSAPP_UPDATED)
+                ->first();
+            $this->assertNotNull($log);
+            $this->assertSame(['phone'], $log->metadata['changed'] ?? null);
+            $this->assertNotSame('11988776655', $log->metadata['phone_from'] ?? null);
+            $this->assertNotSame('5521987654321', $log->metadata['phone_to'] ?? null);
+            $this->assertStringContainsString('4321', (string) ($log->metadata['phone_to'] ?? ''));
+        }
+
+        $this->actingAs($seller)
+            ->get(route('profile.index'))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Profile/Index')
+                ->where('registration.whatsapp', '(21) 98765-4321')
+            );
+    }
+
+    public function test_profile_rejects_invalid_whatsapp(): void
+    {
+        if (! Schema::hasColumn('users', 'phone')) {
+            $this->markTestSkipped('phone column');
+        }
+
+        $seller = $this->seller();
+
+        $this->actingAs($seller)
+            ->from(route('profile.index'))
+            ->put(route('profile.update-whatsapp'), [
+                'phone' => '123',
+            ])
+            ->assertRedirect(route('profile.index'))
+            ->assertSessionHasErrors('phone');
+
+        $seller->refresh();
+        $this->assertSame('11988776655', $seller->phone);
+    }
+
+    public function test_profile_does_not_log_unchanged_whatsapp(): void
+    {
+        if (! Schema::hasColumn('users', 'phone') || ! Schema::hasTable('seller_activity_logs')) {
+            $this->markTestSkipped('phone or seller_activity_logs');
+        }
+
+        $seller = $this->seller();
+
+        $this->actingAs($seller)
+            ->from(route('profile.index'))
+            ->put(route('profile.update-whatsapp'), [
+                'phone' => '(11) 98877-6655',
+            ])
+            ->assertRedirect(route('profile.index'));
+
+        $this->assertSame(0, SellerActivityLog::query()
+            ->where('action', SellerActivityLogService::PROFILE_WHATSAPP_UPDATED)
+            ->count());
     }
 }

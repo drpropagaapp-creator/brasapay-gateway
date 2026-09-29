@@ -178,7 +178,7 @@ class PaymentsController extends Controller
             $status = $result['status'] ?? 'pending';
             if (in_array($status, ['paid', 'settled', 'approved', 'completed'], true)) {
                 $order->update(['status' => 'completed', 'payment_method' => 'card']);
-                $order->grantPurchasedProductAccessToBuyer();
+                app(\App\Services\SubscriptionRenewalService::class)->syncFromPaidOrder($order->fresh());
                 event(new \App\Events\OrderCompleted($order));
             }
 

@@ -13,6 +13,7 @@ use App\Support\RemoteStorage;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Rules\Password;
 use Inertia\Inertia;
@@ -45,7 +46,7 @@ class ProfileController extends Controller
             'kyc_company_nature_suggestion' => PjConversion::isCollectingOrPending($user)
                 ? \App\Support\KycRequiredDocuments::suggestCompanyNatureFromLookup($user)
                 : null,
-            'kyc_uploaded_kinds' => \Illuminate\Support\Facades\Schema::hasTable('kyc_documents')
+            'kyc_uploaded_kinds' => Schema::hasTable('kyc_documents')
                 ? \App\Models\KycDocument::query()
                     ->where('user_id', $user->kycSubjectUser()->id)
                     ->active()
@@ -158,6 +159,47 @@ class ProfileController extends Controller
         return back()->with('success', 'Nome de usuário atualizado.');
     }
 
+    public function updateWhatsapp(Request $request): RedirectResponse
+    {
+        $user = $request->user();
+        if (! $user) {
+            abort(403);
+        }
+
+        if (! Schema::hasColumn('users', 'phone')) {
+            return back()->withErrors(['phone' => 'Não foi possível atualizar o WhatsApp.']);
+        }
+
+        $validated = $request->validate([
+            'phone' => ['required', 'string', 'max:32'],
+        ], [
+            'phone.required' => 'Informe um WhatsApp válido com DDD (10 ou 11 dígitos).',
+        ]);
+
+        $phoneDigits = $this->normalizeWhatsappDigits((string) $validated['phone']);
+        if ($phoneDigits === null) {
+            return back()->withErrors([
+                'phone' => 'Informe um WhatsApp válido com DDD (10 ou 11 dígitos).',
+            ])->withInput();
+        }
+
+        $previous = (string) ($user->phone ?? '');
+        if ($this->sameWhatsappNumber($previous, $phoneDigits)) {
+            return back()->with('success', 'WhatsApp atualizado.');
+        }
+
+        $user->phone = $phoneDigits;
+        $user->save();
+
+        $this->logSellerActivity(SellerActivityLogService::PROFILE_WHATSAPP_UPDATED, $user, [
+            'changed' => ['phone'],
+            'phone_from' => SellerActivityLogService::maskValue($previous !== '' ? $previous : null),
+            'phone_to' => SellerActivityLogService::maskValue($phoneDigits),
+        ]);
+
+        return back()->with('success', 'WhatsApp atualizado.');
+    }
+
     public function updatePassword(Request $request): RedirectResponse
     {
         $user = $request->user();
@@ -185,5 +227,35 @@ class ProfileController extends Controller
         $this->logSellerActivity(SellerActivityLogService::PROFILE_PASSWORD_UPDATED, $user);
 
         return redirect()->route('profile.index')->with('success', 'Senha alterada.');
+    }
+
+    /**
+     * Normaliza WhatsApp BR para dígitos com DDI 55 (12 ou 13 dígitos).
+     */
+    private function normalizeWhatsappDigits(string $phone): ?string
+    {
+        $digits = preg_replace('/\D/', '', $phone) ?? '';
+        if (strlen($digits) < 10) {
+            return null;
+        }
+        if (strlen($digits) <= 11 && ! str_starts_with($digits, '55')) {
+            $digits = '55'.$digits;
+        }
+        if (strlen($digits) < 12 || strlen($digits) > 13) {
+            return null;
+        }
+
+        return $digits;
+    }
+
+    private function sameWhatsappNumber(string $current, string $incoming): bool
+    {
+        $currentDigits = $this->normalizeWhatsappDigits($current);
+        if ($currentDigits === null) {
+            $fallback = preg_replace('/\D/', '', $current) ?? '';
+            $currentDigits = $fallback !== '' ? $fallback : null;
+        }
+
+        return $currentDigits !== null && $currentDigits === $incoming;
     }
 }

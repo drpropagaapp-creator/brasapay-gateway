@@ -6,6 +6,7 @@ import MemberAreaAppLayout from '@/Layouts/MemberAreaAppLayout.vue';
 import Button from '@/components/ui/Button.vue';
 import MemberCertificateHighlight from '@/components/member-area/MemberCertificateHighlight.vue';
 import MemberModuleRenewalPix from '@/components/member-area/MemberModuleRenewalPix.vue';
+import { useMemberAreaHref } from '@/composables/useMemberAreaHref';
 
 defineOptions({ layout: MemberAreaAppLayout });
 
@@ -51,6 +52,8 @@ const props = defineProps({
     base_url: { type: String, default: '' },
     slug: { type: String, required: true },
 });
+
+const { href } = useMemberAreaHref(props.slug, props.base_url);
 
 const hero = props.config?.hero ?? {};
 const heroDesktopBg = hero.image_url_desktop || hero.image_url || null;
@@ -137,7 +140,7 @@ function checkoutHref(item) {
                 <Link
                     v-for="item in continue_watching"
                     :key="item.lesson_id"
-                    :href="item.module_id ? `/m/${slug}/modulo/${item.module_id}?aula=${item.lesson_id}` : `/m/${slug}/aula/${item.lesson_id}`"
+                    :href="item.module_id ? `${href(`/modulo/${item.module_id}`)}?aula=${item.lesson_id}` : href(`/aula/${item.lesson_id}`)"
                     class="flex w-64 shrink-0 items-center gap-4 rounded-xl border border-zinc-700 bg-zinc-800/50 p-4 transition hover:bg-zinc-800"
                 >
                     <div class="relative h-14 w-24 shrink-0 overflow-hidden rounded-lg bg-zinc-700">
@@ -191,7 +194,7 @@ function checkoutHref(item) {
                     <template v-for="mod in section.modules" :key="mod.id">
                         <Link
                             v-if="!mod.is_locked"
-                            :href="`/m/${slug}/modulo/${mod.id}`"
+                            :href="href(`/modulo/${mod.id}`)"
                             class="flex w-64 shrink-0 flex-col rounded-xl overflow-hidden bg-zinc-800/50 text-left transition hover:bg-zinc-800"
                         >
                             <div :class="[(section.cover_mode === 'horizontal' ? 'aspect-video' : 'aspect-[2/3]'), 'relative w-full bg-zinc-700 flex items-center justify-center overflow-hidden']">
@@ -294,7 +297,7 @@ function checkoutHref(item) {
                         <p class="font-medium truncate">{{ ip.name }}</p>
                         <Link
                             v-if="ip.has_access"
-                            :href="`/m/${slug}/loja`"
+                            :href="href('/loja')"
                             class="mt-2 inline-block text-sm text-[var(--ma-primary)] hover:underline"
                         >
                             Acessar

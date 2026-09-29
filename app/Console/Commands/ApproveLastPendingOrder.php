@@ -5,7 +5,7 @@ namespace App\Console\Commands;
 use App\Events\OrderCompleted;
 use App\Models\Order;
 use App\Models\Product;
-use App\Models\Subscription;
+use App\Services\SubscriptionRenewalService;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Str;
@@ -58,21 +58,7 @@ class ApproveLastPendingOrder extends Command
                     $item->product->users()->syncWithoutDetaching([$order->user_id]);
                 }
 
-                if ($order->subscription_plan_id && $order->subscriptionPlan) {
-                    $plan = $order->subscriptionPlan;
-                    if (! $order->is_renewal && ! Subscription::where('user_id', $order->user_id)->where('product_id', $order->product_id)->where('subscription_plan_id', $plan->id)->where('status', Subscription::STATUS_ACTIVE)->exists()) {
-                        [$periodStart, $periodEnd] = $plan->getCurrentPeriod();
-                        Subscription::create([
-                            'tenant_id' => $order->tenant_id,
-                            'user_id' => $order->user_id,
-                            'product_id' => $order->product_id,
-                            'subscription_plan_id' => $plan->id,
-                            'status' => Subscription::STATUS_ACTIVE,
-                            'current_period_start' => $periodStart,
-                            'current_period_end' => $periodEnd,
-                        ]);
-                    }
-                }
+                app(SubscriptionRenewalService::class)->syncFromPaidOrder($order);
 
                 event(new OrderCompleted($order));
             } catch (\Throwable $e) {

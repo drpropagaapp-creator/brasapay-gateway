@@ -7,41 +7,41 @@ use App\Events\OrderCompleted;
 use App\Events\OrderRejected;
 use App\Events\PixGenerated;
 use App\Events\SubscriptionCancelled;
+use App\Listeners\CademiEventSubscriber;
 use App\Listeners\CancelVersellPixAutoOnSubscriptionCancelled;
 use App\Listeners\CreditTenantWalletOnOrderCompleted;
+use App\Listeners\ForgetInertiaSharedCacheOnOrderCompleted;
+use App\Listeners\GrantMemberModuleAccessOnOrderCompleted;
+use App\Listeners\IncrementCouponUsageOnOrderCompleted;
+use App\Listeners\MetaConversionsEventSubscriber;
 use App\Listeners\NotifyCoproducersOnOrderCompleted;
 use App\Listeners\RecordAffiliateCommissionOnOrderCompleted;
 use App\Listeners\RecordReferralCommissionOnOrderCompleted;
-use App\Listeners\ForgetInertiaSharedCacheOnOrderCompleted;
-use App\Listeners\SyncSalesAchievementsOnOrderCompleted;
-use App\Listeners\IncrementCouponUsageOnOrderCompleted;
 use App\Listeners\RevokeProductAccessOnOrderRejected;
-use App\Listeners\GrantMemberModuleAccessOnOrderCompleted;
 use App\Listeners\SendAccessEmailOnOrderCompleted;
+use App\Listeners\SendApiApplicationWebhookListener;
 use App\Listeners\SendPanelPushOnBoletoGenerated;
 use App\Listeners\SendPanelPushOnOrderCompleted;
 use App\Listeners\SendPanelPushOnPixGenerated;
-use App\Listeners\CademiEventSubscriber;
-use App\Listeners\MetaConversionsEventSubscriber;
 use App\Listeners\SpedyEventSubscriber;
+use App\Listeners\SyncSalesAchievementsOnOrderCompleted;
 use App\Listeners\UtmifyEventSubscriber;
-use App\Listeners\SendApiApplicationWebhookListener;
 use App\Listeners\WebhookEventSubscriber;
-use App\Support\DockerInternalDatabaseConfig;
-use App\Support\DockerSetupState;
-use Illuminate\Cache\RateLimiting\Limit;
-use Illuminate\Http\Request;
 use App\Models\Order;
 use App\Models\Product;
 use App\Models\RefundRequest;
 use App\Policies\OrderPolicy;
 use App\Policies\ProductPolicy;
 use App\Policies\RefundRequestPolicy;
+use App\Support\DockerInternalDatabaseConfig;
+use App\Support\DockerSetupState;
+use Illuminate\Cache\RateLimiting\Limit;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Gate;
-use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\Queue;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\Redis;
 use Illuminate\Support\ServiceProvider;
 
@@ -255,6 +255,9 @@ class AppServiceProvider extends ServiceProvider
         Event::subscribe(SpedyEventSubscriber::class);
         Event::subscribe(CademiEventSubscriber::class);
         Event::subscribe(\App\Listeners\IntegraxEventSubscriber::class);
+        Event::subscribe(\App\Listeners\UazapiEventSubscriber::class);
+        Event::subscribe(\App\Listeners\EvolutionEventSubscriber::class);
+        Event::subscribe(\App\Listeners\PlatformWhatsappEventSubscriber::class);
 
     }
 
@@ -348,6 +351,7 @@ class AppServiceProvider extends ServiceProvider
         $connections = config('queue.connections', []);
         if (! is_array($connections) || $connections === []) {
             config(['queue.default' => 'sync']);
+
             return;
         }
         if (! array_key_exists($default, $connections)) {

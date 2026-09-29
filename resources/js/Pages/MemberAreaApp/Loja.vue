@@ -2,6 +2,7 @@
 import { Link } from '@inertiajs/vue3';
 import MemberAreaAppLayout from '@/Layouts/MemberAreaAppLayout.vue';
 import Button from '@/components/ui/Button.vue';
+import { useMemberAreaHref } from '@/composables/useMemberAreaHref';
 
 defineOptions({ layout: MemberAreaAppLayout });
 
@@ -10,7 +11,10 @@ const props = defineProps({
     config: { type: Object, default: () => ({}) },
     items: { type: Array, default: () => [] },
     slug: { type: String, required: true },
+    base_url: { type: String, default: '' },
 });
+
+const { href } = useMemberAreaHref(props.slug, props.base_url);
 
 function checkoutHref(item) {
     if (item?.checkout_url) {
@@ -36,7 +40,7 @@ function checkoutHref(item) {
                     <h2 class="font-semibold">{{ item.name }}</h2>
                     <p v-if="item.description" class="mt-1 text-sm text-zinc-400 line-clamp-2">{{ item.description }}</p>
                     <div class="mt-4">
-                        <Link v-if="item.has_access" :href="`/m/${slug}`" class="text-sm text-[var(--ma-primary)] hover:underline">Acessar área</Link>
+                        <Link v-if="item.has_access" :href="href('/')" class="text-sm text-[var(--ma-primary)] hover:underline">Acessar área</Link>
                         <Button
                             v-else
                             as="a"

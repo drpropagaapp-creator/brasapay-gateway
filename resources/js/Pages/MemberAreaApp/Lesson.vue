@@ -6,6 +6,7 @@ import Button from '@/components/ui/Button.vue';
 import MemberAreaVideoPlayer from '@/components/MemberAreaVideoPlayer.vue';
 import { formatLessonDescription } from '@/lib/utils';
 import { sanitizeHtmlAllowlist } from '@/lib/sanitizeHtml';
+import { completeMemberLesson, useMemberAreaHref } from '@/composables/useMemberAreaHref';
 
 defineOptions({ layout: MemberAreaAppLayout });
 
@@ -14,6 +15,7 @@ const props = defineProps({
     config: { type: Object, default: () => ({}) },
     lesson: { type: Object, required: true },
     slug: { type: String, required: true },
+    base_url: { type: String, default: '' },
     comments_enabled: { type: Boolean, default: false },
     comments_require_approval: { type: Boolean, default: true },
     lesson_comments: { type: Array, default: () => [] },
@@ -37,6 +39,8 @@ function normalizePdfFiles(lesson) {
 
 const pdfFiles = computed(() => normalizePdfFiles(props.lesson));
 
+const { href } = useMemberAreaHref(props.slug, props.base_url);
+
 function safeLessonHtml(html) {
     return sanitizeHtmlAllowlist(html, {
         FORBID_TAGS: ['script', 'iframe', 'object', 'embed'],
@@ -48,12 +52,14 @@ const commentContent = ref('');
 const commentSubmitting = ref(false);
 let autoCompleteTimer = null;
 
-function markComplete() {
+async function markComplete() {
     if (completed.value) return;
-    router.post(`/m/${props.slug}/aula/${props.lesson.id}/complete`, {}, {
-        preserveScroll: true,
-        onSuccess: () => { completed.value = true; },
-    });
+    completed.value = true;
+    try {
+        await completeMemberLesson(href(`/aula/${props.lesson.id}/complete`));
+    } catch (_) {
+        completed.value = false;
+    }
 }
 
 /** Vídeo: marcar concluído ao assistir 80% ou ao terminar. */
@@ -84,8 +90,9 @@ onUnmounted(() => {
 function submitComment() {
     if (!props.comments_enabled || !commentContent.value?.trim()) return;
     commentSubmitting.value = true;
-    router.post(`/m/${props.slug}/aula/${props.lesson.id}/comments`, { content: commentContent.value.trim() }, {
+    router.post(href(`/aula/${props.lesson.id}/comments`), { content: commentContent.value.trim() }, {
         preserveScroll: true,
+        preserveState: true,
         onFinish: () => { commentSubmitting.value = false; commentContent.value = ''; },
     });
 }
@@ -101,7 +108,7 @@ function formatCommentDate(iso) {
 <template>
     <div class="space-y-6">
         <div class="flex items-center gap-2 text-sm text-zinc-400">
-            <Link :href="`/m/${slug}/modulos`" class="hover:text-[var(--ma-primary)]">Módulos</Link>
+            <Link :href="href('/modulos')" class="hover:text-[var(--ma-primary)]">Módulos</Link>
             <span v-if="lesson.section"> / {{ lesson.section.title }}</span>
             <span v-if="lesson.module"> / {{ lesson.module.title }}</span>
         </div>
@@ -162,7 +169,7 @@ function formatCommentDate(iso) {
         </div>
 
         <div class="flex items-center justify-between">
-            <Link :href="`/m/${slug}/modulos`" class="text-sm text-zinc-400 hover:text-[var(--ma-primary)]">← Voltar aos módulos</Link>
+            <Link :href="href('/modulos')" class="text-sm text-zinc-400 hover:text-[var(--ma-primary)]">← Voltar aos módulos</Link>
             <Button @click="markComplete" :disabled="completed">
                 {{ completed ? 'Concluído' : 'Marcar como concluído' }}
             </Button>

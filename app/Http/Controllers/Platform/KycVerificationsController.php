@@ -2,6 +2,8 @@
 
 namespace App\Http\Controllers\Platform;
 
+use App\Events\KycApproved;
+use App\Events\KycRejected;
 use App\Http\Controllers\Concerns\RequiresPlatformStepUp;
 use App\Http\Controllers\Controller;
 use App\Models\KycDocument;
@@ -158,6 +160,7 @@ class KycVerificationsController extends Controller
         PlatformAuditService::log('platform.kyc.approved', ['merchant_id' => $user->id], $request);
 
         $platformEmailNotifications->kycApproved($user->fresh());
+        KycApproved::dispatch($user->fresh());
 
         return redirect()->route('plataforma.kyc.show', ['user' => $user->id])->with('success', 'Verificação aprovada.');
     }
@@ -183,6 +186,7 @@ class KycVerificationsController extends Controller
         PlatformAuditService::log('platform.kyc.rejected', ['merchant_id' => $user->id, 'reason' => $validated['reason']], $request);
 
         $platformEmailNotifications->kycRejected($user->fresh(), $validated['reason']);
+        KycRejected::dispatch($user->fresh(), $validated['reason']);
 
         return redirect()->route('plataforma.kyc.show', ['user' => $user->id])->with('success', 'Verificação rejeitada. O infoprodutor pode reenviar documentos.');
     }

@@ -70,6 +70,8 @@ return [
      */
     'subscriptions' => [
         'cancel_grace_days_after_period_end' => max(0, (int) env('GETFY_SUBSCRIPTION_CANCEL_GRACE_DAYS', 14)),
+        /** Dias relativos ao current_period_end para e-mail de renovação (negativo = em atraso). */
+        'reminder_days' => [7, 3, 1, 0, -1, -2, -3, -7],
     ],
 
     /**

@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue';
-import { router } from '@inertiajs/vue3';
+import { router, Link } from '@inertiajs/vue3';
 import VueApexCharts from 'vue3-apexcharts';
 import LayoutInfoprodutor from '@/Layouts/LayoutInfoprodutor.vue';
 import AuroraPageHeader from '@/components/aurora/AuroraPageHeader.vue';
@@ -21,6 +21,7 @@ import {
     EyeOff,
     XCircle,
     Download,
+    MessageCircle,
 } from 'lucide-vue-next';
 
 defineOptions({ layout: LayoutInfoprodutor });
@@ -67,6 +68,7 @@ const props = defineProps({
     abandonados_com_email: { type: Array, default: () => [] },
     reembolsos_count: { type: Number, default: 0 },
     reembolsos_total: { type: Number, default: 0 },
+    whatsapp_recovery_available: { type: Boolean, default: false },
 });
 
 const periodOptions = [
@@ -438,13 +440,23 @@ const chartOptionsFormas = computed(() => ({
                     <XCircle class="h-4 w-4 text-zinc-500" />
                     Vendas abandonadas com e-mail (para recuperação)
                 </h2>
-                <a
-                    :href="abandonedExportUrl"
-                    :class="[btnSecondary, 'shrink-0']"
-                >
-                    <Download class="h-4 w-4 shrink-0" aria-hidden="true" />
-                    {{ t('reports.export_abandoned_csv', 'Exportar carrinhos abandonados (CSV)') }}
-                </a>
+                <div class="flex flex-wrap items-center gap-2">
+                    <a
+                        :href="abandonedExportUrl"
+                        :class="[btnSecondary, 'shrink-0']"
+                    >
+                        <Download class="h-4 w-4 shrink-0" aria-hidden="true" />
+                        {{ t('reports.export_abandoned_csv', 'Exportar carrinhos abandonados (CSV)') }}
+                    </a>
+                    <Link
+                        v-if="whatsapp_recovery_available"
+                        href="/relatorios/whatsapp"
+                        :class="[btnSecondary, 'shrink-0']"
+                    >
+                        <MessageCircle class="h-4 w-4 shrink-0" aria-hidden="true" />
+                        Painel WhatsApp
+                    </Link>
+                </div>
             </div>
             <p class="aurora-fg-muted mt-2 px-4 text-xs">
                 {{ t('reports.export_abandoned_hint', 'Inclui apenas formulários abandonados com e-mail (1 registro por e-mail e produto no período).') }}

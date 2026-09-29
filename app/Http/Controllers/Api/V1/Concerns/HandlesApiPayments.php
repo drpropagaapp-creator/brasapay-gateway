@@ -15,6 +15,7 @@ use App\Services\BuyerAccountService;
 use App\Services\MerchantOperationalGuard;
 use App\Services\MinimumChargeService;
 use App\Services\Shipping\CheckoutShippingHelper;
+use App\Services\SubscriptionRenewalService;
 use App\Support\FakeConsumerData;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\Request;
@@ -195,6 +196,7 @@ trait HandlesApiPayments
             'period_end' => $periodEnd,
             'is_renewal' => false,
         ];
+        $orderPayload = app(SubscriptionRenewalService::class)->withRenewalFlag($orderPayload);
         if ($shippingResolved !== null) {
             $orderPayload['shipping_amount'] = $shippingResolved['shipping_amount'];
             $orderPayload['shipping_store_id'] = $shippingResolved['shipping_store_id'];

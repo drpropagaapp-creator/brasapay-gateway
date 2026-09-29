@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Platform;
 
+use App\Events\SellerRejected;
 use App\Http\Controllers\Concerns\BuildsMerchantWalletProps;
 use App\Http\Controllers\Concerns\RequiresPlatformStepUp;
 use App\Http\Controllers\Concerns\ProvidesPlatformGatewayProps;
@@ -1094,6 +1095,10 @@ class UsersController extends Controller
                 'from' => $prevAccountStatus,
                 'to' => $user->account_status,
             ], $request);
+
+            if (($user->account_status ?? null) === 'rejected' && $user->role === User::ROLE_INFOPRODUTOR) {
+                SellerRejected::dispatch($user->fresh());
+            }
         }
 
         PlatformAuditService::log('platform.merchant.updated', ['user_id' => $user->id], $request);

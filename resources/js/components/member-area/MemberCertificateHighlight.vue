@@ -2,16 +2,18 @@
 import { computed } from 'vue';
 import { Link, usePage } from '@inertiajs/vue3';
 import { Award, Sparkles, CheckCircle2, ArrowRight, BookOpen, Calendar } from 'lucide-vue-next';
+import { useMemberAreaHref } from '@/composables/useMemberAreaHref';
 
 const props = defineProps({
     slug: { type: String, required: true },
 });
 
 const page = usePage();
+const { href } = useMemberAreaHref(props.slug, page.props.base_url ?? '');
 const cert = computed(() => page.props.member_certificate ?? { enabled: false });
 const release = computed(() => cert.value.release ?? {});
 
-const certHref = computed(() => `/m/${props.slug}/certificado`);
+const certHref = computed(() => href('/certificado'));
 
 const status = computed(() => {
     if (!cert.value.enabled) return 'hidden';

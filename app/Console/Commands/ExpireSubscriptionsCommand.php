@@ -6,6 +6,8 @@ use App\Events\SubscriptionCancelled;
 use App\Events\SubscriptionPastDue;
 use App\Models\Subscription;
 use App\Models\SubscriptionPlan;
+use App\Services\SubscriptionReminderService;
+use Carbon\Carbon;
 use Illuminate\Console\Command;
 
 class ExpireSubscriptionsCommand extends Command
@@ -16,20 +18,29 @@ class ExpireSubscriptionsCommand extends Command
 
     public function handle(): int
     {
-        $today = now()->startOfDay()->toDateString();
+        $todayDate = now()->startOfDay()->toDateString();
 
         $toPastDue = Subscription::query()
             ->where('status', Subscription::STATUS_ACTIVE)
             ->whereNotNull('current_period_end')
-            ->whereDate('current_period_end', '<', $today)
+            ->whereDate('current_period_end', '<', $todayDate)
             ->whereHas('subscriptionPlan', fn ($q) => $q->where('interval', '!=', SubscriptionPlan::INTERVAL_LIFETIME))
             ->with(['user', 'product', 'subscriptionPlan'])
             ->get();
 
         $pastDueCount = 0;
+        $reminders = app(SubscriptionReminderService::class);
+        $today = Carbon::today();
         foreach ($toPastDue as $subscription) {
             $subscription->update(['status' => Subscription::STATUS_PAST_DUE]);
-            event(new SubscriptionPastDue($subscription->fresh()));
+            $fresh = $subscription->fresh();
+            if (! $fresh) {
+                continue;
+            }
+            event(new SubscriptionPastDue($fresh));
+            $periodEnd = Carbon::parse($subscription->current_period_end)->startOfDay();
+            $daysLeft = (int) $today->copy()->startOfDay()->diffInDays($periodEnd, false);
+            $reminders->sendForSubscription($fresh, $reminders->stageForDaysLeft($daysLeft), $today);
             $pastDueCount++;
         }
         $this->info("Assinaturas marcadas como past_due: {$pastDueCount}");

@@ -111,4 +111,24 @@ class ApiWebhookDeliveryService
 
         DeliverApiWebhookJob::dispatch($delivery->id)->delay($delays[$attempt]);
     }
+
+    public function retryNow(ApiWebhookDelivery $delivery): ApiWebhookDelivery
+    {
+        $app = ApiApplication::query()->find($delivery->api_application_id);
+        $url = is_string($app?->webhook_url) && $app->webhook_url !== ''
+            ? (string) $app->webhook_url
+            : (string) $delivery->url;
+
+        $delivery->update([
+            'status' => ApiWebhookDelivery::STATUS_PENDING,
+            'attempt' => 0,
+            'next_retry_at' => now(),
+            'delivered_at' => null,
+            'url' => $url,
+        ]);
+
+        DeliverApiWebhookJob::dispatch($delivery->id);
+
+        return $delivery->fresh() ?? $delivery;
+    }
 }

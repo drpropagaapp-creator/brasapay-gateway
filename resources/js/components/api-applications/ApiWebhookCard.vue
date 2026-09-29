@@ -22,6 +22,8 @@ const expanded = ref(false);
 const loadingMore = ref(false);
 const deliveries = ref([...props.recentDeliveries]);
 const meta = ref({ page: 1, last_page: 1 });
+const retryingId = ref('');
+const retryError = ref('');
 
 const eventLabel = computed(() => {
     if (props.webhook.events_mode === 'all') return 'Todos os eventos';
@@ -100,6 +102,29 @@ async function fetchDeliveries(page = 1) {
         meta.value = data.meta || meta.value;
     } finally {
         loadingMore.value = false;
+    }
+}
+
+async function retryDelivery(delivery) {
+    if (!delivery?.id || retryingId.value) return;
+    retryingId.value = delivery.id;
+    retryError.value = '';
+    try {
+        const { data } = await axios.post(
+            `/aplicacoes-api/${props.applicationId}/webhook/deliveries/${delivery.id}/retry`,
+            {},
+            { headers: { 'X-CSRF-TOKEN': getCsrfToken() } },
+        );
+        const updated = data.delivery;
+        deliveries.value = deliveries.value.map((item) => (
+            item.id === delivery.id && updated
+                ? { ...item, ...updated }
+                : item
+        ));
+    } catch (error) {
+        retryError.value = error?.response?.data?.message || 'Não foi possível reenviar esta entrega.';
+    } finally {
+        retryingId.value = '';
     }
 }
 
@@ -185,17 +210,31 @@ function statusClass(status) {
             <div v-if="loadingMore && !deliveries.length" class="flex justify-center py-6">
                 <Loader2 class="h-5 w-5 animate-spin text-zinc-400" />
             </div>
-            <ul v-else-if="deliveries.length" class="divide-y divide-zinc-200 dark:divide-zinc-700">
-                <li v-for="d in deliveries" :key="d.id" class="flex flex-wrap items-center justify-between gap-2 py-2.5 text-sm">
-                    <span class="font-mono text-xs text-zinc-800 dark:text-zinc-200">{{ d.event }}</span>
-                    <span class="text-xs text-zinc-500">{{ formatDate(d.created_at) }}</span>
-                    <span class="text-xs font-medium" :class="statusClass(d.status)">
-                        {{ d.status }}
-                        <template v-if="d.last_status_code"> · HTTP {{ d.last_status_code }}</template>
-                    </span>
-                </li>
-            </ul>
-            <p v-else class="py-4 text-center text-sm text-zinc-500">Nenhuma entrega registrada ainda.</p>
+            <template v-else>
+                <p v-if="retryError" class="mb-3 text-xs text-red-600 dark:text-red-400">{{ retryError }}</p>
+                <ul v-if="deliveries.length" class="divide-y divide-zinc-200 dark:divide-zinc-700">
+                    <li v-for="d in deliveries" :key="d.id" class="flex flex-wrap items-center justify-between gap-2 py-2.5 text-sm">
+                        <span class="font-mono text-xs text-zinc-800 dark:text-zinc-200">{{ d.event }}</span>
+                        <span class="text-xs text-zinc-500">{{ formatDate(d.created_at) }}</span>
+                        <span class="text-xs font-medium" :class="statusClass(d.status)">
+                            {{ d.status }}
+                            <template v-if="d.last_status_code"> · HTTP {{ d.last_status_code }}</template>
+                        </span>
+                        <button
+                            type="button"
+                            class="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-zinc-600 hover:bg-zinc-100 disabled:opacity-50 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                            :disabled="retryingId === d.id"
+                            title="Reenviar este evento para a URL atual"
+                            @click="retryDelivery(d)"
+                        >
+                            <Loader2 v-if="retryingId === d.id" class="h-3.5 w-3.5 animate-spin" />
+                            <RefreshCw v-else class="h-3.5 w-3.5" />
+                            Reenviar
+                        </button>
+                    </li>
+                </ul>
+                <p v-else class="py-4 text-center text-sm text-zinc-500">Nenhuma entrega registrada ainda.</p>
+            </template>
             <Button
                 v-if="meta.page < meta.last_page"
                 type="button"

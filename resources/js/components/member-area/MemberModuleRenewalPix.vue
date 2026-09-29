@@ -1,14 +1,19 @@
 <script setup>
 import { computed, onUnmounted, ref, watch } from 'vue';
 import axios from 'axios';
-import { router } from '@inertiajs/vue3';
+import { router, usePage } from '@inertiajs/vue3';
 import Button from '@/components/ui/Button.vue';
+import { useMemberAreaHref } from '@/composables/useMemberAreaHref';
 
 const props = defineProps({
     slug: { type: String, required: true },
     module: { type: Object, required: true },
     compact: { type: Boolean, default: false },
+    base_url: { type: String, default: '' },
 });
+
+const page = usePage();
+const { href } = useMemberAreaHref(props.slug, props.base_url || page.props.base_url || '');
 
 const open = ref(false);
 const loading = ref(false);
@@ -35,7 +40,7 @@ const qrcodeSrc = computed(() => {
     return `data:image/png;base64,${q}`;
 });
 
-const pixUrl = computed(() => `/m/${props.slug}/modulo/${props.module.id}/renovar-pix`);
+const pixUrl = computed(() => href(`/modulo/${props.module.id}/renovar-pix`));
 
 watch(() => props.module?.id, () => {
     close();

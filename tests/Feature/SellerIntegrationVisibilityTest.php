@@ -2,14 +2,24 @@
 
 namespace Tests\Feature;
 
+use App\Http\Middleware\EnsureInstalled;
 use App\Models\Setting;
 use App\Models\User;
 use App\Services\SellerIntegrationVisibility;
+use Illuminate\Foundation\Http\Middleware\ValidateCsrfToken;
 use Inertia\Testing\AssertableInertia as Assert;
 use Tests\TestCase;
 
 class SellerIntegrationVisibilityTest extends TestCase
 {
+    protected function setUp(): void
+    {
+        parent::setUp();
+        $this->withoutMiddleware([
+            EnsureInstalled::class,
+            ValidateCsrfToken::class,
+        ]);
+    }
     private function makeSeller(): User
     {
         $seller = User::factory()->create(['role' => User::ROLE_INFOPRODUTOR]);
@@ -33,12 +43,18 @@ class SellerIntegrationVisibilityTest extends TestCase
     public function test_all_integrations_are_visible_by_default(): void
     {
         foreach (SellerIntegrationVisibility::ids() as $id) {
-            $this->assertTrue(SellerIntegrationVisibility::globalEnabled($id));
+            $this->assertSame(
+                SellerIntegrationVisibility::definition($id)['default'],
+                SellerIntegrationVisibility::globalEnabled($id)
+            );
         }
 
         $seller = $this->makeSeller();
         $this->assertSame(
-            SellerIntegrationVisibility::ids(),
+            array_values(array_filter(
+                SellerIntegrationVisibility::ids(),
+                fn (string $id) => SellerIntegrationVisibility::definition($id)['default']
+            )),
             SellerIntegrationVisibility::visibleIdsForTenant((int) $seller->id)
         );
     }
@@ -75,6 +91,8 @@ class SellerIntegrationVisibilityTest extends TestCase
                 ->where('visible_integrations', [
                     SellerIntegrationVisibility::WEBHOOK,
                     SellerIntegrationVisibility::CADEMI,
+                    SellerIntegrationVisibility::UAZAPI,
+                    SellerIntegrationVisibility::EVOLUTION,
                 ])
             );
     }
@@ -121,7 +139,7 @@ class SellerIntegrationVisibilityTest extends TestCase
             ->get(route('integrations.index'))
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
-                ->where('visible_integrations', fn ($ids) => in_array(SellerIntegrationVisibility::UTMIFY, $ids, true))
+                ->where('visible_integrations', fn ($ids) => collect($ids)->contains(SellerIntegrationVisibility::UTMIFY))
             );
 
         $this->actingAs($seller)
@@ -153,7 +171,7 @@ class SellerIntegrationVisibilityTest extends TestCase
             ->get(route('integrations.index'))
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
-                ->where('visible_integrations', fn ($ids) => ! in_array(SellerIntegrationVisibility::CADEMI, $ids, true))
+                ->where('visible_integrations', fn ($ids) => ! collect($ids)->contains(SellerIntegrationVisibility::CADEMI))
             );
     }
 
@@ -224,8 +242,35 @@ class SellerIntegrationVisibilityTest extends TestCase
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->component('Settings/Index')
-                ->has('seller_integrations_catalog', 4)
+                ->has('seller_integrations_catalog', 6)
                 ->where('settings.integration_webhook_enabled', true)
+                ->where('settings.integration_uazapi_enabled', true)
+                ->where('settings.integration_evolution_enabled', true)
+            );
+    }
+
+    public function test_admin_can_persist_whatsapp_visibility_toggle(): void
+    {
+        $admin = $this->makeAdmin();
+
+        $this->actingAs($admin)
+            ->put('/plataforma/configuracoes', [
+                'integration_utmify_enabled' => true,
+                'integration_webhook_enabled' => true,
+                'integration_spedy_enabled' => true,
+                'integration_cademi_enabled' => true,
+                'integration_uazapi_enabled' => true,
+                'integration_evolution_enabled' => true,
+            ])
+            ->assertRedirect();
+
+        $this->assertTrue(SellerIntegrationVisibility::globalEnabled(SellerIntegrationVisibility::UAZAPI));
+
+        $this->actingAs($admin)
+            ->get('/plataforma/configuracoes?tab=integracoes')
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('settings.integration_uazapi_enabled', true)
             );
     }
 }

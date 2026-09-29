@@ -430,6 +430,7 @@ async function initYoutubePlayer() {
                     applyYoutubeSpeed(selectedSpeed.value);
                     if (ytApplyQualityTimer) clearTimeout(ytApplyQualityTimer);
                     ytApplyQualityTimer = setTimeout(() => applyYoutubeQuality(selectedQuality.value), 500);
+                    markUserPlayed();
                 }
                 if (e?.data === window.YT.PlayerState?.PAUSED) {
                     ytIsPlaying.value = false;
@@ -816,6 +817,8 @@ onUnmounted(() => {
 watch(
     () => [props.src, providerType.value, youtubeVideoId.value],
     () => {
+        hasUserPlayed = false;
+        playbackStartedAt = 0;
         useVidstackFallback.value = false;
         ytLoadError.value = false;
         if (providerType.value === 'youtube') {
@@ -826,11 +829,7 @@ watch(
     }
 );
 
-const effectivePlaysinline = computed(() => {
-    if (providerType.value !== 'native') return props.playsinline;
-    if (props.playsinline === false) return false;
-    return !isMobile.value;
-});
+const effectivePlaysinline = computed(() => props.playsinline !== false);
 
 const showFullscreenOverlay = computed(() => {
     // iOS (Safari/Chrome) + YouTube legado: overlay porque o Vidstack não está montado neste branch.
@@ -871,7 +870,20 @@ const vidstackLayoutTranslations = {
     'Playback Rate': 'Velocidade',
 };
 
+let hasUserPlayed = false;
+let playbackStartedAt = 0;
+
+function markUserPlayed() {
+    if (!hasUserPlayed) {
+        hasUserPlayed = true;
+        playbackStartedAt = Date.now();
+    }
+}
+
 function onEnded() {
+    // YouTube/Vidstack disparam ended na carga/erro; só conclui após play real.
+    if (!hasUserPlayed) return;
+    if (Date.now() - playbackStartedAt < 8000) return;
     emit('ended');
 }
 
@@ -1063,6 +1075,7 @@ function onContextMenu(e) {
             :crossorigin="useNativeCrossOrigin ? '' : undefined"
             @vds-ended="onEnded"
             @vds-end="onEnded"
+            @vds-play="markUserPlayed"
         >
             <media-provider>
                 <media-poster v-if="posterUrl" class="vds-poster" :src="posterUrl" alt="" />

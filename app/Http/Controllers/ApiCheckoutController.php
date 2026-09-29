@@ -20,6 +20,7 @@ use App\Services\Checkout\CheckoutAbuseGuard;
 use App\Services\EfiPixRecorrenteService;
 use App\Services\MinimumChargeService;
 use App\Services\PaymentService;
+use App\Services\SubscriptionRenewalService;
 use App\Services\PushinPayPixRecorrenteService;
 use App\Services\Shipping\CheckoutShippingHelper;
 use App\Services\StorageService;
@@ -445,6 +446,7 @@ class ApiCheckoutController extends Controller
             'period_end' => $periodEnd,
             'is_renewal' => false,
         ];
+        $orderPayload = app(SubscriptionRenewalService::class)->withRenewalFlag($orderPayload);
         if ($shippingResolved !== null) {
             $orderPayload['shipping_amount'] = $shippingResolved['shipping_amount'];
             $orderPayload['shipping_store_id'] = $shippingResolved['shipping_store_id'];
@@ -807,6 +809,7 @@ class ApiCheckoutController extends Controller
                 if (in_array($status, ['paid', 'settled', 'approved', 'completed'], true)) {
                     $order->update(['status' => 'completed']);
                     $order->grantPurchasedProductAccessToBuyer();
+                    app(\App\Services\SubscriptionRenewalService::class)->syncFromPaidOrder($order->fresh());
                     event(new OrderCompleted($order));
                 } elseif (in_array($status, ['rejected', 'refused', 'cancelled', 'canceled', 'failed'], true)) {
                     $order->update(['status' => 'rejected']);

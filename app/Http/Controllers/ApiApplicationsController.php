@@ -6,6 +6,7 @@ use App\Models\ApiApplication;
 use App\Models\ApiKey;
 use App\Models\ApiWebhookDelivery;
 use App\Services\Api\ApiWebhookConfigService;
+use App\Services\Api\ApiWebhookDeliveryService;
 use App\Services\SellerActivityLogService;
 use App\Support\ApiScopes;
 use App\Support\ApiWebhookEvents;
@@ -26,6 +27,7 @@ class ApiApplicationsController extends Controller
 
     public function __construct(
         protected ApiWebhookConfigService $webhookConfigService,
+        protected ApiWebhookDeliveryService $webhookDeliveryService,
     ) {}
 
     public function index(): Response
@@ -412,6 +414,39 @@ class ApiApplicationsController extends Controller
                 'page' => $page,
                 'per_page' => $perPage,
                 'last_page' => (int) ceil($total / $perPage) ?: 1,
+            ],
+        ]);
+    }
+
+    public function retryWebhookDelivery(ApiApplication $apiApplication, ApiWebhookDelivery $delivery): JsonResponse
+    {
+        $this->authorizeTenant($apiApplication);
+
+        if ((int) $delivery->api_application_id !== (int) $apiApplication->id) {
+            abort(404);
+        }
+
+        if (! is_string($apiApplication->webhook_url) || $apiApplication->webhook_url === '') {
+            return response()->json(['message' => 'Configure uma URL de webhook antes de reenviar.'], 422);
+        }
+
+        $fresh = $this->webhookDeliveryService->retryNow($delivery);
+
+        $this->logActivity(SellerActivityLogService::API_WEBHOOK_DELIVERY_RETRIED, $apiApplication, [
+            'delivery_id' => $delivery->id,
+            'event' => $delivery->event,
+        ]);
+
+        return response()->json([
+            'message' => 'Reenvio agendado.',
+            'delivery' => [
+                'id' => $fresh->id,
+                'event' => $fresh->event,
+                'status' => $fresh->status,
+                'last_status_code' => $fresh->last_status_code,
+                'attempt' => $fresh->attempt,
+                'created_at' => $fresh->created_at?->toIso8601String(),
+                'delivered_at' => $fresh->delivered_at?->toIso8601String(),
             ],
         ]);
     }

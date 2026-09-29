@@ -72,6 +72,10 @@ const passwordForm = useForm({
     password_confirmation: '',
 });
 
+const whatsappForm = useForm({
+    phone: props.registration?.whatsapp || props.registration?.phone || '',
+});
+
 const pushForm = useForm({
     sale_approved: !!props.push_preferences.sale_approved,
     pix_generated: !!props.push_preferences.pix_generated,
@@ -132,6 +136,33 @@ function submitPassword() {
         onSuccess: () => passwordForm.reset(),
     });
 }
+
+function maskPhone(value) {
+    let digits = String(value || '').replace(/\D/g, '');
+    if (digits.startsWith('55') && digits.length >= 12) {
+        digits = digits.slice(2);
+    }
+    digits = digits.slice(0, 11);
+    if (digits.length <= 2) return digits;
+    if (digits.length <= 6) return `(${digits.slice(0, 2)}) ${digits.slice(2)}`;
+    if (digits.length <= 10) return `(${digits.slice(0, 2)}) ${digits.slice(2, 6)}-${digits.slice(6)}`;
+    return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7)}`;
+}
+
+function submitWhatsapp() {
+    whatsappForm.put('/meu-perfil/whatsapp', { preserveScroll: true });
+}
+
+watch(
+    () => props.registration?.whatsapp || props.registration?.phone || '',
+    (value) => {
+        if (whatsappForm.processing) {
+            return;
+        }
+        whatsappForm.phone = value;
+        whatsappForm.clearErrors();
+    }
+);
 
 function snap(value) {
     if (value === null || value === undefined || value === '') {
@@ -285,7 +316,7 @@ function cancelConversion() {
                 Meu perfil
             </h1>
             <p class="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
-                Atualize sua foto, nome, empresa e senha. E-mail e CPF/CNPJ não podem ser alterados.
+                Atualize sua foto, nome, empresa, WhatsApp e senha. E-mail e CPF/CNPJ não podem ser alterados.
             </p>
         </div>
 
@@ -452,7 +483,7 @@ function cancelConversion() {
                             Dados de cadastro
                         </h2>
                         <p class="text-xs text-zinc-500 dark:text-zinc-400">
-                            E-mail e CPF/CNPJ não são editáveis.
+                            WhatsApp pode ser corrigido. E-mail e CPF/CNPJ não são editáveis.
                         </p>
                     </div>
                 </div>
@@ -466,19 +497,45 @@ function cancelConversion() {
                     <dt class="text-xs font-medium uppercase tracking-wide text-zinc-500">E-mail</dt>
                     <dd class="mt-0.5 break-all text-zinc-900 dark:text-white">{{ snap(registration.email) }}</dd>
                 </div>
-                <div>
+                <div class="sm:col-span-2">
                     <dt class="text-xs font-medium uppercase tracking-wide text-zinc-500">WhatsApp</dt>
-                    <dd class="mt-0.5 flex flex-wrap items-center gap-2 text-zinc-900 dark:text-white">
-                        <span>{{ snap(registration.whatsapp || registration.phone) }}</span>
-                        <a
-                            v-if="registration.whatsapp_url"
-                            :href="registration.whatsapp_url"
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            class="inline-flex items-center rounded-lg bg-emerald-600 px-2 py-1 text-[11px] font-semibold text-white hover:bg-emerald-500"
-                        >
-                            Abrir WhatsApp
-                        </a>
+                    <dd class="mt-1.5">
+                        <form class="flex flex-col gap-2 sm:flex-row sm:items-start" @submit.prevent="submitWhatsapp">
+                            <div class="min-w-0 flex-1">
+                                <input
+                                    :value="whatsappForm.phone"
+                                    type="tel"
+                                    inputmode="tel"
+                                    required
+                                    maxlength="16"
+                                    autocomplete="tel"
+                                    placeholder="(11) 99999-9999"
+                                    class="block w-full rounded-xl border border-zinc-300 bg-white px-4 py-2.5 text-zinc-900 placeholder-zinc-400 shadow-sm focus:border-[var(--color-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]/20 dark:border-zinc-600 dark:bg-zinc-800 dark:text-white dark:placeholder-zinc-500"
+                                    @input="whatsappForm.phone = maskPhone($event.target.value)"
+                                />
+                                <p class="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+                                    Número usado para contato da plataforma. A chave PIX de saque não muda.
+                                </p>
+                                <p v-if="whatsappForm.errors.phone" class="mt-1 text-sm text-red-600 dark:text-red-400">
+                                    {{ whatsappForm.errors.phone }}
+                                </p>
+                            </div>
+                            <div class="flex shrink-0 flex-wrap items-center gap-2">
+                                <Button type="submit" size="sm" :disabled="whatsappForm.processing">
+                                    <Loader2 v-if="whatsappForm.processing" class="mr-2 h-4 w-4 animate-spin" />
+                                    Salvar WhatsApp
+                                </Button>
+                                <a
+                                    v-if="registration.whatsapp_url"
+                                    :href="registration.whatsapp_url"
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    class="inline-flex items-center rounded-lg bg-emerald-600 px-2.5 py-2 text-[11px] font-semibold text-white hover:bg-emerald-500"
+                                >
+                                    Abrir WhatsApp
+                                </a>
+                            </div>
+                        </form>
                     </dd>
                 </div>
                 <div>

@@ -4,7 +4,6 @@ namespace App\Services;
 
 use App\Events\OrderCompleted;
 use App\Models\Order;
-use App\Models\Subscription;
 use InvalidArgumentException;
 
 class OrderManualApprovalService
@@ -37,28 +36,7 @@ class OrderManualApprovalService
         $order->update($completedPatch);
         $order->refresh();
 
-        $order->grantPurchasedProductAccessToBuyer();
-
-        if ($order->subscription_plan_id && $order->subscriptionPlan) {
-            $plan = $order->subscriptionPlan;
-            $exists = Subscription::where('user_id', $order->user_id)
-                ->where('product_id', $order->product_id)
-                ->where('subscription_plan_id', $plan->id)
-                ->where('status', Subscription::STATUS_ACTIVE)
-                ->exists();
-            if (! $order->is_renewal && ! $exists) {
-                [$periodStart, $periodEnd] = $plan->getCurrentPeriod();
-                Subscription::create([
-                    'tenant_id' => $order->tenant_id,
-                    'user_id' => $order->user_id,
-                    'product_id' => $order->product_id,
-                    'subscription_plan_id' => $plan->id,
-                    'status' => Subscription::STATUS_ACTIVE,
-                    'current_period_start' => $periodStart,
-                    'current_period_end' => $periodEnd,
-                ]);
-            }
-        }
+        app(SubscriptionRenewalService::class)->syncFromPaidOrder($order);
 
         event(new OrderCompleted($order));
     }

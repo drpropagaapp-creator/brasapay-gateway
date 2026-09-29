@@ -7,6 +7,7 @@ use App\Models\Order;
 use App\Models\Product;
 use App\Models\User;
 use App\Services\Checkout\CheckoutAbandonmentMetrics;
+use App\Services\SellerIntegrationVisibility;
 use App\Support\SqlDialect;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
@@ -153,6 +154,10 @@ class RelatoriosController extends Controller
             'abandonados_com_email' => $abandonadosComEmail,
             'reembolsos_count' => $reembolsosCount,
             'reembolsos_total' => round($reembolsosTotal, 2),
+            'whatsapp_recovery_available' => $tenantId !== null && (
+                SellerIntegrationVisibility::effectiveForTenant(SellerIntegrationVisibility::UAZAPI, (int) $tenantId)
+                || SellerIntegrationVisibility::effectiveForTenant(SellerIntegrationVisibility::EVOLUTION, (int) $tenantId)
+            ),
         ]);
     }
 

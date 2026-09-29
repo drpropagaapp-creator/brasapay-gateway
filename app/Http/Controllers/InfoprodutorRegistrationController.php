@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Events\SellerRegistered;
 use App\Models\ProductCoproducer;
 use App\Models\TenantWallet;
 use App\Models\User;
@@ -444,6 +445,7 @@ class InfoprodutorRegistrationController extends Controller
         }
 
         $this->platformEmailNotifications->welcomeInfoprodutor($user->fresh());
+        SellerRegistered::dispatch($user->fresh());
 
         $verificationEmailSent = null;
         if (RegistrationEmailVerificationSettings::isEnabled()) {
@@ -649,6 +651,7 @@ class InfoprodutorRegistrationController extends Controller
         }
 
         $this->platformEmailNotifications->welcomeInfoprodutor($user->fresh());
+        SellerRegistered::dispatch($user->fresh());
 
         $verificationEmailSent = null;
         if ($needsEmailVerification) {
@@ -722,7 +725,11 @@ class InfoprodutorRegistrationController extends Controller
 
     private function rejectRegistrationHoneypot(Request $request): ?RedirectResponse
     {
-        if (trim((string) $request->input('website', '')) === '') {
+        $honeypot = trim((string) $request->input('sg_hp', ''));
+        if ($honeypot === '') {
+            $honeypot = trim((string) $request->input('website', ''));
+        }
+        if ($honeypot === '') {
             return null;
         }
 

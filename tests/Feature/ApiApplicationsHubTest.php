@@ -4,12 +4,15 @@ namespace Tests\Feature;
 
 use App\Http\Middleware\EnsureInstalled;
 use App\Http\Middleware\EnsureSellerPanel;
+use App\Jobs\DeliverApiWebhookJob;
 use App\Models\ApiApplication;
 use App\Models\ApiKey;
+use App\Models\ApiWebhookDelivery;
 use App\Models\User;
 use App\Services\Api\ApiWebhookDeliveryService;
 use App\Support\ApiScopes;
 use Illuminate\Foundation\Http\Middleware\ValidateCsrfToken;
+use Illuminate\Support\Facades\Queue;
 use Tests\TestCase;
 
 class ApiApplicationsHubTest extends TestCase
@@ -220,5 +223,66 @@ class ApiApplicationsHubTest extends TestCase
         $delivery = $service->dispatch($app, 'order.completed', ['order_id' => '1']);
 
         $this->assertNull($delivery);
+    }
+
+    public function test_panel_retries_failed_webhook_delivery(): void
+    {
+        Queue::fake();
+
+        $seller = $this->seller();
+        $app = $this->application($seller);
+        $app->update(['webhook_url' => 'https://example.com/hook-atual']);
+
+        $delivery = ApiWebhookDelivery::create([
+            'tenant_id' => $seller->tenant_id,
+            'api_application_id' => $app->id,
+            'event' => 'order.completed',
+            'payload' => ['event' => 'order.completed', 'order_id' => 99],
+            'url' => 'https://example.com/hook-antigo',
+            'status' => ApiWebhookDelivery::STATUS_FAILED,
+            'attempt' => 6,
+            'last_status_code' => 302,
+        ]);
+
+        $response = $this->actingAs($seller)
+            ->postJson("/aplicacoes-api/{$app->id}/webhook/deliveries/{$delivery->id}/retry");
+
+        $response->assertOk();
+        $response->assertJsonPath('message', 'Reenvio agendado.');
+        $response->assertJsonPath('delivery.id', $delivery->id);
+        $response->assertJsonPath('delivery.status', ApiWebhookDelivery::STATUS_PENDING);
+
+        $fresh = $delivery->fresh();
+        $this->assertSame(ApiWebhookDelivery::STATUS_PENDING, $fresh->status);
+        $this->assertSame(0, (int) $fresh->attempt);
+        $this->assertSame('https://example.com/hook-atual', $fresh->url);
+        $this->assertNull($fresh->delivered_at);
+
+        Queue::assertPushed(DeliverApiWebhookJob::class, fn (DeliverApiWebhookJob $job) => $job->deliveryId === $delivery->id);
+    }
+
+    public function test_panel_retry_rejects_delivery_from_another_application(): void
+    {
+        Queue::fake();
+
+        $seller = $this->seller();
+        $app = $this->application($seller);
+        $other = $this->application($this->seller());
+
+        $delivery = ApiWebhookDelivery::create([
+            'tenant_id' => $other->tenant_id,
+            'api_application_id' => $other->id,
+            'event' => 'order.completed',
+            'payload' => ['event' => 'order.completed'],
+            'url' => 'https://example.com/other',
+            'status' => ApiWebhookDelivery::STATUS_FAILED,
+            'attempt' => 1,
+        ]);
+
+        $this->actingAs($seller)
+            ->postJson("/aplicacoes-api/{$app->id}/webhook/deliveries/{$delivery->id}/retry")
+            ->assertNotFound();
+
+        Queue::assertNothingPushed();
     }
 }

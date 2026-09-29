@@ -7,6 +7,7 @@ import MemberAreaVideoPlayer from '@/components/MemberAreaVideoPlayer.vue';
 import MemberModuleRenewalPix from '@/components/member-area/MemberModuleRenewalPix.vue';
 import { formatLessonDescription } from '@/lib/utils';
 import { sanitizeHtmlAllowlist } from '@/lib/sanitizeHtml';
+import { completeMemberLesson, useMemberAreaHref } from '@/composables/useMemberAreaHref';
 import { Link as LinkIcon, CheckCircle, ChevronLeft, ChevronRight } from 'lucide-vue-next';
 
 defineOptions({ layout: MemberAreaAppLayout });
@@ -15,6 +16,7 @@ const props = defineProps({
     product: { type: Object, required: true },
     config: { type: Object, default: () => ({}) },
     slug: { type: String, required: true },
+    base_url: { type: String, default: '' },
     module: { type: Object, required: true },
     lessons: { type: Array, default: () => [] },
     current_lesson: { type: Object, default: null },
@@ -24,6 +26,8 @@ const props = defineProps({
     comments_require_approval: { type: Boolean, default: true },
     lesson_comments: { type: Array, default: () => [] },
 });
+
+const { href } = useMemberAreaHref(props.slug, props.base_url);
 
 function safeLessonHtml(html) {
     return sanitizeHtmlAllowlist(html, {
@@ -80,18 +84,18 @@ const nextUnlockedModule = computed(() => {
 });
 
 function lessonUrl(lessonId) {
-    return `/m/${props.slug}/modulo/${props.module.id}?aula=${lessonId}`;
+    return `${href(`/modulo/${props.module.id}`)}?aula=${lessonId}`;
 }
 
-function markComplete() {
+async function markComplete() {
     if (!props.current_lesson || completed.value) return;
-    router.post(`/m/${props.slug}/aula/${props.current_lesson.id}/complete`, {}, {
-        preserveScroll: true,
-        onSuccess: () => {
-            completed.value = true;
-            completedLessonIds.value.add(props.current_lesson.id);
-        },
-    });
+    completed.value = true;
+    try {
+        await completeMemberLesson(href(`/aula/${props.current_lesson.id}/complete`));
+        completedLessonIds.value.add(props.current_lesson.id);
+    } catch (_) {
+        completed.value = false;
+    }
 }
 
 /** Vídeo: marcar concluído automaticamente após 80% do tempo assistido. */
@@ -124,8 +128,9 @@ const commentSubmitting = ref(false);
 function submitComment() {
     if (!props.current_lesson || !props.comments_enabled || !commentContent.value?.trim()) return;
     commentSubmitting.value = true;
-    router.post(`/m/${props.slug}/aula/${props.current_lesson.id}/comments`, { content: commentContent.value.trim() }, {
+    router.post(href(`/aula/${props.current_lesson.id}/comments`), { content: commentContent.value.trim() }, {
         preserveScroll: true,
+        preserveState: true,
         onFinish: () => { commentSubmitting.value = false; commentContent.value = ''; },
     });
 }
@@ -231,14 +236,14 @@ function scrollCarousel(sectionId, direction) {
                 </div>
 
                 <div class="flex items-center justify-between">
-                    <Link :href="`/m/${slug}`" class="text-sm text-zinc-400 hover:text-[var(--ma-primary)]">← Voltar ao início</Link>
+                    <Link :href="href('/')" class="text-sm text-zinc-400 hover:text-[var(--ma-primary)]">← Voltar ao início</Link>
                     <div class="flex items-center gap-2">
                         <Button
                             v-if="allLessonsCompleted && nextUnlockedModule"
                             as-child
                             class="bg-emerald-600 hover:bg-emerald-500"
                         >
-                            <Link :href="`/m/${slug}/modulo/${nextUnlockedModule.id}`">
+                            <Link :href="href(`/modulo/${nextUnlockedModule.id}`)">
                                 Ir para o próximo módulo
                             </Link>
                         </Button>
@@ -290,7 +295,7 @@ function scrollCarousel(sectionId, direction) {
                         </div>
                     </template>
                     <p v-else class="text-zinc-500">Selecione uma aula na lista à direita.</p>
-                    <Link :href="`/m/${slug}`" class="mt-4 inline-block text-sm text-[var(--ma-primary)] hover:underline">← Voltar ao início</Link>
+                    <Link :href="href('/')" class="mt-4 inline-block text-sm text-[var(--ma-primary)] hover:underline">← Voltar ao início</Link>
                 </div>
             </template>
             </main>
@@ -298,7 +303,7 @@ function scrollCarousel(sectionId, direction) {
             <!-- Sidebar à direita: lista de aulas do módulo -->
             <aside class="w-full shrink-0 rounded-xl border border-zinc-700 bg-zinc-800/50 lg:w-72">
                 <div class="border-b border-zinc-700 p-4">
-                    <Link :href="`/m/${slug}`" class="text-sm text-zinc-400 hover:text-[var(--ma-primary)]">← Início</Link>
+                    <Link :href="href('/')" class="text-sm text-zinc-400 hover:text-[var(--ma-primary)]">← Início</Link>
                     <h2 class="mt-2 text-lg font-semibold">{{ module.title }}</h2>
                     <p v-if="module.section" class="text-xs text-zinc-500">{{ module.section.title }}</p>
                 </div>
@@ -362,7 +367,7 @@ function scrollCarousel(sectionId, direction) {
                         <template v-for="mod in section.modules" :key="mod.id">
                             <Link
                                 v-if="!mod.is_locked"
-                                :href="`/m/${slug}/modulo/${mod.id}`"
+                                :href="href(`/modulo/${mod.id}`)"
                                 class="flex w-64 shrink-0 flex-col rounded-xl overflow-hidden bg-zinc-800/50 text-left transition hover:bg-zinc-800"
                                 :class="{ 'ring-2 ring-[var(--ma-primary)]/50': mod.id === module.id }"
                             >

@@ -157,7 +157,7 @@ class MemberAreaAppController extends Controller
                     return ($this->moduleAccess->lessonLockPayload($l, $module, $product, $user, $now)['is_locked'] ?? false) !== true;
                 });
                 if ($firstUnlocked) {
-                    return redirect()->route('member-area-app.module.host', ['slug' => $slug, 'module' => $module->id, 'aula' => $firstUnlocked->id])
+                    return $this->redirectToModuleContent($request, $slug, $module->id, $firstUnlocked->id)
                         ->with('error', $lock['lock_message'] ?? 'Aula ainda não liberada.');
                 }
                 $request->session()->flash('error', $lock['lock_message'] ?? 'Aulas ainda não liberadas.');
@@ -273,10 +273,11 @@ class MemberAreaAppController extends Controller
         $lessonLock = $this->moduleAccess->lessonLockPayload($lesson, $lesson->module, $product, $user, $now);
         if (($lessonLock['is_locked'] ?? false) === true) {
             if ($lesson->module) {
-                return redirect()->route('member-area-app.module.host', ['slug' => $slug, 'module' => $lesson->module->id])
+                return $this->redirectToModuleContent($request, $slug, $lesson->module->id)
                     ->with('error', $lessonLock['lock_message'] ?? 'Aula ainda não liberada.');
             }
-            return redirect()->route('member-area-app.modulos.host', ['slug' => $slug])
+
+            return $this->redirectToMemberAreaRoute($request, 'member-area-app.modulos', ['slug' => $slug])
                 ->with('error', $lessonLock['lock_message'] ?? 'Aula ainda não liberada.');
         }
         $this->progressService->ensureLessonStarted($lesson, $user);
@@ -357,7 +358,13 @@ class MemberAreaAppController extends Controller
             if ($request->expectsJson() && ! $request->header('X-Inertia')) {
                 return response()->json(['success' => false, 'message' => $lessonLock['lock_message'] ?? 'Conteúdo indisponível.'], 403);
             }
-            return back()->with('error', $lessonLock['lock_message'] ?? 'Conteúdo indisponível.');
+            if ($lesson->module) {
+                return $this->redirectToModuleContent($request, $slug, $lesson->module->id)
+                    ->with('error', $lessonLock['lock_message'] ?? 'Conteúdo indisponível.');
+            }
+
+            return $this->redirectToMemberAreaHome($request, $slug)
+                ->with('error', $lessonLock['lock_message'] ?? 'Conteúdo indisponível.');
         }
         $alreadyCompleted = $this->isLessonCompleted($user->id, $lesson->id);
         $this->progressService->markLessonCompleted($lesson->id, $user);
@@ -371,7 +378,7 @@ class MemberAreaAppController extends Controller
         }
 
         if ($request->header('X-Inertia')) {
-            return redirect()->back();
+            return $this->redirectToLessonContext($request, $slug, $lesson);
         }
         $percent = $this->progressService->completionPercent($product, $user);
 
@@ -532,7 +539,7 @@ class MemberAreaAppController extends Controller
             return response()->json(['success' => true, 'message' => $message]);
         }
 
-        return redirect()->back()->with('success', $message);
+        return $this->redirectToLessonContext($request, $slug, $lesson)->with('success', $message);
     }
 
     public function loja(Request $request, string $slug): Response
@@ -804,7 +811,7 @@ class MemberAreaAppController extends Controller
         $certConfig = $config['certificate'] ?? [];
 
         if (empty($certConfig['enabled'])) {
-            return redirect()->route('member-area-app.show', $slug)
+            return $this->redirectToMemberAreaHome($request, $slug)
                 ->with('error', 'O certificado não está habilitado para este curso.');
         }
 
@@ -867,6 +874,7 @@ class MemberAreaAppController extends Controller
             'title_color' => $certConfig['title_color'] ?? null,
             'signature_font_family' => $certConfig['signature_font_family'] ?? 'Dancing Script',
             'print_format' => $certConfig['print_format'] ?? 'A4',
+            'layout' => is_array($certConfig['layout'] ?? null) ? $certConfig['layout'] : [],
         ];
 
         return Inertia::render('MemberAreaApp/Certificado', [
@@ -1115,12 +1123,50 @@ class MemberAreaAppController extends Controller
 
     private function isHostMemberAreaRequest(Request $request): bool
     {
-        $name = (string) $request->route()?->getName();
-        if (str_ends_with($name, '.host')) {
-            return true;
+        return in_array($request->attributes->get('member_area_access_type'), ['subdomain', 'custom'], true);
+    }
+
+    private function memberAreaRouteName(Request $request, string $baseName): string
+    {
+        if ($this->isHostMemberAreaRequest($request) && ! str_ends_with($baseName, '.host')) {
+            return $baseName.'.host';
         }
 
-        return in_array($request->attributes->get('member_area_access_type'), ['subdomain', 'custom'], true);
+        return $baseName;
+    }
+
+    /**
+     * @param  array<string, mixed>  $params
+     */
+    private function redirectToMemberAreaRoute(Request $request, string $baseName, array $params = []): RedirectResponse
+    {
+        return redirect()->route($this->memberAreaRouteName($request, $baseName), $params);
+    }
+
+    private function redirectToModuleContent(Request $request, string $slug, int|string $moduleId, int|string|null $lessonId = null): RedirectResponse
+    {
+        $params = [
+            'slug' => $slug,
+            'module' => $moduleId,
+        ];
+        if ($lessonId !== null && $lessonId !== '') {
+            $params['aula'] = $lessonId;
+        }
+
+        return $this->redirectToMemberAreaRoute($request, 'member-area-app.module', $params);
+    }
+
+    private function redirectToLessonContext(Request $request, string $slug, MemberLesson $lesson): RedirectResponse
+    {
+        $lesson->loadMissing('module');
+        if ($lesson->module && (int) $lesson->module->product_id === (int) $lesson->product_id) {
+            return $this->redirectToModuleContent($request, $slug, $lesson->module->id, $lesson->id);
+        }
+
+        return $this->redirectToMemberAreaRoute($request, 'member-area-app.lesson', [
+            'slug' => $slug,
+            'lesson' => $lesson->id,
+        ]);
     }
 
     private function redirectToMemberAreaHome(Request $request, string $slug): RedirectResponse

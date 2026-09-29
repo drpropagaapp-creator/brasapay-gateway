@@ -62,6 +62,8 @@ class CustomerPanelController extends Controller
             $items[] = $this->grantedAccessRow($product, $resolver, $user);
         }
 
+        $items = $this->collapseSubscriptionPurchases($items);
+
         return Inertia::render('Cliente/Index', [
             'purchases' => $items,
             'pageTitle' => 'Minhas compras',
@@ -136,6 +138,9 @@ class CustomerPanelController extends Controller
             'is_order_bump' => $position > 0,
             'is_manual_grant' => false,
             'can_request_refund' => $position === 0 && RefundEligibility::canCustomerRequestRefund($order),
+            'is_renewal' => (bool) $order->is_renewal,
+            'billing_type' => $product?->billing_type,
+            'renewal_count' => 0,
         ];
     }
 
@@ -172,7 +177,50 @@ class CustomerPanelController extends Controller
             'is_order_bump' => false,
             'is_manual_grant' => true,
             'can_request_refund' => false,
+            'is_renewal' => false,
+            'billing_type' => $product->billing_type,
+            'renewal_count' => 0,
         ];
+    }
+
+    /**
+     * Assinaturas/renovações do mesmo produto viram um único card (data do último pagamento).
+     *
+     * @param  list<array<string, mixed>>  $items
+     * @return list<array<string, mixed>>
+     */
+    private function collapseSubscriptionPurchases(array $items): array
+    {
+        $seen = [];
+        $collapsed = [];
+
+        foreach ($items as $item) {
+            $productId = $item['product_id'] ?? null;
+            $isBump = (bool) ($item['is_order_bump'] ?? false);
+            $isGrant = (bool) ($item['is_manual_grant'] ?? false);
+            $isSubscription = ($item['billing_type'] ?? null) === Product::BILLING_SUBSCRIPTION
+                || (bool) ($item['is_renewal'] ?? false);
+
+            if ($isBump || $isGrant || ! $isSubscription || $productId === null || $productId === '') {
+                $collapsed[] = $item;
+
+                continue;
+            }
+
+            $key = (string) $productId;
+            if (isset($seen[$key])) {
+                $collapsed[$seen[$key]]['renewal_count'] = (int) ($collapsed[$seen[$key]]['renewal_count'] ?? 0) + 1;
+                $collapsed[$seen[$key]]['is_renewal'] = true;
+
+                continue;
+            }
+
+            $seen[$key] = count($collapsed);
+            $item['renewal_count'] = 0;
+            $collapsed[] = $item;
+        }
+
+        return $collapsed;
     }
 
     private function productAccessUrl(?Product $product, MemberAreaResolver $resolver, User $user): ?string

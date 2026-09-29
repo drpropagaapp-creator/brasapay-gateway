@@ -83,6 +83,8 @@ class SellerActivityLogService
 
     public const API_WEBHOOK_SECRET_ROTATED = 'api.webhook.secret.rotated';
 
+    public const API_WEBHOOK_DELIVERY_RETRIED = 'api.webhook.delivery.retried';
+
     public const API_PIX_CANCELLED = 'api.pix.cancelled';
 
     public const AUTH_LOGIN = 'auth.login';
@@ -98,6 +100,8 @@ class SellerActivityLogService
     public const PROFILE_USERNAME_UPDATED = 'profile.username.updated';
 
     public const PROFILE_PASSWORD_UPDATED = 'profile.password.updated';
+
+    public const PROFILE_WHATSAPP_UPDATED = 'profile.whatsapp.updated';
 
     public const KYC_DOCUMENT_UPLOADED = 'kyc.document.uploaded';
 
@@ -225,6 +229,20 @@ class SellerActivityLogService
 
     public const INTEGRATION_WEBHOOK_DELETED = 'integration.webhook.deleted';
 
+    public const INTEGRATION_UAZAPI_CONNECTED = 'integration.uazapi.connected';
+
+    public const INTEGRATION_UAZAPI_DISCONNECTED = 'integration.uazapi.disconnected';
+
+    public const INTEGRATION_UAZAPI_UPDATED = 'integration.uazapi.updated';
+
+    public const INTEGRATION_UAZAPI_CAMPAIGN = 'integration.uazapi.campaign';
+
+    public const INTEGRATION_EVOLUTION_CONNECTED = 'integration.evolution.connected';
+
+    public const INTEGRATION_EVOLUTION_DISCONNECTED = 'integration.evolution.disconnected';
+
+    public const INTEGRATION_EVOLUTION_UPDATED = 'integration.evolution.updated';
+
     public const DISPUTE_DEFENSE_SUBMITTED = 'dispute.defense.submitted';
 
     public const DISPUTE_DOSSIER_GENERATED = 'dispute.dossier.generated';
@@ -258,6 +276,7 @@ class SellerActivityLogService
         self::API_WEBHOOK_UPDATED => ['group' => self::GROUP_API, 'label' => 'Atualizou webhook da API'],
         self::API_WEBHOOK_CLEARED => ['group' => self::GROUP_API, 'label' => 'Removeu webhook da API'],
         self::API_WEBHOOK_SECRET_ROTATED => ['group' => self::GROUP_API, 'label' => 'Rotacionou secret do webhook'],
+        self::API_WEBHOOK_DELIVERY_RETRIED => ['group' => self::GROUP_API, 'label' => 'Reenviou entrega de webhook da API'],
         self::API_PIX_CANCELLED => ['group' => self::GROUP_API, 'label' => 'Cancelou cobrança PIX via API'],
         self::AUTH_LOGIN => ['group' => self::GROUP_AUTH, 'label' => 'Entrou no painel'],
         self::AUTH_LOGOUT => ['group' => self::GROUP_AUTH, 'label' => 'Saiu do painel'],
@@ -266,6 +285,7 @@ class SellerActivityLogService
         self::PROFILE_UPDATED => ['group' => self::GROUP_AUTH, 'label' => 'Atualizou o perfil'],
         self::PROFILE_USERNAME_UPDATED => ['group' => self::GROUP_AUTH, 'label' => 'Alterou o nome de usuário'],
         self::PROFILE_PASSWORD_UPDATED => ['group' => self::GROUP_AUTH, 'label' => 'Alterou a senha'],
+        self::PROFILE_WHATSAPP_UPDATED => ['group' => self::GROUP_AUTH, 'label' => 'Atualizou o WhatsApp'],
         self::KYC_DOCUMENT_UPLOADED => ['group' => self::GROUP_KYC, 'label' => 'Enviou documento de KYC'],
         self::KYC_SUBMITTED => ['group' => self::GROUP_KYC, 'label' => 'Enviou KYC para análise'],
         self::PJ_CONVERSION_STARTED => ['group' => self::GROUP_KYC, 'label' => 'Iniciou migração de CPF para CNPJ'],
@@ -329,6 +349,13 @@ class SellerActivityLogService
         self::INTEGRATION_WEBHOOK_CREATED => ['group' => self::GROUP_INTEGRATION, 'label' => 'Criou webhook do painel'],
         self::INTEGRATION_WEBHOOK_UPDATED => ['group' => self::GROUP_INTEGRATION, 'label' => 'Atualizou webhook do painel'],
         self::INTEGRATION_WEBHOOK_DELETED => ['group' => self::GROUP_INTEGRATION, 'label' => 'Excluiu webhook do painel'],
+        self::INTEGRATION_UAZAPI_CONNECTED => ['group' => self::GROUP_INTEGRATION, 'label' => 'Conectou WhatsApp (uazapi)'],
+        self::INTEGRATION_UAZAPI_DISCONNECTED => ['group' => self::GROUP_INTEGRATION, 'label' => 'Desconectou WhatsApp (uazapi)'],
+        self::INTEGRATION_UAZAPI_UPDATED => ['group' => self::GROUP_INTEGRATION, 'label' => 'Atualizou WhatsApp (uazapi)'],
+        self::INTEGRATION_UAZAPI_CAMPAIGN => ['group' => self::GROUP_INTEGRATION, 'label' => 'Disparou campanha WhatsApp'],
+        self::INTEGRATION_EVOLUTION_CONNECTED => ['group' => self::GROUP_INTEGRATION, 'label' => 'Conectou Evolution API'],
+        self::INTEGRATION_EVOLUTION_DISCONNECTED => ['group' => self::GROUP_INTEGRATION, 'label' => 'Desconectou Evolution API'],
+        self::INTEGRATION_EVOLUTION_UPDATED => ['group' => self::GROUP_INTEGRATION, 'label' => 'Atualizou Evolution API'],
         self::DISPUTE_DEFENSE_SUBMITTED => ['group' => self::GROUP_DISPUTE, 'label' => 'Enviou defesa de disputa MED'],
         self::DISPUTE_DOSSIER_GENERATED => ['group' => self::GROUP_DISPUTE, 'label' => 'Gerou dossiê de disputa MED'],
         self::SUBSCRIPTION_CANCELLED => ['group' => self::GROUP_SUBSCRIPTION, 'label' => 'Cancelou assinatura'],
@@ -523,10 +550,13 @@ class SellerActivityLogService
             self::INTEGRATION_SPEDY_CREATED, self::INTEGRATION_SPEDY_UPDATED, self::INTEGRATION_SPEDY_DELETED,
             self::INTEGRATION_CADEMI_CREATED, self::INTEGRATION_CADEMI_UPDATED, self::INTEGRATION_CADEMI_DELETED,
             self::INTEGRATION_WEBHOOK_CREATED, self::INTEGRATION_WEBHOOK_UPDATED, self::INTEGRATION_WEBHOOK_DELETED,
+            self::INTEGRATION_UAZAPI_CONNECTED, self::INTEGRATION_UAZAPI_DISCONNECTED, self::INTEGRATION_UAZAPI_UPDATED, self::INTEGRATION_UAZAPI_CAMPAIGN,
+            self::INTEGRATION_EVOLUTION_CONNECTED, self::INTEGRATION_EVOLUTION_DISCONNECTED, self::INTEGRATION_EVOLUTION_UPDATED,
             self::AFFILIATE_SETTINGS_UPDATED => $label.self::namedSuffix($metadata, 'name'),
             self::STUDENT_CREATED, self::STUDENT_UPDATED, self::STUDENT_DELETED => $label.self::namedSuffix($metadata, 'email'),
             self::COPRODUCTION_INVITED, self::COPRODUCTION_REMOVED, self::COPRODUCTION_ACCEPTED => $label.self::namedSuffix($metadata, 'email'),
             self::SUBSCRIPTION_CANCELLED, self::API_PIX_CANCELLED, self::DISPUTE_DEFENSE_SUBMITTED, self::DISPUTE_DOSSIER_GENERATED => $label.self::orderSuffix($metadata),
+            self::PROFILE_WHATSAPP_UPDATED => $label.self::namedSuffix($metadata, 'phone_to'),
             default => $label,
         };
     }

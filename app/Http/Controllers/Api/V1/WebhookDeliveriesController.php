@@ -3,9 +3,9 @@
 namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
-use App\Jobs\DeliverApiWebhookJob;
 use App\Models\ApiWebhookDelivery;
 use App\Services\Api\ApiAuthContext;
+use App\Services\Api\ApiWebhookDeliveryService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -27,12 +27,7 @@ class WebhookDeliveriesController extends Controller
             return response()->json(['message' => 'Entrega não encontrada.'], 404);
         }
 
-        $delivery->update([
-            'status' => ApiWebhookDelivery::STATUS_PENDING,
-            'next_retry_at' => now(),
-        ]);
-
-        DeliverApiWebhookJob::dispatch($delivery->id);
+        app(ApiWebhookDeliveryService::class)->retryNow($delivery);
 
         return response()->json(['message' => 'Reenvio agendado.', 'delivery_id' => $delivery->id]);
     }

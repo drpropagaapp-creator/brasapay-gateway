@@ -7,7 +7,6 @@ use App\Events\OrderCompleted;
 use App\Events\OrderPending;
 use App\Events\OrderRejected;
 use App\Events\PixGenerated;
-use App\Events\SubscriptionCreated;
 use App\Gateways\GatewayRegistry;
 use App\Jobs\ProcessPaymentWebhook;
 use App\Models\CheckoutSession;
@@ -34,6 +33,7 @@ use App\Services\Meta\MetaTrackingService;
 use App\Services\MetricsTracking\MetricsCaptureService;
 use App\Models\MetricsEvent;
 use App\Services\PaymentService;
+use App\Services\SubscriptionRenewalService;
 use App\Services\CajuPay\CajuPaySdkCheckoutService;
 use App\Services\PhysicalProductAccess;
 use App\Services\PushinPayPixRecorrenteService;
@@ -958,6 +958,7 @@ class CheckoutController extends Controller
             'coupon_code' => $couponCode,
             'metadata' => $orderMetadata,
         ];
+        $orderPayload = app(SubscriptionRenewalService::class)->withRenewalFlag($orderPayload);
 
         if ($shippingResolved !== null) {
             $orderPayload['shipping_amount'] = $shippingResolved['shipping_amount'];
@@ -1741,17 +1742,11 @@ class CheckoutController extends Controller
                     $order->load('orderItems');
                     $grantAccessForOrder($order);
                     if ($plan) {
-                        $subscription = Subscription::create([
-                            'tenant_id' => $tenantId,
-                            'user_id' => $user->id,
-                            'product_id' => $product->id,
-                            'subscription_plan_id' => $plan->id,
-                            'status' => Subscription::STATUS_ACTIVE,
-                            'current_period_start' => $periodStart,
-                            'current_period_end' => $periodEnd,
-                        ]);
-                        event(new SubscriptionCreated($subscription));
-                        $this->attachStripeSavedPaymentMethodForSubscription($subscription, $order, $card, $tenantId, $user->id);
+                        $result = app(SubscriptionRenewalService::class)->syncFromPaidOrder($order->fresh());
+                        $subscription = $result['subscription'] ?? null;
+                        if ($subscription) {
+                            $this->attachStripeSavedPaymentMethodForSubscription($subscription, $order, $card, $tenantId, $user->id);
+                        }
                     }
                     event(new OrderCompleted($order));
                 } elseif ($isApproved && $alreadyCompleted) {
@@ -2813,24 +2808,7 @@ class CheckoutController extends Controller
             $order->grantPurchasedProductAccessToBuyer();
 
             if ($plan && $order->user_id) {
-                $existing = Subscription::where('user_id', $order->user_id)
-                    ->where('product_id', $product->id)
-                    ->where('subscription_plan_id', $plan->id)
-                    ->whereIn('status', [Subscription::STATUS_ACTIVE, Subscription::STATUS_PAST_DUE])
-                    ->first();
-                if (! $existing) {
-                    [$periodStart, $periodEnd] = $plan->getCurrentPeriod();
-                    $subscription = Subscription::create([
-                        'tenant_id' => $order->tenant_id,
-                        'user_id' => $order->user_id,
-                        'product_id' => $product->id,
-                        'subscription_plan_id' => $plan->id,
-                        'status' => Subscription::STATUS_ACTIVE,
-                        'current_period_start' => $order->period_start ?? $periodStart,
-                        'current_period_end' => $order->period_end ?? $periodEnd,
-                    ]);
-                    event(new SubscriptionCreated($subscription));
-                }
+                app(SubscriptionRenewalService::class)->syncFromPaidOrder($order->fresh());
             }
 
             event(new OrderCompleted($order->fresh()));
@@ -3189,6 +3167,7 @@ class CheckoutController extends Controller
                 : null,
             'payment_method' => $orderPaymentMethod,
         ];
+        $orderPayload = app(SubscriptionRenewalService::class)->withRenewalFlag($orderPayload);
         if ($shippingResolved !== null) {
             $orderPayload['shipping_amount'] = $shippingResolved['shipping_amount'];
             $orderPayload['shipping_store_id'] = $shippingResolved['shipping_store_id'];
