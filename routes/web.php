@@ -777,6 +777,7 @@ Route::middleware(['auth', 'admin.tenant', 'seller.panel', 'stacker.license', 'r
         ->where('token', '[a-z0-9]{32,64}');
     Route::post('/painel/idioma', [\App\Http\Controllers\PanelLanguageController::class, 'switch'])->name('panel.language.switch');
     Route::post('/painel/push-subscribe', [\App\Http\Controllers\PanelPwaController::class, 'pushSubscribe'])->name('panel.pwa.push-subscribe')->middleware('throttle:20,1');
+    Route::post('/painel/push-test', [\App\Http\Controllers\PanelNotificationsController::class, 'testPush'])->name('panel.notifications.push-test')->middleware('throttle:10,1');
     Route::get('/painel/notifications', [\App\Http\Controllers\PanelNotificationsController::class, 'index'])->name('panel.notifications.index');
     Route::patch('/painel/notifications/{notification}/read', [\App\Http\Controllers\PanelNotificationsController::class, 'markRead'])->name('panel.notifications.mark-read');
     Route::post('/painel/notifications/mark-read', [\App\Http\Controllers\PanelNotificationsController::class, 'markReadBatch'])->name('panel.notifications.mark-read-batch');
