@@ -4,6 +4,8 @@ namespace App\Http\Controllers;
 
 use App\Models\PanelNotification;
 use App\Models\PanelPushSubscription;
+use App\Services\PanelPushService;
+use App\Support\PanelPushSettings;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -95,5 +97,72 @@ class PanelNotificationsController extends Controller
         $deleted = PanelNotification::forUser($user->id)->delete();
 
         return response()->json(['success' => true, 'deleted' => $deleted]);
+    }
+
+    public function testPush(Request $request, PanelPushService $panelPushService): JsonResponse
+    {
+        $user = $request->user();
+        if (! $user->canAccessPanel()) {
+            return response()->json(['message' => 'Acesso negado.'], 403);
+        }
+
+        if (! PanelPushSettings::isPushEnabled()) {
+            return response()->json([
+                'ok' => false,
+                'message' => 'Notificações push não estão configuradas na plataforma.',
+            ], 422);
+        }
+
+        $subs = PanelPushSubscription::query()->where('user_id', $user->id)->get();
+        if ($subs->isEmpty()) {
+            return response()->json([
+                'ok' => false,
+                'message' => 'Nenhuma inscrição neste dispositivo. Ative as notificações primeiro.',
+            ], 422);
+        }
+
+        $appName = trim((string) config('getfy.app_name', config('app.name'))) ?: 'Painel';
+        $result = $panelPushService->sendToSubscriptions(
+            $subs,
+            'Teste '.$appName,
+            'Notificação de teste enviada pelo painel.',
+            '/dashboard'
+        );
+
+        $sent = (int) ($result['sent'] ?? 0);
+
+        return response()->json([
+            'ok' => $sent > 0,
+            'message' => $sent > 0
+                ? 'Notificação de teste enviada. Se chegou neste dispositivo, está tudo certo.'
+                : $this->formatPushFailureMessage($result),
+            'result' => $result,
+        ]);
+    }
+
+    /**
+     * @param  array<string, mixed>  $result
+     */
+    private function formatPushFailureMessage(array $result): string
+    {
+        $failed = (int) ($result['failed'] ?? 0);
+        $expired = (int) ($result['expired'] ?? 0);
+        $invalid = (int) ($result['invalid'] ?? 0);
+        $total = (int) ($result['total'] ?? 0);
+
+        if ($total === 0) {
+            return 'Nenhuma inscrição compatível com o provedor ativo. Reative as notificações neste dispositivo.';
+        }
+        if ($expired > 0) {
+            return 'Inscrição expirada. Reative as notificações neste dispositivo.';
+        }
+        if ($invalid > 0) {
+            return 'Inscrição inválida. Reative as notificações neste dispositivo.';
+        }
+        if ($failed > 0) {
+            return 'Falha ao enviar o teste. Tente novamente em alguns segundos.';
+        }
+
+        return 'Nenhum push entregue. Reative as notificações e tente de novo.';
     }
 }

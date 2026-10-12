@@ -78,6 +78,9 @@ const unreadCount = ref(0);
 const pushSubscribed = ref(false);
 const meta = ref({ current_page: 1, last_page: 1, total: 0 });
 const activatingPush = ref(false);
+const testingPush = ref(false);
+const pushTestMessage = ref('');
+const pushTestOk = ref(null);
 
 async function fetchNotifications() {
     if (!props.open) return;
@@ -199,6 +202,25 @@ async function activateNotifications() {
     activatingPush.value = false;
 }
 
+async function testPushOnDevice() {
+    if (testingPush.value || !pushEnabled.value) return;
+    testingPush.value = true;
+    pushTestMessage.value = '';
+    pushTestOk.value = null;
+    try {
+        const { data } = await axios.post('/painel/push-test');
+        pushTestOk.value = !!data?.ok;
+        pushTestMessage.value = data?.ok
+            ? (data?.message || 'Notificação de teste enviada.')
+            : (data?.message || 'Teste não entregue.');
+    } catch (e) {
+        pushTestOk.value = false;
+        pushTestMessage.value = e?.response?.data?.message || 'Erro ao enviar o teste.';
+    } finally {
+        testingPush.value = false;
+    }
+}
+
 const hasUnread = computed(() => unreadCount.value > 0);
 </script>
 
@@ -282,6 +304,15 @@ const hasUnread = computed(() => unreadCount.value > 0);
                         >
                             {{ activatingPush || pushSubscribing ? 'Aguarde...' : 'Ativar notificações' }}
                         </button>
+                        <button
+                            v-else-if="pushEnabled && pushActive"
+                            type="button"
+                            class="mt-2 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm font-medium text-zinc-700 transition hover:bg-zinc-50 disabled:opacity-60 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800"
+                            :disabled="testingPush"
+                            @click="testPushOnDevice"
+                        >
+                            {{ testingPush ? 'Enviando teste...' : 'Testar neste dispositivo' }}
+                        </button>
                         <p
                             v-else-if="pushEnabled && !pushActive && notificationPermissionDenied"
                             class="mt-2 text-xs text-zinc-500 dark:text-zinc-400"
@@ -293,6 +324,13 @@ const hasUnread = computed(() => unreadCount.value > 0);
                             class="mt-2 text-xs text-zinc-500 dark:text-zinc-400"
                         >
                             {{ pushErrorMessage }}
+                        </p>
+                        <p
+                            v-if="pushTestMessage"
+                            class="mt-2 text-xs"
+                            :class="pushTestOk ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'"
+                        >
+                            {{ pushTestMessage }}
                         </p>
                     </div>
 
