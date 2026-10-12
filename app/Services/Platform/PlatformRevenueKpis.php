@@ -35,11 +35,8 @@ class PlatformRevenueKpis
             ->select(['id', 'payment_method', 'metadata', 'gateway', 'amount'])
             ->chunkById(500, function ($orders) use (&$custoVendas) {
                 foreach ($orders as $order) {
-                    if (self::paymentBucket($order) !== 'pix') {
-                        continue;
-                    }
                     $slug = trim((string) ($order->gateway ?? ''));
-                    if ($slug === '') {
+                    if ($slug === '' || ! self::countsAcquirerSaleFee($order, $slug)) {
                         continue;
                     }
                     $e = GatewayPayoutEconomics::fromSlug($slug);
@@ -118,6 +115,21 @@ class PlatformRevenueKpis
         }
 
         return $q;
+    }
+
+    /**
+     * PIX: taxa de entrada do adquirente.
+     * Cartão: só Stripe por enquanto — demais adquirentes têm taxa por parcelamento.
+     */
+    private static function countsAcquirerSaleFee(Order $order, string $slug): bool
+    {
+        $bucket = self::paymentBucket($order);
+
+        if ($bucket === 'pix') {
+            return true;
+        }
+
+        return $bucket === 'card' && $slug === 'stripe';
     }
 
     /**

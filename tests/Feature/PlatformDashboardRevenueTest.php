@@ -2,9 +2,11 @@
 
 namespace Tests\Feature;
 
+use App\Models\GatewayCredential;
 use App\Models\Order;
 use App\Models\User;
 use App\Models\WalletTransaction;
+use App\Services\Platform\PlatformRevenueKpis;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Schema;
 use Tests\TestCase;
@@ -180,5 +182,90 @@ class PlatformDashboardRevenueTest extends TestCase
             ->assertOk()
             ->assertInertia(fn ($page) => $page
                 ->where('kpis.faturamento_taxas_cobradas', 0));
+    }
+
+    public function test_adq_vendas_includes_stripe_card_entry_fee(): void
+    {
+        if (! Schema::hasTable('wallet_transactions') || ! Schema::hasTable('gateway_credentials')) {
+            $this->markTestSkipped('wallet or gateway tables');
+        }
+
+        Carbon::setTestNow(Carbon::parse('2026-04-13 14:00:00'));
+
+        $seller = User::factory()->create(['role' => User::ROLE_INFOPRODUTOR]);
+        $seller->forceFill(['tenant_id' => $seller->id])->save();
+        $buyer = User::factory()->create(['role' => User::ROLE_ALUNO]);
+        $product = $this->createTestProduct(['tenant_id' => $seller->id]);
+
+        $cred = GatewayCredential::query()->firstOrNew([
+            'tenant_id' => null,
+            'gateway_slug' => 'stripe',
+        ]);
+        $cred->is_connected = true;
+        $cred->setEncryptedCredentials([
+            'secret_key' => 'sk_test',
+            'publishable_key' => 'pk_test',
+            'stripe_admin_fee_pix_brl' => '0,50',
+            'stripe_admin_fee_pix_percent' => '1',
+        ]);
+        $cred->save();
+
+        Order::create([
+            'tenant_id' => $seller->id,
+            'user_id' => $buyer->id,
+            'product_id' => $product->id,
+            'status' => 'completed',
+            'amount' => 100.00,
+            'email' => $buyer->email,
+            'payment_method' => 'card',
+            'gateway' => 'stripe',
+            'metadata' => ['checkout_payment_method' => 'card'],
+        ]);
+
+        // 100 * 1% + 0,50 = 1,50
+        $kpis = PlatformRevenueKpis::compute(null, null);
+
+        $this->assertSame(1.5, $kpis['faturamento_custo_adquirente_vendas']);
+    }
+
+    public function test_adq_vendas_excludes_non_stripe_card_entry_fee(): void
+    {
+        if (! Schema::hasTable('wallet_transactions') || ! Schema::hasTable('gateway_credentials')) {
+            $this->markTestSkipped('wallet or gateway tables');
+        }
+
+        Carbon::setTestNow(Carbon::parse('2026-04-13 14:00:00'));
+
+        $seller = User::factory()->create(['role' => User::ROLE_INFOPRODUTOR]);
+        $seller->forceFill(['tenant_id' => $seller->id])->save();
+        $buyer = User::factory()->create(['role' => User::ROLE_ALUNO]);
+        $product = $this->createTestProduct(['tenant_id' => $seller->id]);
+
+        $cred = GatewayCredential::query()->firstOrNew([
+            'tenant_id' => null,
+            'gateway_slug' => 'efi',
+        ]);
+        $cred->is_connected = true;
+        $cred->setEncryptedCredentials([
+            'efi_admin_fee_pix_brl' => '0,50',
+            'efi_admin_fee_pix_percent' => '1',
+        ]);
+        $cred->save();
+
+        Order::create([
+            'tenant_id' => $seller->id,
+            'user_id' => $buyer->id,
+            'product_id' => $product->id,
+            'status' => 'completed',
+            'amount' => 100.00,
+            'email' => $buyer->email,
+            'payment_method' => 'card',
+            'gateway' => 'efi',
+            'metadata' => ['checkout_payment_method' => 'card'],
+        ]);
+
+        $kpis = PlatformRevenueKpis::compute(null, null);
+
+        $this->assertSame(0.0, $kpis['faturamento_custo_adquirente_vendas']);
     }
 }
