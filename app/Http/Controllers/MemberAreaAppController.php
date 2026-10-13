@@ -2,6 +2,8 @@
 
 namespace App\Http\Controllers;
 
+use App\Exceptions\MemberPdfWatermarkException;
+use App\Models\BrandingSetting;
 use App\Models\MemberCertificateIssued;
 use App\Models\MemberComment;
 use App\Models\MemberCommunityPage;
@@ -12,7 +14,6 @@ use App\Models\MemberInternalProduct;
 use App\Models\MemberLesson;
 use App\Models\MemberModule;
 use App\Models\MemberSection;
-use App\Models\BrandingSetting;
 use App\Models\Order;
 use App\Models\Product;
 use App\Models\User;
@@ -20,6 +21,8 @@ use App\Services\DeliverableAccessLinkService;
 use App\Services\GamificationService;
 use App\Services\MemberAreaResolver;
 use App\Services\MemberCommentService;
+use App\Services\MemberLessonPdfSource;
+use App\Services\MemberLessonPdfWatermarker;
 use App\Services\MemberModuleAccessService;
 use App\Services\MemberProgressService;
 use App\Services\MemberStudentActivityLogService;
@@ -31,6 +34,7 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
+use Symfony\Component\HttpFoundation\Response as HttpResponse;
 
 class MemberAreaAppController extends Controller
 {
@@ -399,8 +403,11 @@ class MemberAreaAppController extends Controller
         return response()->json(['success' => true, 'progress_percent' => $percent, 'newly_unlocked_achievements' => $newlyUnlocked]);
     }
 
-    public function downloadLessonMaterial(Request $request): RedirectResponse
-    {
+    public function downloadLessonMaterial(
+        Request $request,
+        MemberLessonPdfSource $pdfSource,
+        MemberLessonPdfWatermarker $pdfWatermarker,
+    ): RedirectResponse|HttpResponse {
         $slug = $this->routeSlug($request);
         $lesson = $this->routeMemberLesson($request);
         $index = (int) $request->route('index');
@@ -423,6 +430,19 @@ class MemberAreaAppController extends Controller
         $file = $files[$index] ?? null;
         if ($file === null) {
             abort(404, 'Material não encontrado.');
+        }
+
+        if ((bool) ($lesson->watermark_enabled ?? false) && $this->lessonMaterialIsPdf($file)) {
+            return $this->downloadWatermarkedLessonPdf(
+                $request,
+                $user,
+                $product,
+                $lesson,
+                $file,
+                $index,
+                $pdfSource,
+                $pdfWatermarker,
+            );
         }
 
         $this->studentActivity->recordMaterialDownload(
@@ -449,6 +469,79 @@ class MemberAreaAppController extends Controller
     }
 
     /**
+     * @param  array{url: string, name: string}  $file
+     */
+    private function downloadWatermarkedLessonPdf(
+        Request $request,
+        User $user,
+        Product $product,
+        MemberLesson $lesson,
+        array $file,
+        int $index,
+        MemberLessonPdfSource $pdfSource,
+        MemberLessonPdfWatermarker $pdfWatermarker,
+    ): HttpResponse {
+        $tenantId = $product->tenant_id !== null && $product->tenant_id !== ''
+            ? (int) $product->tenant_id
+            : null;
+
+        try {
+            $binary = $pdfSource->read((string) ($file['url'] ?? ''), $tenantId);
+            $stamped = $pdfWatermarker->stamp($binary, $this->getStudentWatermarkData($user, $product));
+        } catch (MemberPdfWatermarkException $e) {
+            return response($e->getMessage(), 422, [
+                'Content-Type' => 'text/plain; charset=UTF-8',
+                'X-Content-Type-Options' => 'nosniff',
+            ]);
+        }
+
+        $this->studentActivity->recordMaterialDownload(
+            $user,
+            $product,
+            $lesson,
+            $request,
+            $index,
+            (string) ($file['name'] ?? 'Material')
+        );
+
+        $filename = $this->pdfDownloadFilename((string) ($file['name'] ?? 'material.pdf'));
+
+        return response($stamped, 200, [
+            'Content-Type' => 'application/pdf',
+            'Content-Disposition' => 'attachment; filename="'.$filename.'"',
+            'Cache-Control' => 'private, no-store',
+            'X-Content-Type-Options' => 'nosniff',
+        ]);
+    }
+
+    /**
+     * @param  array{url?: string, name?: string}  $file
+     */
+    private function lessonMaterialIsPdf(array $file): bool
+    {
+        $name = strtolower(trim((string) ($file['name'] ?? '')));
+        if (str_ends_with($name, '.pdf')) {
+            return true;
+        }
+
+        $path = parse_url((string) ($file['url'] ?? ''), PHP_URL_PATH);
+
+        return is_string($path) && str_ends_with(strtolower($path), '.pdf');
+    }
+
+    private function pdfDownloadFilename(string $name): string
+    {
+        $base = pathinfo($name, PATHINFO_FILENAME);
+        $base = preg_replace('/[^A-Za-z0-9._-]+/', '-', $base) ?? '';
+        $base = trim((string) $base, '.-');
+        if ($base === '') {
+            $base = 'material';
+        }
+
+        return substr($base, 0, 80).'.pdf';
+    }
+
+    /**
      * @return list<array{url: string, name: string}>
      */
     private function normalizeLessonContentFiles(MemberLesson $lesson): array
@@ -461,6 +554,7 @@ class MemberAreaAppController extends Controller
                 if ($url !== '') {
                     $out[] = ['url' => $url, 'name' => 'Material'];
                 }
+
                 continue;
             }
             if (! is_array($item)) {
@@ -1326,20 +1420,33 @@ class MemberAreaAppController extends Controller
     }
 
     /**
-     * Dados do aluno para marca d'água (nome, email, cpf se houver no pedido).
+     * Dados do aluno para marca d'água (nome, e-mail, CPF e número do cliente quando houver pedido).
+     *
+     * @return array{name: string, email: string, cpf: string|null, customer_number: string}
      */
     private function getStudentWatermarkData(User $user, Product $product): array
     {
-        $cpf = Order::where('user_id', $user->id)
+        $order = Order::query()
+            ->where('user_id', $user->id)
             ->where('product_id', $product->id)
             ->where('status', 'completed')
-            ->latest()
-            ->value('cpf');
-        if (is_string($cpf) && trim($cpf) !== '') {
-            return ['name' => $user->name ?? '', 'email' => $user->email ?? '', 'cpf' => trim($cpf)];
-        }
+            ->latest('id')
+            ->first(['id', 'cpf', 'email', 'public_reference']);
 
-        return ['name' => $user->name ?? '', 'email' => $user->email ?? '', 'cpf' => null];
+        $cpf = is_string($order?->cpf) && trim($order->cpf) !== '' ? trim($order->cpf) : null;
+        $email = is_string($order?->email) && trim($order->email) !== ''
+            ? trim($order->email)
+            : (string) ($user->email ?? '');
+        $number = is_string($order?->public_reference) && trim($order->public_reference) !== ''
+            ? trim($order->public_reference)
+            : (string) $user->id;
+
+        return [
+            'name' => (string) ($user->name ?? ''),
+            'email' => $email,
+            'cpf' => $cpf,
+            'customer_number' => $number,
+        ];
     }
 
     public function manifest(Request $request, ?string $slug = null): \Illuminate\Http\JsonResponse
