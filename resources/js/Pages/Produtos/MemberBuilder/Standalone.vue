@@ -3007,6 +3007,14 @@ const inputClass = 'block w-full rounded-lg border border-zinc-300 bg-white px-3
                                                     <Toggle v-model="modulosLessonForm.watermark_enabled" label="Marca d'água (proteção DRM)" />
                                                 </div>
                                             </div>
+                                            <div v-if="modulosLessonForm.type === 'pdf'" class="rounded-lg border border-zinc-200 bg-white p-3 dark:border-zinc-700 dark:bg-zinc-800/50">
+                                                <div class="flex items-center">
+                                                    <Toggle v-model="modulosLessonForm.watermark_enabled" label="Proteger PDF com dados do comprador" />
+                                                </div>
+                                                <p class="mt-2 text-xs text-zinc-500 dark:text-zinc-400">
+                                                    Cada download de PDF leva nome, e-mail, CPF (quando existir no pedido) e número do cliente no cabeçalho, nome e CPF cruzando o meio da página, e um aviso de licença no rodapé. Word, Excel e os demais formatos seguem como foram enviados. Se o PDF tiver senha ou um formato incompatível, o aluno vê um erro e o arquivo original não é enviado.
+                                                </p>
+                                            </div>
                                             <div class="flex gap-2">
                                                 <Button variant="outline" size="sm" class="flex-1" @click="closeModulosLessonForm">Cancelar</Button>
                                                 <Button size="sm" class="flex-1" :disabled="modulosLessonFormSaving" @click="saveLessonFromSidebar">{{ modulosLessonFormSaving ? 'Salvando…' : 'Salvar' }}</Button>
