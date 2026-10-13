@@ -147,6 +147,10 @@ export async function applyUpdate(client, cmd, gatewayRoot, signingKey) {
             fs.cpSync(src, path.join(backupDir, dir), { recursive: true });
         }
     }
+    const hostViews = path.join(gatewayRoot, 'resources', 'views');
+    if (fs.existsSync(hostViews)) {
+        fs.cpSync(hostViews, path.join(backupDir, 'resources', 'views'), { recursive: true });
+    }
     for (const file of copyFiles) {
         const src = path.join(gatewayRoot, file);
         if (fs.existsSync(src)) {
@@ -158,6 +162,19 @@ export async function applyUpdate(client, cmd, gatewayRoot, signingKey) {
             continue;
         const src = path.join(extractDir, entry);
         const dest = path.join(gatewayRoot, entry);
+        // Release só traz resources/views (sem js/css). Não apagar o resto de resources no host.
+        if (entry === 'resources') {
+            const viewsSrc = path.join(src, 'views');
+            if (!fs.existsSync(viewsSrc))
+                continue;
+            const viewsDest = path.join(dest, 'views');
+            if (fs.existsSync(viewsDest)) {
+                fs.rmSync(viewsDest, { recursive: true, force: true });
+            }
+            fs.mkdirSync(dest, { recursive: true });
+            fs.cpSync(viewsSrc, viewsDest, { recursive: true });
+            continue;
+        }
         if (fs.existsSync(dest)) {
             fs.rmSync(dest, { recursive: true, force: true });
         }
