@@ -19,6 +19,7 @@ import KycBanner from '@/components/layout/KycBanner.vue';
 import TotpPromptBanner from '@/components/layout/TotpPromptBanner.vue';
 import DemoExploreBanner from '@/components/layout/DemoExploreBanner.vue';
 import DemoModeBanner from '@/components/layout/DemoModeBanner.vue';
+import CustomerImpersonationBanner from '@/components/layout/CustomerImpersonationBanner.vue';
 
 const { isExpanded, setExpanded } = useSidebarProvider();
 usePanelPushSubscribe();
@@ -191,6 +192,7 @@ onBeforeUnmount(() => {
         ]"
         v-bind="shellDataAttrs"
     >
+        <CustomerImpersonationBanner />
         <AppSidebar />
         <slot name="sidebar-after-nav" />
         <Backdrop />

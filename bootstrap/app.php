@@ -59,6 +59,7 @@ return Application::configure(basePath: dirname(__DIR__))
             \App\Http\Middleware\ApplyBrandingConfig::class,
             \App\Http\Middleware\SetPanelLocale::class,
         ], append: [
+            \App\Http\Middleware\RestrictCustomerImpersonation::class,
             \App\Http\Middleware\BlockMutationsWhenDemoMode::class,
             \App\Http\Middleware\HandleInertiaRequests::class,
             \App\Http\Middleware\PreventCacheForHtml::class,
