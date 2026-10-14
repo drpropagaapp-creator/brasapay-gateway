@@ -4,6 +4,37 @@ namespace App\Services\Meta;
 
 class MetaUserDataHasher
 {
+    /** @var array<string, string> */
+    private const BR_STATE_NAMES = [
+        'acre' => 'ac',
+        'alagoas' => 'al',
+        'amapa' => 'ap',
+        'amazonas' => 'am',
+        'bahia' => 'ba',
+        'ceara' => 'ce',
+        'distritofederal' => 'df',
+        'espiritosanto' => 'es',
+        'goias' => 'go',
+        'maranhao' => 'ma',
+        'matogrosso' => 'mt',
+        'matogrossodosul' => 'ms',
+        'minasgerais' => 'mg',
+        'para' => 'pa',
+        'paraiba' => 'pb',
+        'parana' => 'pr',
+        'pernambuco' => 'pe',
+        'piaui' => 'pi',
+        'riodejaneiro' => 'rj',
+        'riograndedonorte' => 'rn',
+        'riograndedosul' => 'rs',
+        'rondonia' => 'ro',
+        'roraima' => 'rr',
+        'santacatarina' => 'sc',
+        'saopaulo' => 'sp',
+        'sergipe' => 'se',
+        'tocantins' => 'to',
+    ];
+
     public function hashEmail(?string $email): ?string
     {
         if ($email === null || trim($email) === '') {
@@ -13,15 +44,36 @@ class MetaUserDataHasher
         return hash('sha256', strtolower(trim($email)));
     }
 
-    public function hashPhone(?string $phone): ?string
+    /**
+     * Dígitos com DDI. Número brasileiro de 10 ou 11 dígitos recebe 55.
+     */
+    public function normalizePhone(?string $phone): ?string
     {
         if ($phone === null || trim($phone) === '') {
             return null;
         }
 
         $digits = preg_replace('/\D/', '', $phone) ?? '';
+        if (str_starts_with($digits, '00')) {
+            $digits = substr($digits, 2);
+        }
+        if ($digits === '') {
+            return null;
+        }
 
-        return $digits !== '' ? hash('sha256', $digits) : null;
+        $length = strlen($digits);
+        if ($length === 10 || $length === 11) {
+            $digits = '55'.$digits;
+        }
+
+        return $digits;
+    }
+
+    public function hashPhone(?string $phone): ?string
+    {
+        $digits = $this->normalizePhone($phone);
+
+        return $digits !== null ? hash('sha256', $digits) : null;
     }
 
     public function hashName(?string $name): ?string
@@ -30,29 +82,43 @@ class MetaUserDataHasher
             return null;
         }
 
-        $normalized = preg_replace('/\s+/', ' ', strtolower(trim($name))) ?? '';
+        $normalized = mb_strtolower(trim($name));
+        $normalized = preg_replace('/[^\p{L}\s]/u', '', $normalized) ?? '';
+        $normalized = trim(preg_replace('/\s+/', ' ', $normalized) ?? '');
 
         return $normalized !== '' ? hash('sha256', $normalized) : null;
     }
 
     public function hashCity(?string $city): ?string
     {
-        if ($city === null || trim($city) === '') {
-            return null;
-        }
+        $normalized = $this->lettersOnly($city);
 
-        $normalized = preg_replace('/\s+/', ' ', strtolower(trim($city))) ?? '';
-
-        return $normalized !== '' ? hash('sha256', $normalized) : null;
+        return $normalized !== null ? hash('sha256', $normalized) : null;
     }
 
     public function hashState(?string $state): ?string
     {
-        if ($state === null || trim($state) === '') {
+        $code = $this->normalizeState($state);
+
+        return $code !== null ? hash('sha256', $code) : null;
+    }
+
+    public function normalizeState(?string $state): ?string
+    {
+        $letters = $this->lettersOnly($state);
+        if ($letters === null) {
             return null;
         }
 
-        return hash('sha256', strtolower(trim($state)));
+        if (isset(self::BR_STATE_NAMES[$letters])) {
+            return self::BR_STATE_NAMES[$letters];
+        }
+
+        if (strlen($letters) === 2) {
+            return $letters;
+        }
+
+        return null;
     }
 
     public function hashCountry(?string $country): ?string
@@ -61,12 +127,31 @@ class MetaUserDataHasher
             return null;
         }
 
-        $code = strtolower(trim($country));
-        if (strlen($code) > 2) {
-            $code = substr($code, 0, 2);
+        $letters = $this->lettersOnly($country);
+        if ($letters === null) {
+            return null;
         }
 
-        return hash('sha256', $code);
+        $code = match ($letters) {
+            'br', 'brasil', 'brazil' => 'br',
+            default => strlen($letters) === 2 ? $letters : null,
+        };
+
+        return $code !== null ? hash('sha256', $code) : null;
+    }
+
+    public function hashCpf(?string $cpf): ?string
+    {
+        if ($cpf === null || trim($cpf) === '') {
+            return null;
+        }
+
+        $digits = preg_replace('/\D/', '', $cpf) ?? '';
+        if (strlen($digits) !== 11) {
+            return null;
+        }
+
+        return hash('sha256', $digits);
     }
 
     public function hashZip(?string $zip): ?string
@@ -90,10 +175,35 @@ class MetaUserDataHasher
     }
 
     /**
+     * @param  array<int, string|null>  $externalIds
+     * @return array<int, string>
+     */
+    public function hashExternalIds(array $externalIds): array
+    {
+        $hashes = [];
+        foreach ($externalIds as $externalId) {
+            if (! is_string($externalId)) {
+                continue;
+            }
+            $hash = $this->hashExternalId($externalId);
+            if ($hash !== null && ! in_array($hash, $hashes, true)) {
+                $hashes[] = $hash;
+            }
+        }
+
+        return $hashes;
+    }
+
+    /**
      * @return array<string, mixed>
      */
     public function buildUserData(MetaEventContext $context): array
     {
+        $externalIds = $context->externalIds !== []
+            ? $context->externalIds
+            : [$context->externalId];
+        $externalHashes = $this->hashExternalIds($externalIds);
+
         $data = array_filter([
             'em' => ($h = $this->hashEmail($context->email)) ? [$h] : null,
             'ph' => ($h = $this->hashPhone($context->phone)) ? [$h] : null,
@@ -103,13 +213,34 @@ class MetaUserDataHasher
             'st' => ($h = $this->hashState($context->state)) ? [$h] : null,
             'country' => ($h = $this->hashCountry($context->country)) ? [$h] : null,
             'zp' => ($h = $this->hashZip($context->zip)) ? [$h] : null,
-            'external_id' => ($h = $this->hashExternalId($context->externalId)) ? [$h] : null,
+            'external_id' => $externalHashes !== [] ? $externalHashes : null,
             'client_ip_address' => $context->clientIp ?: null,
             'client_user_agent' => $context->clientUserAgent ?: null,
             'fbp' => $context->fbp ?: null,
             'fbc' => $context->fbc ?: null,
+            'subscription_id' => $context->subscriptionId ?: null,
         ], fn ($v) => $v !== null && $v !== '');
 
         return $data;
+    }
+
+    private function lettersOnly(?string $value): ?string
+    {
+        if ($value === null || trim($value) === '') {
+            return null;
+        }
+
+        $normalized = mb_strtolower(trim($value));
+        $normalized = strtr($normalized, [
+            'á' => 'a', 'à' => 'a', 'ã' => 'a', 'â' => 'a', 'ä' => 'a',
+            'é' => 'e', 'è' => 'e', 'ê' => 'e', 'ë' => 'e',
+            'í' => 'i', 'ì' => 'i', 'î' => 'i', 'ï' => 'i',
+            'ó' => 'o', 'ò' => 'o', 'õ' => 'o', 'ô' => 'o', 'ö' => 'o',
+            'ú' => 'u', 'ù' => 'u', 'û' => 'u', 'ü' => 'u',
+            'ç' => 'c', 'ñ' => 'n',
+        ]);
+        $normalized = preg_replace('/[^a-z]/', '', $normalized) ?? '';
+
+        return $normalized !== '' ? $normalized : null;
     }
 }

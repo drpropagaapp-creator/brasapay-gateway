@@ -99,6 +99,45 @@ export function mirrorMetaEventToServer({
 /**
  * Mirror Purchase to server CAPI (same event_id as browser for deduplication).
  */
+export function mirrorMetaAddPaymentInfoToServer({
+    checkoutSessionToken,
+    orderId,
+    eventId,
+    fbp,
+    fbc,
+    userAgent,
+    eventSourceUrl,
+    value,
+    currency,
+    contentIds,
+    contentName,
+}) {
+    const token = String(checkoutSessionToken || '').trim();
+    const oid = orderId ? String(orderId) : '';
+    if (!token || !oid) return;
+
+    const normalizedEventSourceUrl = truncateEventSourceUrl(eventSourceUrl);
+    const resolvedEventId = eventId || `pay:${oid}`;
+
+    const payload = {
+        checkout_session_token: token,
+        event_name: 'AddPaymentInfo',
+        event_id: resolvedEventId,
+        order_id: oid,
+    };
+
+    if (fbp) payload.fbp = fbp;
+    if (fbc) payload.fbc = fbc;
+    if (userAgent) payload.user_agent = userAgent;
+    if (normalizedEventSourceUrl) payload.event_source_url = normalizedEventSourceUrl;
+    if (value != null && !Number.isNaN(Number(value))) payload.value = Number(value);
+    if (currency) payload.currency = currency;
+    if (Array.isArray(contentIds) && contentIds.length) payload.content_ids = contentIds;
+    if (contentName) payload.content_name = contentName;
+
+    postMirrorPayload(payload);
+}
+
 export function mirrorMetaPurchaseToServer({
     checkoutSessionToken,
     orderId,

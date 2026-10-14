@@ -287,8 +287,8 @@ function linkCopyKey(link) {
                                     <p class="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">Usado para enviar eventos server-side (CAPI).</p>
                                 </div>
                                 <div class="space-y-3 border-t border-zinc-200 pt-3 dark:border-zinc-700">
-                                    <Checkbox v-model="item.fire_purchase_on_pix" label="Disparar evento Purchase ao gerar PIX?" />
-                                    <Checkbox v-model="item.fire_purchase_on_boleto" label="Disparar evento Purchase ao gerar Boleto?" />
+                                    <Checkbox v-model="item.fire_purchase_on_pix" label="Disparar Purchase quando o PIX for pago" />
+                                    <Checkbox v-model="item.fire_purchase_on_boleto" label="Disparar Purchase quando o boleto for pago" />
                                     <Checkbox v-model="item.disable_order_bump_events" label="Desativar eventos de order bumps?" />
                                 </div>
                             </div>

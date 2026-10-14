@@ -283,6 +283,58 @@ class MetaCheckoutAdTrafficTest extends TestCase
         Queue::assertNothingPushed();
     }
 
+    public function test_checkout_pixel_events_add_payment_info_queues_for_pending_order(): void
+    {
+        Queue::fake();
+
+        User::factory()->create(['role' => User::ROLE_INFOPRODUTOR, 'tenant_id' => 1]);
+        $product = $this->createTestProduct([
+            'checkout_slug' => 'metapayinfo',
+            'conversion_pixels' => [
+                'meta' => [
+                    'enabled' => true,
+                    'entries' => [
+                        ['pixel_id' => '333222111', 'access_token' => 'capitok'],
+                    ],
+                ],
+            ],
+        ]);
+
+        $order = \App\Models\Order::create([
+            'tenant_id' => 1,
+            'product_id' => $product->id,
+            'status' => 'pending',
+            'amount' => 40,
+            'email' => 'buyer@test.com',
+            'payment_method' => 'pix',
+        ]);
+
+        $session = CheckoutSession::create([
+            'tenant_id' => 1,
+            'product_id' => $product->id,
+            'checkout_slug' => 'metapayinfo',
+            'session_token' => 'sess-add-payment',
+            'step' => CheckoutSession::STEP_FORM_FILLED,
+            'order_id' => $order->id,
+        ]);
+
+        $response = $this->post('/checkout/pixel/events', [
+            'checkout_session_token' => $session->session_token,
+            'event_name' => 'AddPaymentInfo',
+            'event_id' => 'pay:'.$order->id,
+            'order_id' => $order->id,
+            'value' => 40,
+            'currency' => 'BRL',
+        ]);
+
+        $response->assertOk()->assertJson(['ok' => true, 'queued' => 1]);
+        $this->assertDatabaseHas('meta_tracking_events', [
+            'event_name' => 'AddPaymentInfo',
+            'event_id' => 'pay:'.$order->id,
+            'context_id' => $order->id,
+        ]);
+    }
+
     public function test_checkout_get_with_realistic_long_ad_url(): void
     {
         Queue::fake();

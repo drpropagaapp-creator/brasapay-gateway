@@ -8,6 +8,7 @@ use App\Models\MetaTrackingEvent;
 use App\Models\Order;
 use App\Models\Product;
 use App\Services\AffiliateConversionPixels;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 
 class MetaTrackingService
@@ -269,6 +270,74 @@ class MetaTrackingService
     }
 
     /**
+     * Pagamento informado (PIX/boleto gerado ou checkout enviado). Não é Purchase.
+     *
+     * @return array<int, int>
+     */
+    public function queueAddPaymentInfoForOrder(Order $order): array
+    {
+        if (! $this->isServerEnabled('AddPaymentInfo')) {
+            return [];
+        }
+
+        if (! in_array((string) $order->status, ['pending', 'completed'], true)) {
+            return [];
+        }
+
+        $order->loadMissing(['product', 'user', 'checkoutSession']);
+        $pixels = AffiliateConversionPixels::forOrder($order);
+        $entries = $this->eligibleMetaEntries($pixels, 'AddPaymentInfo');
+        if ($entries === []) {
+            return [];
+        }
+
+        return $this->queueEventsForContext(
+            entries: $entries,
+            eventName: 'AddPaymentInfo',
+            eventId: self::eventId('add_payment_info', ['order_id' => $order->id]),
+            contextType: MetaTrackingEvent::CONTEXT_ORDER,
+            contextId: (int) $order->id,
+            tenantId: $order->tenant_id ? (int) $order->tenant_id : null,
+            context: $this->contextResolver->forOrder($order, [
+                'event_time' => (int) ($order->created_at?->timestamp ?? time()),
+            ]),
+            onlyIfNew: true,
+        );
+    }
+
+    /**
+     * Evento personalizado. A Conversions API não tem evento padrão Refund
+     * e este envio não cancela o Purchase. O event_id é refund:{order_id},
+     * distinto de order:{order_id}, e o registro é reutilizado nos retries.
+     *
+     * @return array<int, int>
+     */
+    public function queueRefundForOrder(Order $order): array
+    {
+        if (! $this->isServerEnabled('Refund')) {
+            return [];
+        }
+
+        $order->loadMissing(['product', 'user', 'checkoutSession']);
+        $pixels = AffiliateConversionPixels::forOrder($order);
+        $entries = $this->eligibleMetaEntries($pixels, 'Refund');
+        if ($entries === []) {
+            return [];
+        }
+
+        return $this->queueEventsForContext(
+            entries: $entries,
+            eventName: 'Refund',
+            eventId: self::eventId('refund', ['order_id' => $order->id]),
+            contextType: MetaTrackingEvent::CONTEXT_ORDER,
+            contextId: (int) $order->id,
+            tenantId: $order->tenant_id ? (int) $order->tenant_id : null,
+            context: $this->contextResolver->forOrder($order),
+            onlyIfNew: true,
+        );
+    }
+
+    /**
      * @param  array<int, array{pixel_id: string, access_token: string, flags: array<string, mixed>}>  $entries
      * @return array<int, int> MetaTrackingEvent IDs queued
      */
@@ -280,6 +349,7 @@ class MetaTrackingService
         int $contextId,
         ?int $tenantId,
         MetaEventContext $context,
+        bool $onlyIfNew = false,
     ): array {
         $queued = [];
 
@@ -302,6 +372,10 @@ class MetaTrackingService
             );
 
             if ($record->status === MetaTrackingEvent::STATUS_SENT) {
+                continue;
+            }
+
+            if ($onlyIfNew && ! $record->wasRecentlyCreated) {
                 continue;
             }
 
@@ -364,17 +438,27 @@ class MetaTrackingService
 
     public function buildPayload(string $eventName, string $eventId, MetaEventContext $context): array
     {
+        $orderEvents = ['Purchase', 'AddPaymentInfo', 'Refund'];
         $customData = array_filter([
             'currency' => $context->currency,
             'value' => $context->value !== null ? round(max(0, $context->value), 2) : null,
             'content_type' => 'product',
             'content_ids' => $context->contentIds !== [] ? $context->contentIds : null,
             'content_name' => $context->contentName,
+            'contents' => $context->contents !== [] ? $context->contents : null,
             'num_items' => $context->numItems,
-            'order_id' => $eventName === 'Purchase' && $context->contentIds !== []
-                ? ($context->contentIds[0] ?? null)
-                : null,
+            'order_id' => in_array($eventName, $orderEvents, true) ? $context->orderId : null,
         ], fn ($v) => $v !== null && $v !== '');
+
+        $originalEventData = null;
+        if ($eventName === 'Refund' && $context->orderId) {
+            $originalEventData = array_filter([
+                'event_name' => 'Purchase',
+                'event_time' => $context->originalPurchaseEventTime ?: ($context->eventTime ?? time()),
+                'order_id' => $context->orderId,
+                'event_id' => self::eventId('purchase', ['order_id' => $context->orderId]),
+            ], fn ($v) => $v !== null && $v !== '');
+        }
 
         $event = array_filter([
             'event_name' => $eventName,
@@ -384,6 +468,8 @@ class MetaTrackingService
             'event_source_url' => $context->eventSourceUrl,
             'user_data' => $this->hasher->buildUserData($context),
             'custom_data' => $customData !== [] ? $customData : null,
+            'customer_segmentation' => in_array($eventName, $orderEvents, true) ? $context->customerSegmentation : null,
+            'original_event_data' => $originalEventData,
         ], fn ($v) => $v !== null && $v !== '');
 
         return ['data' => [$event]];
@@ -406,7 +492,12 @@ class MetaTrackingService
                 return null;
             }
 
-            return $this->contextResolver->forOrder($order);
+            $overrides = [];
+            if ($record->event_name === 'AddPaymentInfo') {
+                $overrides['event_time'] = (int) ($order->created_at?->timestamp ?? time());
+            }
+
+            return $this->contextResolver->forOrder($order, $overrides);
         }
 
         return null;
@@ -471,6 +562,9 @@ class MetaTrackingService
         $meta = is_array($order->metadata) ? $order->metadata : [];
         $meta['meta_capi_sent_purchase'] = true;
         $meta['meta_capi_sent_purchase_at'] = now()->toIso8601String();
+        if (! isset($meta['meta_capi_purchase_event_time'])) {
+            $meta['meta_capi_purchase_event_time'] = (int) ($order->updated_at?->timestamp ?? time());
+        }
         unset($meta['meta_capi_failed'], $meta['meta_capi_failed_at'], $meta['meta_capi_last_error'], $meta['meta_capi_skipped_reason']);
         $order->update(['metadata' => $meta]);
     }
@@ -491,6 +585,70 @@ class MetaTrackingService
             'tenant_id' => $order->tenant_id,
             'reason' => $reason,
         ]);
+    }
+
+    /**
+     * Grava fbp/fbc/fbclid só quando o campo ainda está vazio.
+     * Cookie _fbc/_fbp tem prioridade sobre o fbc montado a partir do fbclid.
+     * Um fbc já gravado não é trocado nem apagado.
+     */
+    public function captureRequestAttribution(CheckoutSession $session, Request $request): void
+    {
+        $updates = [];
+        $cookieFbp = $this->metaBrowserCookie($request, '_fbp');
+        $cookieFbc = $this->metaBrowserCookie($request, '_fbc');
+
+        if ($this->isBlank($session->meta_fbp) && $cookieFbp !== null) {
+            $updates['meta_fbp'] = $cookieFbp;
+        }
+        if ($this->isBlank($session->meta_fbc) && $cookieFbc !== null) {
+            $updates['meta_fbc'] = $cookieFbc;
+        }
+
+        $fromQuery = CheckoutSession::metaAttributionFromQuery($request);
+        if ($this->isBlank($session->meta_fbclid) && isset($fromQuery['meta_fbclid'])) {
+            $updates['meta_fbclid'] = $fromQuery['meta_fbclid'];
+        }
+
+        $fbcAfter = $updates['meta_fbc'] ?? $session->meta_fbc;
+        if ($this->isBlank($fbcAfter) && isset($fromQuery['meta_fbc'])) {
+            $updates['meta_fbc'] = $fromQuery['meta_fbc'];
+        }
+
+        if ($this->isBlank($session->meta_user_agent)) {
+            $agent = trim((string) $request->userAgent());
+            if ($agent !== '') {
+                $updates['meta_user_agent'] = mb_substr($agent, 0, 1024);
+            }
+        }
+
+        if ($updates === []) {
+            return;
+        }
+
+        $session->update($updates);
+        $session->fill($updates);
+    }
+
+    /**
+     * Atributos de atribuição para a primeira gravação da sessão.
+     * O cookie real do navegador, quando existe, entra no lugar do fbc derivado.
+     *
+     * @return array<string, string>
+     */
+    public function attributionAttributesFromRequest(Request $request): array
+    {
+        $attributes = CheckoutSession::metaAttributionFromQuery($request);
+        $cookieFbp = $this->metaBrowserCookie($request, '_fbp');
+        $cookieFbc = $this->metaBrowserCookie($request, '_fbc');
+        if ($cookieFbp !== null) {
+            $attributes['meta_fbp'] = $cookieFbp;
+        }
+        if ($cookieFbc !== null) {
+            $attributes['meta_fbc'] = $cookieFbc;
+        }
+
+        return $attributes;
     }
 
     /**
@@ -524,6 +682,9 @@ class MetaTrackingService
             if ($column === 'meta_page_url' && is_string($session->meta_page_url) && trim($session->meta_page_url) !== '') {
                 continue;
             }
+            if (in_array($column, ['meta_fbp', 'meta_fbc'], true) && is_string($session->{$column}) && trim($session->{$column}) !== '') {
+                continue;
+            }
             $updates[$column] = $value;
         }
 
@@ -554,5 +715,25 @@ class MetaTrackingService
         }
 
         return $orderMetadata;
+    }
+
+    private function metaBrowserCookie(Request $request, string $name): ?string
+    {
+        $value = $request->cookies->get($name);
+        if (! is_string($value)) {
+            return null;
+        }
+
+        $value = trim($value);
+        if ($value === '' || ! str_starts_with($value, 'fb.') || mb_strlen($value) > 512) {
+            return null;
+        }
+
+        return $value;
+    }
+
+    private function isBlank(mixed $value): bool
+    {
+        return ! is_string($value) || trim($value) === '';
     }
 }

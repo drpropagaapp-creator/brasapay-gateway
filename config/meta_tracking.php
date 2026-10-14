@@ -8,7 +8,7 @@ return [
     |--------------------------------------------------------------------------
     |
     | Dedicated queue for Meta Pixel CAPI events (PageView, InitiateCheckout,
-    | Purchase). Run: php artisan queue:work --queue=meta-tracking
+    | AddPaymentInfo, Purchase, Refund). Run: php artisan queue:work --queue=meta-tracking
     |
     */
 
@@ -35,9 +35,19 @@ return [
             'browser' => true,
             'server' => true,
         ],
+        'AddPaymentInfo' => [
+            'enabled' => true,
+            'browser' => true,
+            'server' => true,
+        ],
         'Purchase' => [
             'enabled' => true,
             'browser' => true,
+            'server' => true,
+        ],
+        'Refund' => [
+            'enabled' => true,
+            'browser' => false,
             'server' => true,
         ],
     ],
@@ -51,7 +61,9 @@ return [
     'event_ids' => [
         'pageview' => 'pv:{session_token}',
         'initiate_checkout' => 'chk:{session_token}',
+        'add_payment_info' => 'pay:{order_id}',
         'purchase' => 'order:{order_id}',
+        'refund' => 'refund:{order_id}',
     ],
 
     /*

@@ -22,7 +22,9 @@ import { requestCieloPaymentToken, formatCieloSopHolderName } from '@/composable
 import { loadCajuPaySdk } from '@/composables/useCajuPaySdk';
 import { isValidCpf } from '@/utils/brazilianDocuments.js';
 import { navigateAfterCheckout } from '@/lib/checkoutRedirect.js';
-import { trackCheckoutPurchase } from '@/composables/useCheckoutPurchaseTracking.js';
+import { trackCheckoutAddPaymentInfo, trackCheckoutPurchase } from '@/composables/useCheckoutPurchaseTracking.js';
+import { applyMetaAdvancedMatching } from '@/composables/useMetaCheckoutTracking.js';
+import { splitCustomerName } from '@/lib/metaTracking/browserPixel.js';
 import { getMetricsSessionKey } from '@/lib/metricsTracking.js';
 import CheckoutLegalFooter from './CheckoutLegalFooter.vue';
 import { usePlatformBranding } from '@/composables/usePlatformBranding';
@@ -186,6 +188,9 @@ const props = defineProps({
     productOfferId: { type: Number, default: null },
     subscriptionPlanId: { type: Number, default: null },
     checkoutSessionToken: { type: String, default: '' },
+    contentKey: { type: String, default: '' },
+    contentName: { type: String, default: '' },
+    tenantId: { type: [Number, String], default: null },
     /** Código ref de afiliado (query `ref` ou servidor). */
     affiliateRef: { type: String, default: '' },
     orderBumps: { type: Array, default: () => [] },
@@ -349,11 +354,28 @@ async function completeApprovedPurchase(orderId, redirectUrl, triggerType = 'app
     cardApprovedRedirectUrl.value = url;
 
     const api = checkoutConversionPixelsRef?.value ?? null;
+    const customer = currentMetaCustomer();
+    const purchaseValue = Math.max(0, Number(props.checkoutTotalBrl) || 0);
+    await trackCheckoutAddPaymentInfo({
+        orderId,
+        checkoutSessionToken: props.checkoutSessionToken || '',
+        value: purchaseValue,
+        currency: 'BRL',
+        contentKey: props.contentKey || '',
+        contents: currentMetaContents(),
+        contentName: props.contentName || '',
+        customer,
+        pixels: props.conversionPixels || {},
+    });
     await trackCheckoutPurchase({
         orderId,
         checkoutSessionToken: props.checkoutSessionToken || '',
-        value: Math.max(0, Number(props.checkoutTotalBrl) || 0),
+        value: purchaseValue,
         currency: 'BRL',
+        contentKey: props.contentKey || '',
+        contents: currentMetaContents(),
+        contentName: props.contentName || '',
+        customer,
         triggerType,
         pixels: props.conversionPixels || {},
         conversionPixelsApi: api,
@@ -695,6 +717,39 @@ let trackTimeout = null;
 let contactSyncTimeout = null;
 const trackStepSent = ref({ form_started: false, form_filled: false });
 
+function currentMetaCustomer() {
+    const phone = showPhone.value ? `${form.country_code || ''}${phoneDigits.value || ''}` : '';
+    return {
+        email: form.email || '',
+        phone,
+        tenantId: props.tenantId,
+        ...splitCustomerName(form.name),
+    };
+}
+
+function currentMetaContents() {
+    const selected = new Set((props.orderBumpIds || []).map((id) => String(id)));
+    const bumps = (props.orderBumps || []).filter((bump) => selected.has(String(bump.id)));
+    const bumpTotal = bumps.reduce((sum, bump) => sum + (Number(bump.amount_brl) || 0), 0);
+    const total = Math.max(0, Number(props.checkoutTotalBrl) || 0);
+    const mainPrice = Math.max(0, Math.round((total - bumpTotal) * 100) / 100);
+    const rows = [];
+    const key = String(props.contentKey || '').trim();
+    if (key) {
+        rows.push({ id: key, quantity: 1, item_price: mainPrice });
+    }
+    bumps.forEach((bump) => {
+        const id = String(bump.content_id || '').trim();
+        if (!id) return;
+        rows.push({
+            id,
+            quantity: 1,
+            item_price: Math.max(0, Number(bump.amount_brl) || 0),
+        });
+    });
+    return rows;
+}
+
 function buildTrackContactPayload(email, name) {
     const cpf = (form.cpf || '').replace(/\D/g, '');
     const phone = (showPhone.value ? `${form.country_code || ''}${phoneDigits.value || ''}` : '').trim();
@@ -756,6 +811,9 @@ watch(
         const needsName = (props.config?.customer_fields?.name ?? true) !== false;
         if (hasEmail && (!needsName || hasName) && !trackStepSent.value.form_filled) {
             callTrackApi('form_filled', email, name);
+        }
+        if (hasEmail) {
+            applyMetaAdvancedMatching(props.conversionPixels || {}, currentMetaCustomer()).catch(() => {});
         }
         if (hasEmail && (trackStepSent.value.form_started || trackStepSent.value.form_filled)) {
             syncContactFields(email, name);

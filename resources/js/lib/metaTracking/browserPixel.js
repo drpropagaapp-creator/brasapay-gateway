@@ -119,10 +119,60 @@ async function waitForMetaPixelInit(metaEntries, maxMs = 4200) {
     return typeof window.fbq === 'function' && ids.every((id) => metaInitedPixelIds.has(id));
 }
 
+export function normalizeMetaPhone(phone) {
+    let digits = String(phone ?? '').replace(/\D/g, '');
+    if (digits.startsWith('00')) digits = digits.slice(2);
+    if (!digits) return '';
+    if (digits.length === 10 || digits.length === 11) {
+        digits = `55${digits}`;
+    }
+    return digits;
+}
+
+function normalizeMetaName(name) {
+    return String(name ?? '')
+        .trim()
+        .toLowerCase()
+        .replace(/[0-9!"#$%&'()*+,\-./:;<=>?@[\\\]^_`{|}~]/g, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+}
+
+/**
+ * Dados em texto para o pixel hashear (mesmo formato normalizado da CAPI).
+ */
+export function buildAdvancedMatching(customer = {}) {
+    const data = {};
+    const email = String(customer.email ?? '').trim().toLowerCase();
+    const tenantId = Number(customer.tenantId ?? customer.tenant_id ?? 0);
+    if (email) {
+        data.em = email;
+        if (Number.isFinite(tenantId) && tenantId > 0) {
+            data.external_id = `${tenantId}:${email}`;
+        }
+    }
+    const phone = normalizeMetaPhone(customer.phone);
+    if (phone) data.ph = phone;
+    const firstName = normalizeMetaName(customer.firstName);
+    const lastName = normalizeMetaName(customer.lastName);
+    if (firstName) data.fn = firstName;
+    if (lastName) data.ln = lastName;
+    return data;
+}
+
+export function splitCustomerName(name) {
+    const parts = String(name ?? '').trim().split(/\s+/).filter(Boolean);
+    return {
+        firstName: parts[0] || '',
+        lastName: parts.slice(1).join(' '),
+    };
+}
+
 /**
  * Load fbevents.js and init all Meta pixel IDs.
+ * userData liga advanced matching quando e-mail ou telefone já existem.
  */
-export async function initMetaPixels(metaEntries) {
+export async function initMetaPixels(metaEntries, userData = null) {
     const ids = metaEntries.map((e) => String(e.pixel_id).trim()).filter((id) => id && isValidPixelId(id));
     if (!ids.length) return false;
 
@@ -132,9 +182,10 @@ export async function initMetaPixels(metaEntries) {
         return false;
     }
 
+    const matching = userData && typeof userData === 'object' && Object.keys(userData).length ? userData : null;
     ids.forEach((id) => {
-        if (!metaInitedPixelIds.has(id)) {
-            window.fbq('init', id);
+        if (!metaInitedPixelIds.has(id) || matching) {
+            window.fbq('init', id, matching || {});
             metaInitedPixelIds.add(id);
         }
     });
@@ -169,22 +220,49 @@ export function buildCheckoutEventPayload(value, currency, contentKey) {
         content_type: 'product',
         num_items: 1,
         content_ids: key ? [key] : [],
-        contents: key ? [{ id: key, quantity: 1 }] : [],
+        contents: key ? [{ id: key, quantity: 1, item_price: Number.isFinite(num) ? num : 0 }] : [],
     };
 }
 
-export function buildPurchaseEventPayload(value, currency, orderId) {
+export function normalizeMetaContents(contents, fallbackKey = '', fallbackPrice = 0) {
+    const rows = Array.isArray(contents) ? contents : [];
+    const normalized = rows
+        .map((row) => {
+            const id = String(row?.id ?? '').trim();
+            if (!id) return null;
+            const quantity = Number(row.quantity);
+            const itemPrice = Number(row.item_price);
+            return {
+                id,
+                quantity: Number.isFinite(quantity) && quantity > 0 ? quantity : 1,
+                item_price: Number.isFinite(itemPrice) ? itemPrice : 0,
+            };
+        })
+        .filter(Boolean);
+
+    if (normalized.length) return normalized;
+
+    const key = String(fallbackKey || '').trim();
+    if (!key) return [];
+    const price = Number(fallbackPrice);
+    return [{ id: key, quantity: 1, item_price: Number.isFinite(price) ? price : 0 }];
+}
+
+export function buildPurchaseEventPayload(value, currency, orderId, contentKey = '', contents = null) {
     const num = Number(value);
     const normalizedCurrency = typeof currency === 'string' && currency.trim() ? currency.trim().toUpperCase() : 'BRL';
     const oid = orderId ? String(orderId) : '';
+    const price = Number.isFinite(num) ? num : 0;
+    const lines = normalizeMetaContents(contents, contentKey, price);
 
     return {
-        value: Number.isFinite(num) ? num : 0,
+        value: price,
         currency: normalizedCurrency,
         content_type: 'product',
-        num_items: 1,
-        content_ids: oid ? [oid] : [],
-        contents: oid ? [{ id: oid, quantity: 1 }] : [],
+        num_items: lines.length || 1,
+        content_ids: lines.map((line) => line.id),
+        contents: lines,
+        ...(oid ? { order_id: oid } : {}),
     };
 }
 

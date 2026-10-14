@@ -275,9 +275,9 @@ function fireInitiateCheckout(value, currency = 'BRL', checkoutKey = '') {
     });
 }
 
-function firePurchase(value, currency = 'BRL', orderId = '', isOrderBump = false, triggerType = 'approved') {
+function firePurchase(value, currency = 'BRL', orderId = '', isOrderBump = false, triggerType = 'approved', contentKey = '', contents = null) {
     const p = props.pixels || {};
-    const purchasePayload = buildPurchaseEventPayload(value, currency, orderId);
+    const purchasePayload = buildPurchaseEventPayload(value, currency, orderId, contentKey, contents);
     const eventID = orderId ? `order:${orderId}` : undefined;
     let firedAny = false;
 
@@ -340,7 +340,7 @@ defineExpose({
         if (settleDelayMs > 0) await sleep(settleDelayMs);
         return true;
     },
-    async firePurchaseReliable(value, currency = 'BRL', orderId = '', isOrderBump = false, triggerType = 'approved', settleDelayMs = 450) {
+    async firePurchaseReliable(value, currency = 'BRL', orderId = '', isOrderBump = false, triggerType = 'approved', settleDelayMs = 450, contentKey = '', customer = null, contents = null) {
         const oid = orderId ? String(orderId) : '';
         const dedupeKey = oid ? `px:purchase_sent:${oid}` : '';
         if (dedupeKey && safeStorageGet(dedupeKey) === '1') return;
@@ -354,6 +354,9 @@ defineExpose({
                 value,
                 currency,
                 orderId: oid,
+                contentKey,
+                contents,
+                customer,
                 isOrderBump,
                 triggerType,
                 settleDelayMs: 0,
@@ -362,7 +365,7 @@ defineExpose({
         }
 
         await waitForTrackers(2200);
-        const fired = firePurchase(value, currency, orderId, isOrderBump, triggerType);
+        const fired = firePurchase(value, currency, orderId, isOrderBump, triggerType, contentKey, contents);
         if (dedupeKey && (fired || metaFired)) safeStorageSet(dedupeKey, '1');
         if (settleDelayMs > 0) await sleep(settleDelayMs);
     },

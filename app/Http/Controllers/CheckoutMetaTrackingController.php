@@ -14,7 +14,7 @@ class CheckoutMetaTrackingController extends Controller
     {
         $validated = $request->validate([
             'checkout_session_token' => ['required', 'string', 'max:64'],
-            'event_name' => ['required', 'string', 'in:PageView,InitiateCheckout,Purchase'],
+            'event_name' => ['required', 'string', 'in:PageView,InitiateCheckout,AddPaymentInfo,Purchase'],
             'event_id' => ['required', 'string', 'max:128'],
             'order_id' => ['nullable', 'integer', 'min:1'],
             'fbp' => ['nullable', 'string', 'max:512'],
@@ -39,6 +39,10 @@ class CheckoutMetaTrackingController extends Controller
 
         if ($validated['event_name'] === 'Purchase') {
             return $this->storePurchaseMirror($validated, $session, $trackingService);
+        }
+
+        if ($validated['event_name'] === 'AddPaymentInfo') {
+            return $this->storeAddPaymentInfoMirror($validated, $session, $trackingService);
         }
 
         $overrides = array_filter([
@@ -68,25 +72,65 @@ class CheckoutMetaTrackingController extends Controller
     /**
      * @param  array<string, mixed>  $validated
      */
+    private function storeAddPaymentInfoMirror(array $validated, CheckoutSession $session, MetaTrackingService $trackingService): JsonResponse
+    {
+        $order = $this->orderForSessionMirror($validated, $session, 'pay:');
+        if ($order instanceof JsonResponse) {
+            return $order;
+        }
+
+        if (! in_array((string) $order->status, ['pending', 'completed'], true)) {
+            return response()->json(['ok' => false, 'message' => 'Pedido não está aguardando nem pago.'], 422);
+        }
+
+        $queued = $trackingService->queueAddPaymentInfoForOrder($order);
+
+        return response()->json([
+            'ok' => true,
+            'queued' => count($queued),
+        ]);
+    }
+
+    /**
+     * @param  array<string, mixed>  $validated
+     */
     private function storePurchaseMirror(array $validated, CheckoutSession $session, MetaTrackingService $trackingService): JsonResponse
+    {
+        $order = $this->orderForSessionMirror($validated, $session, 'order:');
+        if ($order instanceof JsonResponse) {
+            return $order;
+        }
+
+        if ($order->status !== 'completed') {
+            return response()->json(['ok' => false, 'message' => 'Pedido ainda não está concluído.'], 422);
+        }
+
+        $queued = $trackingService->queuePurchaseForOrder($order);
+
+        return response()->json([
+            'ok' => true,
+            'queued' => count($queued),
+        ]);
+    }
+
+    /**
+     * @param  array<string, mixed>  $validated
+     */
+    private function orderForSessionMirror(array $validated, CheckoutSession $session, string $eventIdPrefix): Order|JsonResponse
     {
         $orderId = (int) ($validated['order_id'] ?? 0);
         if ($orderId <= 0) {
-            return response()->json(['ok' => false, 'message' => 'order_id é obrigatório para Purchase.'], 422);
+            return response()->json(['ok' => false, 'message' => 'order_id é obrigatório.'], 422);
         }
 
-        $expectedEventId = 'order:'.$orderId;
+        $expectedEventId = $eventIdPrefix.$orderId;
         if (($validated['event_id'] ?? '') !== $expectedEventId) {
-            return response()->json(['ok' => false, 'message' => 'event_id inválido para Purchase.'], 422);
+            return response()->json(['ok' => false, 'message' => 'event_id inválido.'], 422);
         }
 
         $order = Order::query()->find($orderId);
         if (! $order) {
             return response()->json(['ok' => false, 'message' => 'Pedido não encontrado.'], 404);
-        }
-
-        if ($order->status !== 'completed') {
-            return response()->json(['ok' => false, 'message' => 'Pedido ainda não está concluído.'], 422);
         }
 
         if ((string) $order->product_id !== (string) $session->product_id) {
@@ -101,11 +145,6 @@ class CheckoutMetaTrackingController extends Controller
             $session->update(['order_id' => $orderId]);
         }
 
-        $queued = $trackingService->queuePurchaseForOrder($order);
-
-        return response()->json([
-            'ok' => true,
-            'queued' => count($queued),
-        ]);
+        return $order;
     }
 }
