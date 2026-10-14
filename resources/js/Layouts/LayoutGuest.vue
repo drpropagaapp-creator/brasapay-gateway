@@ -21,6 +21,12 @@ import CustomerImpersonationBanner from '@/components/layout/CustomerImpersonati
                         Minhas compras
                     </Link>
                     <Link
+                        href="/painel-cliente/marketplace"
+                        class="hidden text-sm font-medium text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-white sm:inline"
+                    >
+                        Marketplace
+                    </Link>
+                    <Link
                         href="/area-membros"
                         class="hidden text-sm font-medium text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-white sm:inline"
                     >

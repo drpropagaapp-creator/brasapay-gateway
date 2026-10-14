@@ -5,7 +5,7 @@ import PwaInstallPrompt from '@/components/member-area/PwaInstallPrompt.vue';
 import CustomerImpersonationBanner from '@/components/layout/CustomerImpersonationBanner.vue';
 import MemberAreaNotificationsPanel from '@/components/member-area/MemberAreaNotificationsPanel.vue';
 import Button from '@/components/ui/Button.vue';
-import { Bell, ChevronDown, User, X, Camera, Lock, CheckCircle, AlertCircle, Menu, Trophy, Award, Package } from 'lucide-vue-next';
+import { Bell, ChevronDown, User, X, Camera, Lock, CheckCircle, AlertCircle, Menu, Trophy, Award, Package, Store } from 'lucide-vue-next';
 import { resolveMemberAreaHref as buildMemberAreaHref } from '@/utils/memberAreaHref';
 
 const page = usePage();
@@ -156,6 +156,7 @@ const customerPanelHref = computed(() => {
     const appUrl = String(props.value?.app_url || '').replace(/\/$/, '');
     return appUrl ? `${appUrl}/painel-cliente` : '/painel-cliente';
 });
+const marketplaceHref = computed(() => `${customerPanelHref.value}/marketplace`);
 
 const initials = computed(() => {
     if (!user.value?.name) return '?';
@@ -585,14 +586,22 @@ watch(
                     >
                         Comunidade
                     </Link>
-                    <a
-                        v-if="canOpenCustomerPanel"
-                        :href="customerPanelHref"
-                        class="inline-flex items-center gap-1.5 rounded-lg bg-white/15 px-3 py-2 text-sm font-medium text-white drop-shadow transition hover:bg-white/25"
-                    >
-                        <Package class="h-4 w-4 shrink-0" />
-                        Minhas compras
-                    </a>
+                        <a
+                            v-if="canOpenCustomerPanel"
+                            :href="customerPanelHref"
+                            class="inline-flex items-center gap-1.5 rounded-lg bg-white/15 px-3 py-2 text-sm font-medium text-white drop-shadow transition hover:bg-white/25"
+                        >
+                            <Package class="h-4 w-4 shrink-0" />
+                            Minhas compras
+                        </a>
+                        <a
+                            v-if="canOpenCustomerPanel"
+                            :href="marketplaceHref"
+                            class="inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium text-white/90 drop-shadow transition hover:bg-white/10"
+                        >
+                            <Store class="h-4 w-4 shrink-0" />
+                            Marketplace
+                        </a>
                 </nav>
                 <!-- Menu principal no mobile: sempre drawer (evita colisão logo + links + ícones) -->
                 <button
@@ -730,6 +739,16 @@ watch(
                             <Package class="h-4 w-4" />
                             Minhas compras
                         </a>
+                        <a
+                            v-if="canOpenCustomerPanel"
+                            :href="marketplaceHref"
+                            class="flex w-full items-center gap-2 px-4 py-2.5 text-left text-sm font-medium text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                            role="menuitem"
+                            @click="accountMenuOpen = false"
+                        >
+                            <Store class="h-4 w-4" />
+                            Marketplace
+                        </a>
                         <Link
                             v-if="certificateEnabled"
                             :href="certificadoHref"
@@ -860,6 +879,15 @@ watch(
                             <Package class="h-4 w-4 shrink-0" />
                             Minhas compras
                         </a>
+                        <a
+                            v-if="canOpenCustomerPanel"
+                            :href="marketplaceHref"
+                            class="flex items-center gap-2 rounded-lg px-4 py-3 text-sm font-medium text-zinc-200 hover:bg-zinc-800 hover:text-white"
+                            @click="closeMobileMenu"
+                        >
+                            <Store class="h-4 w-4 shrink-0" />
+                            Marketplace
+                        </a>
                     </nav>
                     <div v-if="canRegisterPush && !pushRegistered" class="border-t border-zinc-700 px-4 py-3">
                         <button
@@ -907,6 +935,15 @@ watch(
                             >
                                 <Package class="h-4 w-4" />
                                 Minhas compras
+                            </a>
+                            <a
+                                v-if="canOpenCustomerPanel"
+                                :href="marketplaceHref"
+                                class="flex w-full items-center gap-2 rounded-lg px-4 py-3 text-left text-sm font-medium text-zinc-300 hover:bg-zinc-800"
+                                @click="closeMobileMenu"
+                            >
+                                <Store class="h-4 w-4" />
+                                Marketplace
                             </a>
                             <Link
                                 v-if="certificateEnabled"

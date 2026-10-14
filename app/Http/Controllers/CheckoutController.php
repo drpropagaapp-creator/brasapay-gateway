@@ -431,6 +431,10 @@ class CheckoutController extends Controller
                 );
             }
 
+            if ($checkoutSession instanceof CheckoutSession) {
+                $checkoutSession->captureMarketplaceOrigin($request);
+            }
+
             if (! $reusedCheckoutSession) {
                 app(MetaTrackingService::class)->queueCheckoutLandingEvents(
                     $checkoutSession,
@@ -3796,7 +3800,7 @@ class CheckoutController extends Controller
                 $orderMetadata = AffiliateOrderMetadata::merge($orderMetadata, $product, $affiliateRef, $session);
             }
 
-            return $orderMetadata;
+            return CheckoutSession::applyMarketplaceOrigin($orderMetadata, $session);
         }
 
         foreach ($fromRequest as $key => $value) {

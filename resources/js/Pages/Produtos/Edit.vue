@@ -163,6 +163,7 @@ const form = useForm({
     base_interval: props.produto.base_interval ?? (props.produto.subscription_plans?.sort((a, b) => (a.position ?? 0) - (b.position ?? 0))[0]?.interval) ?? 'monthly',
     currency: props.produto.currency ?? 'BRL',
     is_active: props.produto.is_active,
+    show_in_marketplace: Boolean(props.produto.show_in_marketplace),
     image: null,
     conversion_pixels: mergeConversionPixels(props.produto.conversion_pixels),
     deliverable_link: props.produto.checkout_config?.deliverable_link ?? '',
@@ -205,6 +206,10 @@ watch(
 );
 
 const isSubscriptionBilling = computed(() => form.billing_type === 'subscription');
+const marketplaceToggleLabel = computed(() => {
+    const name = String(page.props.appSettings?.app_name || 'plataforma').trim() || 'plataforma';
+    return `Exibir no Marketplace da ${name}`;
+});
 const showCardInstallments = computed(
     () => !isSubscriptionBilling.value && Boolean(props.checkout_gateway_ui?.card_show_installments)
 );
@@ -1223,6 +1228,7 @@ function appendCoreProductFields(fd) {
     }
     fd.append('currency', form.currency);
     fd.append('is_active', form.is_active ? '1' : '0');
+    fd.append('show_in_marketplace', form.show_in_marketplace ? '1' : '0');
     if (form.type === 'produto_fisico') {
         if (form.shipping_store_id) fd.append('shipping_store_id', String(form.shipping_store_id));
         fd.append('physical_free_shipping', form.physical_free_shipping ? '1' : '0');
@@ -1525,6 +1531,16 @@ function submit() {
                                         :label="t('products.create.active_product', 'Produto ativo')"
                                         :disabled="produto.approval?.status && produto.approval.status !== 'approved'"
                                     />
+                                </div>
+                                <div class="pt-1">
+                                    <Checkbox
+                                        v-model="form.show_in_marketplace"
+                                        :label="marketplaceToggleLabel"
+                                        class="w-full"
+                                    />
+                                    <p class="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+                                        Quem já comprou na plataforma vê imagem, nome, categoria e valor. O botão Comprar abre o checkout deste produto.
+                                    </p>
                                 </div>
                                 <div
                                     v-if="produto.approval && produto.approval.status !== 'approved'"
