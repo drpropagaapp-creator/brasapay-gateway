@@ -70,13 +70,16 @@ class MemberPdfWatermarkTest extends TestCase
             (string) $response->headers->get('content-disposition')
         );
         $body = $response->getContent();
+        $this->assertSame((string) strlen($body), (string) $response->headers->get('content-length'));
         $this->assertStringStartsWith('%PDF', $body);
-        $this->assertStringContainsString($this->latin('João Souza'), $body);
-        $this->assertStringContainsString('123.456.789-00', $body);
-        $this->assertStringContainsString('joao.pedido@example.com', $body);
-        $this->assertStringContainsString('A1B2C3D4E5', $body);
-        $this->assertStringContainsString('comprador identificado', $body);
-        $this->assertGreaterThanOrEqual(2, substr_count($body, $this->latin('João Souza')));
+        $this->assertStringContainsString('%%EOF', $body);
+        $plain = $this->pdfPlainText($body);
+        $this->assertStringContainsString($this->latin('João Souza'), $plain);
+        $this->assertStringContainsString('123.456.789-00', $plain);
+        $this->assertStringContainsString('joao.pedido@example.com', $plain);
+        $this->assertStringContainsString('A1B2C3D4E5', $plain);
+        $this->assertStringContainsString('comprador identificado', $plain);
+        $this->assertGreaterThanOrEqual(2, substr_count($plain, $this->latin('João Souza')));
 
         $this->assertDatabaseHas('member_student_activity_logs', [
             'user_id' => $student->id,
@@ -107,7 +110,8 @@ class MemberPdfWatermarkTest extends TestCase
             'index' => 0,
         ]));
         $broken->assertStatus(422);
-        $broken->assertSee('O arquivo original não foi enviado', false);
+        $this->assertStringContainsString('application/json', (string) $broken->headers->get('content-type'));
+        $this->assertStringContainsString('O arquivo original não foi enviado', (string) $broken->json('message'));
         $this->assertStringNotContainsString('%PDF', $broken->getContent());
         $this->assertDatabaseMissing('member_student_activity_logs', [
             'user_id' => $student->id,
@@ -122,10 +126,11 @@ class MemberPdfWatermarkTest extends TestCase
         ]));
         $ok->assertOk();
         $body = $ok->getContent();
-        $this->assertStringContainsString($this->latin('Maria Silva'), $body);
-        $this->assertStringContainsString($this->latin('não informado'), $body);
-        $this->assertStringContainsString($student->email, $body);
-        $this->assertStringContainsString($this->latin('Nº do cliente: ').$student->id, $body);
+        $plain = $this->pdfPlainText($body);
+        $this->assertStringContainsString($this->latin('Maria Silva'), $plain);
+        $this->assertStringContainsString($this->latin('não informado'), $plain);
+        $this->assertStringContainsString($student->email, $plain);
+        $this->assertStringContainsString($this->latin('Nº do cliente: ').$student->id, $plain);
     }
 
     public function test_non_pdf_material_keeps_redirect_when_protection_is_enabled(): void
@@ -170,7 +175,7 @@ class MemberPdfWatermarkTest extends TestCase
             'index' => 0,
         ]));
         $response->assertOk();
-        $this->assertStringContainsString($this->latin('Ana Costa'), $response->getContent());
+        $this->assertStringContainsString($this->latin('Ana Costa'), $this->pdfPlainText($response->getContent()));
 
         $lesson->update([
             'content_files' => [
@@ -205,6 +210,25 @@ class MemberPdfWatermarkTest extends TestCase
         $converted = @iconv('UTF-8', 'ISO-8859-1//TRANSLIT//IGNORE', $text);
 
         return $converted !== false ? $converted : $text;
+    }
+
+    private function pdfPlainText(string $binary): string
+    {
+        $text = $binary;
+        $offset = 0;
+        $pattern = '/\/Length\s+(\d+)\s*>>\s*stream\r?\n/';
+        while (preg_match($pattern, $binary, $match, PREG_OFFSET_CAPTURE, $offset)) {
+            $length = (int) $match[1][0];
+            $start = $match[0][1] + strlen($match[0][0]);
+            $stream = substr($binary, $start, $length);
+            $decoded = @gzuncompress($stream);
+            if (is_string($decoded)) {
+                $text .= "\n".$decoded;
+            }
+            $offset = $start + max(1, $length);
+        }
+
+        return $text;
     }
 
     /**

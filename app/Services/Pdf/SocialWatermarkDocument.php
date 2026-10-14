@@ -36,7 +36,7 @@ class SocialWatermarkDocument extends Fpdi
             throw new MemberPdfWatermarkException('Este PDF passa do tamanho máximo permitido para proteção.');
         }
 
-        $this->SetCompression(false);
+        $this->SetCompression(true);
         $this->SetAutoPageBreak(false);
         $this->WithAlpha = true;
         if ($this->PDFVersion < '1.4') {
@@ -75,7 +75,29 @@ class SocialWatermarkDocument extends Fpdi
             $this->drawMarks($width, $height, $name, $diagonalSecondary, $header, $footer);
         }
 
-        return $this->Output('S');
+        $binary = $this->Output('S');
+        $this->assertDeliverablePdf($binary);
+
+        return $binary;
+    }
+
+    private function assertDeliverablePdf(string $binary): void
+    {
+        $trimmed = ltrim($binary, "\xEF\xBB\xBF");
+        if (! str_starts_with($trimmed, '%PDF') || ! str_contains($binary, '%%EOF')) {
+            throw new MemberPdfWatermarkException('Não foi possível proteger este PDF. O arquivo original não foi enviado.');
+        }
+
+        try {
+            $check = new Fpdi;
+            $pages = $check->setSourceFile(StreamReader::createByString($binary));
+        } catch (\Throwable $e) {
+            throw new MemberPdfWatermarkException('Não foi possível proteger este PDF. O arquivo original não foi enviado.');
+        }
+
+        if ($pages < 1) {
+            throw new MemberPdfWatermarkException('Não foi possível proteger este PDF. O arquivo original não foi enviado.');
+        }
     }
 
     private function drawMarks(

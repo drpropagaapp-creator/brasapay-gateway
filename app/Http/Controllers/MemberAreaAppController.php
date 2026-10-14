@@ -489,9 +489,11 @@ class MemberAreaAppController extends Controller
             $binary = $pdfSource->read((string) ($file['url'] ?? ''), $tenantId);
             $stamped = $pdfWatermarker->stamp($binary, $this->getStudentWatermarkData($user, $product));
         } catch (MemberPdfWatermarkException $e) {
-            return response($e->getMessage(), 422, [
-                'Content-Type' => 'text/plain; charset=UTF-8',
+            return response()->json([
+                'message' => $e->getMessage(),
+            ], 422, [
                 'X-Content-Type-Options' => 'nosniff',
+                'Cache-Control' => 'private, no-store',
             ]);
         }
 
@@ -506,9 +508,12 @@ class MemberAreaAppController extends Controller
 
         $filename = $this->pdfDownloadFilename((string) ($file['name'] ?? 'material.pdf'));
 
+        $encodedName = rawurlencode($filename);
+
         return response($stamped, 200, [
             'Content-Type' => 'application/pdf',
-            'Content-Disposition' => 'attachment; filename="'.$filename.'"',
+            'Content-Length' => (string) strlen($stamped),
+            'Content-Disposition' => 'attachment; filename="'.$filename.'"; filename*=UTF-8\'\''.$encodedName,
             'Cache-Control' => 'private, no-store',
             'X-Content-Type-Options' => 'nosniff',
         ]);
@@ -581,7 +586,13 @@ class MemberAreaAppController extends Controller
     {
         $files = $this->normalizeLessonContentFiles($lesson);
         foreach ($files as $i => $file) {
-            $files[$i]['url'] = $this->lessonMaterialDownloadPath($request, $slug, (int) $lesson->id, $i);
+            $files[$i]['url'] = $this->lessonMaterialDownloadPath(
+                $request,
+                $slug,
+                (int) $lesson->id,
+                $i,
+                $this->publicMaterialFilename((string) ($file['name'] ?? ''), (string) ($file['url'] ?? ''))
+            );
         }
 
         return $files;
@@ -599,9 +610,32 @@ class MemberAreaAppController extends Controller
         return $lesson->content_url ?: null;
     }
 
-    private function lessonMaterialDownloadPath(Request $request, string $slug, int $lessonId, int $index): string
+    private function publicMaterialFilename(string $name, string $url): string
     {
-        $suffix = '/aula/'.$lessonId.'/material/'.$index;
+        $candidate = trim($name);
+        if ($candidate === '') {
+            $path = parse_url($url, PHP_URL_PATH);
+            $candidate = is_string($path) ? basename($path) : '';
+        }
+
+        $extension = strtolower(pathinfo($candidate, PATHINFO_EXTENSION));
+        if (! preg_match('/^[a-z0-9]{1,8}$/', $extension)) {
+            $extension = 'bin';
+        }
+
+        $base = pathinfo($candidate, PATHINFO_FILENAME);
+        $base = preg_replace('/[^A-Za-z0-9._-]+/', '-', (string) $base) ?? '';
+        $base = trim($base, '.-');
+        if ($base === '') {
+            $base = 'material';
+        }
+
+        return substr($base, 0, 80).'.'.$extension;
+    }
+
+    private function lessonMaterialDownloadPath(Request $request, string $slug, int $lessonId, int $index, string $filename): string
+    {
+        $suffix = '/aula/'.$lessonId.'/material/'.$index.'/'.$filename;
         if ($this->isHostMemberAreaRequest($request)) {
             return $suffix;
         }
