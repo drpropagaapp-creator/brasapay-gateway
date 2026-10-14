@@ -81,7 +81,10 @@ export function useAppSidebarNav() {
 
     const navItems = computed(() => {
         if (page.props.customer_panel) {
-            return [{ name: 'Minhas compras', href: '/painel-cliente', icon: Package }];
+            return [
+                { name: 'Minhas compras', href: '/painel-cliente', icon: Package },
+                { name: 'Marketplace', href: '/painel-cliente/marketplace', icon: Store },
+            ];
         }
 
         const items = [];
@@ -187,6 +190,7 @@ export function useAppSidebarNav() {
 
     function isActive(href) {
         const url = page.url.split('?')[0];
+        if (href === '/painel-cliente') return url === '/painel-cliente';
         if (href === '/frete') return url === '/frete' || url.startsWith('/frete/');
         if (href === '/dashboard') return url === '/dashboard' || url === '/';
         if (href === '/vendas') {

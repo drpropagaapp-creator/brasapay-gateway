@@ -39,6 +39,7 @@ class CheckoutSession extends Model
         'meta_fbp', 'meta_fbc', 'meta_fbclid', 'meta_user_agent', 'meta_page_url', 'affiliate_ref',
         'metrics_session_key',
         'utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term', 'sck', 'src',
+        'from_marketplace',
         'abandoned_webhook_fired_at',
     ];
 
@@ -48,6 +49,7 @@ class CheckoutSession extends Model
             'form_started_at' => 'datetime',
             'form_filled_at' => 'datetime',
             'abandoned_webhook_fired_at' => 'datetime',
+            'from_marketplace' => 'boolean',
         ];
     }
 
@@ -277,5 +279,32 @@ class CheckoutSession extends Model
     public static function eagerSelectForOrderRelation(): string
     {
         return 'id,order_id,'.implode(',', self::TRACKING_FIELD_KEYS);
+    }
+
+    public function captureMarketplaceOrigin(Request $request): void
+    {
+        if ($request->query('origem') !== 'marketplace') {
+            return;
+        }
+
+        if (! Schema::hasColumn($this->getTable(), 'from_marketplace') || $this->from_marketplace) {
+            return;
+        }
+
+        $this->from_marketplace = true;
+        $this->save();
+    }
+
+    /**
+     * @param  array<string, mixed>  $orderMetadata
+     * @return array<string, mixed>
+     */
+    public static function applyMarketplaceOrigin(array $orderMetadata, ?self $session): array
+    {
+        if ($session && Schema::hasColumn('checkout_sessions', 'from_marketplace') && $session->from_marketplace) {
+            $orderMetadata['marketplace'] = true;
+        }
+
+        return $orderMetadata;
     }
 }

@@ -63,6 +63,7 @@ class Product extends Model
         'price',
         'currency',
         'is_active',
+        'show_in_marketplace',
         'admin_blocked',
         'approval_status',
         'approval_reason',
@@ -90,6 +91,7 @@ class Product extends Model
         return [
             'price' => 'decimal:2',
             'is_active' => 'boolean',
+            'show_in_marketplace' => 'boolean',
             'admin_blocked' => 'boolean',
             'reviewed_at' => 'datetime',
             'checkout_config' => 'array',

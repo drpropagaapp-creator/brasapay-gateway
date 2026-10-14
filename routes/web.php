@@ -1235,6 +1235,7 @@ Route::middleware(['auth'])->group(function () {
 Route::middleware(['auth', 'customer.panel'])->group(function () {
     Route::get('/area-membros', [\App\Http\Controllers\MemberAreaController::class, 'index'])->name('member-area.index');
     Route::get('/painel-cliente', [\App\Http\Controllers\CustomerPanelController::class, 'index'])->name('painel-cliente.index');
+    Route::get('/painel-cliente/marketplace', [\App\Http\Controllers\CustomerMarketplaceController::class, 'index'])->name('painel-cliente.marketplace');
     Route::post('/painel-cliente/reembolso', [\App\Http\Controllers\CustomerPanelController::class, 'requestRefund'])->name('painel-cliente.refund')->middleware('throttle:20,1');
 });
 

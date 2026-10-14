@@ -37,6 +37,7 @@ use App\Support\MoneyDecimal;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -762,6 +763,9 @@ class ProdutosController extends Controller
         }
 
         $validated['is_active'] = $request->boolean('is_active', true);
+        if (Schema::hasColumn('products', 'show_in_marketplace')) {
+            $validated['show_in_marketplace'] = $request->boolean('show_in_marketplace');
+        }
         $validated['currency'] = $validated['currency'] ?? config('products.currency_default', 'BRL');
         $validated['price'] = MoneyDecimal::storageFromBrl(
             (float) $validated['price'],
@@ -1476,6 +1480,7 @@ class ProdutosController extends Controller
             'price_eur' => $priceEur,
             'price_usd' => $priceUsd,
             'is_active' => $p->is_active,
+            'show_in_marketplace' => (bool) ($p->show_in_marketplace ?? false),
             'available_for_purchase' => $p->isAvailableForPurchase(),
             'approval' => app(ProductApprovalService::class)->sellerFacingStatus($p),
             'conversion_pixels' => $p->conversion_pixels,
