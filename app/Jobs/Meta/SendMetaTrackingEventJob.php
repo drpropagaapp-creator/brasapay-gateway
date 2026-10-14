@@ -52,6 +52,15 @@ class SendMetaTrackingEventJob implements ShouldQueue
 
         $result = $service->sendTrackingEventRecord($record);
 
+        if (($result['error'] ?? '') === 'context_not_found') {
+            $record->update([
+                'status' => MetaTrackingEvent::STATUS_FAILED,
+                'last_error' => 'context_not_found',
+            ]);
+
+            return;
+        }
+
         if ($result['ok']) {
             $record->update([
                 'status' => MetaTrackingEvent::STATUS_SENT,
@@ -60,10 +69,16 @@ class SendMetaTrackingEventJob implements ShouldQueue
                 'last_error' => null,
             ]);
 
-            if ($record->event_name === 'Purchase' && $record->context_type === MetaTrackingEvent::CONTEXT_ORDER) {
+            if ($record->context_type === MetaTrackingEvent::CONTEXT_ORDER) {
                 $order = Order::query()->find($record->context_id);
-                if ($order) {
+                if ($order && $record->event_name === 'Purchase') {
                     $service->markOrderPurchaseSent($order);
+                }
+                if ($order && $record->event_name === 'Refund') {
+                    $meta = is_array($order->metadata) ? $order->metadata : [];
+                    $meta['meta_capi_sent_refund'] = true;
+                    $meta['meta_capi_sent_refund_at'] = now()->toIso8601String();
+                    $order->update(['metadata' => $meta]);
                 }
             }
 

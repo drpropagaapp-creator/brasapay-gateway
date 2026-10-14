@@ -5,7 +5,8 @@ import axios from 'axios';
 import { Copy, FileText, Check } from 'lucide-vue-next';
 import confetti from 'canvas-confetti';
 import ConversionPixels from '@/components/checkout/ConversionPixels.vue';
-import { trackCheckoutPurchase, trackCheckoutPurchaseBeacon } from '@/composables/useCheckoutPurchaseTracking';
+import { trackCheckoutAddPaymentInfo, trackCheckoutPurchase, trackCheckoutPurchaseBeacon } from '@/composables/useCheckoutPurchaseTracking';
+import { splitCustomerName } from '@/lib/metaTracking/browserPixel.js';
 import { navigateAfterCheckout } from '@/lib/checkoutRedirect.js';
 
 const POLL_INTERVAL_MS = 2500;
@@ -28,6 +29,8 @@ const props = defineProps({
     customer_name: { type: String, default: null },
     customer_email: { type: String, default: null },
     customer_phone: { type: String, default: null },
+    tenant_id: { type: [Number, String], default: null },
+    meta_contents: { type: Array, default: () => [] },
     conversion_pixels: { type: Object, default: () => ({}) },
     amount: { type: Number, default: 0 },
 });
@@ -60,6 +63,15 @@ const boletoAmount = computed(() => {
     return Number.isFinite(normalized) ? normalized : 0;
 });
 
+function metaCustomer() {
+    return {
+        email: props.customer_email || '',
+        phone: props.customer_phone || '',
+        tenantId: props.tenant_id,
+        ...splitCustomerName(props.customer_name),
+    };
+}
+
 async function onPaymentCompleted(redirectUrl) {
     if (!purchaseTracked) {
         purchaseTracked = true;
@@ -70,6 +82,10 @@ async function onPaymentCompleted(redirectUrl) {
             triggerType: 'boleto',
             value: boletoAmount.value,
             currency: 'BRL',
+            contentKey: props.checkout_slug || '',
+            contents: props.meta_contents || [],
+            contentName: props.product_name || '',
+            customer: metaCustomer(),
             pixels: props.conversion_pixels || {},
             conversionPixelsApi: conversionPixelsRef.value,
             settleDelayMs: 500,
@@ -89,6 +105,9 @@ function onPageHideBeacon() {
         triggerType: 'boleto',
         value: boletoAmount.value,
         currency: 'BRL',
+        contentKey: props.checkout_slug || '',
+        contents: props.meta_contents || [],
+        contentName: props.product_name || '',
     });
 }
 
@@ -137,6 +156,17 @@ function backToCheckout() {
 }
 
 onMounted(() => {
+    trackCheckoutAddPaymentInfo({
+        orderId: props.order_id,
+        checkoutSessionToken: props.checkout_session_token || '',
+        value: boletoAmount.value,
+        currency: 'BRL',
+        contentKey: props.checkout_slug || '',
+        contents: props.meta_contents || [],
+        contentName: props.product_name || '',
+        customer: metaCustomer(),
+        pixels: props.conversion_pixels || {},
+    });
     confetti({ particleCount: 120, spread: 70, origin: { y: 0.6 } });
     pollInterval = setInterval(() => {
         if (status.value === 'completed') return;

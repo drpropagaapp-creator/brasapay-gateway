@@ -382,6 +382,8 @@ class CheckoutController extends Controller
                 'cta_title' => $b->cta_title,
                 'amount_brl' => $effectiveBrl,
                 'original_amount_brl' => $originalBrl > $effectiveBrl ? $originalBrl : null,
+                'content_id' => $b->targetProductOffer?->checkout_slug
+                    ?: ($target?->checkout_slug ?: ($target ? 'product:'.$target->id : null)),
                 'target_product_id' => $b->target_product_id,
                 'target_product_offer_id' => $b->target_product_offer_id,
                 'image_url' => $imageUrl,
@@ -406,6 +408,7 @@ class CheckoutController extends Controller
                 $checkoutSession = $existingCheckoutSession;
                 $sessionToken = $existingCheckoutSession->session_token;
                 $reusedCheckoutSession = true;
+                app(MetaTrackingService::class)->captureRequestAttribution($checkoutSession, $request);
                 if (trim((string) ($checkoutSession->meta_page_url ?? '')) === '') {
                     app(MetaTrackingService::class)->persistSessionAttribution($checkoutSession, [
                         'event_source_url' => $request->fullUrl(),
@@ -427,7 +430,7 @@ class CheckoutController extends Controller
                         'affiliate_ref' => $affiliateRef !== '' ? $affiliateRef : null,
                         'meta_page_url' => CheckoutSession::truncateTrackingValue($request->fullUrl(), 2048),
                         'meta_user_agent' => CheckoutSession::truncateTrackingValue((string) $request->userAgent(), 1024),
-                    ], CheckoutSession::trackingFromQuery($request), CheckoutSession::metaAttributionFromQuery($request)))
+                    ], CheckoutSession::trackingFromQuery($request), app(MetaTrackingService::class)->attributionAttributesFromRequest($request)))
                 );
             }
 
@@ -2017,6 +2020,8 @@ class CheckoutController extends Controller
             'customer_name' => $stored['customer_name'] ?? null,
             'customer_email' => $stored['customer_email'] ?? null,
             'customer_phone' => $stored['customer_phone'] ?? null,
+            'tenant_id' => $order->tenant_id,
+            'meta_contents' => $this->metaCheckoutContents($order),
             'created_at' => $createdAt,
             'expiry_seconds' => self::PIX_EXPIRY_SECONDS,
             'conversion_pixels' => $conversionPixels,
@@ -2151,6 +2156,8 @@ class CheckoutController extends Controller
             'customer_name' => $stored['customer_name'] ?? $order->user?->name,
             'customer_email' => $stored['customer_email'] ?? $order->email,
             'customer_phone' => $stored['customer_phone'] ?? $order->phone,
+            'tenant_id' => $order->tenant_id,
+            'meta_contents' => $this->metaCheckoutContents($order),
             'created_at' => (int) ($stored['created_at'] ?? time()),
             'expiry_seconds' => 1800,
             'status' => $order->status,
@@ -2206,6 +2213,8 @@ class CheckoutController extends Controller
             'customer_name' => $stored['customer_name'] ?? null,
             'customer_email' => $stored['customer_email'] ?? null,
             'customer_phone' => $stored['customer_phone'] ?? null,
+            'tenant_id' => $order->tenant_id,
+            'meta_contents' => $this->metaCheckoutContents($order),
             'conversion_pixels' => $conversionPixels,
         ]);
     }
@@ -3382,6 +3391,14 @@ class CheckoutController extends Controller
     /**
      * Config de checkout efetiva do pedido (plano > oferta > produto).
      */
+    /**
+     * @return array<int, array{id: string, quantity: int, item_price: float}>
+     */
+    private function metaCheckoutContents(Order $order): array
+    {
+        return app(\App\Services\Meta\MetaEventContextResolver::class)->contentsForOrder($order);
+    }
+
     private function getOrderCheckoutConfig(Order $order): array
     {
         if ($order->subscriptionPlan && $order->subscriptionPlan->checkout_config) {
@@ -3428,6 +3445,7 @@ class CheckoutController extends Controller
             'previous_price' => $previousPrice,
             'product_offer_id' => $offer?->id,
             'subscription_plan_id' => $plan?->id,
+            'tenant_id' => $product->tenant_id,
             'requires_shipping' => $product->requiresShippingAddress(),
             'free_shipping' => $product->hasFreeShipping(),
             'shipping_store_id' => $product->shipping_store_id,

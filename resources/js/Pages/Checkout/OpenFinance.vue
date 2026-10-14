@@ -5,7 +5,8 @@ import axios from 'axios';
 import { Building2, Check, Clock, Loader2 } from 'lucide-vue-next';
 import confetti from 'canvas-confetti';
 import ConversionPixels from '@/components/checkout/ConversionPixels.vue';
-import { trackCheckoutPurchase, trackCheckoutPurchaseBeacon } from '@/composables/useCheckoutPurchaseTracking';
+import { trackCheckoutAddPaymentInfo, trackCheckoutPurchase, trackCheckoutPurchaseBeacon } from '@/composables/useCheckoutPurchaseTracking';
+import { splitCustomerName } from '@/lib/metaTracking/browserPixel.js';
 import { navigateAfterCheckout } from '@/lib/checkoutRedirect.js';
 
 const POLL_INTERVAL_MS = 2500;
@@ -25,6 +26,8 @@ const props = defineProps({
     customer_name: { type: String, default: null },
     customer_email: { type: String, default: null },
     customer_phone: { type: String, default: null },
+    tenant_id: { type: [Number, String], default: null },
+    meta_contents: { type: Array, default: () => [] },
     created_at: { type: Number, required: true },
     expiry_seconds: { type: Number, default: 1800 },
     amount: { type: Number, default: 0 },
@@ -59,6 +62,15 @@ const timerDisplay = computed(() => {
     return `${m < 10 ? '0' : ''}${m}:${s < 10 ? '0' : ''}${s}`;
 });
 
+function metaCustomer() {
+    return {
+        email: props.customer_email || '',
+        phone: props.customer_phone || '',
+        tenantId: props.tenant_id,
+        ...splitCustomerName(props.customer_name),
+    };
+}
+
 async function onPaymentCompleted(redirectUrl) {
     if (!purchaseTracked) {
         purchaseTracked = true;
@@ -69,6 +81,10 @@ async function onPaymentCompleted(redirectUrl) {
             triggerType: 'open_finance',
             value: props.amount,
             currency: 'BRL',
+            contentKey: props.checkout_slug || '',
+            contents: props.meta_contents || [],
+            contentName: props.product_name || '',
+            customer: metaCustomer(),
             pixels: props.conversion_pixels || {},
             conversionPixelsApi: conversionPixelsRef.value,
             settleDelayMs: 500,
@@ -88,6 +104,9 @@ function onPageHideBeacon() {
         triggerType: 'open_finance',
         value: props.amount,
         currency: 'BRL',
+        contentKey: props.checkout_slug || '',
+        contents: props.meta_contents || [],
+        contentName: props.product_name || '',
     });
 }
 
@@ -130,6 +149,17 @@ function backToCheckout() {
 }
 
 onMounted(() => {
+    trackCheckoutAddPaymentInfo({
+        orderId: props.order_id,
+        checkoutSessionToken: props.checkout_session_token || '',
+        value: props.amount,
+        currency: 'BRL',
+        contentKey: props.checkout_slug || '',
+        contents: props.meta_contents || [],
+        contentName: props.product_name || '',
+        customer: metaCustomer(),
+        pixels: props.conversion_pixels || {},
+    });
     updateTimer();
     timerInterval = setInterval(updateTimer, 1000);
     pollInterval = setInterval(() => {

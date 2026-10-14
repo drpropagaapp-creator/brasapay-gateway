@@ -156,6 +156,13 @@ class UpsellController extends Controller
         $checkoutSessionToken = '';
         $orderStatus = null;
         $purchaseConfirmed = false;
+        $metaContents = [];
+        $tenantId = null;
+        $customerEmail = null;
+        $customerPhone = null;
+        $customerName = null;
+        $checkoutSlug = '';
+        $productName = '';
         if ($orderId > 0) {
             $order = Order::with('product')->find($orderId);
             $checkoutSessionToken = (string) (CheckoutSession::query()
@@ -165,6 +172,13 @@ class UpsellController extends Controller
             if ($order) {
                 $orderStatus = (string) $order->status;
                 $purchaseConfirmed = $order->status === 'completed';
+                $tenantId = $order->tenant_id;
+                $customerEmail = $order->email;
+                $customerPhone = $order->phone;
+                $customerName = $order->user?->name;
+                $checkoutSlug = $order->getCheckoutSlug();
+                $productName = (string) ($order->product?->name ?? '');
+                $metaContents = app(\App\Services\Meta\MetaEventContextResolver::class)->contentsForOrder($order);
             }
             if ($order && $order->product) {
                 $conversionPixels = AffiliateConversionPixels::forOrder($order);
@@ -220,6 +234,13 @@ class UpsellController extends Controller
             'order_status' => $orderStatus,
             'purchase_confirmed' => $purchaseConfirmed,
             'checkout_session_token' => $checkoutSessionToken,
+            'tenant_id' => $tenantId,
+            'customer_email' => $customerEmail,
+            'customer_phone' => $customerPhone,
+            'customer_name' => $customerName,
+            'checkout_slug' => $checkoutSlug,
+            'product_name' => $productName,
+            'meta_contents' => $metaContents,
         ]);
     }
 
