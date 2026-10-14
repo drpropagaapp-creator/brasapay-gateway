@@ -29,6 +29,7 @@ use App\Support\ReferralProgramSettings;
 use App\Support\ProductApprovalSettings;
 use App\Services\ProductApprovalService;
 use App\Support\MemberAreaAdminPreview;
+use App\Support\CustomerImpersonation;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Schema;
 use Inertia\Middleware;
@@ -309,6 +310,7 @@ class HandleInertiaRequests extends Middleware
             'member_certificate' => $memberCertificate,
             'member_area_admin_preview' => $memberAreaAdminPreview,
             'customer_panel' => $customerPanel,
+            'customer_impersonation' => CustomerImpersonation::inertiaPayload($request),
             'seller_dashboard_template' => ($user && $user->canAccessSellerPanel() && ! $customerPanel)
                 ? SellerDashboardTemplate::current()
                 : SellerDashboardTemplate::DEFAULT,

@@ -2,6 +2,7 @@
 
 namespace App\Http\Middleware;
 
+use App\Support\CustomerImpersonation;
 use App\Support\RegistrationEmailVerificationSettings;
 use Closure;
 use Illuminate\Http\Request;
@@ -15,6 +16,9 @@ class EnsureSellerPanel
         $user = $request->user();
         if (! $user) {
             abort(403, 'Acesso não autorizado.');
+        }
+        if (CustomerImpersonation::isActive($request)) {
+            return redirect('/painel-cliente');
         }
         if ($user->canAccessPlatformPanel()) {
             return redirect()

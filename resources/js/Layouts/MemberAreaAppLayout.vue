@@ -2,6 +2,7 @@
 import { computed, ref, onMounted, watch, onUnmounted } from 'vue';
 import { Link, usePage, Head, router } from '@inertiajs/vue3';
 import PwaInstallPrompt from '@/components/member-area/PwaInstallPrompt.vue';
+import CustomerImpersonationBanner from '@/components/layout/CustomerImpersonationBanner.vue';
 import MemberAreaNotificationsPanel from '@/components/member-area/MemberAreaNotificationsPanel.vue';
 import Button from '@/components/ui/Button.vue';
 import { Bell, ChevronDown, User, X, Camera, Lock, CheckCircle, AlertCircle, Menu, Trophy, Award, Package } from 'lucide-vue-next';
@@ -510,6 +511,7 @@ watch(
         <meta name="mobile-web-app-capable" content="yes" />
         <link v-if="faviconHref" rel="icon" :href="faviconHref" />
     </Head>
+    <CustomerImpersonationBanner />
     <div
         class="min-h-screen transition-colors"
         :style="{

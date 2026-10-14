@@ -11,6 +11,7 @@ use App\Models\TeamAuditLog;
 use App\Services\MemberAreaResolver;
 use App\Services\SellerActivityLogService;
 use App\Services\Platform\PlatformTotpService;
+use App\Support\CustomerImpersonation;
 use App\Support\DockerSetupState;
 use App\Support\LoginTurnstileSettings;
 use Illuminate\Http\RedirectResponse;
@@ -162,6 +163,10 @@ class LoginController extends Controller
 
     public function logout(Request $request)
     {
+        if (CustomerImpersonation::isActive($request) || CustomerImpersonation::isExpired($request)) {
+            return app(\App\Http\Controllers\Platform\CustomerImpersonationController::class)->leave($request);
+        }
+
         $user = Auth::user();
         if ($user && $user->tenant_id && $user->canAccessSellerPanel()) {
             TeamAuditLog::create([

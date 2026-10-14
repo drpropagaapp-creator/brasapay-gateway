@@ -650,6 +650,9 @@ Route::prefix('plataforma')->name('plataforma.')->group(function () {
             ->name('clientes.export')
             ->middleware('throttle:10,1');
         Route::get('/clientes/{user}', [\App\Http\Controllers\Platform\CustomersController::class, 'show'])->name('clientes.show');
+        Route::post('/clientes/{user}/acessar', [\App\Http\Controllers\Platform\CustomerImpersonationController::class, 'start'])
+            ->name('clientes.impersonate')
+            ->middleware('throttle:20,1');
         Route::get('/clientes/{user}/produtos/{produto}/dossie', [\App\Http\Controllers\Platform\CustomersController::class, 'dossier'])
             ->name('clientes.acessos.dossie');
         Route::get('/clientes/{user}/produtos/{produto}/dossie/exportar', [\App\Http\Controllers\Platform\CustomersController::class, 'exportDossier'])
@@ -1239,6 +1242,9 @@ Route::middleware(['auth', 'customer.panel'])->group(function () {
 });
 
 Route::post('/painel/trocar', [\App\Http\Controllers\PanelSwitchController::class, 'switch'])->middleware(['auth', 'throttle:30,1'])->name('panel.switch');
+Route::post('/acessar-como-cliente/sair', [\App\Http\Controllers\Platform\CustomerImpersonationController::class, 'leave'])
+    ->middleware(['auth', 'throttle:30,1'])
+    ->name('customer-impersonation.leave');
 
 // Área de membros por produto (path: /m/{slug})
 Route::prefix('m/{slug}')->where(['slug' => '[a-zA-Z0-9]{6,16}'])->middleware('member.area.resolve')->group(function () {

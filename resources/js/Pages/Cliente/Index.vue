@@ -23,6 +23,7 @@ const props = defineProps({
 });
 
 const page = usePage();
+const impersonating = computed(() => page.props.customer_impersonation?.active === true);
 const searchQuery = ref('');
 const filter = ref('all');
 const detailsOpen = ref(false);
@@ -306,7 +307,7 @@ async function copyValue(value, key) {
                                     Detalhes
                                 </button>
                                 <button
-                                    v-if="row.can_request_refund"
+                                    v-if="row.can_request_refund && !impersonating"
                                     type="button"
                                     class="flex-1 rounded-xl border border-zinc-200 px-3 py-2 text-xs font-medium text-zinc-700 transition hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800"
                                     @click="openRefund(row)"
@@ -451,7 +452,7 @@ async function copyValue(value, key) {
                             Falar com o vendedor
                         </a>
                         <Button
-                            v-if="detailsRow.can_request_refund"
+                            v-if="detailsRow.can_request_refund && !impersonating"
                             type="button"
                             variant="secondary"
                             class="w-full"

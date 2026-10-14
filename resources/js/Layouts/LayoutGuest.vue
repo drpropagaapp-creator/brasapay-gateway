@@ -2,10 +2,12 @@
 import { Link } from '@inertiajs/vue3';
 import ThemeToggler from '@/components/layout/ThemeToggler.vue';
 import UserMenu from '@/components/layout/UserMenu.vue';
+import CustomerImpersonationBanner from '@/components/layout/CustomerImpersonationBanner.vue';
 </script>
 
 <template>
     <div class="min-h-screen bg-zinc-50 text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100 transition-colors">
+        <CustomerImpersonationBanner />
         <header class="sticky top-0 z-10 border-b border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
             <div class="mx-auto flex h-14 max-w-7xl items-center justify-between gap-4 px-4">
                 <div class="flex min-w-0 items-center gap-4">
