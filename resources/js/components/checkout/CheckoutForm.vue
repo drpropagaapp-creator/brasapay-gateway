@@ -3472,7 +3472,6 @@ function submit() {
                 v-if="isPaypalMethodSelected"
                 class="mt-2"
                 :client-id="paypalClientId || ''"
-                :currency="displayCurrency || 'BRL'"
                 :locale="checkoutLocale || 'pt_BR'"
                 :disabled="!paypalButtonsReady"
                 :build-payload="buildPaypalPayload"

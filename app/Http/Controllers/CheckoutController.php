@@ -2664,15 +2664,9 @@ class CheckoutController extends Controller
             $this->updateCheckoutSessionForCajuPayOrder($order, $validated);
         }
 
-        $chargeCurrency = strtoupper((string) ($validated['display_currency'] ?? $order->currency ?? 'BRL'));
-        if (strlen($chargeCurrency) !== 3) {
-            $chargeCurrency = 'BRL';
-        }
-        // total_amount do contexto é sempre BRL; converter para a moeda de display (igual ao front).
-        $chargeAmount = $this->convertBrlAmountToDisplayCurrency(
-            (float) ($context['total_amount'] ?? $order->amount),
-            $chargeCurrency
-        );
+        // Conta PayPal Brasil só liquida em BRL. display_currency fica na tela;
+        // a PayPal converte para a moeda do comprador.
+        $chargeAmount = round((float) ($context['total_amount'] ?? $order->amount), 2);
 
         try {
             /** @var \App\Gateways\PayPal\PayPalDriver|null $driver */
@@ -2683,7 +2677,7 @@ class CheckoutController extends Controller
             $paypalResult = $driver->createPayPalOrder(
                 $credentials,
                 $chargeAmount,
-                $chargeCurrency,
+                'BRL',
                 (string) $order->id,
                 [
                     'name' => $validated['name'] ?? '',
