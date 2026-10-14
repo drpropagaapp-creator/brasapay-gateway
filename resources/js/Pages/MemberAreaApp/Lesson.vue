@@ -7,6 +7,7 @@ import MemberAreaVideoPlayer from '@/components/MemberAreaVideoPlayer.vue';
 import { formatLessonDescription } from '@/lib/utils';
 import { sanitizeHtmlAllowlist } from '@/lib/sanitizeHtml';
 import { completeMemberLesson, useMemberAreaHref } from '@/composables/useMemberAreaHref';
+import { downloadMemberMaterial, isProtectedPdf } from '@/composables/downloadMemberMaterial';
 
 defineOptions({ layout: MemberAreaAppLayout });
 
@@ -38,6 +39,20 @@ function normalizePdfFiles(lesson) {
 }
 
 const pdfFiles = computed(() => normalizePdfFiles(props.lesson));
+const materialError = ref('');
+const downloadingIndex = ref(null);
+
+async function downloadProtectedPdf(file, index) {
+    materialError.value = '';
+    downloadingIndex.value = index;
+    try {
+        await downloadMemberMaterial(file.url, file.name || 'material.pdf');
+    } catch (error) {
+        materialError.value = error?.message || 'Não foi possível proteger este PDF.';
+    } finally {
+        downloadingIndex.value = null;
+    }
+}
 
 const { href } = useMemberAreaHref(props.slug, props.base_url);
 
@@ -144,18 +159,30 @@ function formatCommentDate(iso) {
             <template v-else-if="lesson.type === 'pdf' && pdfFiles.length">
                 <div class="p-6">
                     <div class="space-y-2">
-                        <a
-                            v-for="(f, i) in pdfFiles"
-                            :key="`${f.url}-${i}`"
-                            :href="f.url"
-                            download
-                            target="_blank"
-                            rel="noopener"
-                            class="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-[var(--ma-primary)] px-4 py-2.5 font-medium text-white transition hover:opacity-90"
-                        >
-                            <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
-                            {{ f.name || 'Baixar material' }}
-                        </a>
+                        <template v-for="(f, i) in pdfFiles" :key="`${f.url}-${i}`">
+                            <button
+                                v-if="isProtectedPdf(lesson, f)"
+                                type="button"
+                                class="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-[var(--ma-primary)] px-4 py-2.5 font-medium text-white transition hover:opacity-90 disabled:opacity-60"
+                                :disabled="downloadingIndex === i"
+                                @click="downloadProtectedPdf(f, i)"
+                            >
+                                <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                                {{ downloadingIndex === i ? 'Preparando PDF...' : (f.name || 'Baixar material') }}
+                            </button>
+                            <a
+                                v-else
+                                :href="f.url"
+                                download
+                                target="_blank"
+                                rel="noopener"
+                                class="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-[var(--ma-primary)] px-4 py-2.5 font-medium text-white transition hover:opacity-90"
+                            >
+                                <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                                {{ f.name || 'Baixar material' }}
+                            </a>
+                        </template>
+                        <p v-if="materialError" class="text-sm text-red-300">{{ materialError }}</p>
                     </div>
                 </div>
             </template>
