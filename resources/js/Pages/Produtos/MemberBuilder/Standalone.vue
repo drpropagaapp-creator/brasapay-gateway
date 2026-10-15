@@ -937,7 +937,12 @@ async function saveLessonFromSidebar() {
         closeModulosLessonForm();
         reload();
     } catch (e) {
-        const msg = e.response?.data?.message ?? e.response?.data?.errors?.title?.[0] ?? e.message ?? 'Erro ao salvar.';
+        const msg =
+            e.response?.data?.errors?.watermark_enabled?.[0]
+            ?? e.response?.data?.message
+            ?? e.response?.data?.errors?.title?.[0]
+            ?? e.message
+            ?? 'Erro ao salvar.';
         alert(msg);
     } finally {
         modulosLessonFormSaving.value = false;
@@ -3012,7 +3017,7 @@ const inputClass = 'block w-full rounded-lg border border-zinc-300 bg-white px-3
                                                     <Toggle v-model="modulosLessonForm.watermark_enabled" label="Proteger PDF com dados do comprador" />
                                                 </div>
                                                 <p class="mt-2 text-xs text-zinc-500 dark:text-zinc-400">
-                                                    Cada download de PDF leva nome, e-mail, CPF (quando existir no pedido) e número do cliente no cabeçalho, nome e CPF cruzando o meio da página, e um aviso de licença no rodapé. Word, Excel e os demais formatos seguem como foram enviados. Se o PDF tiver senha ou um formato incompatível, o aluno vê um erro e o arquivo original não é enviado.
+                                                    Cada download de PDF leva nome, e-mail, CPF (quando existir no pedido) e número do cliente no cabeçalho, nome e CPF cruzando o meio da página, e um aviso de licença no rodapé. Word, Excel e os demais formatos seguem como foram enviados. Ao salvar com a proteção ativa, o sistema testa o PDF: se não aceitar DRM (senha ou formato incompatível), a aula não é salva e você precisa remover a senha, exportar de novo (Imprimir → Salvar como PDF) ou usar uma ferramenta de reparo/conversão antes de enviar outra vez.
                                                 </p>
                                             </div>
                                             <div class="flex gap-2">

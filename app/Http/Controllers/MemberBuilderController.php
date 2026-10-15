@@ -24,10 +24,12 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Arr;
+use App\Exceptions\MemberPdfWatermarkException;
 use App\Services\MemberAreaResolver;
 use App\Services\MemberAccessGrantService;
 use App\Services\MemberStudentAccountService;
 use App\Services\MemberCommentService;
+use App\Services\MemberLessonPdfDrmValidator;
 use App\Services\StorageService;
 use App\Services\GamificationService;
 use App\Services\MemberProgressService;
@@ -80,6 +82,39 @@ class MemberBuilderController extends Controller
         }
 
         return array_slice($out, 0, 30);
+    }
+
+    /**
+     * @param  list<array{url: string, name: string}>  $contentFiles
+     */
+    private function assertPdfDrmCompatibleWhenEnabled(
+        Product $produto,
+        bool $watermarkEnabled,
+        string $type,
+        array $contentFiles,
+        ?string $contentUrl = null,
+    ): void {
+        if (! $watermarkEnabled || $type !== MemberLesson::TYPE_PDF) {
+            return;
+        }
+
+        $files = $contentFiles;
+        $contentUrl = is_string($contentUrl) ? trim($contentUrl) : '';
+        if ($files === [] && $contentUrl !== '') {
+            $files = [['url' => $contentUrl, 'name' => 'Material.pdf']];
+        }
+
+        $tenantId = $produto->tenant_id !== null && $produto->tenant_id !== ''
+            ? (int) $produto->tenant_id
+            : null;
+
+        try {
+            app(MemberLessonPdfDrmValidator::class)->assertFilesCompatible($files, $tenantId);
+        } catch (MemberPdfWatermarkException $e) {
+            throw ValidationException::withMessages([
+                'watermark_enabled' => [$e->getMessage()],
+            ])->errorBag($e->getMessage());
+        }
     }
 
     /**
@@ -1011,6 +1046,14 @@ class MemberBuilderController extends Controller
         if (($validated['type'] ?? null) === 'pdf' && empty($validated['content_url']) && count($contentFiles) > 0) {
             $validated['content_url'] = $contentFiles[0]['url'];
         }
+        $watermarkEnabled = $request->boolean('watermark_enabled', false);
+        $this->assertPdfDrmCompatibleWhenEnabled(
+            $produto,
+            $watermarkEnabled,
+            (string) ($validated['type'] ?? ''),
+            $contentFiles,
+            isset($validated['content_url']) ? (string) $validated['content_url'] : null,
+        );
         $max = MemberLesson::where('member_module_id', $module->id)->max('position') ?? 0;
         MemberLesson::create([
             'member_module_id' => $module->id,
@@ -1028,7 +1071,7 @@ class MemberBuilderController extends Controller
                 : null,
             'duration_seconds' => $validated['duration_seconds'] ?? null,
             'is_free' => $request->boolean('is_free', false),
-            'watermark_enabled' => $request->boolean('watermark_enabled', false),
+            'watermark_enabled' => $watermarkEnabled,
         ]);
         if ($request->expectsJson()) {
             return response()->json(['message' => 'Aula criada.']);
@@ -1097,6 +1140,25 @@ class MemberBuilderController extends Controller
         if (array_key_exists('content_text', $validated)) {
             $validated['content_text'] = \App\Support\HtmlSanitizer::sanitize($validated['content_text']);
         }
+
+        $watermarkEnabled = array_key_exists('watermark_enabled', $validated)
+            ? (bool) $validated['watermark_enabled']
+            : (bool) ($lesson->watermark_enabled ?? false);
+        $filesForDrm = $contentFiles;
+        if ($filesForDrm === [] && $type === MemberLesson::TYPE_PDF) {
+            $filesForDrm = $this->normalizeLessonContentFiles($validated['content_files'] ?? $lesson->content_files);
+        }
+        $contentUrlForDrm = isset($validated['content_url'])
+            ? (string) $validated['content_url']
+            : (string) ($lesson->content_url ?? '');
+        $this->assertPdfDrmCompatibleWhenEnabled(
+            $produto,
+            $watermarkEnabled,
+            (string) $type,
+            $filesForDrm,
+            $contentUrlForDrm,
+        );
+
         $lesson->update($validated);
         if ($request->expectsJson()) {
             return response()->json(['message' => 'Aula atualizada.']);
