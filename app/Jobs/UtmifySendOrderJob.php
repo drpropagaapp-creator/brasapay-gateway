@@ -173,6 +173,11 @@ class UtmifySendOrderJob implements ShouldQueue
         $meta = is_array($order->metadata) ? $order->metadata : [];
         $now = now()->toIso8601String();
 
+        $externalOrderId = app(UtmifyService::class)->resolveExternalOrderId($order);
+        if ($externalOrderId !== '') {
+            $meta['utmify_order_id'] = $externalOrderId;
+        }
+
         if ($this->utmifyStatus === 'paid') {
             $meta['utmify_paid_sent_at'] = $now;
             unset($meta['utmify_last_error'], $meta['utmify_failed_at']);
