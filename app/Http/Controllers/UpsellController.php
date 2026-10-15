@@ -16,6 +16,7 @@ use App\Models\User;
 use App\Services\AccessEmailService;
 use App\Services\MinimumChargeService;
 use App\Services\PaymentService;
+use App\Services\UtmifyService;
 use App\Support\SafeUrl;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -512,6 +513,7 @@ class UpsellController extends Controller
             $amount = $offer ? (float) $offer->price : (float) $product->price;
             app(MinimumChargeService::class)->assertPlatformCheckout($amount, (int) $order->tenant_id);
             $checkoutSlug = $offer && $offer->checkout_slug ? $offer->checkout_slug : $product->checkout_slug;
+            $inheritedTracking = app(UtmifyService::class)->trackingMetadataFromOrder($order);
 
             $newOrder = Order::create([
                 'tenant_id' => $order->tenant_id,
@@ -526,13 +528,15 @@ class UpsellController extends Controller
                 'email' => $order->email,
                 'cpf' => $order->cpf,
                 'phone' => $order->phone,
-                'customer_ip' => $request->ip(),
+                'customer_ip' => $request->ip() ?: $order->customer_ip,
                 'coupon_code' => null,
                 'status' => 'pending',
                 'gateway' => null,
                 'gateway_id' => null,
                 'payment_method' => 'pix',
-                'metadata' => ['checkout_payment_method' => 'pix'],
+                'metadata' => array_merge($inheritedTracking, [
+                    'checkout_payment_method' => 'pix',
+                ]),
             ]);
             OrderItem::create([
                 'order_id' => $newOrder->id,
@@ -597,6 +601,12 @@ class UpsellController extends Controller
                     'phone' => $order->phone,
                     'cpf' => $order->cpf,
                 ];
+                foreach (CheckoutSession::TRACKING_FIELD_KEYS as $trackingKey) {
+                    $trackingValue = $inheritedTracking[$trackingKey] ?? null;
+                    if (is_string($trackingValue) && $trackingValue !== '') {
+                        $params[$trackingKey] = $trackingValue;
+                    }
+                }
                 $firstRedirectUrl = route('checkout.show', ['slug' => $checkoutSlug]) . '?' . http_build_query(array_filter($params));
             }
         }

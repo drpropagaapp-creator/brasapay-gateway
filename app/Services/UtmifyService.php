@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\CheckoutSession;
 use App\Models\Order;
+use App\Support\BrazilianDocuments;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
@@ -96,10 +97,10 @@ class UtmifyService
             'customer' => [
                 'name' => 'Cliente Exemplo',
                 'email' => 'exemplo@email.com',
-                'phone' => '11999999999',
-                'document' => '12345678900',
-                'country' => 'BR',
-                'ip' => '',
+            'phone' => '11999999999',
+            'document' => '11144477735',
+            'country' => 'BR',
+            'ip' => null,
             ],
             'products' => [
                 [
@@ -135,21 +136,13 @@ class UtmifyService
         $session = $this->resolveCheckoutSessionForOrder($order);
         $meta = is_array($order->metadata) ? $order->metadata : [];
 
-        $orderId = $order->gateway_id ?: (string) $order->id;
+        $orderId = $this->resolveExternalOrderId($order);
         $paymentMethod = $this->mapPaymentMethod($order);
         $createdAt = $order->created_at->utc()->format('Y-m-d H:i:s');
         $approvedDate = $options['approved_at'] ?? ($utmifyStatus === 'paid' ? $order->updated_at->utc()->format('Y-m-d H:i:s') : null);
         $refundedAt = $options['refunded_at'] ?? null;
 
-        $customerName = $session?->name ?? $order->user?->name ?? '';
-        $customer = [
-            'name' => $customerName,
-            'email' => $order->email ?? '',
-            'phone' => $order->phone ?? '',
-            'document' => $order->cpf ?? '',
-            'country' => 'BR',
-            'ip' => $order->customer_ip ?? '',
-        ];
+        $customer = $this->buildCustomer($order, $session);
 
         $products = [];
         foreach ($order->orderItems as $item) {
@@ -225,16 +218,37 @@ class UtmifyService
         $trackingParameters = [];
 
         foreach (CheckoutSession::TRACKING_FIELD_KEYS as $key) {
-            $raw = $meta[$key] ?? $session?->{$key} ?? null;
-            if (is_string($raw)) {
-                $trimmed = trim($raw);
-                $trackingParameters[$key] = $trimmed !== '' ? $trimmed : null;
-            } else {
-                $trackingParameters[$key] = null;
-            }
+            $trackingParameters[$key] = $this->normalizeTrackingValue($meta[$key] ?? $session?->{$key} ?? null);
         }
 
         return $trackingParameters;
+    }
+
+    /**
+     * A API rejeita o pedido inteiro (SCHEMA_VALIDATION_FAILED) se a chave
+     * faltar, vier como número/array, ou passar do tamanho aceito.
+     * O contrato é string ou null, nas 7 chaves.
+     */
+    private function normalizeTrackingValue(mixed $raw): ?string
+    {
+        if (is_array($raw)) {
+            $raw = $raw[0] ?? null;
+        }
+        if (is_int($raw) || is_float($raw)) {
+            $raw = (string) $raw;
+        }
+        if (! is_string($raw)) {
+            return null;
+        }
+
+        $trimmed = trim($raw);
+        if ($trimmed === '') {
+            return null;
+        }
+
+        $trimmed = preg_replace('/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/u', '', $trimmed) ?? $trimmed;
+
+        return CheckoutSession::truncateTrackingValue($trimmed, 255);
     }
 
     /**
@@ -242,9 +256,18 @@ class UtmifyService
      */
     public function post(string $apiKey, array $body): \Illuminate\Http\Client\Response
     {
+        $json = json_encode($body, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        if ($json === false) {
+            throw new \RuntimeException('UTMIFY payload inválido: '.json_last_error_msg());
+        }
+
         $response = Http::timeout((int) config('utmify.http_timeout', 15))
-            ->withHeaders(['x-api-token' => $apiKey])
-            ->post(self::ENDPOINT, $body);
+            ->withHeaders([
+                'x-api-token' => $apiKey,
+                'Accept' => 'application/json',
+            ])
+            ->withBody($json, 'application/json')
+            ->post(self::ENDPOINT);
 
         if (! $response->successful()) {
             throw new \RuntimeException(
@@ -255,6 +278,118 @@ class UtmifyService
         return $response;
     }
 
+    /**
+     * Id estável do pedido na plataforma. A UTMify atualiza o mesmo orderId
+     * entre waiting_payment, paid e refunded. gateway_id muda (CajuPay, Mercado Pago).
+     */
+    public function resolveExternalOrderId(Order $order): string
+    {
+        $meta = is_array($order->metadata) ? $order->metadata : [];
+        $stored = isset($meta['utmify_order_id']) && is_string($meta['utmify_order_id'])
+            ? trim($meta['utmify_order_id'])
+            : '';
+        if ($stored !== '') {
+            return $stored;
+        }
+
+        return (string) $order->id;
+    }
+
+    /**
+     * UTMs e token da sessão do pedido de origem (upsell/downsell).
+     * Não copia flags de envio (utmify_paid_sent_at), senão o novo pedido é ignorado.
+     *
+     * @return array<string, string>
+     */
+    public function trackingMetadataFromOrder(Order $order): array
+    {
+        $meta = is_array($order->metadata) ? $order->metadata : [];
+        $out = [];
+
+        $token = isset($meta['checkout_session_token']) && is_string($meta['checkout_session_token'])
+            ? trim($meta['checkout_session_token'])
+            : '';
+        if ($token !== '') {
+            $out['checkout_session_token'] = $token;
+        }
+
+        foreach (CheckoutSession::TRACKING_FIELD_KEYS as $key) {
+            $raw = $meta[$key] ?? null;
+            if (is_string($raw) && trim($raw) !== '') {
+                $out[$key] = trim($raw);
+            }
+        }
+
+        return $out;
+    }
+
+    /**
+     * @return array{name: string, email: string, phone: string|null, document: string|null, country: string, ip: string|null}
+     */
+    private function buildCustomer(Order $order, ?CheckoutSession $session): array
+    {
+        $meta = is_array($order->metadata) ? $order->metadata : [];
+
+        $name = $this->firstNonEmpty([
+            $session?->name,
+            $order->user?->name,
+            $meta['consumer_name'] ?? null,
+        ]) ?? 'Cliente';
+
+        $email = $this->firstNonEmpty([
+            $order->email,
+            $session?->email,
+            $order->user?->email,
+        ]) ?? ('pedido'.$order->id.'@checkout.local');
+
+        $phoneDigits = BrazilianDocuments::digits($this->firstNonEmpty([
+            $order->phone,
+            $session?->phone,
+        ]));
+        $phone = strlen($phoneDigits) >= 10 && strlen($phoneDigits) <= 13 ? $phoneDigits : null;
+
+        $documentDigits = BrazilianDocuments::digits($this->firstNonEmpty([
+            $order->cpf,
+            $session?->cpf,
+        ]));
+        $document = (BrazilianDocuments::isValidCpf($documentDigits) || BrazilianDocuments::isValidCnpj($documentDigits))
+            ? $documentDigits
+            : null;
+
+        $ipRaw = $this->firstNonEmpty([
+            $order->customer_ip,
+            $session?->customer_ip,
+        ]);
+        $ip = is_string($ipRaw) && filter_var($ipRaw, FILTER_VALIDATE_IP) ? $ipRaw : null;
+
+        return [
+            'name' => $name,
+            'email' => $email,
+            'phone' => $phone,
+            'document' => $document,
+            'country' => 'BR',
+            'ip' => $ip,
+        ];
+    }
+
+    /**
+     * @param  array<int, mixed>  $candidates
+     */
+    private function firstNonEmpty(array $candidates): ?string
+    {
+        foreach ($candidates as $candidate) {
+            if (! is_string($candidate) && ! is_numeric($candidate)) {
+                continue;
+            }
+            $trimmed = trim((string) $candidate);
+            if ($trimmed !== '') {
+                return $trimmed;
+            }
+        }
+
+        return null;
+    }
+
     private function mapPaymentMethod(Order $order): string
     {
         $key = $order->resolveCheckoutPaymentMethodKey();
@@ -262,7 +397,8 @@ class UtmifyService
             return match ($key) {
                 'pix', 'pix_auto' => 'pix',
                 'boleto' => 'boleto',
-                'card', 'apple_pay', 'google_pay', 'paypal' => 'credit_card',
+                'paypal' => 'paypal',
+                'card', 'apple_pay', 'google_pay' => 'credit_card',
                 default => $this->mapPaymentMethodFromGateway($order->gateway),
             };
         }
