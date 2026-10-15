@@ -1,4 +1,4 @@
-# Getfy (Open Source)
+# STACKER (Open Source)
 
 Plataforma Laravel + Vue para checkout, área de membros e estrutura completa de pagamentos.
 
