@@ -5,32 +5,22 @@ namespace App\Services\CajuPay;
 use App\Models\CajuPayAccount;
 use App\Models\GatewayCredential;
 use App\Models\Order;
+use App\Models\Setting;
 use App\Models\User;
 use Illuminate\Support\Collection;
 
 class CajuPayAccountResolver
 {
+    public const METHOD_ACCOUNT_SETTING = 'cajupay_method_accounts';
+
+    /** @var list<string> */
+    public const METHOD_KEYS = ['pix', 'card', 'boleto', 'pix_auto'];
+
     public function resolveForTenant(?int $tenantId): ?CajuPayAccount
     {
-        if ($tenantId !== null && $tenantId > 0) {
-            $owner = User::query()
-                ->where('role', User::ROLE_INFOPRODUTOR)
-                ->where(function ($q) use ($tenantId) {
-                    $q->where('tenant_id', $tenantId)->orWhere('id', $tenantId);
-                })
-                ->whereNotNull('cajupay_account_id')
-                ->first();
-
-            if ($owner !== null && $owner->cajupay_account_id) {
-                $assigned = CajuPayAccount::query()
-                    ->whereKey($owner->cajupay_account_id)
-                    ->enabled()
-                    ->connected()
-                    ->first();
-                if ($assigned !== null) {
-                    return $assigned;
-                }
-            }
+        $assigned = $this->assignedAccountForTenant($tenantId);
+        if ($assigned !== null) {
+            return $assigned;
         }
 
         $default = CajuPayAccount::query()->default()->first();
@@ -50,6 +40,89 @@ class CajuPayAccountResolver
         }
 
         return $this->legacyCredentialAsVirtualAccount();
+    }
+
+    /**
+     * Conta usada na cobrança de um método.
+     * Vendedor com conta fixa continua nela. Sem conta fixa, vale a conta escolhida
+     * em Financeiro → Prioridade por método. Se essa conta não estiver utilizável,
+     * a CajuPay fica de fora desse método (não cai na outra conta).
+     */
+    public function resolveForPayment(?int $tenantId, ?string $method): ?CajuPayAccount
+    {
+        $assigned = $this->assignedAccountForTenant($tenantId);
+        if ($assigned !== null) {
+            return $assigned;
+        }
+
+        $key = $this->normalizeMethodKey($method);
+        $map = $this->storedMethodAccountIds();
+        if ($key !== null && ! empty($map[$key])) {
+            $account = CajuPayAccount::query()
+                ->whereKey((int) $map[$key])
+                ->enabled()
+                ->connected()
+                ->first();
+            if ($account !== null && $this->isUsableAccount($account)) {
+                return $account;
+            }
+
+            return null;
+        }
+
+        return $this->resolveForTenant($tenantId);
+    }
+
+    public function accountIdForPayment(?int $tenantId, ?string $method): ?int
+    {
+        $id = (int) ($this->resolveForPayment($tenantId, $method)?->id ?? 0);
+
+        return $id > 0 ? $id : null;
+    }
+
+    /**
+     * @return array{pix: ?int, card: ?int, boleto: ?int, pix_auto: ?int}
+     */
+    public function methodAccountMap(?int $tenantId = null): array
+    {
+        return $this->sanitizeMethodAccounts($this->storedMethodAccountIds($tenantId));
+    }
+
+    /**
+     * IDs gravados, mesmo se a conta tiver sido desligada depois.
+     *
+     * @return array{pix: ?int, card: ?int, boleto: ?int, pix_auto: ?int}
+     */
+    private function storedMethodAccountIds(?int $tenantId = null): array
+    {
+        $raw = Setting::get(self::METHOD_ACCOUNT_SETTING, null, $tenantId);
+        if (is_string($raw)) {
+            $decoded = json_decode($raw, true);
+            $raw = is_array($decoded) ? $decoded : [];
+        }
+        if (! is_array($raw)) {
+            $raw = [];
+        }
+
+        $out = [];
+        foreach (self::METHOD_KEYS as $key) {
+            $id = (int) ($raw[$key] ?? 0);
+            $out[$key] = $id > 0 ? $id : null;
+        }
+
+        return $out;
+    }
+
+    /**
+     * @param  array<string, mixed>  $input
+     * @return array{pix: ?int, card: ?int, boleto: ?int, pix_auto: ?int}
+     */
+    public function saveMethodAccounts(array $input, ?int $tenantId = null): array
+    {
+        $clean = $this->sanitizeMethodAccounts($input);
+        Setting::set(self::METHOD_ACCOUNT_SETTING, $clean, $tenantId);
+
+        return $clean;
     }
 
     public function resolveForOrder(Order $order): ?CajuPayAccount
@@ -162,6 +235,65 @@ class CajuPayAccountResolver
             ->first(fn (CajuPayAccount $account) => $this->isUsableAccount($account));
 
         return $any ?? $this->legacyCredentialAsVirtualAccount();
+    }
+
+    private function assignedAccountForTenant(?int $tenantId): ?CajuPayAccount
+    {
+        if ($tenantId === null || $tenantId <= 0) {
+            return null;
+        }
+
+        $owner = User::query()
+            ->where('role', User::ROLE_INFOPRODUTOR)
+            ->where(function ($q) use ($tenantId) {
+                $q->where('tenant_id', $tenantId)->orWhere('id', $tenantId);
+            })
+            ->whereNotNull('cajupay_account_id')
+            ->first();
+
+        if ($owner === null || ! $owner->cajupay_account_id) {
+            return null;
+        }
+
+        return CajuPayAccount::query()
+            ->whereKey($owner->cajupay_account_id)
+            ->enabled()
+            ->connected()
+            ->first();
+    }
+
+    private function normalizeMethodKey(?string $method): ?string
+    {
+        $method = strtolower(trim((string) $method));
+        if (in_array($method, ['apple_pay', 'google_pay'], true)) {
+            $method = 'card';
+        }
+
+        return in_array($method, self::METHOD_KEYS, true) ? $method : null;
+    }
+
+    /**
+     * @param  array<string, mixed>  $input
+     * @return array{pix: ?int, card: ?int, boleto: ?int, pix_auto: ?int}
+     */
+    private function sanitizeMethodAccounts(array $input): array
+    {
+        $allowed = array_flip(
+            CajuPayAccount::query()
+                ->enabled()
+                ->connected()
+                ->pluck('id')
+                ->map(fn ($id) => (int) $id)
+                ->all()
+        );
+
+        $out = [];
+        foreach (self::METHOD_KEYS as $key) {
+            $id = (int) ($input[$key] ?? 0);
+            $out[$key] = $id > 0 && isset($allowed[$id]) ? $id : null;
+        }
+
+        return $out;
     }
 
     private function isUsableAccount(CajuPayAccount $account): bool

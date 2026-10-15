@@ -105,6 +105,10 @@ const props = defineProps({
     },
     platform_totp_enabled: { type: Boolean, default: false },
     cajupay_accounts: { type: Array, default: () => [] },
+    cajupay_method_accounts: {
+        type: Object,
+        default: () => ({ pix: null, card: null, boleto: null, pix_auto: null }),
+    },
     cajupay_credential_keys: { type: Array, default: () => [] },
 });
 
@@ -177,23 +181,76 @@ function connectedGatewaysForMethod(method) {
     );
 }
 
+function connectedCajuAccounts() {
+    return (props.cajupay_accounts || []).filter((account) => account.is_connected && account.is_enabled);
+}
+
+/**
+ * Opções do seletor. Cada conta CajuPay conectada vira uma opção própria.
+ * @param {string} method
+ * @returns {{ value: string, label: string }[]}
+ */
+function priorityOptions(method) {
+    const accounts = connectedCajuAccounts();
+    const options = [];
+    for (const gateway of connectedGatewaysForMethod(method)) {
+        if (gateway.slug !== 'cajupay') {
+            options.push({ value: gateway.slug, label: gateway.name });
+            continue;
+        }
+        if (accounts.length === 0) {
+            options.push({ value: 'cajupay', label: gateway.name });
+            continue;
+        }
+        for (const account of accounts) {
+            const suffix = account.is_default ? ' (padrão)' : '';
+            options.push({
+                value: `cajupay:${account.id}`,
+                label: `${gateway.name} — ${account.name}${suffix}`,
+            });
+        }
+    }
+    return options;
+}
+
+function slugFromSelection(value) {
+    const raw = String(value || '');
+    return raw.startsWith('cajupay:') ? 'cajupay' : raw;
+}
+
+function accountIdFromSelection(value) {
+    const raw = String(value || '');
+    if (!raw.startsWith('cajupay:')) return null;
+    const id = Number(raw.slice('cajupay:'.length));
+    return Number.isInteger(id) && id > 0 ? id : null;
+}
+
+function selectionForMethod(method) {
+    const options = priorityOptions(method);
+    const values = options.map((option) => option.value);
+    const first = (props.gateway_order?.[method] || [])[0];
+    const savedId = props.cajupay_method_accounts?.[method];
+    if (first === 'cajupay' && savedId) {
+        const token = `cajupay:${savedId}`;
+        if (values.includes(token)) return token;
+    }
+    if (first && values.includes(first)) return first;
+    if (first === 'cajupay') {
+        const caju = options.find((option) => String(option.value).startsWith('cajupay'));
+        if (caju) return caju.value;
+    }
+    return values[0] || '';
+}
+
 function syncPrimaryFromProps() {
-    const o = props.gateway_order || {};
-    const pick = (method) => {
-        const list = o[method] || [];
-        const first = list[0];
-        const conn = connectedGatewaysForMethod(method).map((g) => g.slug);
-        if (first && conn.includes(first)) return first;
-        return conn[0] || '';
-    };
-    primaryPix.value = pick('pix');
-    primaryCard.value = pick('card');
-    primaryBoleto.value = pick('boleto');
-    primaryPixAuto.value = pick('pix_auto');
+    primaryPix.value = selectionForMethod('pix');
+    primaryCard.value = selectionForMethod('card');
+    primaryBoleto.value = selectionForMethod('boleto');
+    primaryPixAuto.value = selectionForMethod('pix_auto');
 }
 
 watch(
-    () => [props.gateway_order, props.gateways],
+    () => [props.gateway_order, props.gateways, props.cajupay_accounts, props.cajupay_method_accounts],
     () => syncPrimaryFromProps(),
     { deep: true, immediate: true }
 );
@@ -235,20 +292,32 @@ async function saveAcquirerOrder() {
     acquirerOrderMessage.value = null;
     acquirerOrderError.value = false;
     try {
+        const selections = {
+            pix: primaryPix.value,
+            card: primaryCard.value,
+            boleto: primaryBoleto.value,
+            pix_auto: primaryPixAuto.value,
+        };
         const gateway_order = {
-            pix: buildGatewayOrderList('pix', primaryPix.value),
-            card: buildGatewayOrderList('card', primaryCard.value),
-            boleto: buildGatewayOrderList('boleto', primaryBoleto.value),
-            pix_auto: buildGatewayOrderList('pix_auto', primaryPixAuto.value),
+            pix: buildGatewayOrderList('pix', slugFromSelection(selections.pix)),
+            card: buildGatewayOrderList('card', slugFromSelection(selections.card)),
+            boleto: buildGatewayOrderList('boleto', slugFromSelection(selections.boleto)),
+            pix_auto: buildGatewayOrderList('pix_auto', slugFromSelection(selections.pix_auto)),
+        };
+        const cajupay_method_accounts = {
+            pix: accountIdFromSelection(selections.pix),
+            card: accountIdFromSelection(selections.card),
+            boleto: accountIdFromSelection(selections.boleto),
+            pix_auto: accountIdFromSelection(selections.pix_auto),
         };
         await axios.put(
             `${GATEWAYS_API_BASE.replace(/\/$/, '')}/order`,
-            { gateway_order },
+            { gateway_order, cajupay_method_accounts },
             { headers: { 'X-XSRF-TOKEN': getCsrfToken(), Accept: 'application/json' } }
         );
         acquirerOrderMessage.value = 'Preferências de adquirente salvas. O primeiro de cada lista é tentado primeiro na cobrança; os demais servem como redundância.';
         acquirerOrderError.value = false;
-        router.reload({ only: ['gateways', 'gateway_order'] });
+        router.reload({ only: ['gateways', 'gateway_order', 'cajupay_method_accounts'] });
     } catch (err) {
         acquirerOrderError.value = true;
         acquirerOrderMessage.value =
@@ -1035,8 +1104,10 @@ function submitSettlement() {
                                         Prioridade por método
                                     </h2>
                                     <p class="mt-1 max-w-2xl text-sm leading-relaxed text-zinc-600 dark:text-zinc-400">
-                                        Defina qual adquirente entra primeiro em cada forma de pagamento. Os demais
-                                        conectados ficam como redundância automática se o principal falhar.
+                                        Defina qual adquirente entra primeiro em cada forma de pagamento. Com mais de
+                                        uma conta CajuPay, escolha a conta de cada método — por exemplo, uma no PIX e
+                                        outra no cartão. Os demais adquirentes conectados seguem como redundância se o
+                                        principal falhar. Vendedor com conta CajuPay fixa continua nessa conta.
                                     </p>
                                 </div>
                             </div>
@@ -1072,21 +1143,21 @@ function submitSettlement() {
                                     id="acq-primary-pix"
                                     v-model="primaryPix"
                                     class="w-full cursor-pointer rounded-xl border border-zinc-200 bg-white px-3.5 py-2.5 text-sm font-medium text-zinc-900 shadow-sm outline-none ring-zinc-950/5 transition focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20 disabled:cursor-not-allowed disabled:opacity-60 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-100 dark:ring-white/5"
-                                    :disabled="connectedGatewaysForMethod('pix').length === 0"
+                                    :disabled="priorityOptions('pix').length === 0"
                                 >
-                                    <option v-if="connectedGatewaysForMethod('pix').length === 0" value="" disabled>
+                                    <option v-if="priorityOptions('pix').length === 0" value="" disabled>
                                         Nenhum adquirente conectado
                                     </option>
                                     <option
-                                        v-for="g in connectedGatewaysForMethod('pix')"
-                                        :key="g.slug"
-                                        :value="g.slug"
+                                        v-for="option in priorityOptions('pix')"
+                                        :key="option.value"
+                                        :value="option.value"
                                     >
-                                        {{ g.name }}
+                                        {{ option.label }}
                                     </option>
                                 </select>
                                 <p
-                                    v-if="connectedGatewaysForMethod('pix').length === 0"
+                                    v-if="priorityOptions('pix').length === 0"
                                     class="mt-2 text-xs leading-snug text-zinc-500 dark:text-zinc-400"
                                 >
                                     Conecte um adquirente com PIX nos cartões acima para habilitar.
@@ -1115,21 +1186,21 @@ function submitSettlement() {
                                     id="acq-primary-card"
                                     v-model="primaryCard"
                                     class="w-full cursor-pointer rounded-xl border border-zinc-200 bg-white px-3.5 py-2.5 text-sm font-medium text-zinc-900 shadow-sm outline-none transition focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20 disabled:cursor-not-allowed disabled:opacity-60 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-100"
-                                    :disabled="connectedGatewaysForMethod('card').length === 0"
+                                    :disabled="priorityOptions('card').length === 0"
                                 >
-                                    <option v-if="connectedGatewaysForMethod('card').length === 0" value="" disabled>
+                                    <option v-if="priorityOptions('card').length === 0" value="" disabled>
                                         Nenhum adquirente conectado
                                     </option>
                                     <option
-                                        v-for="g in connectedGatewaysForMethod('card')"
-                                        :key="g.slug"
-                                        :value="g.slug"
+                                        v-for="option in priorityOptions('card')"
+                                        :key="option.value"
+                                        :value="option.value"
                                     >
-                                        {{ g.name }}
+                                        {{ option.label }}
                                     </option>
                                 </select>
                                 <p
-                                    v-if="connectedGatewaysForMethod('card').length === 0"
+                                    v-if="priorityOptions('card').length === 0"
                                     class="mt-2 text-xs leading-snug text-zinc-500 dark:text-zinc-400"
                                 >
                                     Conecte um adquirente com cartão nos cartões acima.
@@ -1158,21 +1229,21 @@ function submitSettlement() {
                                     id="acq-primary-boleto"
                                     v-model="primaryBoleto"
                                     class="w-full cursor-pointer rounded-xl border border-zinc-200 bg-white px-3.5 py-2.5 text-sm font-medium text-zinc-900 shadow-sm outline-none transition focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20 disabled:cursor-not-allowed disabled:opacity-60 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-100"
-                                    :disabled="connectedGatewaysForMethod('boleto').length === 0"
+                                    :disabled="priorityOptions('boleto').length === 0"
                                 >
-                                    <option v-if="connectedGatewaysForMethod('boleto').length === 0" value="" disabled>
+                                    <option v-if="priorityOptions('boleto').length === 0" value="" disabled>
                                         Nenhum adquirente conectado
                                     </option>
                                     <option
-                                        v-for="g in connectedGatewaysForMethod('boleto')"
-                                        :key="g.slug"
-                                        :value="g.slug"
+                                        v-for="option in priorityOptions('boleto')"
+                                        :key="option.value"
+                                        :value="option.value"
                                     >
-                                        {{ g.name }}
+                                        {{ option.label }}
                                     </option>
                                 </select>
                                 <p
-                                    v-if="connectedGatewaysForMethod('boleto').length === 0"
+                                    v-if="priorityOptions('boleto').length === 0"
                                     class="mt-2 text-xs leading-snug text-zinc-500 dark:text-zinc-400"
                                 >
                                     Conecte um adquirente com boleto nos cartões acima.
@@ -1207,23 +1278,23 @@ function submitSettlement() {
                                         id="acq-primary-pix-auto"
                                         v-model="primaryPixAuto"
                                         class="w-full cursor-pointer rounded-xl border border-violet-200/80 bg-white px-3.5 py-2.5 text-sm font-medium text-zinc-900 shadow-sm outline-none transition focus:border-violet-500 focus:ring-2 focus:ring-violet-500/20 disabled:cursor-not-allowed disabled:opacity-60 dark:border-violet-500/30 dark:bg-zinc-900 dark:text-zinc-100"
-                                        :disabled="connectedGatewaysForMethod('pix_auto').length === 0"
+                                        :disabled="priorityOptions('pix_auto').length === 0"
                                     >
-                                        <option v-if="connectedGatewaysForMethod('pix_auto').length === 0" value="" disabled>
+                                        <option v-if="priorityOptions('pix_auto').length === 0" value="" disabled>
                                             Nenhum conectado
                                         </option>
                                         <option
-                                            v-for="g in connectedGatewaysForMethod('pix_auto')"
-                                            :key="g.slug"
-                                            :value="g.slug"
+                                            v-for="option in priorityOptions('pix_auto')"
+                                            :key="option.value"
+                                            :value="option.value"
                                         >
-                                            {{ g.name }}
+                                            {{ option.label }}
                                         </option>
                                     </select>
                                 </div>
                             </div>
                             <p
-                                v-if="connectedGatewaysForMethod('pix_auto').length === 0"
+                                v-if="priorityOptions('pix_auto').length === 0"
                                 class="mt-3 text-xs text-zinc-600 dark:text-zinc-400"
                             >
                                 Conecte um adquirente com PIX automático (ex.: Efí) para assinaturas.

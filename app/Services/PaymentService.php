@@ -42,7 +42,7 @@ class PaymentService
             if (! $this->isPixAcquirerAllowedForOrder($gatewaySlug, $order)) {
                 continue;
             }
-            $resolved = $this->resolveGatewayPaymentContext($tenantId, $gatewaySlug);
+            $resolved = $this->resolveGatewayPaymentContext($tenantId, $gatewaySlug, 'pix');
             if ($resolved === null) {
                 continue;
             }
@@ -138,7 +138,7 @@ class PaymentService
             if (microtime(true) > $deadline) {
                 break;
             }
-            $resolved = $this->resolveGatewayPaymentContext($tenantId, $gatewaySlug);
+            $resolved = $this->resolveGatewayPaymentContext($tenantId, $gatewaySlug, 'card');
             if ($resolved === null) {
                 continue;
             }
@@ -224,7 +224,7 @@ class PaymentService
             if (microtime(true) > $deadline) {
                 break;
             }
-            $resolved = $this->resolveGatewayPaymentContext($tenantId, $gatewaySlug);
+            $resolved = $this->resolveGatewayPaymentContext($tenantId, $gatewaySlug, 'boleto');
             if ($resolved === null) {
                 continue;
             }
@@ -291,7 +291,7 @@ class PaymentService
     {
         $orderSlugs = $this->getGatewayOrderForMethod($tenantId, $method, $product, $gatewayConfigOverride);
         foreach ($orderSlugs as $gatewaySlug) {
-            $resolved = $this->resolveGatewayPaymentContext($tenantId, $gatewaySlug);
+            $resolved = $this->resolveGatewayPaymentContext($tenantId, $gatewaySlug, $method);
             if ($resolved === null) {
                 continue;
             }
@@ -506,7 +506,7 @@ class PaymentService
 
             foreach ($slugsToCheck as $slug) {
                 if ($slug === 'cajupay') {
-                    if (! app(CajuPayAccountResolver::class)->isAvailableForTenant($tenantId)) {
+                    if (app(CajuPayAccountResolver::class)->resolveForPayment($tenantId, $methodKey) === null) {
                         continue;
                     }
                 } else {
@@ -581,14 +581,7 @@ class PaymentService
             $slugsToCheck = $this->getGatewayOrderForMethod($tenantId, $methodKey, $product);
             foreach ($slugsToCheck as $slug) {
                 if ($slug === 'cajupay') {
-                    if (app(CajuPayAccountResolver::class)->isAvailableForTenant($tenantId)) {
-                        $out[$methodKey] = true;
-                        break;
-                    }
-                    continue;
-                }
-                if ($slug === 'cajupay') {
-                    if (! app(CajuPayAccountResolver::class)->isAvailableForTenant($tenantId)) {
+                    if (app(CajuPayAccountResolver::class)->resolveForPayment($tenantId, $methodKey) === null) {
                         continue;
                     }
                 } else {
@@ -610,7 +603,7 @@ class PaymentService
         $firstCardSlug = null;
         foreach ($this->getGatewayOrderForMethod($tenantId, 'card', $product) as $slug) {
             if ($slug === 'cajupay') {
-                if (app(CajuPayAccountResolver::class)->isAvailableForTenant($tenantId)) {
+                if (app(CajuPayAccountResolver::class)->resolveForPayment($tenantId, 'card') !== null) {
                     $firstCardSlug = $slug;
                     break;
                 }
@@ -691,14 +684,17 @@ class PaymentService
     /**
      * @return array{credentials: array<string, mixed>, cajupay_account_id: ?int, gateway_credential_id: ?int}|null
      */
-    private function resolveGatewayPaymentContext(?int $tenantId, string $gatewaySlug): ?array
+    private function resolveGatewayPaymentContext(?int $tenantId, string $gatewaySlug, ?string $method = null): ?array
     {
         if (! GatewayPluginRequirement::isUnlocked($gatewaySlug)) {
             return null;
         }
 
         if ($gatewaySlug === 'cajupay') {
-            $account = app(CajuPayAccountResolver::class)->resolveForTenant($tenantId);
+            $resolver = app(CajuPayAccountResolver::class);
+            $account = $method !== null && $method !== ''
+                ? $resolver->resolveForPayment($tenantId, $method)
+                : $resolver->resolveForTenant($tenantId);
             if ($account === null) {
                 return null;
             }
