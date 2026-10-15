@@ -5,7 +5,7 @@ Plataforma Laravel + Vue para checkout, área de membros e estrutura completa de
 ## Instalação rápida
 
 - Hospedagem compartilhada (upload manual): acesse `https://SEU_DOMINIO/install`
-- VPS (terminal): `bash -c "$(curl -fsSL https://raw.githubusercontent.com/getfy-opensource/getfy/main/install.sh)"`
+- VPS (terminal): `bash -c "$(curl -fsSL https://raw.githubusercontent.com/stacker-builders/stacker-gateway/main/install.sh)"`
 - Docker na Hostinger (deploy por URL do GitHub): use `docker-compose.yml` do repositório
 
 ---
@@ -99,7 +99,7 @@ O banco padrão do stack Docker é **PostgreSQL**.
 Conecte via SSH e execute:
 
 ```bash
-bash -c "$(curl -fsSL https://raw.githubusercontent.com/getfy-opensource/getfy/main/install.sh)"
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/stacker-builders/stacker-gateway/main/install.sh)"
 ```
 
 O que esse comando faz:
@@ -125,7 +125,7 @@ Abra e informe o domínio público (ex.: `seudominio.com`). Isso ajusta `APP_URL
 Você pode definir variáveis antes de rodar o instalador:
 
 ```bash
-GETFY_HTTP_PORT=8080 GETFY_DIR=/opt/getfy bash -c "$(curl -fsSL https://raw.githubusercontent.com/getfy-opensource/getfy/main/install.sh)"
+GETFY_HTTP_PORT=8080 GETFY_DIR=/opt/getfy bash -c "$(curl -fsSL https://raw.githubusercontent.com/stacker-builders/stacker-gateway/main/install.sh)"
 ```
 
 ---
@@ -164,7 +164,7 @@ Se o seu painel não suportar `docker-compose.yml`, a alternativa mais simples �
 ## Para atualizar:
 VPS:
 1. Conecte via SSH.
-3. Execute: `bash -c "$(curl -fsSL https://raw.githubusercontent.com/getfy-opensource/getfy/main/update.sh)"`.
+3. Execute: `bash -c "$(curl -fsSL https://raw.githubusercontent.com/stacker-builders/stacker-gateway/main/update.sh)"`.
 
 Hospedagem compartilhada:
 1. Baixe o zip update vX.X.X do repositório.
