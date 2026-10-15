@@ -59,7 +59,7 @@ class PixGoChargeService
             'gateway_id' => null,
             'payment_method' => 'pix',
             'sale_origin' => SaleOrigin::PIXGO,
-            'cajupay_account_id' => app(CajuPayAccountResolver::class)->accountIdForTenant($tenantId),
+            'cajupay_account_id' => app(CajuPayAccountResolver::class)->accountIdForPayment($tenantId, 'pix'),
             'metadata' => $metadata,
         ]);
 

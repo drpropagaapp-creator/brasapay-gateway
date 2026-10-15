@@ -9,6 +9,7 @@ use App\Gateways\Versell\VersellCredentials;
 use App\Gateways\Versell\VersellDriver;
 use App\Models\GatewayCredential;
 use App\Models\Setting;
+use App\Services\CajuPay\CajuPayAccountResolver;
 use App\Services\CajuPay\CajuPayWebhookBootstrapService;
 use App\Services\Versell\VersellWebhookBootstrapService;
 use App\Services\Xflow\XflowWebhookBootstrapService;
@@ -837,6 +838,11 @@ class GatewaysController extends Controller
             'gateway_order.boleto.*' => ['string', 'max:64'],
             'gateway_order.pix_auto' => ['nullable', 'array'],
             'gateway_order.pix_auto.*' => ['string', 'max:64'],
+            'cajupay_method_accounts' => ['sometimes', 'array'],
+            'cajupay_method_accounts.pix' => ['nullable', 'integer'],
+            'cajupay_method_accounts.card' => ['nullable', 'integer'],
+            'cajupay_method_accounts.boleto' => ['nullable', 'integer'],
+            'cajupay_method_accounts.pix_auto' => ['nullable', 'integer'],
         ]);
 
         $tenantId = PlatformConfigContext::settingsTenantId();
@@ -849,7 +855,19 @@ class GatewaysController extends Controller
         ];
         Setting::set('gateway_order', $sanitized, $tenantId);
 
-        return response()->json(['success' => true, 'message' => 'Ordem de redundância atualizada.']);
+        $methodAccounts = null;
+        if ($request->exists('cajupay_method_accounts')) {
+            $methodAccounts = app(CajuPayAccountResolver::class)->saveMethodAccounts(
+                is_array($validated['cajupay_method_accounts'] ?? null) ? $validated['cajupay_method_accounts'] : [],
+                $tenantId
+            );
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Ordem de redundância atualizada.',
+            'cajupay_method_accounts' => $methodAccounts,
+        ]);
     }
 
     /**

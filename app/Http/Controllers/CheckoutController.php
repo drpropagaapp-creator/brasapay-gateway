@@ -2286,7 +2286,8 @@ class CheckoutController extends Controller
 
         $totalAmount = (float) $context['total_amount'];
 
-        $account = app(\App\Services\CajuPay\CajuPayAccountResolver::class)->resolveForTenant($product->tenant_id);
+        $method = (string) $validated['payment_method'];
+        $account = app(\App\Services\CajuPay\CajuPayAccountResolver::class)->resolveForPayment($product->tenant_id, $method);
         if (! $account) {
             return response()->json(['message' => 'CajuPay não está conectado.'], 422);
         }
@@ -2295,7 +2296,6 @@ class CheckoutController extends Controller
             return response()->json(['message' => 'CajuPay: chaves de API não configuradas.'], 422);
         }
 
-        $method = $validated['payment_method'];
         $defaultMethodMap = [
             'card' => 'card',
             'apple_pay' => 'apple_pay',
@@ -2380,6 +2380,7 @@ class CheckoutController extends Controller
             'card_installments_enabled' => ! empty($installmentFlags['allow_card_installments']),
             'card_max_installments' => (int) ($installmentFlags['card_max_installments'] ?? 1),
             'tenant_id' => $product->tenant_id,
+            'cajupay_account_id' => (int) $account->id > 0 ? (int) $account->id : null,
             'external_id' => $externalRef,
             'methods_available' => $availableMethods,
             'created_at' => time(),
@@ -3186,7 +3187,10 @@ class CheckoutController extends Controller
             'gateway' => $gatewaySlug,
             'gateway_id' => $draft['gateway_id'] ?? $draft['checkout_session_id'] ?? null,
             'cajupay_account_id' => $gatewaySlug === 'cajupay'
-                ? app(\App\Services\CajuPay\CajuPayAccountResolver::class)->accountIdForTenant($tenantId)
+                ? ($draft['cajupay_account_id'] ?? app(\App\Services\CajuPay\CajuPayAccountResolver::class)->accountIdForPayment(
+                    $tenantId,
+                    (string) ($draft['payment_method'] ?? 'card')
+                ))
                 : null,
             'payment_method' => $orderPaymentMethod,
         ];
