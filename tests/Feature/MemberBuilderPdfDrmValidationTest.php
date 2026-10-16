@@ -13,6 +13,7 @@ use App\Services\MemberLessonPdfDrmValidator;
 use FPDF;
 use Illuminate\Foundation\Http\Middleware\ValidateCsrfToken;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
 
 class MemberBuilderPdfDrmValidationTest extends TestCase
@@ -88,6 +89,71 @@ class MemberBuilderPdfDrmValidationTest extends TestCase
             'title' => 'Apostila',
             'watermark_enabled' => 1,
         ]);
+    }
+
+    public function test_store_lesson_accepts_local_storage_upload_url_when_drm_enabled(): void
+    {
+        Storage::fake('public');
+        config(['app.url' => 'https://app.asgardpay.com.br']);
+        [$owner, $product, $module] = $this->sellerWithModule();
+
+        $path = 'member-area/'.$product->id.'/apostila.pdf';
+        Storage::disk('public')->put($path, $this->samplePdf());
+        $url = 'https://app.asgardpay.com.br/storage/'.$path;
+
+        Http::fake();
+
+        $response = $this->actingAs($owner)->postJson(
+            route('member-builder.lessons.store', [$product, $module]),
+            [
+                'title' => 'Apostila local',
+                'type' => MemberLesson::TYPE_PDF,
+                'content_url' => $url,
+                'content_files' => [
+                    ['url' => $url, 'name' => 'Apostila.pdf'],
+                ],
+                'watermark_enabled' => true,
+            ]
+        );
+
+        $response->assertOk();
+        $this->assertDatabaseHas('member_lessons', [
+            'product_id' => $product->id,
+            'title' => 'Apostila local',
+            'watermark_enabled' => 1,
+        ]);
+        Http::assertNothingSent();
+    }
+
+    public function test_store_lesson_reports_read_failure_distinct_from_incompatible_pdf(): void
+    {
+        Storage::fake('public');
+        config(['app.url' => 'https://app.asgardpay.com.br']);
+        [$owner, $product, $module] = $this->sellerWithModule();
+
+        $url = 'https://app.asgardpay.com.br/storage/member-area/'.$product->id.'/ausente.pdf';
+        Http::fake();
+
+        $response = $this->actingAs($owner)->postJson(
+            route('member-builder.lessons.store', [$product, $module]),
+            [
+                'title' => 'Apostila ausente',
+                'type' => MemberLesson::TYPE_PDF,
+                'content_url' => $url,
+                'content_files' => [
+                    ['url' => $url, 'name' => 'Ausente.pdf'],
+                ],
+                'watermark_enabled' => true,
+            ]
+        );
+
+        $response->assertStatus(422);
+        $response->assertJsonValidationErrors(['watermark_enabled']);
+        $this->assertSame(
+            MemberLessonPdfDrmValidator::PRODUCER_READ_MESSAGE,
+            $response->json('errors.watermark_enabled.0')
+        );
+        Http::assertNothingSent();
     }
 
     public function test_update_lesson_rejects_enabling_drm_on_incompatible_pdf(): void
