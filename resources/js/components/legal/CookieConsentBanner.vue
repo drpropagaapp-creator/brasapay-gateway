@@ -30,6 +30,7 @@ function saveChoice(value) {
         /* ignore */
     }
     visible.value = false;
+    window.dispatchEvent(new CustomEvent('cookie-consent-changed', { detail: value }));
 }
 
 function accept() {

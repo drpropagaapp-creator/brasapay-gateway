@@ -24,6 +24,7 @@ use App\Support\LoginTemplate;
 use App\Support\PanelColorScheme;
 use App\Support\PublicAppUrl;
 use App\Support\SellerDashboardTemplate;
+use App\Support\PlatformGa4Settings;
 use App\Support\SellerPanelSupportSettings;
 use App\Support\ReferralProgramSettings;
 use App\Support\ProductApprovalSettings;
@@ -350,6 +351,7 @@ class HandleInertiaRequests extends Middleware
                 ? \App\Services\PixGoAccess::sidebarLabel()
                 : \App\Services\PixGoAccess::DEFAULT_SIDEBAR_LABEL,
             'legal' => $sharedCache->legalPublicLinks(),
+            'platform_ga4' => PlatformGa4Settings::inertiaConfig(),
         ];
 
         if ($user && ($user->canAccessSellerPanel() || $user->canAccessPlatformPanel())) {
