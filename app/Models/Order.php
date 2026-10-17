@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Gateways\GatewayRegistry;
 use App\Services\PlatformPaymentMethods;
+use App\Support\PlatformGa4Settings;
 use App\Support\SaleOrigin;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -42,10 +43,10 @@ class Order extends Model
     protected static function booted(): void
     {
         static::creating(function (Order $order) {
-            if ($order->public_reference !== null && $order->public_reference !== '') {
-                return;
+            if ($order->public_reference === null || $order->public_reference === '') {
+                $order->public_reference = static::newUniquePublicReference();
             }
-            $order->public_reference = static::newUniquePublicReference();
+            PlatformGa4Settings::stampClientId($order);
         });
 
         static::saving(function (Order $order) {

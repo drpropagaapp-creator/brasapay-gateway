@@ -19,6 +19,7 @@ use App\Listeners\RecordAffiliateCommissionOnOrderCompleted;
 use App\Listeners\RecordReferralCommissionOnOrderCompleted;
 use App\Listeners\RevokeProductAccessOnOrderRejected;
 use App\Listeners\SendAccessEmailOnOrderCompleted;
+use App\Listeners\SendPlatformGa4PurchaseOnOrderCompleted;
 use App\Listeners\SendApiApplicationWebhookListener;
 use App\Listeners\SendPanelPushOnBoletoGenerated;
 use App\Listeners\SendPanelPushOnOrderCompleted;
@@ -242,6 +243,7 @@ class AppServiceProvider extends ServiceProvider
         Event::listen(OrderCompleted::class, IncrementCouponUsageOnOrderCompleted::class);
         Event::listen(OrderCompleted::class, GrantMemberModuleAccessOnOrderCompleted::class);
         Event::listen(OrderCompleted::class, SendAccessEmailOnOrderCompleted::class);
+        Event::listen(OrderCompleted::class, SendPlatformGa4PurchaseOnOrderCompleted::class);
         Event::listen(OrderRejected::class, RevokeProductAccessOnOrderRejected::class);
         Event::listen(PixGenerated::class, SendPanelPushOnPixGenerated::class);
         Event::listen(BoletoGenerated::class, SendPanelPushOnBoletoGenerated::class);
