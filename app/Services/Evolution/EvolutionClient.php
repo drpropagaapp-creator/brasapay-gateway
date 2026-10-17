@@ -67,24 +67,7 @@ class EvolutionClient
 
     public function normalizePhone(?string $raw): ?string
     {
-        if ($raw === null || trim($raw) === '') {
-            return null;
-        }
-
-        $digits = preg_replace('/\D+/', '', $raw);
-        if (! is_string($digits) || $digits === '') {
-            return null;
-        }
-
-        if (str_starts_with($digits, '55') && strlen($digits) >= 12 && strlen($digits) <= 13) {
-            return $digits;
-        }
-
-        if (strlen($digits) >= 10 && strlen($digits) <= 11) {
-            return '55'.$digits;
-        }
-
-        return null;
+        return \App\Support\WhatsappPhoneNormalizer::normalize($raw);
     }
 
     /**

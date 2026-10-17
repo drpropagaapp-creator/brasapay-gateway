@@ -418,9 +418,9 @@ class AccountManagersController extends Controller
         ]);
 
         $phone = SellerPanelSupportSettings::normalizeWhatsappNumber($validated['phone'] ?? '');
-        if ($phone === '' || strlen($phone) < 12) {
+        if ($phone === '') {
             throw \Illuminate\Validation\ValidationException::withMessages([
-                'phone' => 'Informe um WhatsApp válido com DDD (10 ou 11 dígitos).',
+                'phone' => 'Informe um WhatsApp válido com DDI (ex.: +351...) ou DDD brasileiro.',
             ]);
         }
 

@@ -171,16 +171,7 @@ final class SellerPanelSupportSettings
 
     public static function normalizeWhatsappNumber(?string $phone): string
     {
-        $digits = preg_replace('/\D/', '', (string) $phone) ?? '';
-        if (strlen($digits) < 10) {
-            return '';
-        }
-
-        if (strlen($digits) <= 11 && ! str_starts_with($digits, '55')) {
-            $digits = '55'.$digits;
-        }
-
-        return $digits;
+        return WhatsappPhoneNormalizer::normalize($phone) ?? '';
     }
 
     public static function buildWhatsAppHref(?string $phone): ?string

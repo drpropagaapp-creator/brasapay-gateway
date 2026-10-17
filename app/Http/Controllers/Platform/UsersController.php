@@ -899,13 +899,10 @@ class UsersController extends Controller
             if ($rawPhone === '') {
                 $user->phone = null;
             } else {
-                $digits = preg_replace('/\D/', '', $rawPhone) ?? '';
-                if (strlen($digits) <= 11 && strlen($digits) >= 10 && ! str_starts_with($digits, '55')) {
-                    $digits = '55'.$digits;
-                }
-                if (strlen($digits) < 12 || strlen($digits) > 13) {
+                $digits = \App\Support\WhatsappPhoneNormalizer::normalize($rawPhone);
+                if ($digits === null) {
                     throw ValidationException::withMessages([
-                        'phone' => 'Informe um WhatsApp válido com DDD (10 ou 11 dígitos).',
+                        'phone' => 'Informe um WhatsApp válido com DDI (ex.: +351...) ou DDD brasileiro.',
                     ]);
                 }
                 $user->phone = $digits;

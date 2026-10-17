@@ -21,6 +21,13 @@ class IntegraxPhoneNormalizerTest extends TestCase
         $this->assertSame('5511999887766', $service->normalizePhone('(11) 99988-7766'));
     }
 
+    public function test_normalizes_international_phone(): void
+    {
+        $service = new IntegraxService;
+
+        $this->assertSame('351912345678', $service->normalizePhone('+351 912 345 678'));
+    }
+
     public function test_returns_null_for_invalid_phone(): void
     {
         $service = new IntegraxService;
