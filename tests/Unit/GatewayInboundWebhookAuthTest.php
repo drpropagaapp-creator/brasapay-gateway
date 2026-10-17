@@ -95,6 +95,46 @@ class GatewayInboundWebhookAuthTest extends TestCase
         $this->assertTrue(GatewayInboundWebhookAuth::verifyHmacSha256Body($request, 'pushinpay', 1, 'X-Webhook-Signature'));
     }
 
+    public function test_woovi_accepts_authorization_header_matching_webhook_secret(): void
+    {
+        $secret = 'woovi-authorization-token';
+        $credential = GatewayCredential::create([
+            'tenant_id' => null,
+            'gateway_slug' => 'woovi',
+            'credentials' => '',
+            'is_connected' => true,
+        ]);
+        $credential->setEncryptedCredentials(['webhook_secret' => $secret]);
+        $credential->save();
+
+        $request = Request::create(
+            '/webhooks/gateways/woovi',
+            'POST',
+            [],
+            [],
+            [],
+            ['HTTP_AUTHORIZATION' => $secret],
+            '{"event":"OPENPIX:CHARGE_COMPLETED","charge":{"status":"COMPLETED","transactionID":"tx_1"}}'
+        );
+
+        $this->assertTrue(GatewayInboundWebhookAuth::verifyWoovi($request, null));
+    }
+
+    public function test_woovi_fail_closed_when_webhook_secret_missing(): void
+    {
+        $request = Request::create(
+            '/webhooks/gateways/woovi',
+            'POST',
+            [],
+            [],
+            [],
+            ['HTTP_AUTHORIZATION' => 'qualquer-token'],
+            '{"event":"OPENPIX:CHARGE_COMPLETED","charge":{"status":"COMPLETED","transactionID":"tx_1"}}'
+        );
+
+        $this->assertFalse(GatewayInboundWebhookAuth::verifyWoovi($request, null));
+    }
+
     public function test_bspay_skips_hmac_when_secret_missing(): void
     {
         $request = Request::create(

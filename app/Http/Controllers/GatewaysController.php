@@ -106,6 +106,9 @@ class GatewaysController extends Controller
         $webhookHelp = null;
         if ($slug === 'pushinpay') {
             $webhookUrl = GatewayWebhookUrl::forGateway('pushinpay');
+        } elseif ($slug === 'woovi') {
+            $webhookUrl = GatewayWebhookUrl::forGateway('woovi');
+            $webhookHelp = 'Cadastre esta URL HTTPS no painel Woovi (API/Plugins → Webhooks), evento OPENPIX:CHARGE_COMPLETED. No cadastro do webhook, preencha o campo authorization com um token secreto e cole o mesmo valor em Webhook Secret abaixo. Sem esse secret, as notificações de pagamento são rejeitadas.';
         } elseif ($slug === 'onlyup') {
             $webhookUrl = GatewayWebhookUrl::forGateway('onlyup');
         } elseif ($slug === 'cajupay') {
