@@ -136,25 +136,14 @@ class EvolutionClient
     public function sendText(string $token, string $instanceName, string $number, string $text): array
     {
         $path = '/message/sendText/'.$this->encodeName($instanceName);
-        $payload = [
+
+        // Um único POST: o fallback antigo (text+textMessage → em 400 outro POST)
+        // podia entregar a mensagem e ainda assim reenviar no segundo request.
+        return $this->request($token, 'POST', $path, [
             'number' => $number,
             'text' => $text,
-            'textMessage' => ['text' => $text],
             'linkPreview' => true,
-        ];
-
-        try {
-            return $this->request($token, 'POST', $path, $payload);
-        } catch (EvolutionRequestException $e) {
-            if ($e->status !== 400) {
-                throw $e;
-            }
-
-            return $this->request($token, 'POST', $path, [
-                'number' => $number,
-                'textMessage' => ['text' => $text],
-            ]);
-        }
+        ]);
     }
 
     /**

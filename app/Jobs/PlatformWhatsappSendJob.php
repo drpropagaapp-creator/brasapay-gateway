@@ -41,7 +41,33 @@ class PlatformWhatsappSendJob implements ShouldQueue
     public function handle(PlatformWhatsappChannelService $channelService): void
     {
         $dispatch = PlatformWhatsappDispatch::query()->find($this->dispatchId);
-        if (! $dispatch || $dispatch->status !== PlatformWhatsappDispatch::STATUS_PENDING) {
+        if (! $dispatch) {
+            return;
+        }
+
+        if (in_array($dispatch->status, [
+            PlatformWhatsappDispatch::STATUS_SENT,
+            PlatformWhatsappDispatch::STATUS_CANCELED,
+            PlatformWhatsappDispatch::STATUS_FAILED,
+            PlatformWhatsappDispatch::STATUS_SKIPPED,
+        ], true)) {
+            return;
+        }
+
+        // Crash após claim (e possivelmente após a API aceitar): não reenvia.
+        if ($dispatch->status === PlatformWhatsappDispatch::STATUS_PROCESSING) {
+            Log::warning('PlatformWhatsappSendJob: dispatch preso em processing — sem reenvio', [
+                'dispatch_id' => $dispatch->id,
+            ]);
+            $dispatch->update([
+                'status' => PlatformWhatsappDispatch::STATUS_FAILED,
+                'error' => 'Envio anterior ficou incompleto; reenvio automático bloqueado para evitar duplicata.',
+            ]);
+
+            return;
+        }
+
+        if ($dispatch->status !== PlatformWhatsappDispatch::STATUS_PENDING || ! $dispatch->claimForSending()) {
             return;
         }
 
@@ -75,8 +101,11 @@ class PlatformWhatsappSendJob implements ShouldQueue
         } catch (\Throwable $e) {
             $retryable = str_contains(strtolower($e->getMessage()), '429')
                 || str_contains(strtolower($e->getMessage()), '503');
+
             $dispatch->update([
-                'status' => $retryable ? PlatformWhatsappDispatch::STATUS_PENDING : PlatformWhatsappDispatch::STATUS_FAILED,
+                'status' => $retryable
+                    ? PlatformWhatsappDispatch::STATUS_PENDING
+                    : PlatformWhatsappDispatch::STATUS_FAILED,
                 'error' => mb_substr($e->getMessage(), 0, 500),
             ]);
 
@@ -94,7 +123,14 @@ class PlatformWhatsappSendJob implements ShouldQueue
     public function failed(?\Throwable $exception): void
     {
         $dispatch = PlatformWhatsappDispatch::query()->find($this->dispatchId);
-        if (! $dispatch || $dispatch->status !== PlatformWhatsappDispatch::STATUS_PENDING) {
+        if (! $dispatch) {
+            return;
+        }
+
+        if (! in_array($dispatch->status, [
+            PlatformWhatsappDispatch::STATUS_PENDING,
+            PlatformWhatsappDispatch::STATUS_PROCESSING,
+        ], true)) {
             return;
         }
 
