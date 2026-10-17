@@ -8,6 +8,7 @@ use App\Models\PlatformWhatsappDispatch;
 use App\Models\PlatformWhatsappOptOut;
 use App\Models\PlatformWhatsappTemplate;
 use App\Models\User;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 
 class PlatformWhatsappDispatcher
@@ -43,10 +44,33 @@ class PlatformWhatsappDispatcher
             return false;
         }
 
-        $message = $this->vars->render($template->message, $this->vars->forSeller($seller, $extra));
-        $this->assertLength($message);
+        $lock = Cache::lock('platform-whatsapp:notify:'.$seller->id.':'.$eventKey, 15);
+        if (! $lock->get()) {
+            Log::info('PlatformWhatsappDispatcher: notify ignorado (lock)', [
+                'event' => $eventKey,
+                'user_id' => $seller->id,
+            ]);
 
-        return $this->queue($eventKey, $phone, $message, (int) $seller->id);
+            return false;
+        }
+
+        try {
+            if (PlatformWhatsappDispatch::blocksDuplicate((int) $seller->id, $eventKey)) {
+                Log::info('PlatformWhatsappDispatcher: notify ignorado (duplicata)', [
+                    'event' => $eventKey,
+                    'user_id' => $seller->id,
+                ]);
+
+                return false;
+            }
+
+            $message = $this->vars->render($template->message, $this->vars->forSeller($seller, $extra));
+            $this->assertLength($message);
+
+            return $this->queue($eventKey, $phone, $message, (int) $seller->id);
+        } finally {
+            $lock->release();
+        }
     }
 
     public function queue(
