@@ -110,6 +110,7 @@ return [
             'credential_keys' => [
                 ['key' => 'app_id', 'label' => 'AppID (API)', 'type' => 'password'],
                 ['key' => 'sandbox', 'label' => 'Sandbox — ambiente de testes (API: api.woovi-sandbox.com)', 'type' => 'boolean'],
+                ['key' => 'webhook_secret', 'label' => 'Webhook Secret (campo authorization do webhook na Woovi)', 'type' => 'password'],
                 ['key' => 'from_pix_key', 'label' => 'Chave PIX de origem (conta Woovi — saques)', 'type' => 'text'],
                 ['key' => 'woovi_payout_min_brl', 'label' => 'Mínimo líquido de payout (R$)', 'type' => 'text', 'optional' => true],
                 ['key' => 'woovi_admin_fee_pix_brl', 'label' => 'Taxa PIX paga à Woovi (R$ fixo)', 'type' => 'text', 'optional' => true],
