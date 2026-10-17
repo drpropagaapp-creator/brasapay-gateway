@@ -173,13 +173,13 @@ class ProfileController extends Controller
         $validated = $request->validate([
             'phone' => ['required', 'string', 'max:32'],
         ], [
-            'phone.required' => 'Informe um WhatsApp válido com DDD (10 ou 11 dígitos).',
+            'phone.required' => 'Informe um WhatsApp válido com DDI (ex.: +351...) ou DDD brasileiro.',
         ]);
 
         $phoneDigits = $this->normalizeWhatsappDigits((string) $validated['phone']);
         if ($phoneDigits === null) {
             return back()->withErrors([
-                'phone' => 'Informe um WhatsApp válido com DDD (10 ou 11 dígitos).',
+                'phone' => 'Informe um WhatsApp válido com DDI (ex.: +351...) ou DDD brasileiro.',
             ])->withInput();
         }
 
@@ -230,22 +230,11 @@ class ProfileController extends Controller
     }
 
     /**
-     * Normaliza WhatsApp BR para dígitos com DDI 55 (12 ou 13 dígitos).
+     * Normaliza WhatsApp para dígitos E.164 (BR por padrão se vier só DDD+número).
      */
     private function normalizeWhatsappDigits(string $phone): ?string
     {
-        $digits = preg_replace('/\D/', '', $phone) ?? '';
-        if (strlen($digits) < 10) {
-            return null;
-        }
-        if (strlen($digits) <= 11 && ! str_starts_with($digits, '55')) {
-            $digits = '55'.$digits;
-        }
-        if (strlen($digits) < 12 || strlen($digits) > 13) {
-            return null;
-        }
-
-        return $digits;
+        return \App\Support\WhatsappPhoneNormalizer::normalize($phone);
     }
 
     private function sameWhatsappNumber(string $current, string $incoming): bool

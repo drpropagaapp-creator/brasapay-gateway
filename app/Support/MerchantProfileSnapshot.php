@@ -150,17 +150,15 @@ final class MerchantProfileSnapshot
      */
     private static function whatsappFromPhoneDigits(string $phone): array
     {
-        $digits = preg_replace('/\D/', '', $phone) ?? '';
-        if (strlen($digits) < 10) {
+        $digits = WhatsappPhoneNormalizer::normalize($phone);
+        if ($digits === null) {
             return [];
         }
 
-        if (strlen($digits) <= 11 && ! str_starts_with($digits, '55')) {
-            $digits = '55'.$digits;
-        }
+        $isBr = str_starts_with($digits, '55') && (strlen($digits) === 12 || strlen($digits) === 13);
 
         return [
-            'display' => self::formatPhoneBr($digits),
+            'display' => $isBr ? self::formatPhoneBr($digits) : '+'.$digits,
             'url' => 'https://wa.me/'.$digits,
         ];
     }
