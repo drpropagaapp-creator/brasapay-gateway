@@ -375,6 +375,28 @@ class Product extends Model
     }
 
     /**
+     * Checkout efetivo: produto como base, oferta ou plano por cima.
+     * Upsell e downsell ficam só no produto (aba do produto). Checkout de oferta/plano
+     * não pode desligá-los — o builder grava o padrão desativado nesses escopos.
+     *
+     * @return array<string, mixed>
+     */
+    public static function resolvedCheckoutConfig(self $product, ?ProductOffer $offer = null, ?SubscriptionPlan $plan = null): array
+    {
+        $productConfig = is_array($product->checkout_config) ? $product->checkout_config : static::defaultCheckoutConfig();
+        $cfg = $productConfig;
+        if ($offer !== null && is_array($offer->checkout_config) && $offer->checkout_config !== []) {
+            $cfg = array_replace_recursive($cfg, $offer->checkout_config);
+        } elseif ($plan !== null && is_array($plan->checkout_config) && $plan->checkout_config !== []) {
+            $cfg = array_replace_recursive($cfg, $plan->checkout_config);
+        }
+        $cfg['upsell'] = $productConfig['upsell'] ?? [];
+        $cfg['downsell'] = $productConfig['downsell'] ?? [];
+
+        return $cfg;
+    }
+
+    /**
      * Flags `payment_methods_enabled` efetivas no checkout (produto + oferta/plano), alinhado ao {@see CheckoutController::show}.
      *
      * @return array<string, bool>

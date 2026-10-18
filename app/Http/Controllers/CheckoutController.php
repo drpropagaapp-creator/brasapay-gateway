@@ -195,14 +195,7 @@ class CheckoutController extends Controller
         }
 
         $product = $resolved['product'];
-        $defaults = Product::defaultCheckoutConfig();
-        $productConfig = $product->checkout_config ?? [];
-        $config = array_replace_recursive($defaults, $productConfig);
-        if ($resolved['offer'] && $resolved['offer']->checkout_config !== null && $resolved['offer']->checkout_config !== []) {
-            $config = array_replace_recursive($config, $resolved['offer']->checkout_config);
-        } elseif ($resolved['plan'] && $resolved['plan']->checkout_config !== null && $resolved['plan']->checkout_config !== []) {
-            $config = array_replace_recursive($config, $resolved['plan']->checkout_config);
-        }
+        $config = Product::resolvedCheckoutConfig($product, $resolved['offer'], $resolved['plan']);
         $productArray = $this->productToCheckoutArray($product, $resolved['offer'], $resolved['plan'], $resolved['amount'], $resolved['currency'], $resolved['checkout_slug']);
         $payload = [
             'product' => $productArray,
@@ -1683,11 +1676,7 @@ class CheckoutController extends Controller
                 $card['card_expiry_year'] = trim((string) $validated['card_expiry_year']);
                 $card['card_ccv'] = trim((string) $validated['card_ccv']);
             }
-            $checkoutConfig = $offer && $offer->checkout_config !== null && $offer->checkout_config !== []
-                ? array_replace_recursive(Product::defaultCheckoutConfig(), $offer->checkout_config)
-                : ($plan && $plan->checkout_config !== null && $plan->checkout_config !== []
-                    ? array_replace_recursive(Product::defaultCheckoutConfig(), $plan->checkout_config)
-                    : ($product->checkout_config ?? []));
+            $checkoutConfig = Product::resolvedCheckoutConfig($product, $offer, $plan);
             $cardInstallments = $checkoutConfig['card_installments'] ?? ['enabled' => false, 'max' => 1];
             $resolvedInstallments = PlatformCardInstallments::forProductConfig(
                 is_array($cardInstallments) ? $cardInstallments : [],
@@ -1773,26 +1762,11 @@ class CheckoutController extends Controller
                     event(new OrderRejected($order));
                 }
 
-                $config = $this->getOrderCheckoutConfigForProcess($order, $product, $offer, $plan);
-                $redirectUrl = null;
-                if ($isApproved) {
-                    $upsell = $config['upsell'] ?? [];
-                    if (! empty($upsell['enabled']) && ! empty($upsell['products']) && is_array($upsell['products'])) {
-                        $upsellToken = Str::random(64);
-                        Cache::put('upsell_token.'.$upsellToken, ['order_id' => $order->id, 'gateway' => $order->gateway], now()->addMinutes(60));
-                        $redirectUrl = route('checkout.upsell', ['token' => $upsellToken]);
-                    } else {
-                        $customRedirect = $config['redirect_after_purchase'] ?? null;
-                        if (is_string($customRedirect) && trim($customRedirect) !== '') {
-                            $redirectUrl = SafeUrl::normalizeCheckoutRedirect($customRedirect);
-                        }
-                        if ($redirectUrl === null) {
-                            $next = ($order->user_id && User::find($order->user_id)) ? 'member-area' : 'login';
-                            $redirectUrl = route('checkout.thank-you', ['order_id' => $order->id, 'next' => $next]);
-                        }
-                    }
-                }
+                $redirectUrl = $isApproved
+                    ? $this->postPurchaseRedirectUrl($order, $product, $offer, $plan)
+                    : null;
                 $wantsJson = $request->expectsJson() || $request->header('X-Requested-With') === 'XMLHttpRequest';
+                $statusToken = ($wantsJson && ! $isRejected) ? $this->rememberCardStatusToken($order) : null;
                 if ($wantsJson) {
                     if ($isRejected) {
                         return $this->idempotencyReturn($idempotencyKey, response()->json([
@@ -1813,6 +1787,7 @@ class CheckoutController extends Controller
                             ? 'Pagamento aprovado.'
                             : 'Pagamento em processamento. Aguarde a confirmação.',
                         'redirect_url' => $isApproved ? $redirectUrl : null,
+                        'status_token' => $statusToken,
                     ];
                     if ($status === 'requires_action' && ! empty($cardResult['client_secret'])) {
                         $json['success'] = true;
@@ -1948,18 +1923,99 @@ class CheckoutController extends Controller
     }
 
     /**
-     * Config de checkout efetiva no process (já temos product, offer, plan).
+     * Config de checkout efetiva (produto + oferta/plano). Upsell e downsell vêm do produto.
      */
-    private function getOrderCheckoutConfigForProcess(Order $order, Product $product, ?ProductOffer $offer, ?SubscriptionPlan $plan): array
+    private function getOrderCheckoutConfig(Order $order): array
     {
-        if ($plan && $plan->checkout_config) {
-            return array_replace_recursive(Product::defaultCheckoutConfig(), $plan->checkout_config);
-        }
-        if ($offer && $offer->checkout_config) {
-            return array_replace_recursive(Product::defaultCheckoutConfig(), $offer->checkout_config);
+        $product = $order->product;
+        if (! $product) {
+            return [];
         }
 
-        return $product->checkout_config;
+        return Product::resolvedCheckoutConfig($product, $order->productOffer, $order->subscriptionPlan);
+    }
+
+    private function upsellHasConfiguredProduct(array $upsell): bool
+    {
+        if (empty($upsell['enabled']) || empty($upsell['products']) || ! is_array($upsell['products'])) {
+            return false;
+        }
+        foreach ($upsell['products'] as $item) {
+            if (is_array($item) && trim((string) ($item['product_id'] ?? '')) !== '') {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * URL pós-compra: upsell do produto, redirect personalizado ou página de obrigado.
+     */
+    private function postPurchaseRedirectUrl(Order $order, ?Product $product = null, ?ProductOffer $offer = null, ?SubscriptionPlan $plan = null): string
+    {
+        if ($order->api_application_id) {
+            return route('api-checkout.thank-you', ['order_id' => $order->id]);
+        }
+
+        $product = $product ?? $order->product;
+        if (! $product) {
+            $next = ($order->user_id && User::find($order->user_id)) ? 'member-area' : 'login';
+
+            return route('checkout.thank-you', ['order_id' => $order->id, 'next' => $next]);
+        }
+        if ($offer === null && $order->product_offer_id) {
+            $offer = $order->productOffer;
+        }
+        if ($plan === null && $order->subscription_plan_id) {
+            $plan = $order->subscriptionPlan;
+        }
+
+        $config = Product::resolvedCheckoutConfig($product, $offer, $plan);
+        $upsell = is_array($config['upsell'] ?? null) ? $config['upsell'] : [];
+        if ($this->upsellHasConfiguredProduct($upsell)) {
+            $upsellToken = Str::random(64);
+            Cache::put('upsell_token.'.$upsellToken, [
+                'order_id' => $order->id,
+                'gateway' => $order->gateway ?: 'checkout',
+            ], now()->addMinutes(60));
+
+            return route('checkout.upsell', ['token' => $upsellToken]);
+        }
+
+        $customRedirect = $config['redirect_after_purchase'] ?? null;
+        if (is_string($customRedirect) && trim($customRedirect) !== '') {
+            $normalized = SafeUrl::normalizeCheckoutRedirect($customRedirect);
+            if ($normalized !== null) {
+                return $normalized;
+            }
+        }
+
+        $next = ($order->user_id && User::find($order->user_id)) ? 'member-area' : 'login';
+
+        return route('checkout.thank-you', ['order_id' => $order->id, 'next' => $next]);
+    }
+
+    private function redirectAfterPurchase(Order $order): RedirectResponse
+    {
+        $url = $this->postPurchaseRedirectUrl($order);
+        $host = request()->getSchemeAndHttpHost();
+        if (str_starts_with($url, 'http') && ! str_starts_with($url, $host)) {
+            return redirect()->away($url);
+        }
+
+        return redirect()->to($url);
+    }
+
+    private function rememberCardStatusToken(Order $order): string
+    {
+        $token = Str::random(32);
+        session()->put('card_display.'.$token, [
+            'order_id' => $order->id,
+            'created_at' => time(),
+        ]);
+
+        return $token;
     }
 
     private const PIX_EXPIRY_SECONDS = 900; // 15 min
@@ -2067,27 +2123,7 @@ class CheckoutController extends Controller
 
         $order->refresh();
         if ($order->status === 'completed') {
-            $config = $this->getOrderCheckoutConfig($order);
-            $upsell = $config['upsell'] ?? [];
-            if (! empty($upsell['enabled']) && ! empty($upsell['products']) && is_array($upsell['products'])) {
-                $upsellToken = Str::random(64);
-                Cache::put('upsell_token.'.$upsellToken, [
-                    'order_id' => $order->id,
-                    'gateway' => 'open_finance',
-                ], now()->addMinutes(60));
-
-                return redirect()->route('checkout.upsell', ['token' => $upsellToken]);
-            }
-            $customRedirect = $config['redirect_after_purchase'] ?? null;
-            if (is_string($customRedirect) && trim($customRedirect) !== '') {
-                $url = SafeUrl::normalizeCheckoutRedirect($customRedirect);
-                if ($url !== null) {
-                    return redirect()->away($url);
-                }
-            }
-            $next = ($order->user_id && User::find($order->user_id)) ? 'member-area' : 'login';
-
-            return redirect()->route('checkout.thank-you', ['order_id' => $order->id, 'next' => $next]);
+            return $this->redirectAfterPurchase($order);
         }
 
         $waitToken = Str::random(32);
@@ -2134,10 +2170,7 @@ class CheckoutController extends Controller
         }
 
         if ($order->status === 'completed') {
-            return redirect()->route('checkout.thank-you', [
-                'order_id' => $order->id,
-                'next' => ($order->user_id && User::find($order->user_id)) ? 'member-area' : 'login',
-            ]);
+            return $this->redirectAfterPurchase($order);
         }
 
         $amount = (float) ($stored['amount'] ?? $order->amount);
@@ -2917,26 +2950,7 @@ class CheckoutController extends Controller
             return route('checkout.thank-you', ['order_id' => $order->id, 'next' => $next]);
         }
 
-        $config = $this->getOrderCheckoutConfigForProcess($order, $product, $offer, $plan);
-        $upsell = $config['upsell'] ?? [];
-        if (! empty($upsell['enabled']) && ! empty($upsell['products']) && is_array($upsell['products'])) {
-            $upsellToken = Str::random(64);
-            Cache::put('upsell_token.'.$upsellToken, ['order_id' => $order->id, 'gateway' => $order->gateway], now()->addMinutes(60));
-
-            return route('checkout.upsell', ['token' => $upsellToken]);
-        }
-
-        $customRedirect = $config['redirect_after_purchase'] ?? null;
-        if (is_string($customRedirect) && trim($customRedirect) !== '') {
-            $normalized = SafeUrl::normalizeCheckoutRedirect($customRedirect);
-            if ($normalized !== null) {
-                return $normalized;
-            }
-        }
-
-        $next = ($order->user_id && User::find($order->user_id)) ? 'member-area' : 'login';
-
-        return route('checkout.thank-you', ['order_id' => $order->id, 'next' => $next]);
+        return $this->postPurchaseRedirectUrl($order, $product, $offer, $plan);
     }
 
     /**
@@ -3267,6 +3281,9 @@ class CheckoutController extends Controller
             $stored = session('lina_display.'.$token);
         }
         if (! is_array($stored)) {
+            $stored = session('card_display.'.$token);
+        }
+        if (! is_array($stored)) {
             return response()->json(['status' => 'not_found'], 404);
         }
 
@@ -3358,32 +3375,7 @@ class CheckoutController extends Controller
         }
 
         $status = $order->status;
-        $redirectUrl = null;
-        if ($status === 'completed') {
-            if ($order->api_application_id) {
-                $redirectUrl = route('api-checkout.thank-you', ['order_id' => $order->id]);
-            } else {
-                $config = $this->getOrderCheckoutConfig($order);
-                $upsell = $config['upsell'] ?? [];
-                if (! empty($upsell['enabled']) && ! empty($upsell['products']) && is_array($upsell['products'])) {
-                    $upsellToken = Str::random(64);
-                    Cache::put('upsell_token.'.$upsellToken, [
-                        'order_id' => $order->id,
-                        'gateway' => 'pix',
-                    ], now()->addMinutes(60));
-                    $redirectUrl = route('checkout.upsell', ['token' => $upsellToken]);
-                } else {
-                    $customRedirect = $config['redirect_after_purchase'] ?? null;
-                    if (is_string($customRedirect) && trim($customRedirect) !== '') {
-                        $redirectUrl = SafeUrl::normalizeCheckoutRedirect($customRedirect);
-                    }
-                    if ($redirectUrl === null) {
-                        $next = ($order->user_id && User::find($order->user_id)) ? 'member-area' : 'login';
-                        $redirectUrl = route('checkout.thank-you', ['order_id' => $order->id, 'next' => $next]);
-                    }
-                }
-            }
-        }
+        $redirectUrl = $status === 'completed' ? $this->postPurchaseRedirectUrl($order) : null;
 
         return response()->json([
             'status' => $status,
@@ -3393,26 +3385,11 @@ class CheckoutController extends Controller
     }
 
     /**
-     * Config de checkout efetiva do pedido (plano > oferta > produto).
-     */
-    /**
      * @return array<int, array{id: string, quantity: int, item_price: float}>
      */
     private function metaCheckoutContents(Order $order): array
     {
         return app(\App\Services\Meta\MetaEventContextResolver::class)->contentsForOrder($order);
-    }
-
-    private function getOrderCheckoutConfig(Order $order): array
-    {
-        if ($order->subscriptionPlan && $order->subscriptionPlan->checkout_config) {
-            return array_replace_recursive(Product::defaultCheckoutConfig(), $order->subscriptionPlan->checkout_config);
-        }
-        if ($order->productOffer && $order->productOffer->checkout_config) {
-            return array_replace_recursive(Product::defaultCheckoutConfig(), $order->productOffer->checkout_config);
-        }
-
-        return $order->product ? $order->product->checkout_config : [];
     }
 
     /**
