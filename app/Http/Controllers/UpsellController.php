@@ -34,17 +34,17 @@ class UpsellController extends Controller
     private const TTL_MINUTES = 60;
 
     /**
-     * Config de checkout efetiva do pedido (plano > oferta > produto).
+     * Config de checkout efetiva do pedido (produto + oferta/plano).
+     * Upsell e downsell vêm sempre do produto.
      */
     private function getOrderCheckoutConfig(Order $order): array
     {
-        if ($order->subscriptionPlan && $order->subscriptionPlan->checkout_config) {
-            return array_replace_recursive(Product::defaultCheckoutConfig(), $order->subscriptionPlan->checkout_config);
+        $product = $order->product;
+        if (! $product) {
+            return [];
         }
-        if ($order->productOffer && $order->productOffer->checkout_config) {
-            return array_replace_recursive(Product::defaultCheckoutConfig(), $order->productOffer->checkout_config);
-        }
-        return $order->product ? $order->product->checkout_config : [];
+
+        return Product::resolvedCheckoutConfig($product, $order->productOffer, $order->subscriptionPlan);
     }
 
     /**

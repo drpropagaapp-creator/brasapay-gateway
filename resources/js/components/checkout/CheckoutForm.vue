@@ -386,6 +386,51 @@ async function completeApprovedPurchase(orderId, redirectUrl, triggerType = 'app
     navigateAfterCheckout(url);
 }
 
+function sleepMs(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+const CARD_STATUS_PENDING = ['pending', 'in_process', 'in_mediation', 'authorized', 'processing', 'requires_action'];
+
+async function pollCardOrderUntilSettled(statusToken, orderId) {
+    const started = Date.now();
+    while (Date.now() - started < 90000) {
+        try {
+            const res = await axios.get('/checkout/order-status', {
+                params: { token: statusToken },
+                headers: { Accept: 'application/json' },
+                withCredentials: true,
+            });
+            const data = res?.data || {};
+            if (data.status === 'completed' && data.redirect_url) {
+                await completeApprovedPurchase(data.order_id || orderId, data.redirect_url, 'approved');
+                return 'completed';
+            }
+            if (['rejected', 'cancelled', 'failed'].includes(String(data.status || ''))) {
+                return 'rejected';
+            }
+        } catch (_) {
+            /* segue tentando */
+        }
+        await sleepMs(2000);
+    }
+    return 'timeout';
+}
+
+async function settleCardPaymentByPolling(data) {
+    const token = data?.status_token;
+    if (!token) return 'timeout';
+    const outcome = await pollCardOrderUntilSettled(token, data.order_id);
+    if (outcome === 'rejected') {
+        cardRefusedMessage.value = 'Pagamento recusado. Verifique os dados do cartão e tente novamente.';
+        showCardRefusedModal.value = true;
+    } else if (outcome !== 'completed') {
+        cardRefusedMessage.value = 'Pagamento em processamento. Você receberá a confirmação por e-mail.';
+        showCardRefusedModal.value = true;
+    }
+    return outcome;
+}
+
 const customerFields = computed(() => props.config?.customer_fields ?? { name: true, cpf: true, phone: true, coupon: false });
 const showName = computed(() => customerFields.value.name !== false);
 const showCpf = computed(() => {
@@ -1844,8 +1889,20 @@ async function initMercadopagoBrick() {
                                 reject();
                                 return;
                             }
-                            // pending / in_process: não tratar como erro do Brick (doc MP — aguardar webhook).
-                            if (isJson && (payload.pending || ['pending', 'in_process', 'in_mediation', 'authorized'].includes(status))) {
+                            // pending / in_process: consulta o pedido até aprovar, para ainda abrir o upsell.
+                            if (isJson && (payload.pending || CARD_STATUS_PENDING.includes(status))) {
+                                if (payload.status_token) {
+                                    const outcome = await settleCardPaymentByPolling(payload);
+                                    if (outcome === 'completed') {
+                                        resolve();
+                                        return;
+                                    }
+                                    if (outcome === 'rejected') {
+                                        cardFormError.value = cardRefusedMessage.value || 'Pagamento recusado.';
+                                        reject();
+                                        return;
+                                    }
+                                }
                                 cardFormError.value = payload.message
                                     || 'Pagamento em processamento. Você receberá a confirmação em breve.';
                                 resolve();
@@ -2200,6 +2257,8 @@ function submit() {
                     }
                     if (isJson && data.success && isCardPaymentApprovedStatus(data.status) && data.redirect_url) {
                         await completeApprovedPurchase(data.order_id, data.redirect_url, 'approved');
+                    } else if (isJson && data.status_token && CARD_STATUS_PENDING.includes(String(data.status || '').toLowerCase())) {
+                        await settleCardPaymentByPolling(data);
                     } else if (isJson && !data.success) {
                         const msg = data.message || 'Pagamento não aprovado.';
                         cardFormError.value = typeof msg === 'string' ? msg : 'Pagamento não aprovado.';
@@ -2337,11 +2396,23 @@ function submit() {
                         cardTokenizing.value = false;
                         return;
                     }
+                    if (data.status_token) {
+                        await settleCardPaymentByPolling(data);
+                        return;
+                    }
                     const url = data.redirect_url || (data.order_id ? `/checkout/obrigado?order_id=${data.order_id}` : null);
                     if (url && !url.replace(/\/$/, '').endsWith(window.location.origin + '/checkout')) {
                         await completeApprovedPurchase(data.order_id, url, 'approved');
                         return;
                     }
+                }
+                if (isJson && data.requires_action && typeof data.redirect_url === 'string' && data.redirect_url && !data.client_secret) {
+                    window.location.assign(data.redirect_url);
+                    return;
+                }
+                if (isJson && data.status_token && !isCardPaymentApprovedStatus(data.status) && CARD_STATUS_PENDING.includes(String(data.status || '').toLowerCase())) {
+                    await settleCardPaymentByPolling(data);
+                    return;
                 }
                 if (isJson && data.success) {
                     if (!isCardPaymentApprovedStatus(data.status) && !data.requires_action) {

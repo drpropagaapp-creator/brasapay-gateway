@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Http\Middleware\EnsureInstalled;
 use App\Models\Product;
 use App\Models\ProductOffer;
 use App\Models\SubscriptionPlan;
@@ -11,6 +12,12 @@ use Tests\TestCase;
 
 class CheckoutConfigOfferPlanInheritanceTest extends TestCase
 {
+    protected function setUp(): void
+    {
+        parent::setUp();
+        $this->withoutMiddleware(EnsureInstalled::class);
+    }
+
     public function test_offer_checkout_config_update_does_not_persist_product_only_payment_keys(): void
     {
         $user = User::factory()->create([
@@ -62,6 +69,8 @@ class CheckoutConfigOfferPlanInheritanceTest extends TestCase
         $this->assertArrayNotHasKey('payment_methods_enabled', $stored);
         $this->assertArrayNotHasKey('deliverable_link', $stored);
         $this->assertArrayNotHasKey('email_template', $stored);
+        $this->assertArrayNotHasKey('upsell', $stored);
+        $this->assertArrayNotHasKey('downsell', $stored);
 
         $product->refresh();
         $this->assertSame('efi', $product->checkout_config['payment_gateways']['pix'] ?? null);
@@ -116,6 +125,8 @@ class CheckoutConfigOfferPlanInheritanceTest extends TestCase
         $this->assertIsArray($stored);
         $this->assertArrayNotHasKey('payment_gateways', $stored);
         $this->assertArrayNotHasKey('payment_methods_enabled', $stored);
+        $this->assertArrayNotHasKey('upsell', $stored);
+        $this->assertArrayNotHasKey('downsell', $stored);
 
         $product->refresh();
         $this->assertSame('mercadopago', $product->checkout_config['payment_gateways']['pix'] ?? null);

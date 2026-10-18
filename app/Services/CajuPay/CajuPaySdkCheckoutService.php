@@ -91,21 +91,12 @@ class CajuPaySdkCheckoutService
      */
     private function checkoutConfigForOrder(Order $order): array
     {
-        $defaults = Product::defaultCheckoutConfig();
-        $plan = $order->subscriptionPlan;
-        if ($plan && is_array($plan->checkout_config) && $plan->checkout_config !== []) {
-            return array_replace_recursive($defaults, $plan->checkout_config);
-        }
-        $offer = $order->productOffer;
-        if ($offer && is_array($offer->checkout_config) && $offer->checkout_config !== []) {
-            return array_replace_recursive($defaults, $offer->checkout_config);
-        }
         $product = $order->product;
-        if ($product && is_array($product->checkout_config) && $product->checkout_config !== []) {
-            return array_replace_recursive($defaults, $product->checkout_config);
+        if (! $product) {
+            return Product::defaultCheckoutConfig();
         }
 
-        return $defaults;
+        return Product::resolvedCheckoutConfig($product, $order->productOffer, $order->subscriptionPlan);
     }
 
     /**
