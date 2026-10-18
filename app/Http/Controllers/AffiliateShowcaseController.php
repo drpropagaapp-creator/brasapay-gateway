@@ -75,10 +75,12 @@ class AffiliateShowcaseController extends Controller
             return self::showcaseProductPayload($p, $storage, $owner, $enrollment, $isOwnProduct);
         });
 
-        $types = collect(Product::typeConfig())->map(fn ($c, $v) => [
-            'value' => $v,
-            'label' => $c['label'],
-        ])->values()->all();
+        $types = collect(Product::typeConfig())
+            ->filter(fn ($c) => (bool) ($c['available'] ?? false))
+            ->map(fn ($c, $v) => [
+                'value' => $v,
+                'label' => $c['label'],
+            ])->values()->all();
 
         return Inertia::render('Produtos/VitrineAfiliacao', [
             'products' => $products,

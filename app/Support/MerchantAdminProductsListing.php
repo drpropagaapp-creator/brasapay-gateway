@@ -157,6 +157,9 @@ final class MerchantAdminProductsListing
 
         $typeOptions = [];
         foreach (Product::typeConfig() as $value => $cfg) {
+            if (! ($cfg['available'] ?? false)) {
+                continue;
+            }
             $typeOptions[] = ['value' => (string) $value, 'label' => (string) ($cfg['label'] ?? $value)];
         }
         $allowedTypes = array_column($typeOptions, 'value');
