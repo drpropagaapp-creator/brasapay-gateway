@@ -213,8 +213,8 @@ class UpsellController extends Controller
                             $redirectLabel = 'Acessar conteúdo';
                             $subtitle = 'Seu pedido foi registrado. Acesse o conteúdo pelo link abaixo.';
                         } elseif ($order->product->type === Product::TYPE_AREA_MEMBROS) {
-                            $redirectLabel = 'Fazer login';
-                            $subtitle = 'Seu pedido foi registrado. Faça login para ver todos os seus produtos em Minha área.';
+                            $redirectLabel = 'Entrar na área de cursos';
+                            $subtitle = 'Seu pedido foi registrado. Entre na área de cursos com o e-mail e a senha enviados.';
                         } else {
                             $redirectLabel = 'Acessar';
                             $subtitle = 'Seu pedido foi registrado. Acesse pelo link abaixo.';

@@ -8,6 +8,7 @@ use App\Models\Product;
 use App\Models\Setting;
 use App\Models\User;
 use App\Services\AccessEmailService;
+use App\Support\PublicAppUrl;
 use Illuminate\Support\Facades\Mail;
 use Tests\TestCase;
 
@@ -141,11 +142,14 @@ class AccessEmailPasswordBlockTest extends TestCase
         $ok = app(AccessEmailService::class)->sendForOrder($order, true);
         $this->assertTrue($ok->success);
 
-        Mail::assertSent(AccessGrantedMail::class, function (AccessGrantedMail $mail) {
-            return str_contains($mail->htmlBody, 'href="http://localhost/login"')
+        $base = rtrim(PublicAppUrl::base(), '/');
+        Mail::assertSent(AccessGrantedMail::class, function (AccessGrantedMail $mail) use ($base) {
+            return str_contains($mail->htmlBody, 'href="'.$base.'/m/curso-sem-senha"')
+                && str_contains($mail->htmlBody, 'Aqui você pode ver todas as suas compras')
+                && str_contains($mail->htmlBody, 'href="'.$base.'/login"')
                 && str_contains($mail->htmlBody, 'Crie sua senha de acesso')
                 && str_contains($mail->htmlBody, 'Esqueci minha senha')
-                && str_contains($mail->htmlBody, 'href="http://localhost/esqueci-senha"');
+                && str_contains($mail->htmlBody, 'href="'.$base.'/esqueci-senha"');
         });
     }
 }

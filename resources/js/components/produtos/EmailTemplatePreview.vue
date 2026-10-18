@@ -12,7 +12,8 @@ const props = defineProps({
 const SAMPLE = {
   nome_cliente: 'Maria Silva',
   nome_produto: 'Meu Curso',
-  link_acesso: 'https://exemplo.com/login',
+  link_acesso: 'https://exemplo.com/m/meu-curso',
+  link_plataforma: 'https://exemplo.com/login',
   email_cliente: 'maria@exemplo.com',
   senha: 'SenhaExemplo123',
   link_esqueci_senha: 'https://exemplo.com/esqueci-senha',
@@ -24,6 +25,7 @@ function replacePlaceholders(text) {
     .replace(/\{nome_cliente\}/g, SAMPLE.nome_cliente)
     .replace(/\{nome_produto\}/g, SAMPLE.nome_produto)
     .replace(/\{link_acesso\}/g, SAMPLE.link_acesso)
+    .replace(/\{link_plataforma\}/g, SAMPLE.link_plataforma)
     .replace(/\{email_cliente\}/g, SAMPLE.email_cliente)
     .replace(/\{senha\}/g, SAMPLE.senha)
     .replace(/\{link_esqueci_senha\}/g, SAMPLE.link_esqueci_senha);

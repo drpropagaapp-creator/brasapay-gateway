@@ -8,12 +8,13 @@ use App\Models\Product;
 use App\Models\Setting;
 use App\Models\User;
 use App\Services\AccessEmailService;
+use App\Support\PublicAppUrl;
 use Illuminate\Support\Facades\Mail;
 use Tests\TestCase;
 
 class AccessEmailLoginLinkTest extends TestCase
 {
-    public function test_member_area_access_email_uses_platform_login_link(): void
+    public function test_member_area_access_email_includes_course_area_and_platform_purchases_link(): void
     {
         Mail::fake();
         $this->seedPlatformSmtp();
@@ -41,14 +42,21 @@ class AccessEmailLoginLinkTest extends TestCase
 
         $this->assertTrue($result->success);
 
-        Mail::assertSent(AccessGrantedMail::class, function (AccessGrantedMail $mail) {
-            return str_contains($mail->htmlBody, 'href="http://localhost/login"')
-                && ! str_contains($mail->htmlBody, 'signature=')
-                && ! str_contains($mail->htmlBody, '/access');
+        $base = rtrim(PublicAppUrl::base(), '/');
+        $courseUrl = $base.'/m/curso-teste';
+        $platformUrl = $base.'/login';
+
+        Mail::assertSent(AccessGrantedMail::class, function (AccessGrantedMail $mail) use ($courseUrl, $platformUrl) {
+            return str_contains($mail->htmlBody, 'href="'.$courseUrl.'"')
+                && str_contains($mail->htmlBody, 'Entrar na área de cursos')
+                && str_contains($mail->htmlBody, 'Aqui você pode ver todas as suas compras')
+                && str_contains($mail->htmlBody, 'href="'.$platformUrl.'"')
+                && str_contains($mail->htmlBody, 'senha123')
+                && ! str_contains($mail->htmlBody, 'signature=');
         });
 
         $link = $service->getAccessLinkForOrder($order->fresh());
-        $this->assertSame('http://localhost/login', $link);
+        $this->assertSame($courseUrl, $link);
     }
 
     private function seedPlatformSmtp(): void
