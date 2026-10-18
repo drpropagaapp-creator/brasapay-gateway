@@ -61,7 +61,7 @@ const DEFAULT_EMAIL_TEMPLATE = {
     logo_url: '',
     from_name: '',
     subject: 'Seu acesso a {nome_produto}',
-    body_html: '<p>Olá, {nome_cliente}!</p><p>Obrigado por adquirir <strong>{nome_produto}</strong>.</p><p>Clique no botão abaixo para fazer login e ver todos os seus produtos em Minha área:</p><p><a href="{link_acesso}" style="display:inline-block;padding:12px 24px;background:#0ea5e9;color:#fff;text-decoration:none;border-radius:8px;font-weight:600;">Fazer login</a></p><p style="font-size:14px;color:#64748b;">Ou copie e cole no navegador: {link_acesso}</p><p style="margin-top:16px;font-size:14px;color:#334155;"><strong>E-mail:</strong> {email_cliente}<br/><strong>Senha:</strong> {senha}</p><p style="font-size:13px;color:#64748b;">Se você não tiver senha, use <a href="{link_esqueci_senha}">Esqueci minha senha</a> para criar uma nova.</p><p>Qualquer dúvida, responda este e-mail.</p>',
+    body_html: '<p>Olá, {nome_cliente}!</p><p>Obrigado por adquirir <strong>{nome_produto}</strong>.</p><p>Clique no botão abaixo para entrar na sua área de cursos:</p><p><a href="{link_acesso}" style="display:inline-block;padding:12px 24px;background:#0ea5e9;color:#fff;text-decoration:none;border-radius:8px;font-weight:600;">Entrar na área de cursos</a></p><p style="font-size:14px;color:#64748b;">Ou copie e cole no navegador: {link_acesso}</p><p style="margin-top:16px;font-size:14px;color:#334155;"><strong>E-mail:</strong> {email_cliente}<br/><strong>Senha:</strong> {senha}</p><p style="font-size:13px;color:#64748b;">Se você não tiver senha, use <a href="{link_esqueci_senha}">Esqueci minha senha</a> para criar uma nova.</p><p>Aqui você pode ver todas as suas compras: <a href="{link_plataforma}">{link_plataforma}</a></p><p>Qualquer dúvida, responda este e-mail.</p>',
 };
 
 const PIXEL_TABS = computed(() => [
@@ -2585,7 +2585,9 @@ function submit() {
                                     Placeholders: <code class="rounded bg-zinc-100 px-1 dark:bg-zinc-700">{nome_cliente}</code>,
                                     <code class="rounded bg-zinc-100 px-1 dark:bg-zinc-700">{nome_produto}</code>,
                                     <code class="rounded bg-zinc-100 px-1 dark:bg-zinc-700">{link_acesso}</code>
-                                    (tela de login da plataforma),
+                                    (área de cursos),
+                                    <code class="rounded bg-zinc-100 px-1 dark:bg-zinc-700">{link_plataforma}</code>
+                                    (todas as compras),
                                     <code class="rounded bg-zinc-100 px-1 dark:bg-zinc-700">{email_cliente}</code>,
                                     <code class="rounded bg-zinc-100 px-1 dark:bg-zinc-700">{senha}</code>
                                     (área de membros, quando disponível),
