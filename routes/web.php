@@ -22,6 +22,10 @@ Route::get('/admin', function () {
 })->name('admin.portal');
 
 // Storage: servir arquivos de storage/app/public (sem symlink) — deve ser uma das primeiras rotas
+Route::get('/email/abertura/{token}', \App\Http\Controllers\OutboundEmailOpenController::class)
+    ->where('token', '[A-Za-z0-9]{40}')
+    ->name('email.open');
+
 Route::get('/storage/{path}', \App\Http\Controllers\StorageServeController::class)
     ->where('path', '.+')
     ->name('storage.serve');
