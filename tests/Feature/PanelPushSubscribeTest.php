@@ -44,7 +44,7 @@ class PanelPushSubscribeTest extends TestCase
         ]);
     }
 
-    public function test_vapid_resubscribe_replaces_previous_endpoint_for_same_user(): void
+    public function test_vapid_resubscribe_keeps_other_device_endpoint(): void
     {
         $this->configureTestVapidPush();
         $user = $this->createSellerUser();
@@ -66,7 +66,7 @@ class PanelPushSubscribeTest extends TestCase
         ])->assertOk();
 
         $this->assertSame(
-            1,
+            2,
             PanelPushSubscription::query()
                 ->where('user_id', $user->id)
                 ->where('provider', PanelPushSubscription::PROVIDER_VAPID)
@@ -76,7 +76,8 @@ class PanelPushSubscribeTest extends TestCase
             'user_id' => $user->id,
             'endpoint' => 'https://push.example.com/new-endpoint',
         ]);
-        $this->assertDatabaseMissing('panel_push_subscriptions', [
+        $this->assertDatabaseHas('panel_push_subscriptions', [
+            'user_id' => $user->id,
             'endpoint' => 'https://push.example.com/old-endpoint',
         ]);
     }
@@ -117,5 +118,45 @@ class PanelPushSubscribeTest extends TestCase
             'provider' => PanelPushSubscription::PROVIDER_FCM,
             'fcm_token' => 'fcm-device-token-xyz-12345',
         ]);
+    }
+
+    public function test_fcm_push_subscribe_keeps_other_device_token(): void
+    {
+        config(['getfy.pwa.push_provider' => PanelPushSettings::PROVIDER_FCM]);
+        PanelPushSettings::saveGlobal([
+            'push_provider' => PanelPushSettings::PROVIDER_FCM,
+            'firebase_project_id' => 'proj-test',
+            'firebase_api_key' => 'api-key',
+            'firebase_messaging_sender_id' => '123',
+            'firebase_app_id' => 'app-id',
+            'firebase_web_vapid_key' => 'web-vapid',
+        ]);
+
+        $row = \App\Models\BrandingSetting::query()->whereNull('tenant_id')->first();
+        $data = is_array($row->data) ? $row->data : [];
+        $data['firebase_service_account'] = \Illuminate\Support\Facades\Crypt::encryptString(json_encode([
+            'type' => 'service_account',
+            'project_id' => 'proj-test',
+            'private_key' => "-----BEGIN PRIVATE KEY-----\nMIIB\n-----END PRIVATE KEY-----\n",
+            'client_email' => 'test@proj-test.iam.gserviceaccount.com',
+        ]));
+        $row->update(['data' => $data]);
+        PanelPushSettings::applyToConfig();
+
+        $user = $this->createSellerUser();
+
+        $this->actingAs($user)->postJson('/painel/push-subscribe', [
+            'provider' => 'fcm',
+            'fcm_token' => 'phone-token',
+        ])->assertOk();
+
+        $this->actingAs($user)->postJson('/painel/push-subscribe', [
+            'provider' => 'fcm',
+            'fcm_token' => 'desktop-token',
+        ])->assertOk();
+
+        $this->assertSame(2, PanelPushSubscription::query()->where('user_id', $user->id)->count());
+        $this->assertDatabaseHas('panel_push_subscriptions', ['fcm_token' => 'phone-token']);
+        $this->assertDatabaseHas('panel_push_subscriptions', ['fcm_token' => 'desktop-token']);
     }
 }

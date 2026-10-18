@@ -65,25 +65,26 @@ class PanelPushService
             }
         }
 
-        $shouldSendPush = true;
+        $cacheKey = null;
         if ($eventKey !== null && $eventKey !== '') {
-            if (! Cache::add('panel_push_sent:'.$eventKey, 1, now()->addSeconds(60))) {
-                $shouldSendPush = false;
+            $cacheKey = 'panel_push_sent:'.$eventKey;
+            if (! Cache::add($cacheKey, 1, now()->addSeconds(60))) {
+                Log::info('PanelPushService: push omitido (event_key já enviado recentemente)', [
+                    'tenant_id' => $tenantId,
+                    'type' => $type,
+                    'event_key' => $eventKey,
+                ]);
+
+                return 0;
             }
-        }
-
-        if (! $shouldSendPush) {
-            Log::info('PanelPushService: push omitido (event_key já enviado recentemente)', [
-                'tenant_id' => $tenantId,
-                'type' => $type,
-                'event_key' => $eventKey,
-            ]);
-
-            return 0;
         }
 
         $result = $this->sendToSubscriptions($subscriptions, $title, $body, $url, $eventKey);
         $sent = (int) ($result['sent'] ?? 0);
+
+        if ($sent === 0 && $cacheKey !== null) {
+            Cache::forget($cacheKey);
+        }
 
         Log::info('PanelPushService: sendAndPersistToTenant', [
             'tenant_id' => $tenantId,
@@ -179,7 +180,8 @@ class PanelPushService
     }
 
     /**
-     * Uma entrega por usuário (inscrição mais recente válida), evitando push duplicado no mesmo aparelho.
+     * Uma entrega por aparelho. O mesmo endpoint/token não recebe duas vezes;
+     * computador e celular do mesmo usuário recebem os dois.
      *
      * @param  Collection<int, PanelPushSubscription>  $subscriptions
      * @return Collection<int, PanelPushSubscription>
@@ -189,8 +191,13 @@ class PanelPushService
         return $subscriptions
             ->filter(fn (PanelPushSubscription $subscription) => $subscription->isValidForPush())
             ->sortByDesc(fn (PanelPushSubscription $subscription) => $subscription->updated_at?->getTimestamp() ?? $subscription->id)
-            ->unique('user_id')
-            ->unique('endpoint')
+            ->unique(function (PanelPushSubscription $subscription) {
+                if ($subscription->isFcm()) {
+                    return 'fcm:'.trim((string) $subscription->fcm_token);
+                }
+
+                return 'vapid:'.(string) $subscription->endpoint;
+            })
             ->values();
     }
 }
