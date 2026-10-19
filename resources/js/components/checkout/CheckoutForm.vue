@@ -433,8 +433,12 @@ async function settleCardPaymentByPolling(data) {
 
 const customerFields = computed(() => props.config?.customer_fields ?? { name: true, cpf: true, phone: true, coupon: false });
 const showName = computed(() => customerFields.value.name !== false);
+const pixUsesStripe = computed(() => {
+    const methods = Array.isArray(props.availablePaymentMethods) ? props.availablePaymentMethods : [];
+    return methods.some((method) => method?.id === 'pix' && method?.gateway_slug === 'stripe');
+});
 const showCpf = computed(() => {
-    if (form.payment_method === 'open_finance') {
+    if (form.payment_method === 'open_finance' || pixUsesStripe.value) {
         return true;
     }
     return customerFields.value.cpf === true && props.displayCurrency === 'BRL';

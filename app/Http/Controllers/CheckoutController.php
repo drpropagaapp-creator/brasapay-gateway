@@ -653,7 +653,8 @@ class CheckoutController extends Controller
             : null;
         $requireCpf = (($customerFields['cpf'] ?? false) && $displayCurrency === 'BRL')
             || ($firstCardGatewayForRules === 'pagarme' && $displayCurrency === 'BRL')
-            || $paymentMethodForRules === 'open_finance';
+            || $paymentMethodForRules === 'open_finance'
+            || ($paymentMethodForRules === 'pix' && $firstPixGateway === 'stripe');
         $phoneRequiredForCheckout = ($customerFields['phone'] ?? false)
             || ($paymentMethodForRules === 'pix' && $firstPixGateway === 'pagarme');
 

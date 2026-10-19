@@ -1492,7 +1492,7 @@ function submitSettlement() {
                     </h2>
                     <p class="mb-6 text-sm text-zinc-600 dark:text-zinc-400">
                         Ative ou desative cada forma de pagamento para <strong class="font-medium text-zinc-800 dark:text-zinc-200">toda a plataforma</strong>.
-                        Infoprodutores ainda podem restringir por produto no checkout. Apple Pay e Google Pay exigem CajuPay como adquirente de cartão.
+                        Infoprodutores ainda podem restringir por produto no checkout. Apple Pay e Google Pay exigem CajuPay ou Stripe como adquirente definida.
                     </p>
                     <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                         <button

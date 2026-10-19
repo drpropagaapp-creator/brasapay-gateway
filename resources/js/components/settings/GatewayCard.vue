@@ -44,10 +44,11 @@ const methods = computed(() =>
 
 const isPluginLocked = computed(() => props.gateway.plugin_locked === true);
 
-/** CajuPay: cartão + wallets no checkout SDK; chips extras junto a PIX/Cartão. */
+/** CajuPay e Stripe: cartão + wallets; chips extras junto a PIX/Cartão. */
 const methodChips = computed(() => {
     const base = methods.value;
-    if ((props.gateway.slug || '').toLowerCase() !== 'cajupay') {
+    const slug = (props.gateway.slug || '').toLowerCase();
+    if (slug !== 'cajupay' && slug !== 'stripe') {
         return base;
     }
     const extra = ['Apple Pay', 'Google Pay'];
