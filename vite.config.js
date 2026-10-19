@@ -35,9 +35,11 @@ export default defineConfig({
             : []),
     ],
     resolve: {
-        alias: {
-            '@': '/resources/js',
-        },
+        alias: [
+            { find: '@', replacement: '/resources/js' },
+            // Ícones do Paynext DS (Phosphor duotone) no lugar do Lucide, mantendo os nomes importados.
+            { find: /^lucide-vue-next$/, replacement: '/resources/js/components/icons/paynext-icons.js' },
+        ],
     },
     build: {
         rollupOptions: {
