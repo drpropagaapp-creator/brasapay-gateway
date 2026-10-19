@@ -48,14 +48,14 @@ function renderPoints() {
         const hasConv = Number(p.conversions || 0) > 0;
         const circle = L.circleMarker([lat, lng], {
             radius: radiusFor(p),
-            color: hasConv ? '#047857' : '#2563eb',
-            fillColor: hasConv ? '#10b981' : '#3b82f6',
+            color: hasConv ? '#8fa611' : '#1c78c9',
+            fillColor: hasConv ? '#e1fb4d' : '#7cc4ff',
             fillOpacity: 0.55,
             weight: 1.5,
         });
         circle.bindPopup(`
             <div style="min-width:160px;font-size:12px;line-height:1.4">
-                <strong>${p.label || 'Local'}</strong><br/>
+                <span style="font-weight:500">${p.label || 'Local'}</span><br/>
                 Eventos: ${p.events || 0}<br/>
                 Conversões: ${p.conversions || 0}<br/>
                 Receita: ${money(p.revenue)}
@@ -101,10 +101,10 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-    <div class="relative overflow-hidden rounded-xl border border-zinc-200 dark:border-zinc-700">
+    <div class="relative overflow-hidden rounded-[28px] border border-[var(--border-default)]">
         <div ref="mapEl" class="h-[460px] w-full bg-zinc-100 dark:bg-zinc-900" />
-        <div class="pointer-events-none absolute bottom-3 left-3 rounded-lg bg-white/90 px-3 py-2 text-[11px] text-zinc-700 shadow dark:bg-zinc-900/90 dark:text-zinc-200">
-            Verde = com conversão · Azul = só tráfego · Tamanho ∝ {{ metric === 'revenue' ? 'receita' : metric === 'events' ? 'eventos' : 'conversões' }}
+        <div class="pn-glass pn-glass--strong pointer-events-none absolute bottom-3 left-3 z-[400] rounded-full px-3 py-2 text-[11px] text-[var(--text-secondary)]">
+            Lime = com conversão · Azul = só tráfego · Tamanho ∝ {{ metric === 'revenue' ? 'receita' : metric === 'events' ? 'eventos' : 'conversões' }}
         </div>
     </div>
 </template>

@@ -9,7 +9,7 @@ const props = defineProps({
 
 const icons = { info: Lightbulb, warning: AlertCircle, tip: Lightbulb };
 const styles = {
-    info: 'border-teal-500/30 bg-teal-500/10 text-teal-400/90',
+    info: 'border-lime-300/30 bg-lime-300/10 text-lime-300/90',
     warning: 'border-amber-500/30 bg-amber-500/10 text-amber-400/90',
     tip: 'border-sky-500/30 bg-sky-500/10 text-sky-400/90',
 };

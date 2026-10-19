@@ -139,6 +139,6 @@ createInertiaApp({
     },
     progress: {
         delay: 200,
-        color: '#0ea5e9',
+        color: '#E1FB4D', // Paynext DS: lime
     },
 });

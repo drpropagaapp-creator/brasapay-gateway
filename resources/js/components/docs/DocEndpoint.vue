@@ -13,7 +13,7 @@ const methodClass = computed(() =>
 </script>
 
 <template>
-    <div class="doc-endpoint my-10 rounded-xl border border-white/10 bg-white/[0.02] border-l-4 border-l-teal-500/50">
+    <div class="doc-endpoint my-10 rounded-xl border border-white/10 bg-white/[0.02] border-l-4 border-l-lime-300/50">
         <div class="doc-endpoint-header flex flex-wrap items-center gap-2 border-b border-white/10 px-5 py-3">
             <span
                 class="doc-endpoint-method rounded px-2 py-0.5 text-xs font-bold uppercase tracking-wider"

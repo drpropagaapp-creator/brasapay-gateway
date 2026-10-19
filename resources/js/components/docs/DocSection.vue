@@ -16,12 +16,12 @@ defineProps({
 .doc-section-title {
     margin-top: 4rem;
     margin-bottom: 1.5rem;
-    border-top: 1px solid rgb(255 255 255 / 0.1);
+    border-top: 1px solid var(--border-default);
     padding-top: 2rem;
-    font-size: 1.25rem;
-    font-weight: 600;
+    font-size: 1.5rem;
+    font-weight: 500;
     letter-spacing: -0.025em;
-    color: #fff;
+    color: var(--text-primary);
 }
 .doc-section-title:first-child {
     margin-top: 2rem;

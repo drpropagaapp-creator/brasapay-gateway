@@ -1,4 +1,5 @@
 <script setup>
+import { pnChartPalette } from '@/lib/paynextBrand';
 import { computed } from 'vue';
 import { router } from '@inertiajs/vue3';
 import VueApexCharts from 'vue3-apexcharts';
@@ -84,21 +85,21 @@ const chartOpts = computed(() => ({
     yaxis: { labels: { style: { colors: isDark.value ? '#a1a1aa' : '#71717a' } } },
     legend: { labels: { colors: isDark.value ? '#e4e4e7' : '#27272a' } },
     grid: { borderColor: isDark.value ? '#3f3f46' : '#e4e4e7' },
-    colors: ['#059669', '#2563eb', '#d97706'],
+    colors: pnChartPalette(isDark.value).slice(0, 3),
     fill: { type: 'gradient', gradient: { opacityFrom: 0.35, opacityTo: 0.05 } },
     tooltip: { theme: isDark.value ? 'dark' : 'light' },
 }));
 
 const revenueOpts = computed(() => ({
     ...chartOpts.value,
-    colors: ['#059669', '#2563eb'],
+    colors: pnChartPalette(isDark.value).slice(0, 2),
 }));
 
 const deviceOpts = computed(() => ({
     chart: { type: 'donut', background: 'transparent' },
     labels: props.by_device.map((r) => r.label),
     legend: { position: 'bottom', labels: { colors: isDark.value ? '#e4e4e7' : '#27272a' } },
-    colors: ['#059669', '#2563eb', '#d97706', '#db2777'],
+    colors: pnChartPalette(isDark.value),
     tooltip: { theme: isDark.value ? 'dark' : 'light' },
 }));
 

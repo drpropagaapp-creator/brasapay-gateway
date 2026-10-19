@@ -22,13 +22,13 @@ const initialOpId = computed(() => {
         <div class="mb-6 flex flex-wrap items-center gap-3">
             <Link
                 href="/docs/api-pagamentos"
-                class="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm font-medium text-zinc-400 transition hover:border-teal-500/30 hover:bg-white/10 hover:text-white"
+                class="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm font-medium text-zinc-400 transition hover:border-lime-300/30 hover:bg-white/10 hover:text-white"
             >
                 ← Documentação
             </Link>
             <Link
                 href="/aplicacoes-api"
-                class="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm font-medium text-zinc-400 transition hover:border-teal-500/30 hover:bg-white/10 hover:text-white"
+                class="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm font-medium text-zinc-400 transition hover:border-lime-300/30 hover:bg-white/10 hover:text-white"
             >
                 Chaves da API
             </Link>
@@ -36,7 +36,7 @@ const initialOpId = computed(() => {
 
         <div class="mb-6">
             <div class="flex items-center gap-2">
-                <FlaskConical class="h-6 w-6 text-teal-400" />
+                <FlaskConical class="h-6 w-6 text-lime-300" />
                 <h1 class="text-2xl font-bold text-white">Testar API</h1>
             </div>
             <p class="mt-2 max-w-3xl text-sm leading-relaxed text-zinc-400">
@@ -54,7 +54,7 @@ const initialOpId = computed(() => {
 
         <div class="mb-8 grid gap-4 lg:grid-cols-2">
             <div class="rounded-xl border border-white/10 bg-white/[0.02] p-4">
-                <div class="mb-2 flex items-center gap-2 text-sm font-semibold text-teal-300">
+                <div class="mb-2 flex items-center gap-2 text-sm font-semibold text-lime-300">
                     <ListOrdered class="h-4 w-4" />
                     Fluxo PIX
                 </div>
@@ -66,7 +66,7 @@ const initialOpId = computed(() => {
                 </ol>
             </div>
             <div class="rounded-xl border border-white/10 bg-white/[0.02] p-4">
-                <div class="mb-2 flex items-center gap-2 text-sm font-semibold text-teal-300">
+                <div class="mb-2 flex items-center gap-2 text-sm font-semibold text-lime-300">
                     <ListOrdered class="h-4 w-4" />
                     Fluxo saque
                 </div>

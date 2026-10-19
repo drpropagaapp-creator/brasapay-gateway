@@ -833,7 +833,7 @@ function onConversionPixelsReady() {
 .checkout-landing-html ol { list-style: decimal; }
 .checkout-landing-html li { margin: 0.375em 0; }
 .checkout-landing-html a {
-    color: #2563eb;
+    color: #151718; /* Paynext DS: link em tinta no vidro claro */
     text-decoration: underline;
 }
 .checkout-landing-html img {

@@ -47,7 +47,7 @@ async function copyCode() {
 </script>
 
 <template>
-    <div class="doc-code relative my-6 overflow-hidden rounded-xl border border-white/10 bg-zinc-950/80">
+    <div class="doc-code relative my-6 overflow-hidden rounded-[20px] border border-[var(--border-default)] bg-black/40">
         <span class="doc-code-label">{{ label }}</span>
         <button type="button" class="doc-code-copy" title="Copiar" @click="copyCode">
             <span v-if="copied" class="text-emerald-400">Copiado!</span>
@@ -65,13 +65,13 @@ async function copyCode() {
     top: 0.625rem;
     left: 0.75rem;
     z-index: 1;
-    border-radius: 0.25rem;
-    background: rgb(255 255 255 / 0.1);
+    border-radius: 999px;
+    background: var(--bg-muted);
     padding: 0.125rem 0.5rem;
     font-family: ui-monospace, monospace;
     font-size: 0.75rem;
     letter-spacing: 0.05em;
-    color: #71717a;
+    color: var(--text-tertiary);
     text-transform: uppercase;
 }
 .doc-code-copy {
@@ -82,17 +82,17 @@ async function copyCode() {
     display: flex;
     align-items: center;
     gap: 0.375rem;
-    border-radius: 0.5rem;
-    border: 1px solid rgb(255 255 255 / 0.1);
-    background: rgb(255 255 255 / 0.05);
+    border-radius: 999px;
+    border: 1px solid var(--border-default);
+    background: var(--bg-subtle);
     padding: 0.375rem 0.625rem;
     font-size: 0.75rem;
     font-weight: 500;
-    color: #a1a1aa;
+    color: var(--text-secondary);
 }
 .doc-code-copy:hover {
-    background: rgb(255 255 255 / 0.1);
-    color: #fff;
+    background: var(--bg-hover);
+    color: var(--text-primary);
 }
 .doc-code-pre {
     margin: 0;

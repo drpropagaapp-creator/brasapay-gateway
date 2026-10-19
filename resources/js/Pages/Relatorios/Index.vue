@@ -2,6 +2,7 @@
 import { ref, computed, onMounted, watch } from 'vue';
 import { router, Link } from '@inertiajs/vue3';
 import VueApexCharts from 'vue3-apexcharts';
+import { pnChartPalette } from '@/lib/paynextBrand';
 import LayoutInfoprodutor from '@/Layouts/LayoutInfoprodutor.vue';
 import AuroraPageHeader from '@/components/aurora/AuroraPageHeader.vue';
 import AuroraPageSection from '@/components/aurora/AuroraPageSection.vue';
@@ -219,7 +220,7 @@ const chartSeriesFormas = computed(() =>
 const chartOptionsFormas = computed(() => ({
     chart: { type: 'donut', fontFamily: 'inherit' },
     labels: formasFiltradas.value.map((fp) => fp.label),
-    colors: ['#10b981', '#6366f1', '#f59e0b', '#ef4444', '#8b5cf6'].slice(0, formasFiltradas.value.length) || ['#6366f1'],
+    colors: [...pnChartPalette(isDarkMode.value), '#8A9296'].slice(0, Math.max(1, formasFiltradas.value.length)),
     dataLabels: { enabled: false },
     legend: { position: 'bottom' },
     tooltip: { theme: isDarkMode.value ? 'dark' : 'light' },

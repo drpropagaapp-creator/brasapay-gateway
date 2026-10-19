@@ -12,8 +12,8 @@ defineProps({
 
 <template>
     <div>
-        <h1 class="mb-2 text-2xl font-bold tracking-tight">{{ title }}</h1>
-        <p v-if="updated_at" class="mb-8 text-sm text-zinc-500">
+        <h1 class="mb-2 text-3xl font-medium tracking-tight text-[var(--text-primary)]">{{ title }}</h1>
+        <p v-if="updated_at" class="mb-8 text-sm text-[var(--text-tertiary)]">
             Última atualização: {{ new Date(updated_at).toLocaleDateString('pt-BR') }}
         </p>
         <article
@@ -30,7 +30,11 @@ defineProps({
 .legal-document :deep(h2) {
     margin-top: 1.75rem;
     font-size: 1.125rem;
-    font-weight: 600;
+    font-weight: 500;
+}
+.legal-document :deep(strong),
+.legal-document :deep(b) {
+    font-weight: 500;
 }
 .legal-document :deep(p),
 .legal-document :deep(li) {

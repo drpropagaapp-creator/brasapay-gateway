@@ -249,6 +249,17 @@ html.dark {
     --bg-muted: rgba(255, 255, 255, 0.08);
     --chart-bar: rgba(255, 255, 255, 0.12);
     --chart-grid: rgba(255, 255, 255, 0.08);
+    /* extensão: status legível sobre o painel ink também no tema claro (valores do tema escuro do DS) */
+    --status-success-fg: var(--success-400);
+    --status-success-bg: rgba(74, 222, 155, 0.14);
+    --status-warning-fg: var(--warning-400);
+    --status-warning-bg: rgba(255, 200, 87, 0.14);
+    --status-error-fg: var(--error-400);
+    --status-error-bg: rgba(255, 107, 107, 0.15);
+    --status-info-fg: var(--info-400);
+    --status-info-bg: rgba(124, 196, 255, 0.15);
+    --status-neutral-fg: rgba(244, 246, 247, 0.7);
+    --status-neutral-bg: rgba(255, 255, 255, 0.08);
 }
 [data-surface='lime'] {
     --text-primary: var(--ink-900);

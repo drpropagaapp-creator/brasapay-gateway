@@ -240,7 +240,7 @@ watch(activeGroup, (group) => {
                     class="rounded-full px-3 py-1.5 text-sm font-medium transition"
                     :class="
                         activeGroup === g.id
-                            ? 'bg-teal-600 text-white'
+                            ? 'bg-lime-300 text-white'
                             : 'bg-white/5 text-zinc-400 hover:bg-white/10 hover:text-white'
                     "
                     @click="activeGroup = g.id"
@@ -250,7 +250,7 @@ watch(activeGroup, (group) => {
             </div>
             <select
                 v-model="selectedOpId"
-                class="w-full rounded-lg border border-white/10 bg-zinc-900 px-3 py-2 text-sm text-white focus:border-teal-500/50 focus:outline-none focus:ring-1 focus:ring-teal-500/30"
+                class="w-full rounded-lg border border-white/10 bg-zinc-900 px-3 py-2 text-sm text-white focus:border-lime-300/50 focus:outline-none focus:ring-1 focus:ring-lime-300/30"
             >
                 <option v-for="op in operationsInGroup" :key="op.id" :value="op.id">
                     {{ op.method }} {{ op.path }} — {{ op.label }}
@@ -267,7 +267,7 @@ watch(activeGroup, (group) => {
             <code class="min-w-0 flex-1 truncate font-mono text-xs text-zinc-300 sm:text-sm">{{ displayUrl }}</code>
             <button
                 type="button"
-                class="inline-flex shrink-0 items-center gap-2 rounded-lg bg-teal-600 px-4 py-2 text-sm font-medium text-white hover:bg-teal-500 disabled:opacity-50"
+                class="inline-flex shrink-0 items-center gap-2 rounded-lg bg-lime-300 px-4 py-2 text-sm font-medium text-white hover:bg-lime-300 disabled:opacity-50"
                 :disabled="loading"
                 @click="send"
             >
@@ -287,7 +287,7 @@ watch(activeGroup, (group) => {
                         <button
                             type="button"
                             class="rounded-lg px-3 py-1.5 text-xs font-medium"
-                            :class="authMode === 'keypair' ? 'bg-teal-500/20 text-teal-300' : 'bg-white/5 text-zinc-400'"
+                            :class="authMode === 'keypair' ? 'bg-lime-300/20 text-lime-300' : 'bg-white/5 text-zinc-400'"
                             @click="authMode = 'keypair'"
                         >
                             Public + Secret
@@ -295,7 +295,7 @@ watch(activeGroup, (group) => {
                         <button
                             type="button"
                             class="rounded-lg px-3 py-1.5 text-xs font-medium"
-                            :class="authMode === 'legacy' ? 'bg-teal-500/20 text-teal-300' : 'bg-white/5 text-zinc-400'"
+                            :class="authMode === 'legacy' ? 'bg-lime-300/20 text-lime-300' : 'bg-white/5 text-zinc-400'"
                             @click="authMode = 'legacy'"
                         >
                             Bearer (legado)
@@ -309,7 +309,7 @@ watch(activeGroup, (group) => {
                                 type="text"
                                 placeholder="gpk_..."
                                 autocomplete="off"
-                                class="w-full rounded-lg border border-white/10 bg-zinc-950 px-3 py-2 font-mono text-xs text-white placeholder-zinc-600 focus:border-teal-500/50 focus:outline-none"
+                                class="w-full rounded-lg border border-white/10 bg-zinc-950 px-3 py-2 font-mono text-xs text-white placeholder-zinc-600 focus:border-lime-300/50 focus:outline-none"
                             />
                         </div>
                         <div>
@@ -320,7 +320,7 @@ watch(activeGroup, (group) => {
                                     :type="showSecret ? 'text' : 'password'"
                                     placeholder="gsk_..."
                                     autocomplete="off"
-                                    class="w-full rounded-lg border border-white/10 bg-zinc-950 px-3 py-2 pr-10 font-mono text-xs text-white placeholder-zinc-600 focus:border-teal-500/50 focus:outline-none"
+                                    class="w-full rounded-lg border border-white/10 bg-zinc-950 px-3 py-2 pr-10 font-mono text-xs text-white placeholder-zinc-600 focus:border-lime-300/50 focus:outline-none"
                                 />
                                 <button
                                     type="button"
@@ -340,7 +340,7 @@ watch(activeGroup, (group) => {
                             type="password"
                             placeholder="getfy_..."
                             autocomplete="off"
-                            class="w-full rounded-lg border border-white/10 bg-zinc-950 px-3 py-2 font-mono text-xs text-white placeholder-zinc-600 focus:border-teal-500/50 focus:outline-none"
+                            class="w-full rounded-lg border border-white/10 bg-zinc-950 px-3 py-2 font-mono text-xs text-white placeholder-zinc-600 focus:border-lime-300/50 focus:outline-none"
                         />
                     </div>
                 </section>
@@ -355,7 +355,7 @@ watch(activeGroup, (group) => {
                                 v-model="pathParams[field.key]"
                                 type="text"
                                 :placeholder="field.placeholder"
-                                class="w-full rounded-lg border border-white/10 bg-zinc-950 px-3 py-2 font-mono text-xs text-white placeholder-zinc-600 focus:border-teal-500/50 focus:outline-none"
+                                class="w-full rounded-lg border border-white/10 bg-zinc-950 px-3 py-2 font-mono text-xs text-white placeholder-zinc-600 focus:border-lime-300/50 focus:outline-none"
                             />
                         </div>
                     </div>
@@ -413,7 +413,7 @@ watch(activeGroup, (group) => {
                         v-model="bodyJson"
                         rows="14"
                         spellcheck="false"
-                        class="w-full rounded-lg border border-white/10 bg-zinc-950 p-3 font-mono text-xs leading-relaxed text-zinc-200 focus:border-teal-500/50 focus:outline-none focus:ring-1 focus:ring-teal-500/30"
+                        class="w-full rounded-lg border border-white/10 bg-zinc-950 p-3 font-mono text-xs leading-relaxed text-zinc-200 focus:border-lime-300/50 focus:outline-none focus:ring-1 focus:ring-lime-300/30"
                     />
                     <p v-if="bodyError" class="mt-2 text-xs text-red-400">{{ bodyError }}</p>
                 </section>
@@ -453,10 +453,10 @@ watch(activeGroup, (group) => {
                     </p>
                     <div
                         v-if="lastResponse.data?.copy_paste"
-                        class="mb-3 rounded-lg border border-teal-500/30 bg-teal-500/10 p-3"
+                        class="mb-3 rounded-lg border border-lime-300/30 bg-lime-300/10 p-3"
                     >
-                        <p class="text-xs font-semibold uppercase tracking-wider text-teal-400">PIX copia e cola</p>
-                        <p class="mt-2 break-all font-mono text-xs text-teal-100">
+                        <p class="text-xs font-semibold uppercase tracking-wider text-lime-300">PIX copia e cola</p>
+                        <p class="mt-2 break-all font-mono text-xs text-lime-200">
                             {{ lastResponse.data.copy_paste }}
                         </p>
                     </div>

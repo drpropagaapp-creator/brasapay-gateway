@@ -64,7 +64,7 @@ html.dark .pn-popover {
     color: var(--lime-300);
 }
 html:not(.dark) .pn-dot {
-    color: var(--lime-500);
+    color: var(--lime-600);
 }
 
 /* Contador sobre botão de ícone (sino) */

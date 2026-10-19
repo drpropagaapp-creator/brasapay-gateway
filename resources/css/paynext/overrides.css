@@ -510,3 +510,44 @@ html.dark :is(.text-violet-700, .text-violet-800, .text-violet-950, .text-indigo
 html.dark :is(.border-red-200, .border-emerald-200, .border-amber-200, .border-sky-200, .border-green-200, .border-blue-200):not([class*='dark:border-']) {
     border-color: var(--border-default);
 }
+
+/* ── Tema claro: tons 400/500 de status em texto ficam ilegíveis no vidro claro → fg de status do DS ── */
+html:not(.dark) :is(.text-emerald-400, .text-emerald-500, .text-green-400, .text-green-500, .text-teal-400, .text-teal-500):not([data-surface='contrast'] *, [data-surface='contrast']) {
+    color: var(--status-success-fg);
+}
+html:not(.dark) :is(.text-amber-400, .text-amber-500, .text-yellow-400, .text-yellow-500, .text-orange-400):not([data-surface='contrast'] *, [data-surface='contrast']) {
+    color: var(--status-warning-fg);
+}
+html:not(.dark) :is(.text-sky-400, .text-sky-500, .text-cyan-400, .text-cyan-500, .text-blue-400):not([data-surface='contrast'] *, [data-surface='contrast']) {
+    color: var(--status-info-fg);
+}
+
+/* ── Selos dentro do item de menu ativo (lime): tinta sobre lime ── */
+.pn-nav--active .pn-badge {
+    background: rgba(21, 23, 24, 0.12);
+    color: var(--ink-900);
+}
+
+/* ── Leaflet (mapa de métricas): controles e popups no DS ── */
+.leaflet-container {
+    font-family: var(--font-display);
+}
+.leaflet-bar {
+    border: 1px solid var(--glass-border) !important;
+    border-radius: 999px !important;
+    overflow: hidden;
+    box-shadow: var(--shadow-sm) !important;
+}
+.leaflet-bar a,
+.leaflet-bar a:hover {
+    background: var(--bg-surface);
+    color: var(--text-primary);
+    font-weight: 500;
+    border-bottom-color: var(--border-default);
+}
+.leaflet-popup-content-wrapper,
+.leaflet-popup-tip {
+    border-radius: 20px;
+    background: var(--bg-surface);
+    color: var(--text-primary);
+}

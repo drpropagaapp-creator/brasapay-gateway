@@ -72,14 +72,14 @@ async function downloadLlmBundle() {
     <div class="mx-auto max-w-3xl px-4 py-10 sm:px-6">
         <Link
             href="/docs/api-pagamentos"
-            class="mb-8 inline-flex items-center gap-2 text-sm font-medium text-zinc-400 transition hover:text-teal-300"
+            class="mb-8 inline-flex items-center gap-2 text-sm font-medium text-zinc-400 transition hover:text-lime-300"
         >
             <ArrowLeft class="h-4 w-4" />
             Voltar à documentação
         </Link>
 
         <div
-            class="relative overflow-hidden rounded-2xl border border-teal-500/20 bg-gradient-to-br from-teal-500/10 via-zinc-900 to-zinc-950 px-6 py-10 sm:px-10"
+            class="relative overflow-hidden rounded-2xl border border-lime-300/20 bg-gradient-to-br from-lime-300/10 via-zinc-900 to-zinc-950 px-6 py-10 sm:px-10"
         >
             <div
                 class="pointer-events-none absolute inset-0 opacity-30"
@@ -112,7 +112,7 @@ async function downloadLlmBundle() {
                         </span>
                     </div>
                     <span
-                        class="inline-flex items-center gap-1.5 rounded-full border border-teal-500/30 bg-teal-500/10 px-3 py-1 text-xs font-medium text-teal-300"
+                        class="inline-flex items-center gap-1.5 rounded-full border border-lime-300/30 bg-lime-300/10 px-3 py-1 text-xs font-medium text-lime-300"
                     >
                         <Sparkles class="h-3.5 w-3.5" />
                         Hub de integração via IA
@@ -132,11 +132,11 @@ async function downloadLlmBundle() {
 
         <div class="mt-8">
             <div
-                class="rounded-xl border border-white/10 bg-zinc-900/50 p-6 transition hover:border-teal-500/30 hover:bg-zinc-900/80"
+                class="rounded-xl border border-white/10 bg-zinc-900/50 p-6 transition hover:border-lime-300/30 hover:bg-zinc-900/80"
             >
                 <div class="flex items-start gap-4">
                     <div
-                        class="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-teal-500/15 text-teal-400"
+                        class="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-lime-300/15 text-lime-300"
                     >
                         <Download class="h-5 w-5" />
                     </div>
@@ -148,7 +148,7 @@ async function downloadLlmBundle() {
                         </p>
                         <button
                             type="button"
-                            class="mt-4 inline-flex items-center gap-2 rounded-lg bg-teal-500 px-4 py-2.5 text-sm font-semibold text-zinc-950 transition hover:bg-teal-400 disabled:cursor-wait disabled:opacity-70"
+                            class="mt-4 inline-flex items-center gap-2 rounded-lg bg-lime-300 px-4 py-2.5 text-sm font-semibold text-zinc-950 transition hover:bg-lime-300 disabled:cursor-wait disabled:opacity-70"
                             :disabled="downloading"
                             @click="downloadLlmBundle"
                         >
@@ -160,7 +160,7 @@ async function downloadLlmBundle() {
                         </p>
                         <p class="mt-3 text-xs text-zinc-500">
                             Se o download falhar,
-                            <a :href="downloadUrl" class="text-teal-400 hover:underline" target="_blank" rel="noopener">
+                            <a :href="downloadUrl" class="text-lime-300 hover:underline" target="_blank" rel="noopener">
                                 abra o arquivo em nova aba
                             </a>
                             .
@@ -172,7 +172,7 @@ async function downloadLlmBundle() {
 
         <p class="mt-8 text-center text-sm text-zinc-500">
             Prefere navegar na web?
-            <Link href="/docs/api-pagamentos#confirmacao-pagamento-fallbacks" class="text-teal-400 hover:underline">
+            <Link href="/docs/api-pagamentos#confirmacao-pagamento-fallbacks" class="text-lime-300 hover:underline">
                 Ver seção de confirmação e fallbacks
             </Link>
         </p>

@@ -157,7 +157,7 @@ onMounted(() => nextTick(setupObserver));
                 <div class="space-y-8">
                     <div v-for="section in navSections" :key="section.title" class="space-y-2">
                         <div class="flex items-center gap-2 px-2 pb-1">
-                            <component :is="section.icon" class="h-4 w-4 shrink-0 text-teal-400/90" />
+                            <component :is="section.icon" class="h-4 w-4 shrink-0 text-lime-300/90" />
                             <span class="text-xs font-semibold uppercase tracking-wider text-zinc-500">{{
                                 section.title
                             }}</span>
@@ -178,7 +178,7 @@ onMounted(() => nextTick(setupObserver));
                                     class="doc-nav-link flex cursor-pointer items-center justify-between rounded-lg px-3 py-2 text-sm font-medium transition"
                                     :class="
                                         activeId === item.id
-                                            ? 'bg-teal-500/15 text-teal-300'
+                                            ? 'bg-lime-300/15 text-lime-300'
                                             : 'text-zinc-300 hover:bg-white/5 hover:text-white'
                                     "
                                     @click.prevent="scrollTo(item.id)"
@@ -195,11 +195,11 @@ onMounted(() => nextTick(setupObserver));
 
         <div ref="contentRef" class="min-w-0 flex-1 lg:pl-0">
             <div
-                class="sticky top-14 z-30 flex items-center justify-between border-b border-white/5 bg-zinc-900/95 px-4 py-3 backdrop-blur-sm lg:hidden"
+                class="sticky top-[84px] z-30 flex items-center justify-between px-1 py-2 lg:hidden"
             >
                 <button
                     type="button"
-                    class="flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-zinc-300 hover:bg-white/5 hover:text-white"
+                    class="pn-btn pn-btn--secondary pn-btn--sm"
                     @click="menuOpen = true"
                 >
                     <Menu class="h-5 w-5" />
@@ -215,11 +215,11 @@ onMounted(() => nextTick(setupObserver));
                         PIX, acompanhe pagamentos, consulte saldo, solicite saques e receba webhooks em tempo real.
                     </p>
                     <div class="mt-4 flex flex-wrap gap-2">
-                        <span class="rounded-full bg-teal-500/20 px-3 py-1 text-xs font-medium text-teal-300">REST</span>
+                        <span class="rounded-full bg-lime-300/20 px-3 py-1 text-xs font-medium text-lime-300">REST</span>
                         <span class="rounded-full bg-white/10 px-3 py-1 text-xs font-medium text-zinc-400">JSON</span>
                         <Link
                             href="/docs/api-pagamentos/testar"
-                            class="inline-flex items-center gap-1.5 rounded-full border border-teal-500/40 bg-teal-500/10 px-3 py-1 text-xs font-medium text-teal-300 hover:bg-teal-500/20"
+                            class="inline-flex items-center gap-1.5 rounded-full border border-lime-300/40 bg-lime-300/10 px-3 py-1 text-xs font-medium text-lime-300 hover:bg-lime-300/20"
                         >
                             <FlaskConical class="h-3.5 w-3.5" />
                             Testar API
@@ -247,16 +247,16 @@ onMounted(() => nextTick(setupObserver));
             </div>
 
             <div class="mx-auto max-w-3xl px-4 pt-8 lg:px-0">
-                <div class="rounded-xl border border-teal-500/30 bg-teal-500/10 px-4 py-4">
+                <div class="rounded-xl border border-lime-300/30 bg-lime-300/10 px-4 py-4">
                     <div class="flex flex-wrap items-baseline gap-x-4 gap-y-1">
-                        <span class="text-xs font-semibold uppercase tracking-wider text-teal-400/90">Base URL</span>
+                        <span class="text-xs font-semibold uppercase tracking-wider text-lime-300/90">Base URL</span>
                         <code class="text-sm text-zinc-200">{{ apiBase }}</code>
                     </div>
                     <p class="mt-2 text-sm text-zinc-400">
                         Autenticação:
-                        <code class="rounded bg-white/10 px-1.5 py-0.5 text-teal-300">X-Public-Key</code>
+                        <code class="rounded bg-white/10 px-1.5 py-0.5 text-lime-300">X-Public-Key</code>
                         e
-                        <code class="rounded bg-white/10 px-1.5 py-0.5 text-teal-300">X-Secret-Key</code>.
+                        <code class="rounded bg-white/10 px-1.5 py-0.5 text-lime-300">X-Secret-Key</code>.
                     </p>
                 </div>
             </div>
@@ -265,7 +265,7 @@ onMounted(() => nextTick(setupObserver));
                 <DocSection id="inicio-rapido" title="Início rápido">
                     <p class="text-zinc-400 leading-relaxed mb-4">
                         Todas as rotas estão sob
-                        <code class="rounded bg-white/10 px-1.5 py-0.5 text-teal-300">/api/v1</code>.
+                        <code class="rounded bg-white/10 px-1.5 py-0.5 text-lime-300">/api/v1</code>.
                     </p>
                     <h3 class="doc-h3">Resumo dos endpoints</h3>
                     <DocTable
@@ -285,7 +285,7 @@ onMounted(() => nextTick(setupObserver));
                     <DocCallout type="tip" title="Webhook vs polling">
                         Prefira webhook <code class="rounded bg-white/10 px-1 py-0.5">order.completed</code> para
                         liberar o produto. Use GET /payments/{order_id} como fallback no servidor — veja
-                        <a href="#confirmacao-pagamento-fallbacks" class="text-teal-300 underline hover:text-teal-200">
+                        <a href="#confirmacao-pagamento-fallbacks" class="text-lime-300 underline hover:text-lime-200">
                             Confirmação de pagamento e fallbacks
                         </a>.
                         Polling no checkout é só para UX; não substitui webhook + job de reconciliação.
@@ -307,7 +307,7 @@ onMounted(() => nextTick(setupObserver));
                         <li v-for="(step, i) in partnerIntegrationSteps" :key="i">{{ step }}</li>
                     </ol>
                     <DocCallout type="tip" title="Scopes recomendados para chave de parceiro">
-                        <code class="rounded bg-white/10 px-1 py-0.5 text-teal-300">{{ partnerRecommendedScopes }}</code>
+                        <code class="rounded bg-white/10 px-1 py-0.5 text-lime-300">{{ partnerRecommendedScopes }}</code>
                         — ou use a chave principal (acesso total).
                     </DocCallout>
                 </DocSection>
@@ -336,8 +336,8 @@ onMounted(() => nextTick(setupObserver));
 
                 <DocSection id="envio-api-key" title="Envio das chaves">
                     <ul class="doc-ul mb-6">
-                        <li><code class="rounded bg-white/10 px-1.5 py-0.5 text-teal-300">X-Public-Key</code></li>
-                        <li><code class="rounded bg-white/10 px-1.5 py-0.5 text-teal-300">X-Secret-Key</code></li>
+                        <li><code class="rounded bg-white/10 px-1.5 py-0.5 text-lime-300">X-Public-Key</code></li>
+                        <li><code class="rounded bg-white/10 px-1.5 py-0.5 text-lime-300">X-Secret-Key</code></li>
                     </ul>
                     <DocCode label="http">
                         POST /api/v1/payments/pix HTTP/1.1
@@ -392,7 +392,7 @@ onMounted(() => nextTick(setupObserver));
                 <DocSection id="integracao-conta" title="Chaves e configuração">
                     <p class="text-zinc-400 leading-relaxed">
                         Cada conta tem um par Public + Secret. Configure IPs permitidos no painel. Para webhook, use
-                        <code class="rounded bg-white/10 px-1 py-0.5 text-teal-300">PUT /api/v1/webhook</code>
+                        <code class="rounded bg-white/10 px-1 py-0.5 text-lime-300">PUT /api/v1/webhook</code>
                         (recomendado para parceiros) ou configure manualmente em
                         <code class="rounded bg-white/10 px-1 py-0.5">/aplicacoes-api</code>.
                     </p>
@@ -435,7 +435,7 @@ onMounted(() => nextTick(setupObserver));
                 <DocSection id="processadora-webhooks" title="Webhooks (configuração)">
                     <p class="text-zinc-400 leading-relaxed mb-4">
                         Configure
-                        <code class="rounded bg-white/10 px-1 py-0.5 text-teal-300">webhook_url</code>
+                        <code class="rounded bg-white/10 px-1 py-0.5 text-lime-300">webhook_url</code>
                         via <code class="rounded bg-white/10 px-1 py-0.5">PUT /api/v1/webhook</code> (recomendado) ou no
                         painel em <code class="rounded bg-white/10 px-1 py-0.5">/aplicacoes-api</code>.
                     </p>
@@ -450,7 +450,7 @@ onMounted(() => nextTick(setupObserver));
                         <p class="mb-4 text-sm">
                             <Link
                                 href="/docs/api-pagamentos/testar?op=post-payments-pix"
-                                class="inline-flex items-center gap-1 text-teal-400 hover:underline"
+                                class="inline-flex items-center gap-1 text-lime-300 hover:underline"
                             >
                                 <FlaskConical class="h-3.5 w-3.5" />
                                 Testar este endpoint →
@@ -494,7 +494,7 @@ onMounted(() => nextTick(setupObserver));
                     </p>
                     <p class="text-zinc-400 leading-relaxed mb-4">
                         Para alto volume, envie o header
-                        <code class="rounded bg-white/10 px-1.5 py-0.5 text-teal-300">X-Async: true</code>
+                        <code class="rounded bg-white/10 px-1.5 py-0.5 text-lime-300">X-Async: true</code>
                         e receba <strong class="text-zinc-200">202</strong> com
                         <code class="rounded bg-white/10 px-1 py-0.5">status: processing</code>. Consulte
                         <code class="rounded bg-white/10 px-1 py-0.5">GET /payments/{order_id}</code> ou aguarde o
@@ -620,7 +620,7 @@ onMounted(() => nextTick(setupObserver));
                         <p class="mb-4 text-sm">
                             <Link
                                 href="/docs/api-pagamentos/testar?op=post-withdrawals"
-                                class="inline-flex items-center gap-1 text-teal-400 hover:underline"
+                                class="inline-flex items-center gap-1 text-lime-300 hover:underline"
                             >
                                 <FlaskConical class="h-3.5 w-3.5" />
                                 Testar este endpoint →
@@ -667,9 +667,9 @@ onMounted(() => nextTick(setupObserver));
                 <DocSection id="idempotencia-pix" title="Idempotência">
                     <p class="text-zinc-400 leading-relaxed mb-4">
                         Use
-                        <code class="rounded bg-white/10 px-1.5 py-0.5 text-teal-300">idempotency_key</code>
+                        <code class="rounded bg-white/10 px-1.5 py-0.5 text-lime-300">idempotency_key</code>
                         no body ou header
-                        <code class="rounded bg-white/10 px-1.5 py-0.5 text-teal-300">Idempotency-Key</code>
+                        <code class="rounded bg-white/10 px-1.5 py-0.5 text-lime-300">Idempotency-Key</code>
                         (máx. 128 caracteres). A mesma chave devolve a resposta original sem duplicar a operação.
                     </p>
                     <DocCallout type="tip" title="Chave principal">
@@ -780,9 +780,9 @@ Polling no checkout (opcional) → atualiza tela</DocCode>
                         <li v-for="(item, i) in paymentConfirmationChecklist" :key="i">{{ item }}</li>
                     </ul>
                     <p class="mt-4 text-sm text-zinc-500">
-                        <Link href="/docs/api-pagamentos/testar" class="text-teal-400 hover:underline">Testar API</Link>
+                        <Link href="/docs/api-pagamentos/testar" class="text-lime-300 hover:underline">Testar API</Link>
                         ·
-                        <Link href="/docs/api-pagamentos/ia" class="text-teal-400 hover:underline">Integrar com IA</Link>
+                        <Link href="/docs/api-pagamentos/ia" class="text-lime-300 hover:underline">Integrar com IA</Link>
                     </p>
                 </DocSection>
 
@@ -838,29 +838,26 @@ Polling no checkout (opcional) → atualiza tela</DocCode>
 </template>
 
 <style scoped>
-.api-docs {
-    font-family: 'DM Sans', ui-sans-serif, system-ui, sans-serif;
-}
 .doc-h3 {
     margin-top: 3rem;
     margin-bottom: 1rem;
     font-size: 1rem;
-    font-weight: 600;
-    color: #e4e4e7;
+    font-weight: 500;
+    color: var(--text-primary);
 }
 .doc-h4 {
     margin-top: 2rem;
     margin-bottom: 0.75rem;
     font-size: 0.875rem;
     font-weight: 500;
-    color: #d4d4d8;
+    color: var(--text-primary);
 }
 .doc-ul,
 .doc-ol {
     margin-block: 1.5rem;
     padding-left: 1.5rem;
     line-height: 1.625;
-    color: #a1a1aa;
+    color: var(--text-secondary);
 }
 .doc-ul {
     list-style-type: disc;

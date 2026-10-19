@@ -11,7 +11,7 @@
     $forcedTheme = null;
     if (str_starts_with($path, 'c/') || str_starts_with($path, 'checkout') || str_starts_with($path, 'api-checkout') || str_starts_with($path, 'pagar')) {
         $forcedTheme = 'light';
-    } elseif (str_starts_with($path, 'm/') || request()->attributes->get('member_area_slug')) {
+    } elseif (str_starts_with($path, 'm/') || str_starts_with($path, 'docs/') || request()->attributes->get('member_area_slug')) {
         $forcedTheme = 'dark';
     }
 @endphp
