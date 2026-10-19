@@ -91,13 +91,11 @@ class ApproveLastPendingOrder extends Command
 
     private function getOrderCheckoutConfig(Order $order): array
     {
-        if ($order->subscriptionPlan?->checkout_config) {
-            return array_replace_recursive(Product::defaultCheckoutConfig(), $order->subscriptionPlan->checkout_config);
-        }
-        if ($order->productOffer?->checkout_config) {
-            return array_replace_recursive(Product::defaultCheckoutConfig(), $order->productOffer->checkout_config);
+        $product = $order->product;
+        if (! $product) {
+            return [];
         }
 
-        return $order->product?->checkout_config ?? [];
+        return Product::resolvedCheckoutConfig($product, $order->productOffer, $order->subscriptionPlan);
     }
 }

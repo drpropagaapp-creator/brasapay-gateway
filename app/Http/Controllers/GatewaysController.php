@@ -9,6 +9,7 @@ use App\Gateways\Versell\VersellCredentials;
 use App\Gateways\Versell\VersellDriver;
 use App\Models\GatewayCredential;
 use App\Models\Setting;
+use App\Services\CajuPay\CajuPayAccountResolver;
 use App\Services\CajuPay\CajuPayWebhookBootstrapService;
 use App\Services\Versell\VersellWebhookBootstrapService;
 use App\Services\Xflow\XflowWebhookBootstrapService;
@@ -105,6 +106,9 @@ class GatewaysController extends Controller
         $webhookHelp = null;
         if ($slug === 'pushinpay') {
             $webhookUrl = GatewayWebhookUrl::forGateway('pushinpay');
+        } elseif ($slug === 'woovi') {
+            $webhookUrl = GatewayWebhookUrl::forGateway('woovi');
+            $webhookHelp = 'Cadastre esta URL HTTPS no painel Woovi (API/Plugins → Webhooks), evento OPENPIX:CHARGE_COMPLETED. No cadastro do webhook, preencha o campo authorization com um token secreto e cole o mesmo valor em Webhook Secret abaixo. Sem esse secret, as notificações de pagamento são rejeitadas.';
         } elseif ($slug === 'onlyup') {
             $webhookUrl = GatewayWebhookUrl::forGateway('onlyup');
         } elseif ($slug === 'cajupay') {
@@ -134,6 +138,9 @@ class GatewaysController extends Controller
         } elseif ($slug === 'cielo') {
             $webhookUrl = GatewayWebhookUrl::forGateway('cielo');
             $webhookHelp = 'Cadastre esta URL HTTPS no Site Cielo (E-commerce → Gestão API E-commerce → URL de notificações), método POST, JSON. A URL é estática (não vai em cada cobrança). Recomendado: configure o mesmo header Key/Value no portal e nos campos abaixo. O Post de Notificação só traz PaymentId; o sistema confirma o status em GET /1/sales/{PaymentId}. PIX Cielo2 (Provider Cielo2) não tem sandbox de pagamento confirmado.';
+        } elseif ($slug === 'stripe') {
+            $webhookUrl = GatewayWebhookUrl::forGateway('stripe');
+            $webhookHelp = 'Cadastre esta URL HTTPS no Stripe Dashboard (Developers → Webhooks), no mesmo modo da Secret Key (teste ou live). Evento: payment_intent.succeeded. Depois cole o signing secret (whsec_…) no campo Webhook Secret abaixo.';
         } elseif ($slug === 'paypal') {
             $webhookUrl = GatewayWebhookUrl::forGateway('paypal');
             $webhookHelp = 'Cadastre esta URL HTTPS no PayPal Developer Dashboard (Webhooks) do mesmo app REST. Eventos: PAYMENT.CAPTURE.COMPLETED, PAYMENT.CAPTURE.DENIED, PAYMENT.CAPTURE.REFUNDED. Depois cole o Webhook ID no campo abaixo. Não altera PIX/cartão das outras adquirentes.';
@@ -840,19 +847,52 @@ class GatewaysController extends Controller
             'gateway_order.boleto.*' => ['string', 'max:64'],
             'gateway_order.pix_auto' => ['nullable', 'array'],
             'gateway_order.pix_auto.*' => ['string', 'max:64'],
+            'gateway_order.wallet' => ['nullable', 'array'],
+            'gateway_order.wallet.*' => ['string', 'max:64'],
+            'cajupay_method_accounts' => ['sometimes', 'array'],
+            'cajupay_method_accounts.pix' => ['nullable', 'integer'],
+            'cajupay_method_accounts.card' => ['nullable', 'integer'],
+            'cajupay_method_accounts.boleto' => ['nullable', 'integer'],
+            'cajupay_method_accounts.pix_auto' => ['nullable', 'integer'],
         ]);
 
         $tenantId = PlatformConfigContext::settingsTenantId();
         $go = $validated['gateway_order'];
+        $existing = Setting::get('gateway_order', null, $tenantId);
+        if (is_string($existing)) {
+            $decoded = json_decode($existing, true);
+            $existing = is_array($decoded) ? $decoded : [];
+        }
+        $existing = is_array($existing) ? $existing : [];
+        $walletSource = array_key_exists('wallet', $go)
+            ? ($go['wallet'] ?? [])
+            : ($existing['wallet'] ?? config('gateways.default_order.wallet', ['cajupay', 'stripe']));
+
         $sanitized = [
             'pix' => GatewayRegistry::filterSlugsToAllowedAcquirers($go['pix'] ?? []),
             'card' => GatewayRegistry::filterSlugsToAllowedAcquirers($go['card'] ?? []),
             'boleto' => GatewayRegistry::filterSlugsToAllowedAcquirers($go['boleto'] ?? []),
             'pix_auto' => GatewayRegistry::filterSlugsToAllowedAcquirers($go['pix_auto'] ?? []),
+            'wallet' => array_values(array_filter(
+                GatewayRegistry::filterSlugsToAllowedAcquirers(is_array($walletSource) ? $walletSource : []),
+                fn ($slug) => in_array($slug, ['cajupay', 'stripe'], true)
+            )),
         ];
         Setting::set('gateway_order', $sanitized, $tenantId);
 
-        return response()->json(['success' => true, 'message' => 'Ordem de redundância atualizada.']);
+        $methodAccounts = null;
+        if ($request->exists('cajupay_method_accounts')) {
+            $methodAccounts = app(CajuPayAccountResolver::class)->saveMethodAccounts(
+                is_array($validated['cajupay_method_accounts'] ?? null) ? $validated['cajupay_method_accounts'] : [],
+                $tenantId
+            );
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Ordem de redundância atualizada.',
+            'cajupay_method_accounts' => $methodAccounts,
+        ]);
     }
 
     /**
@@ -923,6 +963,7 @@ class GatewaysController extends Controller
                 'card' => GatewayRegistry::filterSlugsToAllowedAcquirers($default['card'] ?? []),
                 'boleto' => GatewayRegistry::filterSlugsToAllowedAcquirers($default['boleto'] ?? []),
                 'pix_auto' => GatewayRegistry::filterSlugsToAllowedAcquirers($default['pix_auto'] ?? []),
+                'wallet' => $this->filterWalletSlugs($default['wallet'] ?? ['cajupay', 'stripe']),
             ];
         }
 
@@ -931,7 +972,20 @@ class GatewaysController extends Controller
             'card' => GatewayRegistry::filterSlugsToAllowedAcquirers($raw['card'] ?? $default['card'] ?? []),
             'boleto' => GatewayRegistry::filterSlugsToAllowedAcquirers($raw['boleto'] ?? $default['boleto'] ?? []),
             'pix_auto' => GatewayRegistry::filterSlugsToAllowedAcquirers($raw['pix_auto'] ?? $default['pix_auto'] ?? []),
+            'wallet' => $this->filterWalletSlugs($raw['wallet'] ?? $default['wallet'] ?? ['cajupay', 'stripe']),
         ];
+    }
+
+    /**
+     * @param  array<int, mixed>  $slugs
+     * @return list<string>
+     */
+    private function filterWalletSlugs(array $slugs): array
+    {
+        return array_values(array_filter(
+            GatewayRegistry::filterSlugsToAllowedAcquirers($slugs),
+            fn ($slug) => in_array($slug, ['cajupay', 'stripe'], true)
+        ));
     }
 
     /**

@@ -61,7 +61,7 @@ const DEFAULT_EMAIL_TEMPLATE = {
     logo_url: '',
     from_name: '',
     subject: 'Seu acesso a {nome_produto}',
-    body_html: '<p>Olá, {nome_cliente}!</p><p>Obrigado por adquirir <strong>{nome_produto}</strong>.</p><p>Clique no botão abaixo para fazer login e ver todos os seus produtos em Minha área:</p><p><a href="{link_acesso}" style="display:inline-block;padding:12px 24px;background:#0ea5e9;color:#fff;text-decoration:none;border-radius:8px;font-weight:600;">Fazer login</a></p><p style="font-size:14px;color:#64748b;">Ou copie e cole no navegador: {link_acesso}</p><p style="margin-top:16px;font-size:14px;color:#334155;"><strong>E-mail:</strong> {email_cliente}<br/><strong>Senha:</strong> {senha}</p><p style="font-size:13px;color:#64748b;">Se você não tiver senha, use <a href="{link_esqueci_senha}">Esqueci minha senha</a> para criar uma nova.</p><p>Qualquer dúvida, responda este e-mail.</p>',
+    body_html: '<p>Olá, {nome_cliente}!</p><p>Obrigado por adquirir <strong>{nome_produto}</strong>.</p><p>Clique no botão abaixo para entrar na sua área de cursos:</p><p><a href="{link_acesso}" style="display:inline-block;padding:12px 24px;background:#0ea5e9;color:#fff;text-decoration:none;border-radius:8px;font-weight:600;">Entrar na área de cursos</a></p><p style="font-size:14px;color:#64748b;">Ou copie e cole no navegador: {link_acesso}</p><p style="margin-top:16px;font-size:14px;color:#334155;"><strong>E-mail:</strong> {email_cliente}<br/><strong>Senha:</strong> {senha}</p><p style="font-size:13px;color:#64748b;">Se você não tiver senha, use <a href="{link_esqueci_senha}">Esqueci minha senha</a> para criar uma nova.</p><p>Aqui você pode ver todas as suas compras: <a href="{link_plataforma}">{link_plataforma}</a></p><p>Qualquer dúvida, responda este e-mail.</p>',
 };
 
 const PIXEL_TABS = computed(() => [
@@ -107,11 +107,13 @@ const props = defineProps({
         type: Object,
         default: () => ({ pix: false, card: false, boleto: false, pix_auto: false, apple_pay: false, google_pay: false, paypal: false }),
     },
+    wallet_acquirer_label: { type: String, default: '' },
     shipping_stores: { type: Array, default: () => [] },
     coproduction_readonly: { type: Boolean, default: false },
 });
 
 const page = usePage();
+const visibleProductTypes = computed(() => (props.productTypes || []).filter((type) => type.available));
 const coproductionReadonly = computed(() => !!props.coproduction_readonly);
 const visibleTabs = computed(() => {
     if (!coproductionReadonly.value) {
@@ -163,6 +165,7 @@ const form = useForm({
     base_interval: props.produto.base_interval ?? (props.produto.subscription_plans?.sort((a, b) => (a.position ?? 0) - (b.position ?? 0))[0]?.interval) ?? 'monthly',
     currency: props.produto.currency ?? 'BRL',
     is_active: props.produto.is_active,
+    show_in_marketplace: Boolean(props.produto.show_in_marketplace),
     image: null,
     conversion_pixels: mergeConversionPixels(props.produto.conversion_pixels),
     deliverable_link: props.produto.checkout_config?.deliverable_link ?? '',
@@ -205,6 +208,10 @@ watch(
 );
 
 const isSubscriptionBilling = computed(() => form.billing_type === 'subscription');
+const marketplaceToggleLabel = computed(() => {
+    const name = String(page.props.appSettings?.app_name || 'plataforma').trim() || 'plataforma';
+    return `Exibir no Marketplace da ${name}`;
+});
 const showCardInstallments = computed(
     () => !isSubscriptionBilling.value && Boolean(props.checkout_gateway_ui?.card_show_installments)
 );
@@ -464,8 +471,8 @@ watch(
 const paymentMethodMeta = {
     pix: { label: 'PIX', hint: 'Pagamento instantâneo', visual: 'pix' },
     card: { label: 'Cartão', hint: 'Crédito ou débito', visual: 'card' },
-    apple_pay: { label: 'Apple Pay', hint: 'Wallet CajuPay em qualquer dispositivo', visual: 'apple_pay' },
-    google_pay: { label: 'Google Pay', hint: 'Wallet CajuPay em qualquer dispositivo', visual: 'google_pay' },
+    apple_pay: { label: 'Apple Pay', hint: '', visual: 'apple_pay' },
+    google_pay: { label: 'Google Pay', hint: '', visual: 'google_pay' },
     boleto: { label: 'Boleto', hint: 'Compensação bancária', visual: 'boleto' },
     pix_auto: { label: 'PIX automático', hint: 'Débito recorrente na assinatura', visual: 'pix_auto' },
     open_finance: { label: 'Open Finance', hint: 'Pagamento autorizado no app do banco', visual: 'open_finance' },
@@ -479,9 +486,18 @@ const paymentMethodCardsList = computed(() => {
     if (form.billing_type === 'subscription') {
         order.push('pix_auto');
     }
+    const walletHint = props.wallet_acquirer_label
+        ? `Wallet via ${props.wallet_acquirer_label}`
+        : 'Wallet via CajuPay ou Stripe';
     return order
         .filter((key) => avail[key] === true && paymentMethodMeta[key])
-        .map((key) => ({ key, ...paymentMethodMeta[key] }));
+        .map((key) => {
+            const meta = { ...paymentMethodMeta[key] };
+            if (key === 'apple_pay' || key === 'google_pay') {
+                meta.hint = walletHint;
+            }
+            return { key, ...meta };
+        });
 });
 
 /** Grid compacto: mais colunas, cartões menores. */
@@ -625,6 +641,26 @@ async function uploadEmailLogo(file) {
 function onLogoFileChange(e) {
     const file = e.target?.files?.[0];
     if (file) uploadEmailLogo(file);
+}
+
+async function removeEmailLogo() {
+    logoError.value = '';
+    logoUploading.value = true;
+    try {
+        await axios.delete(`/produtos/${props.produto.id}/email-template-logo`, {
+            headers: {
+                'X-XSRF-TOKEN': getCsrfToken(),
+                Accept: 'application/json',
+                'X-Requested-With': 'XMLHttpRequest',
+            },
+            withCredentials: true,
+        });
+        form.email_template.logo_url = '';
+    } catch (err) {
+        logoError.value = err.response?.data?.message || 'Não foi possível remover a logo.';
+    } finally {
+        logoUploading.value = false;
+    }
 }
 
 function checkoutUrl(slug) {
@@ -1203,6 +1239,7 @@ function appendCoreProductFields(fd) {
     }
     fd.append('currency', form.currency);
     fd.append('is_active', form.is_active ? '1' : '0');
+    fd.append('show_in_marketplace', form.show_in_marketplace ? '1' : '0');
     if (form.type === 'produto_fisico') {
         if (form.shipping_store_id) fd.append('shipping_store_id', String(form.shipping_store_id));
         fd.append('physical_free_shipping', form.physical_free_shipping ? '1' : '0');
@@ -1505,6 +1542,16 @@ function submit() {
                                         :label="t('products.create.active_product', 'Produto ativo')"
                                         :disabled="produto.approval?.status && produto.approval.status !== 'approved'"
                                     />
+                                </div>
+                                <div class="pt-1">
+                                    <Checkbox
+                                        v-model="form.show_in_marketplace"
+                                        :label="marketplaceToggleLabel"
+                                        class="w-full"
+                                    />
+                                    <p class="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+                                        Quem já comprou na plataforma vê imagem, nome, categoria e valor. O botão Comprar abre o checkout deste produto.
+                                    </p>
                                 </div>
                                 <div
                                     v-if="produto.approval && produto.approval.status !== 'approved'"
@@ -1864,7 +1911,7 @@ function submit() {
                             v-if="paymentMethodCardsList.some((m) => m.key === 'apple_pay' || m.key === 'google_pay')"
                             class="text-[11px] leading-snug text-zinc-400 dark:text-zinc-500"
                         >
-                            Apple Pay e Google Pay aparecem juntos no checkout em qualquer aparelho, quando os dois estiverem ligados. O botão nativo só conclui se a carteira estiver disponível; caso contrário o pagador usa cartão.
+                            Apple Pay e Google Pay usam a carteira definida em Adquirentes → Prioridade por método. O botão nativo só conclui se a carteira estiver disponível no aparelho.
                         </p>
                         <p
                             v-if="paymentMethodCardsList.length === 0"
@@ -1984,26 +2031,23 @@ function submit() {
                     <div class="p-6">
                         <div class="grid gap-3 grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
                             <button
-                                v-for="t in productTypes"
+                                v-for="t in visibleProductTypes"
                                 :key="t.value"
                                 type="button"
-                                :disabled="!t.available"
                                 :class="[
                                     'flex items-start gap-3 rounded-xl border-2 p-4 text-left transition',
                                     form.type === t.value
                                         ? 'border-[var(--color-primary)] bg-[var(--color-primary)]/10 dark:bg-[var(--color-primary)]/20'
                                         : 'border-zinc-200 bg-zinc-50 hover:border-zinc-300 hover:bg-zinc-100 dark:border-zinc-600 dark:bg-zinc-800 dark:hover:border-zinc-500 dark:hover:bg-zinc-700',
-                                    !t.available && 'cursor-not-allowed opacity-60',
                                 ]"
-                                @click="t.available && (form.type = t.value)"
+                                @click="form.type = t.value"
                             >
                                 <component :is="typeIcons[t.value] || Package" class="mt-0.5 h-5 w-5 shrink-0 text-zinc-500 dark:text-zinc-400" />
                                 <div class="min-w-0 flex-1">
                                     <span class="font-medium text-zinc-900 dark:text-white">{{ t.label }}</span>
-                                    <span v-if="!t.available" class="ml-1 text-xs text-zinc-500">(em breve)</span>
                                 </div>
                                 <button
-                                    v-if="t.available && t.value === 'link' && form.type === t.value"
+                                    v-if="t.value === 'link' && form.type === t.value"
                                     type="button"
                                     class="shrink-0 rounded-lg p-1.5 text-zinc-500 transition hover:bg-zinc-200 hover:text-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-600 dark:hover:text-white"
                                     title="Configurar link do entregável"
@@ -2013,7 +2057,7 @@ function submit() {
                                     <Settings class="h-4 w-4" aria-hidden="true" />
                                 </button>
                                 <button
-                                    v-if="t.available && t.value === 'area_membros' && form.type === t.value"
+                                    v-if="t.value === 'area_membros' && form.type === t.value"
                                     type="button"
                                     class="shrink-0 rounded-lg p-1.5 text-zinc-500 transition hover:bg-zinc-200 hover:text-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-600 dark:hover:text-white"
                                     title="Abrir Member Builder"
@@ -2476,33 +2520,60 @@ function submit() {
                             <div>
                                 <label class="mb-2 block text-sm font-medium text-zinc-700 dark:text-zinc-300">{{ t('products.edit.email_logo', 'Logo do e-mail') }}</label>
                                 <div class="flex flex-col sm:flex-row gap-4 items-start">
+                                    <input ref="logoInputRef" type="file" accept="image/png,image/jpeg,image/webp,image/gif" class="hidden" @change="onLogoFileChange" />
                                     <div
-                                        class="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-zinc-300 bg-zinc-50 dark:border-zinc-600 dark:bg-zinc-800/80 w-full sm:w-44 h-32 shrink-0 cursor-pointer transition hover:border-[var(--color-primary)] hover:bg-[var(--color-primary)]/5"
-                                        @click="logoInputRef?.click()"
+                                        class="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-zinc-300 bg-zinc-50 dark:border-zinc-600 dark:bg-zinc-800/80 w-full sm:w-52 h-36 shrink-0 transition"
+                                        :class="logoUploading ? 'opacity-70' : 'hover:border-[var(--color-primary)] hover:bg-[var(--color-primary)]/5'"
                                     >
-                                        <input ref="logoInputRef" type="file" accept="image/*" class="hidden" @change="onLogoFileChange" />
                                         <template v-if="logoUploading">
                                             <Loader2 class="h-8 w-8 text-[var(--color-primary)] animate-spin" />
                                             <span class="mt-2 text-xs text-zinc-500">{{ t('common.sending', 'Enviando...') }}</span>
                                         </template>
                                         <template v-else-if="form.email_template.logo_url">
-                                            <div class="rounded-lg bg-white px-2 py-1.5 shadow-sm ring-1 ring-zinc-200/80 dark:ring-zinc-600">
+                                            <div class="rounded-lg bg-white px-3 py-2 shadow-sm ring-1 ring-zinc-200/80 dark:ring-zinc-600">
                                                 <img
                                                     :key="form.email_template.logo_url"
                                                     :src="form.email_template.logo_url"
                                                     alt="Logo"
-                                                    class="max-h-20 w-auto object-contain mx-auto"
+                                                    class="max-h-24 w-auto max-w-[180px] object-contain mx-auto"
                                                     @error="($e) => $e.target.style.display = 'none'"
                                                 />
                                             </div>
-                                            <span class="mt-2 text-xs text-zinc-500">{{ t('products.edit.click_to_change', 'Clique para trocar') }}</span>
                                         </template>
                                         <template v-else>
-                                            <ImageIcon class="h-8 w-8 text-zinc-400 dark:text-zinc-500" />
-                                            <span class="mt-2 text-xs text-zinc-500">{{ t('products.edit.click_to_upload', 'Clique para enviar') }}</span>
+                                            <button
+                                                type="button"
+                                                class="flex flex-col items-center justify-center px-4 py-6 cursor-pointer"
+                                                @click="logoInputRef?.click()"
+                                            >
+                                                <ImageIcon class="h-8 w-8 text-zinc-400 dark:text-zinc-500" />
+                                                <span class="mt-2 text-xs text-zinc-500">{{ t('products.edit.click_to_upload', 'Clique para enviar') }}</span>
+                                            </button>
                                         </template>
                                     </div>
-                                    <p class="text-xs text-zinc-500 dark:text-zinc-400 sm:pt-2">PNG ou JPG, até 2 MB. Exibida no topo do e-mail.</p>
+                                    <div class="space-y-2 sm:pt-1">
+                                        <p class="text-xs text-zinc-500 dark:text-zinc-400">
+                                            {{ t('products.edit.email_logo_hint', 'PNG, JPG ou WebP, até 2 MB. A logo é convertida com fundo branco para aparecer nítida no e-mail (inclusive no modo escuro).') }}
+                                        </p>
+                                        <div v-if="form.email_template.logo_url" class="flex flex-wrap gap-2">
+                                            <button
+                                                type="button"
+                                                class="inline-flex items-center rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-xs font-medium text-zinc-700 transition hover:bg-zinc-50 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700"
+                                                :disabled="logoUploading || coproductionReadonly"
+                                                @click="logoInputRef?.click()"
+                                            >
+                                                {{ t('products.edit.click_to_change', 'Trocar') }}
+                                            </button>
+                                            <button
+                                                type="button"
+                                                class="inline-flex items-center rounded-lg border border-red-200 bg-white px-3 py-1.5 text-xs font-medium text-red-600 transition hover:bg-red-50 dark:border-red-900/50 dark:bg-zinc-800 dark:text-red-400 dark:hover:bg-red-950/40"
+                                                :disabled="logoUploading || coproductionReadonly"
+                                                @click="removeEmailLogo"
+                                            >
+                                                {{ t('products.edit.remove_email_logo', 'Remover logo') }}
+                                            </button>
+                                        </div>
+                                    </div>
                                 </div>
                                 <p v-if="logoError" class="mt-2 text-sm text-red-600 dark:text-red-400">{{ logoError }}</p>
                             </div>
@@ -2522,7 +2593,9 @@ function submit() {
                                     Placeholders: <code class="rounded bg-zinc-100 px-1 dark:bg-zinc-700">{nome_cliente}</code>,
                                     <code class="rounded bg-zinc-100 px-1 dark:bg-zinc-700">{nome_produto}</code>,
                                     <code class="rounded bg-zinc-100 px-1 dark:bg-zinc-700">{link_acesso}</code>
-                                    (tela de login da plataforma),
+                                    (área de cursos),
+                                    <code class="rounded bg-zinc-100 px-1 dark:bg-zinc-700">{link_plataforma}</code>
+                                    (todas as compras),
                                     <code class="rounded bg-zinc-100 px-1 dark:bg-zinc-700">{email_cliente}</code>,
                                     <code class="rounded bg-zinc-100 px-1 dark:bg-zinc-700">{senha}</code>
                                     (área de membros, quando disponível),

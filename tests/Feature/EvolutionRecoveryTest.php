@@ -187,6 +187,139 @@ class EvolutionRecoveryTest extends TestCase
         );
     }
 
+    public function test_pix_paid_queues_purchase_message_when_enabled(): void
+    {
+        Queue::fake();
+        $this->seedSeller();
+        $this->connectedInstance([
+            'order_paid_enabled' => true,
+            'message_order_paid' => '{nome}, PIX de {valor} confirmado para {produto}',
+        ]);
+
+        $product = $this->createTestProduct(['tenant_id' => 1, 'name' => 'Curso Pix']);
+        $order = Order::create([
+            'tenant_id' => 1,
+            'product_id' => $product->id,
+            'status' => 'completed',
+            'amount' => 49.90,
+            'email' => 'buyer@example.com',
+            'phone' => '11977665544',
+            'payment_method' => 'pix',
+        ]);
+
+        event(new OrderCompleted($order));
+        event(new OrderCompleted($order));
+
+        Queue::assertPushed(EvolutionSendMessageJob::class, 1);
+        $dispatch = EvolutionMessageDispatch::query()
+            ->where('event_type', EvolutionInstance::EVENT_ORDER_PAID)
+            ->first();
+        $this->assertNotNull($dispatch);
+        $this->assertSame($order->id, $dispatch->order_id);
+        $this->assertSame(EvolutionMessageDispatch::STATUS_PENDING, $dispatch->status);
+        $this->assertStringContainsString('PIX de R$ 49,90 confirmado', $dispatch->message);
+        $this->assertStringContainsString('Curso Pix', $dispatch->message);
+    }
+
+    public function test_order_paid_skips_non_pix_payments(): void
+    {
+        Queue::fake();
+        $this->seedSeller();
+        $this->connectedInstance(['order_paid_enabled' => true]);
+
+        $product = $this->createTestProduct(['tenant_id' => 1]);
+        $order = Order::create([
+            'tenant_id' => 1,
+            'product_id' => $product->id,
+            'status' => 'completed',
+            'amount' => 10,
+            'email' => 'buyer@example.com',
+            'phone' => '11977665544',
+            'payment_method' => 'card',
+        ]);
+
+        event(new OrderCompleted($order));
+
+        Queue::assertNotPushed(EvolutionSendMessageJob::class);
+        $this->assertSame(0, EvolutionMessageDispatch::query()->count());
+    }
+
+    public function test_send_job_sends_order_paid_when_order_is_completed(): void
+    {
+        Http::fake([
+            'https://stacker.evo.com/chat/whatsappNumbers/*' => Http::response([['exists' => true]]),
+            'https://stacker.evo.com/message/sendText/*' => Http::response(['key' => ['id' => 'evo-paid-1']]),
+            'https://stacker.evo.com/*' => Http::response(['ok' => true]),
+        ]);
+
+        $this->seedSeller();
+        $instance = $this->connectedInstance(['order_paid_enabled' => true]);
+        $product = $this->createTestProduct(['tenant_id' => 1]);
+        $order = Order::create([
+            'tenant_id' => 1,
+            'product_id' => $product->id,
+            'status' => 'completed',
+            'amount' => 49.90,
+            'email' => 'buyer@example.com',
+            'phone' => '11977665544',
+            'payment_method' => 'pix',
+        ]);
+
+        $dispatch = EvolutionMessageDispatch::query()->create([
+            'tenant_id' => 1,
+            'evolution_instance_id' => $instance->id,
+            'order_id' => $order->id,
+            'event_type' => EvolutionInstance::EVENT_ORDER_PAID,
+            'sequence_step' => 0,
+            'phone' => '5511977665544',
+            'message' => 'Compra confirmada',
+            'payload' => [],
+            'status' => EvolutionMessageDispatch::STATUS_PENDING,
+        ]);
+
+        (new EvolutionSendMessageJob($dispatch->id))->handle(app(\App\Services\Evolution\EvolutionClient::class));
+
+        $dispatch->refresh();
+        $this->assertSame(EvolutionMessageDispatch::STATUS_SENT, $dispatch->status);
+        $this->assertNull($dispatch->error);
+        Http::assertSent(fn ($request) => str_contains($request->url(), '/message/sendText/'));
+    }
+
+    public function test_send_job_cancels_order_paid_when_order_refunded(): void
+    {
+        Http::fake();
+        $this->seedSeller();
+        $instance = $this->connectedInstance(['order_paid_enabled' => true]);
+        $product = $this->createTestProduct(['tenant_id' => 1]);
+        $order = Order::create([
+            'tenant_id' => 1,
+            'product_id' => $product->id,
+            'status' => 'refunded',
+            'amount' => 49.90,
+            'email' => 'buyer@example.com',
+            'phone' => '11977665544',
+            'payment_method' => 'pix',
+        ]);
+
+        $dispatch = EvolutionMessageDispatch::query()->create([
+            'tenant_id' => 1,
+            'evolution_instance_id' => $instance->id,
+            'order_id' => $order->id,
+            'event_type' => EvolutionInstance::EVENT_ORDER_PAID,
+            'sequence_step' => 0,
+            'phone' => '5511977665544',
+            'message' => 'Compra confirmada',
+            'status' => EvolutionMessageDispatch::STATUS_PENDING,
+        ]);
+
+        (new EvolutionSendMessageJob($dispatch->id))->handle(app(\App\Services\Evolution\EvolutionClient::class));
+
+        $dispatch->refresh();
+        $this->assertSame(EvolutionMessageDispatch::STATUS_CANCELED, $dispatch->status);
+        $this->assertStringContainsString('reembolsado ou cancelado', (string) $dispatch->error);
+        Http::assertNothingSent();
+    }
+
     public function test_seller_cannot_open_evolution_when_hidden(): void
     {
         SellerIntegrationVisibility::setGlobal(SellerIntegrationVisibility::EVOLUTION, false);
@@ -486,6 +619,113 @@ class EvolutionRecoveryTest extends TestCase
                 ->where('metrics.cart_sent', 1)
                 ->has('recent', 1)
             );
+    }
+
+    public function test_report_can_resend_failed_evolution_cart_recovery(): void
+    {
+        Queue::fake();
+        SellerIntegrationVisibility::setGlobal(SellerIntegrationVisibility::UAZAPI, false);
+
+        $seller = User::factory()->create(['role' => User::ROLE_INFOPRODUTOR]);
+        $seller->forceFill([
+            'tenant_id' => $seller->id,
+            'kyc_status' => User::KYC_APPROVED,
+            'account_status' => 'approved',
+        ])->save();
+
+        $instance = EvolutionInstance::firstOrNewForTenant((int) $seller->id);
+        $instance->fill([
+            'name' => 'Conta principal',
+            'server_url' => 'https://stacker.evo.com',
+            'instance_name' => 'loja-1',
+            'instance_token' => 'inst-token',
+            'status' => EvolutionInstance::STATUS_CONNECTED,
+            'is_active' => true,
+            'is_default' => true,
+            'cart_recovery_enabled' => true,
+            'connected_at' => now(),
+        ]);
+        $instance->save();
+
+        $dispatch = EvolutionMessageDispatch::query()->create([
+            'tenant_id' => $seller->id,
+            'evolution_instance_id' => $instance->id,
+            'event_type' => EvolutionInstance::EVENT_CART_RECOVERY,
+            'sequence_step' => 0,
+            'phone' => '5511988776655',
+            'message' => 'Oi {nome}! Finalize: {link}',
+            'status' => EvolutionMessageDispatch::STATUS_FAILED,
+            'error' => 'Evolution HTTP 500: temporary',
+        ]);
+
+        $this->actingAs($seller)
+            ->get(route('relatorios.whatsapp'))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Relatorios/Whatsapp')
+                ->where('recent.0.can_resend', true)
+                ->where('recent.0.provider', 'evolution')
+            );
+
+        $this->actingAs($seller)
+            ->postJson(route('relatorios.whatsapp.resend', [
+                'provider' => 'evolution',
+                'dispatch' => $dispatch->id,
+            ]))
+            ->assertOk()
+            ->assertJsonPath('ok', true);
+
+        $fresh = $dispatch->fresh();
+        $this->assertSame(EvolutionMessageDispatch::STATUS_PENDING, $fresh->status);
+        $this->assertNull($fresh->error);
+        Queue::assertPushed(EvolutionSendMessageJob::class, fn ($job) => $job->dispatchId === $dispatch->id);
+    }
+
+    public function test_report_rejects_resend_for_sent_dispatch(): void
+    {
+        Queue::fake();
+        SellerIntegrationVisibility::setGlobal(SellerIntegrationVisibility::UAZAPI, false);
+
+        $seller = User::factory()->create(['role' => User::ROLE_INFOPRODUTOR]);
+        $seller->forceFill([
+            'tenant_id' => $seller->id,
+            'kyc_status' => User::KYC_APPROVED,
+            'account_status' => 'approved',
+        ])->save();
+
+        $instance = EvolutionInstance::firstOrNewForTenant((int) $seller->id);
+        $instance->fill([
+            'name' => 'Conta principal',
+            'server_url' => 'https://stacker.evo.com',
+            'instance_name' => 'loja-1',
+            'instance_token' => 'inst-token',
+            'status' => EvolutionInstance::STATUS_CONNECTED,
+            'is_active' => true,
+            'is_default' => true,
+            'connected_at' => now(),
+        ]);
+        $instance->save();
+
+        $dispatch = EvolutionMessageDispatch::query()->create([
+            'tenant_id' => $seller->id,
+            'evolution_instance_id' => $instance->id,
+            'event_type' => EvolutionInstance::EVENT_CART_RECOVERY,
+            'sequence_step' => 0,
+            'phone' => '5511988776655',
+            'message' => 'Oi',
+            'status' => EvolutionMessageDispatch::STATUS_SENT,
+            'sent_at' => now(),
+        ]);
+
+        $this->actingAs($seller)
+            ->postJson(route('relatorios.whatsapp.resend', [
+                'provider' => 'evolution',
+                'dispatch' => $dispatch->id,
+            ]))
+            ->assertStatus(422);
+
+        Queue::assertNothingPushed();
+        $this->assertSame(EvolutionMessageDispatch::STATUS_SENT, $dispatch->fresh()->status);
     }
 
     private function seedSeller(): void

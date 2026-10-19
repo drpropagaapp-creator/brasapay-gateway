@@ -45,6 +45,8 @@ class MetaCheckoutAdTrafficTest extends TestCase
         $this->assertSame('CLICK_ID_XYZ', $session->meta_fbclid);
         $this->assertNotEmpty($session->meta_fbc);
         $this->assertStringContainsString('CLICK_ID_XYZ', $session->meta_fbc);
+        $this->assertNotEmpty($session->meta_page_url);
+        $this->assertStringContainsString('/c/metaad1', $session->meta_page_url);
     }
 
     public function test_checkout_get_with_ad_params_queues_pageview_and_initiate_checkout(): void
@@ -69,6 +71,8 @@ class MetaCheckoutAdTrafficTest extends TestCase
 
         $session = CheckoutSession::query()->where('checkout_slug', 'metaad2')->latest('id')->first();
         $this->assertNotNull($session);
+        $this->assertNotEmpty($session->meta_page_url);
+        $this->assertStringContainsString('/c/metaad2', $session->meta_page_url);
 
         $this->assertDatabaseHas('meta_tracking_events', [
             'event_name' => 'PageView',
@@ -82,6 +86,14 @@ class MetaCheckoutAdTrafficTest extends TestCase
         ]);
 
         Queue::assertPushed(SendMetaTrackingEventJob::class, 2);
+
+        $context = app(\App\Services\Meta\MetaEventContextResolver::class)->forCheckoutSession($session);
+        $payload = app(\App\Services\Meta\MetaTrackingService::class)->buildPayload(
+            'PageView',
+            'pv:'.$session->session_token,
+            $context,
+        );
+        $this->assertSame($session->meta_page_url, $payload['data'][0]['event_source_url'] ?? null);
     }
 
     public function test_checkout_get_without_ad_params_does_not_queue_landing_backup(): void
@@ -269,6 +281,58 @@ class MetaCheckoutAdTrafficTest extends TestCase
         $response->assertStatus(422);
         $this->assertSame(0, MetaTrackingEvent::query()->count());
         Queue::assertNothingPushed();
+    }
+
+    public function test_checkout_pixel_events_add_payment_info_queues_for_pending_order(): void
+    {
+        Queue::fake();
+
+        User::factory()->create(['role' => User::ROLE_INFOPRODUTOR, 'tenant_id' => 1]);
+        $product = $this->createTestProduct([
+            'checkout_slug' => 'metapayinfo',
+            'conversion_pixels' => [
+                'meta' => [
+                    'enabled' => true,
+                    'entries' => [
+                        ['pixel_id' => '333222111', 'access_token' => 'capitok'],
+                    ],
+                ],
+            ],
+        ]);
+
+        $order = \App\Models\Order::create([
+            'tenant_id' => 1,
+            'product_id' => $product->id,
+            'status' => 'pending',
+            'amount' => 40,
+            'email' => 'buyer@test.com',
+            'payment_method' => 'pix',
+        ]);
+
+        $session = CheckoutSession::create([
+            'tenant_id' => 1,
+            'product_id' => $product->id,
+            'checkout_slug' => 'metapayinfo',
+            'session_token' => 'sess-add-payment',
+            'step' => CheckoutSession::STEP_FORM_FILLED,
+            'order_id' => $order->id,
+        ]);
+
+        $response = $this->post('/checkout/pixel/events', [
+            'checkout_session_token' => $session->session_token,
+            'event_name' => 'AddPaymentInfo',
+            'event_id' => 'pay:'.$order->id,
+            'order_id' => $order->id,
+            'value' => 40,
+            'currency' => 'BRL',
+        ]);
+
+        $response->assertOk()->assertJson(['ok' => true, 'queued' => 1]);
+        $this->assertDatabaseHas('meta_tracking_events', [
+            'event_name' => 'AddPaymentInfo',
+            'event_id' => 'pay:'.$order->id,
+            'context_id' => $order->id,
+        ]);
     }
 
     public function test_checkout_get_with_realistic_long_ad_url(): void

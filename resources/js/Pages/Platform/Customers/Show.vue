@@ -77,6 +77,26 @@ function formatDateOnly(iso) {
     return formatDate(iso);
 }
 
+function accessAsCustomer() {
+    const name = props.customer?.name || props.customer?.email || 'este cliente';
+    if (!confirm(`Abrir o painel de ${name} em uma nova aba?\n\nEsta ficha continua aberta. A outra aba mostra as compras e os acessos dele, sem alterar a conta.`)) {
+        return;
+    }
+    const token = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
+    const form = document.createElement('form');
+    form.method = 'POST';
+    form.action = `/plataforma/clientes/${props.customer.id}/acessar`;
+    form.target = '_blank';
+    const input = document.createElement('input');
+    input.type = 'hidden';
+    input.name = '_token';
+    input.value = token;
+    form.appendChild(input);
+    document.body.appendChild(form);
+    form.submit();
+    form.remove();
+}
+
 function applyFilters() {
     const params = {
         per_page: form.per_page || 25,
@@ -158,8 +178,15 @@ function formatEnrolledAt(iso) {
         </div>
 
         <header class="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900/60">
-            <h1 class="text-xl font-semibold text-zinc-900 dark:text-white">{{ display(customer.name) }}</h1>
-            <p class="mt-1 text-sm text-zinc-500">ID {{ customer.id }} · {{ display(customer.email) }}</p>
+            <div class="flex flex-wrap items-start justify-between gap-3">
+                <div class="min-w-0">
+                    <h1 class="text-xl font-semibold text-zinc-900 dark:text-white">{{ display(customer.name) }}</h1>
+                    <p class="mt-1 text-sm text-zinc-500">ID {{ customer.id }} · {{ display(customer.email) }}</p>
+                </div>
+                <Button type="button" size="sm" variant="secondary" @click="accessAsCustomer">
+                    Acessar como cliente
+                </Button>
+            </div>
             <p
                 v-if="customer.is_infoprodutor"
                 class="mt-2 inline-flex rounded-lg bg-amber-50 px-2 py-1 text-xs font-medium text-amber-800 dark:bg-amber-950/40 dark:text-amber-200"

@@ -87,6 +87,7 @@ class AccessEmailService
 
         $customerName = $order->user?->name ?? explode('@', $customerEmail)[0] ?? 'Cliente';
         $linkAcesso = $this->resolveAccessLinkForProduct($product, $order->user);
+        $linkPlataforma = $this->resolvePlatformLoginLink();
         $linkEsqueciSenha = $this->resolveForgotPasswordLink();
 
         if (config('app.debug') && $product->type === Product::TYPE_AREA_MEMBROS) {
@@ -138,9 +139,17 @@ class AccessEmailService
         if ($isRenewal) {
             $subject = 'Renovação confirmada — '.$product->name;
             $bodyHtml = $this->buildRenewalSuccessBody($customerName, $product->name);
+            $logoUrl = $this->resolveAccessEmailLogo($tenantIdForMail, $template);
+            if ($logoUrl !== null) {
+                $bodyHtml = $this->prependLogoToBody($logoUrl, $bodyHtml);
+            }
         } elseif ($product->type === Product::TYPE_AREA_MEMBROS_EXTERNA) {
             $subject = 'Compra confirmada — '.$product->name;
             $bodyHtml = $this->buildExternalMemberAreaPendingBody($customerName, $product->name);
+            $logoUrl = $this->resolveAccessEmailLogo($tenantIdForMail, $template);
+            if ($logoUrl !== null) {
+                $bodyHtml = $this->prependLogoToBody($logoUrl, $bodyHtml);
+            }
         } elseif ($product->type === Product::TYPE_LINK) {
             $subject = 'Seu acesso a '.$product->name;
             $externalLink = $order->user
@@ -154,12 +163,15 @@ class AccessEmailService
                 $customerEmail,
                 $linkEsqueciSenha,
             );
-            $brandingLogo = BrandingEmailData::forTenant($tenantIdForMail)['logo_url'] ?? null;
-            if (is_string($brandingLogo) && $brandingLogo !== '') {
-                $bodyHtml = $this->prependLogoToBody($brandingLogo, $bodyHtml);
+            $logoUrl = $this->resolveAccessEmailLogo($tenantIdForMail, $template);
+            if ($logoUrl !== null) {
+                $bodyHtml = $this->prependLogoToBody($logoUrl, $bodyHtml);
             }
         } else {
             $bodyHtmlBeforeReplace = $bodyHtml;
+            if ($product->type === Product::TYPE_AREA_MEMBROS) {
+                $bodyHtml = $this->adaptLegacyMemberAreaCopy($bodyHtml);
+            }
             $senhaDisplay = $senha !== ''
                 ? $senha
                 : 'Não disponível — use Esqueci minha senha na tela de login';
@@ -167,22 +179,24 @@ class AccessEmailService
                 '{nome_cliente}' => $customerName,
                 '{nome_produto}' => $product->name,
                 '{link_acesso}' => $linkAcesso,
+                '{link_plataforma}' => $linkPlataforma,
                 '{email_cliente}' => $customerEmail,
                 '{senha}' => $senhaDisplay,
                 '{link_esqueci_senha}' => $linkEsqueciSenha,
             ];
             $subject = str_replace(array_keys($replace), array_values($replace), $subject);
             $bodyHtml = str_replace(array_keys($replace), array_values($replace), $bodyHtml);
-            $brandingLogo = BrandingEmailData::forTenant($tenantIdForMail)['logo_url'] ?? null;
-            if (is_string($brandingLogo) && $brandingLogo !== '') {
-                $bodyHtml = $this->prependLogoToBody($brandingLogo, $bodyHtml);
+            $logoUrl = $this->resolveAccessEmailLogo($tenantIdForMail, $template);
+            if ($logoUrl !== null) {
+                $bodyHtml = $this->prependLogoToBody($logoUrl, $bodyHtml);
             }
             if ($product->type === Product::TYPE_AREA_MEMBROS) {
                 if ($senha !== '' && ! str_contains($bodyHtmlBeforeReplace, '{senha}')) {
-                    $bodyHtml = $this->appendMemberAreaPasswordCredentialsBlock($bodyHtml, $customerEmail, $senha);
+                    $bodyHtml = $this->appendMemberAreaPasswordCredentialsBlock($bodyHtml, $customerEmail, $senha, $linkPlataforma);
                 } elseif ($senha === '' && ! str_contains($bodyHtmlBeforeReplace, '{link_esqueci_senha}')) {
                     $bodyHtml = $this->appendMemberAreaForgotPasswordBlock($bodyHtml, $customerEmail, $linkEsqueciSenha);
                 }
+                $bodyHtml = $this->ensureMemberAreaPurchaseLinks($bodyHtml, $linkAcesso, $linkPlataforma);
             }
         }
 
@@ -451,12 +465,12 @@ class AccessEmailService
 
     /**
      * Link usado no e-mail de acesso e na página de obrigado.
-     * Área de membros: sempre a tela de login da plataforma (aluno vê todos os produtos).
+     * Área de membros: URL da área de cursos (/m/{slug}, domínio ou subdomínio).
      */
     public function resolveAccessLinkForProduct(Product $product, ?User $user = null): string
     {
         if ($product->type === Product::TYPE_AREA_MEMBROS) {
-            return $this->resolvePlatformLoginLink();
+            return $this->resolveMemberAreaUrl($product);
         }
 
         if ($user && $this->deliverableAccessLinks->tracks($product)) {
@@ -501,6 +515,7 @@ class AccessEmailService
 
         $customerName = $user->name ?: explode('@', $customerEmail)[0] ?? 'Cliente';
         $linkAcesso = $this->resolveAccessLinkForProduct($product, $user);
+        $linkPlataforma = $this->resolvePlatformLoginLink();
         $linkEsqueciSenha = $this->resolveForgotPasswordLink();
 
         if ($product->type === Product::TYPE_LINK) {
@@ -515,10 +530,14 @@ class AccessEmailService
             );
         } else {
             $bodyHtmlBeforeReplace = $bodyHtml;
+            if ($product->type === Product::TYPE_AREA_MEMBROS) {
+                $bodyHtml = $this->adaptLegacyMemberAreaCopy($bodyHtml);
+            }
             $replace = [
                 '{nome_cliente}' => $customerName,
                 '{nome_produto}' => $product->name,
                 '{link_acesso}' => $linkAcesso,
+                '{link_plataforma}' => $linkPlataforma,
                 '{email_cliente}' => $customerEmail,
                 '{senha}' => 'Não disponível — use Esqueci minha senha na tela de login',
                 '{link_esqueci_senha}' => $linkEsqueciSenha,
@@ -531,16 +550,35 @@ class AccessEmailService
             ) {
                 $bodyHtml = $this->appendMemberAreaForgotPasswordBlock($bodyHtml, $customerEmail, $linkEsqueciSenha);
             }
+            if ($product->type === Product::TYPE_AREA_MEMBROS) {
+                $bodyHtml = $this->ensureMemberAreaPurchaseLinks($bodyHtml, $linkAcesso, $linkPlataforma);
+            }
         }
 
-        $brandingLogo = BrandingEmailData::forTenant($product->tenant_id)['logo_url'] ?? null;
-        if (is_string($brandingLogo) && $brandingLogo !== '') {
-            $bodyHtml = $this->prependLogoToBody($brandingLogo, $bodyHtml);
-        } elseif (! empty($template['logo_url'])) {
-            $bodyHtml = $this->prependLogoToBody($template['logo_url'], $bodyHtml);
+        $logoUrl = $this->resolveAccessEmailLogo($product->tenant_id, $template);
+        if ($logoUrl !== null) {
+            $bodyHtml = $this->prependLogoToBody($logoUrl, $bodyHtml);
         }
 
         return $this->sendAccessMailableWithFallback($subject, $bodyHtml, $customerEmail, $product->tenant_id, $template, $product);
+    }
+
+    /**
+     * Prioriza a logo do template do produto; se vazia, usa a logo da marca da plataforma.
+     */
+    private function resolveAccessEmailLogo(?int $tenantId, array $template): ?string
+    {
+        $productLogo = trim((string) ($template['logo_url'] ?? ''));
+        if ($productLogo !== '') {
+            return $productLogo;
+        }
+
+        $brandingLogo = BrandingEmailData::forTenant($tenantId)['logo_url'] ?? null;
+        if (is_string($brandingLogo) && trim($brandingLogo) !== '') {
+            return trim($brandingLogo);
+        }
+
+        return null;
     }
 
     private function resolveLinkAcesso(Product $product): string
@@ -560,6 +598,66 @@ class AccessEmailService
         return rtrim(PublicAppUrl::base(), '/').'/login';
     }
 
+    private function resolveMemberAreaUrl(Product $product): string
+    {
+        $product->loadMissing('memberAreaDomain');
+        $url = trim(app(MemberAreaResolver::class)->baseUrlForProduct($product));
+
+        return $url !== '' ? $url : $this->resolvePlatformLoginLink();
+    }
+
+    /**
+     * Modelos antigos falavam só do login da plataforma. O botão passa a abrir a área de cursos.
+     */
+    private function adaptLegacyMemberAreaCopy(string $bodyHtml): string
+    {
+        if (! str_contains($bodyHtml, 'ver todos os seus produtos em Minha área')) {
+            return $bodyHtml;
+        }
+
+        $bodyHtml = str_replace(
+            'Clique no botão abaixo para fazer login e ver todos os seus produtos em Minha área:',
+            'Clique no botão abaixo para entrar na sua área de cursos:',
+            $bodyHtml
+        );
+        $bodyHtml = str_replace('>Fazer login</a>', '>Entrar na área de cursos</a>', $bodyHtml);
+        $bodyHtml = str_replace('Na tela de login, entre com:', 'Na área de cursos, entre com:', $bodyHtml);
+
+        return $bodyHtml;
+    }
+
+    private function ensureMemberAreaPurchaseLinks(string $bodyHtml, string $memberAreaUrl, string $platformUrl): string
+    {
+        if ($memberAreaUrl !== '' && ! str_contains($bodyHtml, $memberAreaUrl)) {
+            $course = '<p style="margin:24px 0 8px;font-size:15px;line-height:1.6;color:#334155;"><strong>Área de cursos</strong></p>'
+                .'<p style="margin:0 0 12px;text-align:center;"><a href="'.e($memberAreaUrl).'" style="display:inline-block;padding:14px 28px;background:#0ea5e9;color:#ffffff;text-decoration:none;font-weight:600;font-size:16px;border-radius:8px;">Entrar na área de cursos</a></p>'
+                .'<p style="margin:0 0 8px;font-size:13px;line-height:1.5;color:#64748b;word-break:break-all;"><a href="'.e($memberAreaUrl).'" style="color:#0ea5e9;">'.e($memberAreaUrl).'</a></p>';
+            $bodyHtml = $this->insertBeforeEmailFooter($bodyHtml, $course);
+        }
+
+        if ($platformUrl !== '' && ! str_contains($bodyHtml, $platformUrl)) {
+            $purchases = '<p style="margin:20px 0 0;font-size:15px;line-height:1.6;color:#334155;">Aqui você pode ver todas as suas compras: <a href="'.e($platformUrl).'" style="color:#0ea5e9;font-weight:600;word-break:break-all;">'.e($platformUrl).'</a></p>';
+            $bodyHtml = $this->insertBeforeEmailFooter($bodyHtml, $purchases);
+        }
+
+        return $bodyHtml;
+    }
+
+    private function insertBeforeEmailFooter(string $bodyHtml, string $html): string
+    {
+        $marker = 'background:#f1f5f9';
+        $pos = strpos($bodyHtml, $marker);
+        if ($pos === false) {
+            return $bodyHtml.$html;
+        }
+        $tr = strrpos(substr($bodyHtml, 0, $pos), '<tr>');
+        if ($tr === false) {
+            return $bodyHtml.$html;
+        }
+
+        return substr($bodyHtml, 0, $tr).$html.substr($bodyHtml, $tr);
+    }
+
     private function resolveForgotPasswordLink(): string
     {
         return rtrim(PublicAppUrl::base(), '/').'/esqueci-senha';
@@ -574,13 +672,17 @@ class AccessEmailService
         return EmailLogoHtml::wrap($logoUrl).$bodyHtml;
     }
 
-    private function appendMemberAreaPasswordCredentialsBlock(string $bodyHtml, string $email, string $password): string
+    private function appendMemberAreaPasswordCredentialsBlock(string $bodyHtml, string $email, string $password, string $platformUrl = ''): string
     {
+        $purchases = $platformUrl !== ''
+            ? '<p style="margin:16px 0 0;font-size:14px;line-height:1.5;color:#78350f;">Aqui você pode ver todas as suas compras: <a href="'.e($platformUrl).'" style="color:#2563eb;font-weight:600;word-break:break-all;">'.e($platformUrl).'</a></p>'
+            : '';
         $block = '<div style="margin:24px 0 0;padding:20px;background:#fffbeb;border:1px solid #f59e0b;border-radius:8px;">'
             .'<p style="margin:0 0 10px;font-size:14px;line-height:1.5;color:#92400e;"><strong>Guarde seus dados de acesso</strong></p>'
-            .'<p style="margin:0 0 16px;font-size:14px;line-height:1.5;color:#78350f;">Use o botão acima para abrir a tela de login. Depois, entre com:</p>'
+            .'<p style="margin:0 0 16px;font-size:14px;line-height:1.5;color:#78350f;">Use o botão acima para entrar na área de cursos. Depois, entre com:</p>'
             .'<p style="margin:0 0 10px;font-size:14px;color:#0f172a;"><strong>E-mail:</strong> '.e($email).'</p>'
             .'<p style="margin:0;font-size:15px;color:#0f172a;font-family:Consolas,\'Courier New\',monospace;font-weight:600;letter-spacing:0.02em;word-break:break-all;"><strong>Senha:</strong> '.e($password).'</p>'
+            .$purchases
             .'</div>';
 
         return $bodyHtml.$block;
@@ -669,12 +771,11 @@ class AccessEmailService
 
         $subject = 'Pedido confirmado — '.$product->name;
         $bodyHtml = $this->buildPhysicalProductConfirmationBody($order, $customerName, $product->name);
-        $brandingLogo = BrandingEmailData::forTenant($tenantIdForMail)['logo_url'] ?? null;
-        if (is_string($brandingLogo) && $brandingLogo !== '') {
-            $bodyHtml = $this->prependLogoToBody($brandingLogo, $bodyHtml);
-        }
-
         $template = array_merge(Product::defaultEmailTemplate(), ($product->checkout_config ?? [])['email_template'] ?? []);
+        $logoUrl = $this->resolveAccessEmailLogo($tenantIdForMail, $template);
+        if ($logoUrl !== null) {
+            $bodyHtml = $this->prependLogoToBody($logoUrl, $bodyHtml);
+        }
 
         $sendResult = $this->sendAccessMailableWithFallback($subject, $bodyHtml, $customerEmail, $tenantIdForMail, $template, $product);
         if ($sendResult->success) {

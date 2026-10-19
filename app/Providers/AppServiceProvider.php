@@ -3,6 +3,9 @@
 namespace App\Providers;
 
 use App\Events\BoletoGenerated;
+use App\Services\OutboundEmailRecorder;
+use Illuminate\Mail\Events\MessageSending;
+use Illuminate\Mail\Events\MessageSent;
 use App\Events\OrderCompleted;
 use App\Events\OrderRejected;
 use App\Events\PixGenerated;
@@ -19,6 +22,7 @@ use App\Listeners\RecordAffiliateCommissionOnOrderCompleted;
 use App\Listeners\RecordReferralCommissionOnOrderCompleted;
 use App\Listeners\RevokeProductAccessOnOrderRejected;
 use App\Listeners\SendAccessEmailOnOrderCompleted;
+use App\Listeners\SendPlatformGa4PurchaseOnOrderCompleted;
 use App\Listeners\SendApiApplicationWebhookListener;
 use App\Listeners\SendPanelPushOnBoletoGenerated;
 use App\Listeners\SendPanelPushOnOrderCompleted;
@@ -52,7 +56,14 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        //
+        // O provider de e-mail do framework é adiado e regrava mail.manager.
+        // Registrar primeiro e substituir em seguida mantém o histórico de envios.
+        $this->app->register(\Illuminate\Mail\MailServiceProvider::class);
+        $this->app->singleton('mail.manager', function ($app) {
+            return new \App\Mail\LoggingMailManager($app);
+        });
+        $this->app->forgetInstance('mail.manager');
+        $this->app->forgetInstance('mailer');
     }
 
     /**
@@ -232,6 +243,12 @@ class AppServiceProvider extends ServiceProvider
             Cache::put('queue_heartbeat', now()->toIso8601String(), now()->addMinutes(5));
         });
 
+        Event::listen(MessageSending::class, function (MessageSending $event): void {
+            app(OutboundEmailRecorder::class)->recordSending($event->message, $event->data);
+        });
+        Event::listen(MessageSent::class, function (MessageSent $event): void {
+            app(OutboundEmailRecorder::class)->markSent($event->message);
+        });
         Event::listen(OrderCompleted::class, SendPanelPushOnOrderCompleted::class, 100);
         Event::listen(OrderCompleted::class, CreditTenantWalletOnOrderCompleted::class);
         Event::listen(OrderCompleted::class, NotifyCoproducersOnOrderCompleted::class);
@@ -242,6 +259,7 @@ class AppServiceProvider extends ServiceProvider
         Event::listen(OrderCompleted::class, IncrementCouponUsageOnOrderCompleted::class);
         Event::listen(OrderCompleted::class, GrantMemberModuleAccessOnOrderCompleted::class);
         Event::listen(OrderCompleted::class, SendAccessEmailOnOrderCompleted::class);
+        Event::listen(OrderCompleted::class, SendPlatformGa4PurchaseOnOrderCompleted::class);
         Event::listen(OrderRejected::class, RevokeProductAccessOnOrderRejected::class);
         Event::listen(PixGenerated::class, SendPanelPushOnPixGenerated::class);
         Event::listen(BoletoGenerated::class, SendPanelPushOnBoletoGenerated::class);

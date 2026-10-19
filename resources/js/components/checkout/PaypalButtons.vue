@@ -4,7 +4,6 @@ import axios from 'axios';
 
 const props = defineProps({
     clientId: { type: String, required: true },
-    currency: { type: String, default: 'BRL' },
     locale: { type: String, default: 'pt_BR' },
     disabled: { type: Boolean, default: false },
     buildPayload: { type: Function, required: true },
@@ -30,10 +29,11 @@ function paypalLocale(locale) {
     return 'pt_BR';
 }
 
-function sdkUrl(clientId, currency) {
+function sdkUrl(clientId) {
     const params = new URLSearchParams({
         'client-id': clientId,
-        currency: (currency || 'BRL').toUpperCase(),
+        // Conta recebedora no Brasil só aceita BRL. A PayPal converte para o comprador.
+        currency: 'BRL',
         intent: 'capture',
         'disable-funding': 'card,credit,paylater,venmo',
         locale: paypalLocale(props.locale),
@@ -41,7 +41,7 @@ function sdkUrl(clientId, currency) {
     return `https://www.paypal.com/sdk/js?${params.toString()}`;
 }
 
-function loadSdk(clientId, currency) {
+function loadSdk(clientId) {
     return new Promise((resolve, reject) => {
         if (typeof window === 'undefined') {
             reject(new Error('PayPal indisponível.'));
@@ -54,7 +54,7 @@ function loadSdk(clientId, currency) {
         document.querySelectorAll('script[data-stacker-paypal-sdk]').forEach((el) => el.remove());
         delete window.paypal;
         const script = document.createElement('script');
-        script.src = sdkUrl(clientId, currency);
+        script.src = sdkUrl(clientId);
         script.async = true;
         script.dataset.stackerPaypalSdk = '1';
         script.onload = () => {
@@ -78,7 +78,7 @@ async function renderButtons() {
     loading.value = true;
     errorMessage.value = '';
     try {
-        const paypal = await loadSdk(props.clientId.trim(), props.currency);
+        const paypal = await loadSdk(props.clientId.trim());
         if (buttonsInstance && typeof buttonsInstance.close === 'function') {
             try { buttonsInstance.close(); } catch (_) {}
         }
@@ -145,7 +145,7 @@ async function renderButtons() {
 }
 
 watch(
-    () => [props.clientId, props.currency, props.locale, props.disabled],
+    () => [props.clientId, props.locale, props.disabled],
     () => { void renderButtons(); }
 );
 

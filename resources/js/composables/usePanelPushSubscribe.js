@@ -16,6 +16,55 @@ let firebaseMessaging = null;
 let permissionCheckInterval = null;
 let swLifecycleRegistered = false;
 let mountCount = 0;
+let fcmForegroundAttached = false;
+
+function showForegroundPush(payload) {
+    const data = payload?.data || {};
+    const notification = payload?.notification || {};
+    const title = data.title || notification.title || 'Notificação';
+    const body = data.body || notification.body || '';
+    if (!title && !body) return;
+
+    const url = data.url || null;
+    const tag = data.tag || url || 'panel-fcm-push';
+    const options = {
+        body,
+        tag,
+        data: { url },
+    };
+
+    const show = (reg) => {
+        if (reg?.showNotification) {
+            return reg.showNotification(title, options);
+        }
+        if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+            const n = new Notification(title, options);
+            if (url) {
+                n.onclick = () => {
+                    window.focus();
+                    window.location.assign(url);
+                };
+            }
+        }
+    };
+
+    if (typeof navigator !== 'undefined' && navigator.serviceWorker?.getRegistration) {
+        navigator.serviceWorker.getRegistration('/painel/').then(show).catch(() => show(null));
+        return;
+    }
+
+    show(null);
+}
+
+function attachFcmForegroundHandler(onMessage) {
+    if (!firebaseMessaging || fcmForegroundAttached || typeof onMessage !== 'function') return;
+    fcmForegroundAttached = true;
+    // FCM em primeiro plano não passa pelo SW: toca o som direto aqui.
+    onMessage(firebaseMessaging, (payload) => {
+        showForegroundPush(payload);
+        playPanelNotificationSound();
+    });
+}
 
 /* ── Som de notificação (cash.mp3) ────────────────────────────────────────
  * O service worker não tem acesso a Audio; ele avisa as janelas abertas via
@@ -381,10 +430,7 @@ export function usePanelPushSubscribe() {
             return false;
         }
 
-        // FCM em primeiro plano não passa pelo SW: toca o som direto aqui.
-        onMessage(firebaseMessaging, () => {
-            playPanelNotificationSound();
-        });
+        attachFcmForegroundHandler(onMessage);
 
         return syncFcmToServer(token);
     }
@@ -504,16 +550,6 @@ export function usePanelPushSubscribe() {
             const { data } = await axios.get('/painel/notifications', { params: { per_page: 1 } });
             if (data?.push_needs_resubscribe) {
                 pushNeedsResubscribe.value = true;
-            }
-            if (data?.push_subscribed && !data?.push_needs_resubscribe) {
-                pushRegistered.value = true;
-                pushNeedsResubscribe.value = false;
-                if (vapidPublic.value) {
-                    setStoredVapidPublic(vapidPublic.value);
-                }
-                return true;
-            }
-            if (data?.push_needs_resubscribe) {
                 return registerAndSubscribe();
             }
         } catch (_) {}
@@ -522,12 +558,13 @@ export function usePanelPushSubscribe() {
             if (pushProvider.value === 'fcm') {
                 const cfg = firebaseClientConfig.value;
                 if (!cfg?.firebase) return false;
-                const { initializeApp, getMessaging, getToken, isSupported } = await loadFirebaseModules();
+                const { initializeApp, getMessaging, getToken, onMessage, isSupported } = await loadFirebaseModules();
                 if (!(await isSupported())) return false;
                 const reg = await registerFirebaseSw();
                 if (!reg) return false;
                 if (!firebaseApp) firebaseApp = initializeApp(cfg.firebase);
                 firebaseMessaging = getMessaging(firebaseApp, { serviceWorkerRegistration: reg });
+                attachFcmForegroundHandler(onMessage);
                 const token = await getToken(firebaseMessaging, {
                     vapidKey: cfg.firebase_web_vapid_key,
                     serviceWorkerRegistration: reg,

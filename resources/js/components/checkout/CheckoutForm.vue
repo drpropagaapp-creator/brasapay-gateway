@@ -22,7 +22,9 @@ import { requestCieloPaymentToken, formatCieloSopHolderName } from '@/composable
 import { loadCajuPaySdk } from '@/composables/useCajuPaySdk';
 import { isValidCpf } from '@/utils/brazilianDocuments.js';
 import { navigateAfterCheckout } from '@/lib/checkoutRedirect.js';
-import { trackCheckoutPurchase } from '@/composables/useCheckoutPurchaseTracking.js';
+import { trackCheckoutAddPaymentInfo, trackCheckoutPurchase } from '@/composables/useCheckoutPurchaseTracking.js';
+import { applyMetaAdvancedMatching } from '@/composables/useMetaCheckoutTracking.js';
+import { splitCustomerName } from '@/lib/metaTracking/browserPixel.js';
 import { getMetricsSessionKey } from '@/lib/metricsTracking.js';
 import CheckoutLegalFooter from './CheckoutLegalFooter.vue';
 import { usePlatformBranding } from '@/composables/usePlatformBranding';
@@ -186,6 +188,9 @@ const props = defineProps({
     productOfferId: { type: Number, default: null },
     subscriptionPlanId: { type: Number, default: null },
     checkoutSessionToken: { type: String, default: '' },
+    contentKey: { type: String, default: '' },
+    contentName: { type: String, default: '' },
+    tenantId: { type: [Number, String], default: null },
     /** Código ref de afiliado (query `ref` ou servidor). */
     affiliateRef: { type: String, default: '' },
     orderBumps: { type: Array, default: () => [] },
@@ -349,11 +354,28 @@ async function completeApprovedPurchase(orderId, redirectUrl, triggerType = 'app
     cardApprovedRedirectUrl.value = url;
 
     const api = checkoutConversionPixelsRef?.value ?? null;
+    const customer = currentMetaCustomer();
+    const purchaseValue = Math.max(0, Number(props.checkoutTotalBrl) || 0);
+    await trackCheckoutAddPaymentInfo({
+        orderId,
+        checkoutSessionToken: props.checkoutSessionToken || '',
+        value: purchaseValue,
+        currency: 'BRL',
+        contentKey: props.contentKey || '',
+        contents: currentMetaContents(),
+        contentName: props.contentName || '',
+        customer,
+        pixels: props.conversionPixels || {},
+    });
     await trackCheckoutPurchase({
         orderId,
         checkoutSessionToken: props.checkoutSessionToken || '',
-        value: Math.max(0, Number(props.checkoutTotalBrl) || 0),
+        value: purchaseValue,
         currency: 'BRL',
+        contentKey: props.contentKey || '',
+        contents: currentMetaContents(),
+        contentName: props.contentName || '',
+        customer,
         triggerType,
         pixels: props.conversionPixels || {},
         conversionPixelsApi: api,
@@ -364,10 +386,59 @@ async function completeApprovedPurchase(orderId, redirectUrl, triggerType = 'app
     navigateAfterCheckout(url);
 }
 
+function sleepMs(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+const CARD_STATUS_PENDING = ['pending', 'in_process', 'in_mediation', 'authorized', 'processing', 'requires_action'];
+
+async function pollCardOrderUntilSettled(statusToken, orderId) {
+    const started = Date.now();
+    while (Date.now() - started < 90000) {
+        try {
+            const res = await axios.get('/checkout/order-status', {
+                params: { token: statusToken },
+                headers: { Accept: 'application/json' },
+                withCredentials: true,
+            });
+            const data = res?.data || {};
+            if (data.status === 'completed' && data.redirect_url) {
+                await completeApprovedPurchase(data.order_id || orderId, data.redirect_url, 'approved');
+                return 'completed';
+            }
+            if (['rejected', 'cancelled', 'failed'].includes(String(data.status || ''))) {
+                return 'rejected';
+            }
+        } catch (_) {
+            /* segue tentando */
+        }
+        await sleepMs(2000);
+    }
+    return 'timeout';
+}
+
+async function settleCardPaymentByPolling(data) {
+    const token = data?.status_token;
+    if (!token) return 'timeout';
+    const outcome = await pollCardOrderUntilSettled(token, data.order_id);
+    if (outcome === 'rejected') {
+        cardRefusedMessage.value = 'Pagamento recusado. Verifique os dados do cartão e tente novamente.';
+        showCardRefusedModal.value = true;
+    } else if (outcome !== 'completed') {
+        cardRefusedMessage.value = 'Pagamento em processamento. Você receberá a confirmação por e-mail.';
+        showCardRefusedModal.value = true;
+    }
+    return outcome;
+}
+
 const customerFields = computed(() => props.config?.customer_fields ?? { name: true, cpf: true, phone: true, coupon: false });
 const showName = computed(() => customerFields.value.name !== false);
+const pixUsesStripe = computed(() => {
+    const methods = Array.isArray(props.availablePaymentMethods) ? props.availablePaymentMethods : [];
+    return methods.some((method) => method?.id === 'pix' && method?.gateway_slug === 'stripe');
+});
 const showCpf = computed(() => {
-    if (form.payment_method === 'open_finance') {
+    if (form.payment_method === 'open_finance' || pixUsesStripe.value) {
         return true;
     }
     return customerFields.value.cpf === true && props.displayCurrency === 'BRL';
@@ -427,6 +498,11 @@ const isCajupayCardOnly = computed(() => isCajuPaySdkFlow.value && form.payment_
 const isCajupayCheckoutUi = computed(() => isCajuPaySdkFlow.value);
 /** Apple/Google Pay CajuPay: o SDK exibe o botão de pagar; escondemos o submit principal do formulário. */
 const hidePrimarySubmitForCajupayWallet = computed(() => isCajuPayWalletSdk.value);
+const isStripeWallet = computed(() =>
+    (form.payment_method === 'apple_pay' || form.payment_method === 'google_pay')
+    && currentMethodGatewaySlug.value === 'stripe'
+);
+const hidePrimarySubmitForStripeWallet = computed(() => isStripeWallet.value);
 const hidePrimarySubmitForPaypal = computed(() => isPaypalMethodSelected.value);
 
 const primarySubmitButtonLabel = computed(() => {
@@ -695,6 +771,39 @@ let trackTimeout = null;
 let contactSyncTimeout = null;
 const trackStepSent = ref({ form_started: false, form_filled: false });
 
+function currentMetaCustomer() {
+    const phone = showPhone.value ? `${form.country_code || ''}${phoneDigits.value || ''}` : '';
+    return {
+        email: form.email || '',
+        phone,
+        tenantId: props.tenantId,
+        ...splitCustomerName(form.name),
+    };
+}
+
+function currentMetaContents() {
+    const selected = new Set((props.orderBumpIds || []).map((id) => String(id)));
+    const bumps = (props.orderBumps || []).filter((bump) => selected.has(String(bump.id)));
+    const bumpTotal = bumps.reduce((sum, bump) => sum + (Number(bump.amount_brl) || 0), 0);
+    const total = Math.max(0, Number(props.checkoutTotalBrl) || 0);
+    const mainPrice = Math.max(0, Math.round((total - bumpTotal) * 100) / 100);
+    const rows = [];
+    const key = String(props.contentKey || '').trim();
+    if (key) {
+        rows.push({ id: key, quantity: 1, item_price: mainPrice });
+    }
+    bumps.forEach((bump) => {
+        const id = String(bump.content_id || '').trim();
+        if (!id) return;
+        rows.push({
+            id,
+            quantity: 1,
+            item_price: Math.max(0, Number(bump.amount_brl) || 0),
+        });
+    });
+    return rows;
+}
+
 function buildTrackContactPayload(email, name) {
     const cpf = (form.cpf || '').replace(/\D/g, '');
     const phone = (showPhone.value ? `${form.country_code || ''}${phoneDigits.value || ''}` : '').trim();
@@ -756,6 +865,9 @@ watch(
         const needsName = (props.config?.customer_fields?.name ?? true) !== false;
         if (hasEmail && (!needsName || hasName) && !trackStepSent.value.form_filled) {
             callTrackApi('form_filled', email, name);
+        }
+        if (hasEmail) {
+            applyMetaAdvancedMatching(props.conversionPixels || {}, currentMetaCustomer()).catch(() => {});
         }
         if (hasEmail && (trackStepSent.value.form_started || trackStepSent.value.form_filled)) {
             syncContactFields(email, name);
@@ -1064,6 +1176,11 @@ const stripeCardRef = ref(null);
 const stripeInstance = ref(null);
 const stripeCardElement = ref(null);
 const stripeElements = ref(null);
+const stripeWalletRef = ref(null);
+const stripeWalletButton = ref(null);
+const stripeWalletMessage = ref('');
+let stripeWalletRequest = null;
+let stripeWalletGeneration = 0;
 
 // Mercado Pago Card Payment Brick (cartão)
 const mercadopagoBrickContainer = ref(null);
@@ -1157,6 +1274,17 @@ watch(
     () => [cardHolderName.value, cardNumberDigits.value, cardExpMonth.value, cardExpYear.value, cardCvv.value],
     () => { cardFormError.value = ''; },
     { deep: true }
+);
+
+watch(
+    () => [form.payment_method, isStripeWallet.value, props.cardStripePublishableKey, props.checkoutTotalBrl],
+    async ([, active]) => {
+        destroyStripeWallet();
+        if (!active) return;
+        await nextTick();
+        await initStripeWallet();
+    },
+    { immediate: true }
 );
 
 watch(
@@ -1609,6 +1737,7 @@ onBeforeUnmount(() => {
     stopCajuPayPolling();
     if (cajupaySessionDebounce) clearTimeout(cajupaySessionDebounce);
     destroyMercadopagoBrick();
+    destroyStripeWallet();
     resetCajuPaySessionState();
 });
 
@@ -1655,6 +1784,147 @@ async function initStripeCardElement() {
         stripeCardElement.value = cardElement;
     } catch (e) {
         console.warn('Stripe init failed', e);
+    }
+}
+
+function destroyStripeWallet() {
+    stripeWalletGeneration += 1;
+    stripeWalletMessage.value = '';
+    try {
+        stripeWalletButton.value?.unmount?.();
+    } catch (_) {}
+    stripeWalletButton.value = null;
+    stripeWalletRequest = null;
+    if (stripeWalletRef.value) {
+        stripeWalletRef.value.innerHTML = '';
+    }
+}
+
+function stripeWalletAmountCents() {
+    const total = Math.max(0, Number(props.checkoutTotalBrl) || 0);
+    return Math.round(total * 100);
+}
+
+async function submitStripeWalletPayment(paymentMethodId) {
+    const payload = {
+        product_id: form.product_id,
+        payment_method: form.payment_method,
+        email: form.email,
+        name: showName.value ? form.name : '',
+        cpf: showCpf.value ? (form.cpf || '').replace(/\D/g, '') : '',
+        phone: showPhone.value ? form.country_code + phoneDigits.value : '',
+        coupon_code: (form.coupon_code || '').trim() || null,
+        payment_token: paymentMethodId,
+        installments: 1,
+    };
+    if (props.productOfferId) payload.product_offer_id = props.productOfferId;
+    if (props.subscriptionPlanId) payload.subscription_plan_id = props.subscriptionPlanId;
+    if (props.checkoutSessionToken) payload.checkout_session_token = props.checkoutSessionToken;
+    if (props.displayCurrency) payload.display_currency = props.displayCurrency;
+    if (Array.isArray(props.orderBumpIds) && props.orderBumpIds.length > 0) {
+        payload.order_bump_ids = props.orderBumpIds.map((id) => (typeof id === 'number' ? id : parseInt(id, 10))).filter((n) => !Number.isNaN(n));
+    }
+    appendUtmsAndAffiliate(payload);
+    const res = await axios.post('/checkout', payload, {
+        headers: {
+            Accept: 'application/json',
+            'X-Requested-With': 'XMLHttpRequest',
+            'X-XSRF-TOKEN': getCsrfToken(),
+        },
+        withCredentials: true,
+    });
+    const data = res?.data;
+    if (data?.requires_action && data.client_secret && stripeInstance.value) {
+        const { error } = await stripeInstance.value.confirmCardPayment(data.client_secret);
+        if (error) {
+            throw new Error(error.message || 'Falha na confirmação do pagamento.');
+        }
+    }
+    if (data?.status_token && !isCardPaymentApprovedStatus(data.status)) {
+        await settleCardPaymentByPolling(data);
+        return;
+    }
+    if (data?.success && isCardPaymentApprovedStatus(data.status)) {
+        const url = data.redirect_url || (data.order_id ? `/checkout/obrigado?order_id=${data.order_id}` : null);
+        if (url) {
+            await completeApprovedPurchase(data.order_id, url, 'approved');
+        }
+        return;
+    }
+    throw new Error(data?.message || 'Pagamento não aprovado.');
+}
+
+async function initStripeWallet() {
+    if (!isStripeWallet.value || !props.cardStripePublishableKey?.trim() || !stripeWalletRef.value) return;
+    const generation = ++stripeWalletGeneration;
+    stripeWalletMessage.value = '';
+    const amount = stripeWalletAmountCents();
+    if (amount < 50) {
+        stripeWalletMessage.value = 'O valor mínimo para a carteira Stripe é R$ 0,50.';
+        return;
+    }
+    try {
+        const { loadStripe } = await import('@stripe/stripe-js');
+        const stripe = await loadStripe(props.cardStripePublishableKey.trim());
+        if (!stripe || generation !== stripeWalletGeneration) return;
+        stripeInstance.value = stripe;
+        const paymentRequest = stripe.paymentRequest({
+            country: 'BR',
+            currency: 'brl',
+            total: {
+                label: form.payment_method === 'apple_pay' ? 'Apple Pay' : 'Google Pay',
+                amount,
+            },
+            requestPayerName: true,
+            requestPayerEmail: true,
+        });
+        const availability = await paymentRequest.canMakePayment();
+        if (generation !== stripeWalletGeneration) return;
+        const wantsApple = form.payment_method === 'apple_pay';
+        const available = wantsApple ? Boolean(availability?.applePay) : Boolean(availability?.googlePay);
+        if (!available) {
+            stripeWalletMessage.value = wantsApple
+                ? 'Apple Pay não está disponível neste aparelho ou navegador.'
+                : 'Google Pay não está disponível neste aparelho ou navegador.';
+            return;
+        }
+        const elements = stripe.elements();
+        const button = elements.create('paymentRequestButton', {
+            paymentRequest,
+            style: {
+                paymentRequestButton: {
+                    type: 'buy',
+                    theme: 'dark',
+                    height: '48px',
+                },
+            },
+        });
+        button.mount(stripeWalletRef.value);
+        stripeWalletButton.value = button;
+        stripeWalletRequest = paymentRequest;
+        paymentRequest.on('paymentmethod', async (event) => {
+            if (generation !== stripeWalletGeneration) {
+                event.complete('fail');
+                return;
+            }
+            cardTokenizing.value = true;
+            cardFormError.value = '';
+            try {
+                await submitStripeWalletPayment(event.paymentMethod.id);
+                event.complete('success');
+            } catch (error) {
+                event.complete('fail');
+                cardFormError.value = formatCheckoutCardError(error);
+                cardRefusedMessage.value = cardFormError.value;
+                showCardRefusedModal.value = true;
+            } finally {
+                cardTokenizing.value = false;
+            }
+        });
+    } catch (error) {
+        if (generation === stripeWalletGeneration) {
+            stripeWalletMessage.value = 'Não foi possível carregar a carteira Stripe.';
+        }
     }
 }
 
@@ -1786,8 +2056,20 @@ async function initMercadopagoBrick() {
                                 reject();
                                 return;
                             }
-                            // pending / in_process: não tratar como erro do Brick (doc MP — aguardar webhook).
-                            if (isJson && (payload.pending || ['pending', 'in_process', 'in_mediation', 'authorized'].includes(status))) {
+                            // pending / in_process: consulta o pedido até aprovar, para ainda abrir o upsell.
+                            if (isJson && (payload.pending || CARD_STATUS_PENDING.includes(status))) {
+                                if (payload.status_token) {
+                                    const outcome = await settleCardPaymentByPolling(payload);
+                                    if (outcome === 'completed') {
+                                        resolve();
+                                        return;
+                                    }
+                                    if (outcome === 'rejected') {
+                                        cardFormError.value = cardRefusedMessage.value || 'Pagamento recusado.';
+                                        reject();
+                                        return;
+                                    }
+                                }
                                 cardFormError.value = payload.message
                                     || 'Pagamento em processamento. Você receberá a confirmação em breve.';
                                 resolve();
@@ -2068,6 +2350,11 @@ function submit() {
 
     const isCardLikeSubmit = paymentMethod === 'card' || paymentMethod === 'apple_pay' || paymentMethod === 'google_pay';
 
+    if (isStripeWallet.value) {
+        cardFormError.value = stripeWalletMessage.value || 'Use o botão Apple Pay ou Google Pay para pagar.';
+        return;
+    }
+
     if (isCardLikeSubmit) {
         cardFormError.value = '';
         if (isCajuPaySdkFlow.value) {
@@ -2142,6 +2429,8 @@ function submit() {
                     }
                     if (isJson && data.success && isCardPaymentApprovedStatus(data.status) && data.redirect_url) {
                         await completeApprovedPurchase(data.order_id, data.redirect_url, 'approved');
+                    } else if (isJson && data.status_token && CARD_STATUS_PENDING.includes(String(data.status || '').toLowerCase())) {
+                        await settleCardPaymentByPolling(data);
                     } else if (isJson && !data.success) {
                         const msg = data.message || 'Pagamento não aprovado.';
                         cardFormError.value = typeof msg === 'string' ? msg : 'Pagamento não aprovado.';
@@ -2279,11 +2568,23 @@ function submit() {
                         cardTokenizing.value = false;
                         return;
                     }
+                    if (data.status_token) {
+                        await settleCardPaymentByPolling(data);
+                        return;
+                    }
                     const url = data.redirect_url || (data.order_id ? `/checkout/obrigado?order_id=${data.order_id}` : null);
                     if (url && !url.replace(/\/$/, '').endsWith(window.location.origin + '/checkout')) {
                         await completeApprovedPurchase(data.order_id, url, 'approved');
                         return;
                     }
+                }
+                if (isJson && data.requires_action && typeof data.redirect_url === 'string' && data.redirect_url && !data.client_secret) {
+                    window.location.assign(data.redirect_url);
+                    return;
+                }
+                if (isJson && data.status_token && !isCardPaymentApprovedStatus(data.status) && CARD_STATUS_PENDING.includes(String(data.status || '').toLowerCase())) {
+                    await settleCardPaymentByPolling(data);
+                    return;
                 }
                 if (isJson && data.success) {
                     if (!isCardPaymentApprovedStatus(data.status) && !data.requires_action) {
@@ -2957,8 +3258,18 @@ function submit() {
                 <p v-if="cardFormError" class="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-700" role="alert">
                     {{ cardFormError }}
                 </p>
+                <div v-if="isStripeWallet" class="space-y-3">
+                    <p
+                        v-if="!cardStripePublishableKey?.trim()"
+                        class="rounded-xl border-2 border-amber-200 bg-amber-50/80 px-4 py-3 text-sm font-medium text-amber-800"
+                    >
+                        Configure a Publishable Key da Stripe nas credenciais do gateway.
+                    </p>
+                    <p v-else-if="stripeWalletMessage" class="text-sm text-gray-600">{{ stripeWalletMessage }}</p>
+                    <div ref="stripeWalletRef" class="min-h-[48px]" />
+                </div>
                 <!-- Mercado Pago: Card Payment Brick -->
-                <div v-if="isCardGatewayMercadopago" class="min-h-[280px]">
+                <div v-else-if="isCardGatewayMercadopago" class="min-h-[280px]">
                     <p v-if="!cardMercadopagoPublicKey?.trim()" class="rounded-xl border-2 border-amber-200 bg-amber-50/80 px-4 py-3 text-sm font-medium text-amber-800">
                         Configure a Public Key do Mercado Pago nas credenciais do gateway (cartão).
                     </p>
@@ -3440,7 +3751,7 @@ function submit() {
                 <slot name="before-submit" />
             </div>
             <button
-                v-if="(!isCardPaymentFamily || !isCardGatewayMercadopago) && !hidePrimarySubmitForCajupayWallet && !hidePrimarySubmitForPaypal"
+                v-if="(!isCardPaymentFamily || !isCardGatewayMercadopago) && !hidePrimarySubmitForCajupayWallet && !hidePrimarySubmitForStripeWallet && !hidePrimarySubmitForPaypal"
                 type="submit"
                 data-checkout="form-submit"
                 class="flex w-full items-center justify-center gap-2 rounded-xl px-6 py-4 text-base font-semibold text-white shadow-lg shadow-black/10 transition hover:opacity-95 focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-70"
@@ -3472,7 +3783,6 @@ function submit() {
                 v-if="isPaypalMethodSelected"
                 class="mt-2"
                 :client-id="paypalClientId || ''"
-                :currency="displayCurrency || 'BRL'"
                 :locale="checkoutLocale || 'pt_BR'"
                 :disabled="!paypalButtonsReady"
                 :build-payload="buildPaypalPayload"

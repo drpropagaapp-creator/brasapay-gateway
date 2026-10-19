@@ -22,6 +22,10 @@ Route::get('/admin', function () {
 })->name('admin.portal');
 
 // Storage: servir arquivos de storage/app/public (sem symlink) — deve ser uma das primeiras rotas
+Route::get('/email/abertura/{token}', \App\Http\Controllers\OutboundEmailOpenController::class)
+    ->where('token', '[A-Za-z0-9]{40}')
+    ->name('email.open');
+
 Route::get('/storage/{path}', \App\Http\Controllers\StorageServeController::class)
     ->where('path', '.+')
     ->name('storage.serve');
@@ -652,6 +656,9 @@ Route::prefix('plataforma')->name('plataforma.')->group(function () {
             ->name('clientes.export')
             ->middleware('throttle:10,1');
         Route::get('/clientes/{user}', [\App\Http\Controllers\Platform\CustomersController::class, 'show'])->name('clientes.show');
+        Route::post('/clientes/{user}/acessar', [\App\Http\Controllers\Platform\CustomerImpersonationController::class, 'start'])
+            ->name('clientes.impersonate')
+            ->middleware('throttle:20,1');
         Route::get('/clientes/{user}/produtos/{produto}/dossie', [\App\Http\Controllers\Platform\CustomersController::class, 'dossier'])
             ->name('clientes.acessos.dossie');
         Route::get('/clientes/{user}/produtos/{produto}/dossie/exportar', [\App\Http\Controllers\Platform\CustomersController::class, 'exportDossier'])
@@ -779,6 +786,7 @@ Route::middleware(['auth', 'admin.tenant', 'seller.panel', 'stacker.license', 'r
         ->where('token', '[a-z0-9]{32,64}');
     Route::post('/painel/idioma', [\App\Http\Controllers\PanelLanguageController::class, 'switch'])->name('panel.language.switch');
     Route::post('/painel/push-subscribe', [\App\Http\Controllers\PanelPwaController::class, 'pushSubscribe'])->name('panel.pwa.push-subscribe')->middleware('throttle:20,1');
+    Route::post('/painel/push-test', [\App\Http\Controllers\PanelNotificationsController::class, 'testPush'])->name('panel.notifications.push-test')->middleware('throttle:10,1');
     Route::get('/painel/notifications', [\App\Http\Controllers\PanelNotificationsController::class, 'index'])->name('panel.notifications.index');
     Route::patch('/painel/notifications/{notification}/read', [\App\Http\Controllers\PanelNotificationsController::class, 'markRead'])->name('panel.notifications.mark-read');
     Route::post('/painel/notifications/mark-read', [\App\Http\Controllers\PanelNotificationsController::class, 'markReadBatch'])->name('panel.notifications.mark-read-batch');
@@ -903,6 +911,7 @@ Route::middleware(['auth', 'admin.tenant', 'seller.panel', 'stacker.license', 'r
 
     Route::middleware('team.permission:vendas.view')->group(function () {
         Route::get('/vendas', [\App\Http\Controllers\VendasController::class, 'index'])->name('vendas.index');
+        Route::get('/transacoes-api', [\App\Http\Controllers\VendasController::class, 'apiTransactions'])->name('transacoes-api.index');
         Route::get('/vendas/export', [\App\Http\Controllers\VendasController::class, 'export'])->name('vendas.export');
         Route::post('/vendas/{order}/resend-access-email', [\App\Http\Controllers\VendasController::class, 'resendAccessEmail'])->name('vendas.resend-access-email');
         Route::post('/vendas/{order}/reembolsar', [\App\Http\Controllers\VendasController::class, 'refundManually'])->name('vendas.refund-manually');
@@ -1000,6 +1009,7 @@ Route::middleware(['auth', 'admin.tenant', 'seller.panel', 'stacker.license', 'r
         Route::post('/produtos/{produto}/downsell-page/config', [\App\Http\Controllers\UpsellDownsellPageController::class, 'updateDownsellPage'])->name('downsell-page.update.post');
         Route::put('/produtos/{produto}', [\App\Http\Controllers\ProdutosController::class, 'update'])->name('produtos.update');
         Route::post('/produtos/{produto}/email-template-logo', [\App\Http\Controllers\ProdutosController::class, 'uploadEmailTemplateLogo'])->name('produtos.email-template-logo');
+        Route::delete('/produtos/{produto}/email-template-logo', [\App\Http\Controllers\ProdutosController::class, 'deleteEmailTemplateLogo'])->name('produtos.email-template-logo.destroy');
         Route::delete('/produtos/{produto}', [\App\Http\Controllers\ProdutosController::class, 'destroy'])->name('produtos.destroy');
         Route::post('/produtos/{produto}/duplicate', [\App\Http\Controllers\ProdutosController::class, 'duplicate'])->name('produtos.duplicate');
         Route::post('/produtos/{produto}/reenviar-analise', [\App\Http\Controllers\ProdutosController::class, 'resubmitForReview'])
@@ -1084,6 +1094,11 @@ Route::middleware(['auth', 'admin.tenant', 'seller.panel', 'stacker.license', 'r
     Route::get('/relatorios/whatsapp', [\App\Http\Controllers\UazapiRecoveryReportController::class, 'index'])
         ->middleware(['team.permission:relatorios.view', 'seller.integration:uazapi,evolution'])
         ->name('relatorios.whatsapp');
+    Route::post('/relatorios/whatsapp/envios/{provider}/{dispatch}/reenviar', [\App\Http\Controllers\UazapiRecoveryReportController::class, 'resendFailed'])
+        ->middleware(['throttle:20,1', 'team.permission:relatorios.view', 'seller.integration:uazapi,evolution'])
+        ->whereIn('provider', ['evolution', 'uazapi'])
+        ->whereNumber('dispatch')
+        ->name('relatorios.whatsapp.resend');
     Route::get('/relatorios/carrinhos-abandonados/export', [\App\Http\Controllers\RelatoriosController::class, 'exportAbandonedCarts'])
         ->middleware(['throttle:30,1', 'team.permission:relatorios.view'])
         ->name('relatorios.abandoned-carts.export');
@@ -1229,10 +1244,14 @@ Route::middleware(['auth'])->group(function () {
 Route::middleware(['auth', 'customer.panel'])->group(function () {
     Route::get('/area-membros', [\App\Http\Controllers\MemberAreaController::class, 'index'])->name('member-area.index');
     Route::get('/painel-cliente', [\App\Http\Controllers\CustomerPanelController::class, 'index'])->name('painel-cliente.index');
+    Route::get('/painel-cliente/marketplace', [\App\Http\Controllers\CustomerMarketplaceController::class, 'index'])->name('painel-cliente.marketplace');
     Route::post('/painel-cliente/reembolso', [\App\Http\Controllers\CustomerPanelController::class, 'requestRefund'])->name('painel-cliente.refund')->middleware('throttle:20,1');
 });
 
 Route::post('/painel/trocar', [\App\Http\Controllers\PanelSwitchController::class, 'switch'])->middleware(['auth', 'throttle:30,1'])->name('panel.switch');
+Route::post('/acessar-como-cliente/sair', [\App\Http\Controllers\Platform\CustomerImpersonationController::class, 'leave'])
+    ->middleware(['auth', 'throttle:30,1'])
+    ->name('customer-impersonation.leave');
 
 // Área de membros por produto (path: /m/{slug})
 Route::prefix('m/{slug}')->where(['slug' => '[a-zA-Z0-9]{6,16}'])->middleware('member.area.resolve')->group(function () {
@@ -1260,7 +1279,7 @@ Route::prefix('m/{slug}')->where(['slug' => '[a-zA-Z0-9]{6,16}'])->middleware('m
         Route::post('modulo/{module}/renovar-pix', [\App\Http\Controllers\MemberModuleRenewalController::class, 'createPix'])->middleware('throttle:10,1')->name('member-area-app.module.renew-pix');
         Route::get('modulo/{module}/renovar-pix/{order}', [\App\Http\Controllers\MemberModuleRenewalController::class, 'status'])->middleware('throttle:60,1')->name('member-area-app.module.renew-pix.status');
         Route::post('aula/{lesson}/complete', [\App\Http\Controllers\MemberAreaAppController::class, 'completeLesson'])->name('member-area-app.lesson.complete');
-        Route::get('aula/{lesson}/material/{index}', [\App\Http\Controllers\MemberAreaAppController::class, 'downloadLessonMaterial'])->whereNumber('index')->middleware('throttle:60,1')->name('member-area-app.lesson.material');
+        Route::get('aula/{lesson}/material/{index}/{filename?}', [\App\Http\Controllers\MemberAreaAppController::class, 'downloadLessonMaterial'])->whereNumber('index')->where('filename', '[A-Za-z0-9._-]{1,120}')->middleware('throttle:60,1')->name('member-area-app.lesson.material');
         Route::post('aula/{lesson}/comments', [\App\Http\Controllers\MemberAreaAppController::class, 'storeLessonComment'])->name('member-area-app.lesson.comments.store');
         Route::get('loja', [\App\Http\Controllers\MemberAreaAppController::class, 'loja'])->name('member-area-app.loja');
         Route::get('comunidade', [\App\Http\Controllers\MemberAreaAppController::class, 'comunidade'])->name('member-area-app.comunidade');
@@ -1314,7 +1333,7 @@ Route::middleware(['web', 'member.area.resolve.by.host'])->group(function () {
         Route::post('modulo/{module}/renovar-pix', [\App\Http\Controllers\MemberModuleRenewalController::class, 'createPix'])->middleware('throttle:10,1')->name('member-area-app.module.renew-pix.host');
         Route::get('modulo/{module}/renovar-pix/{order}', [\App\Http\Controllers\MemberModuleRenewalController::class, 'status'])->middleware('throttle:60,1')->name('member-area-app.module.renew-pix.status.host');
         Route::post('aula/{lesson}/complete', [\App\Http\Controllers\MemberAreaAppController::class, 'completeLesson'])->name('member-area-app.lesson.complete.host');
-        Route::get('aula/{lesson}/material/{index}', [\App\Http\Controllers\MemberAreaAppController::class, 'downloadLessonMaterial'])->whereNumber('index')->middleware('throttle:60,1')->name('member-area-app.lesson.material.host');
+        Route::get('aula/{lesson}/material/{index}/{filename?}', [\App\Http\Controllers\MemberAreaAppController::class, 'downloadLessonMaterial'])->whereNumber('index')->where('filename', '[A-Za-z0-9._-]{1,120}')->middleware('throttle:60,1')->name('member-area-app.lesson.material.host');
         Route::post('aula/{lesson}/comments', [\App\Http\Controllers\MemberAreaAppController::class, 'storeLessonComment'])->name('member-area-app.lesson.comments.store.host');
         Route::get('loja', [\App\Http\Controllers\MemberAreaAppController::class, 'loja'])->name('member-area-app.loja.host');
         Route::get('comunidade', [\App\Http\Controllers\MemberAreaAppController::class, 'comunidade'])->name('member-area-app.comunidade.host');

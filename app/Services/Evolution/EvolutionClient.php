@@ -67,24 +67,7 @@ class EvolutionClient
 
     public function normalizePhone(?string $raw): ?string
     {
-        if ($raw === null || trim($raw) === '') {
-            return null;
-        }
-
-        $digits = preg_replace('/\D+/', '', $raw);
-        if (! is_string($digits) || $digits === '') {
-            return null;
-        }
-
-        if (str_starts_with($digits, '55') && strlen($digits) >= 12 && strlen($digits) <= 13) {
-            return $digits;
-        }
-
-        if (strlen($digits) >= 10 && strlen($digits) <= 11) {
-            return '55'.$digits;
-        }
-
-        return null;
+        return \App\Support\WhatsappPhoneNormalizer::normalize($raw);
     }
 
     /**
@@ -136,25 +119,14 @@ class EvolutionClient
     public function sendText(string $token, string $instanceName, string $number, string $text): array
     {
         $path = '/message/sendText/'.$this->encodeName($instanceName);
-        $payload = [
+
+        // Um único POST: o fallback antigo (text+textMessage → em 400 outro POST)
+        // podia entregar a mensagem e ainda assim reenviar no segundo request.
+        return $this->request($token, 'POST', $path, [
             'number' => $number,
             'text' => $text,
-            'textMessage' => ['text' => $text],
             'linkPreview' => true,
-        ];
-
-        try {
-            return $this->request($token, 'POST', $path, $payload);
-        } catch (EvolutionRequestException $e) {
-            if ($e->status !== 400) {
-                throw $e;
-            }
-
-            return $this->request($token, 'POST', $path, [
-                'number' => $number,
-                'textMessage' => ['text' => $text],
-            ]);
-        }
+        ]);
     }
 
     /**

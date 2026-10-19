@@ -9,6 +9,8 @@ class PlatformWhatsappDispatch extends Model
 {
     public const STATUS_PENDING = 'pending';
 
+    public const STATUS_PROCESSING = 'processing';
+
     public const STATUS_SENT = 'sent';
 
     public const STATUS_FAILED = 'failed';
@@ -52,11 +54,65 @@ class PlatformWhatsappDispatch extends Model
     {
         return static::query()
             ->where('phone', $phone)
-            ->where('status', self::STATUS_PENDING)
+            ->whereIn('status', [self::STATUS_PENDING, self::STATUS_PROCESSING])
             ->update([
                 'status' => self::STATUS_CANCELED,
                 'error' => $reason,
             ]);
+    }
+
+    /**
+     * Blocks a second transactional notify for the same seller + event.
+     * One-shot events (cadastro / KYC aprovado) nunca repetem após pending/sent.
+     * Eventos repetíveis (rejeição) bloqueiam pending e sent recente (anti double-click).
+     */
+    public static function blocksDuplicate(int $userId, string $eventType, int $recentMinutes = 5): bool
+    {
+        $oneShot = in_array($eventType, [
+            PlatformWhatsappTemplate::EVENT_SELLER_REGISTERED,
+            PlatformWhatsappTemplate::EVENT_KYC_APPROVED,
+        ], true);
+
+        $query = static::query()
+            ->where('user_id', $userId)
+            ->where('event_type', $eventType);
+
+        if ($oneShot) {
+            return $query
+                ->whereIn('status', [self::STATUS_PENDING, self::STATUS_SENT, self::STATUS_PROCESSING])
+                ->exists();
+        }
+
+        return $query
+            ->where(function ($inner) use ($recentMinutes) {
+                $inner->whereIn('status', [self::STATUS_PENDING, self::STATUS_PROCESSING])
+                    ->orWhere(function ($sent) use ($recentMinutes) {
+                        $sent->where('status', self::STATUS_SENT)
+                            ->where('created_at', '>=', now()->subMinutes(max(1, $recentMinutes)));
+                    });
+            })
+            ->exists();
+    }
+
+    public function claimForSending(): bool
+    {
+        if ($this->status !== self::STATUS_PENDING) {
+            return false;
+        }
+
+        $affected = static::query()
+            ->where('id', $this->id)
+            ->where('status', self::STATUS_PENDING)
+            ->update([
+                'status' => self::STATUS_PROCESSING,
+                'updated_at' => now(),
+            ]);
+
+        if ($affected === 1) {
+            $this->status = self::STATUS_PROCESSING;
+        }
+
+        return $affected === 1;
     }
 
     /**

@@ -190,7 +190,7 @@ trait HandlesApiPayments
             'gateway' => null,
             'gateway_id' => null,
             'payment_method' => $paymentMethod,
-            'cajupay_account_id' => app(CajuPayAccountResolver::class)->accountIdForTenant($tenantId),
+            'cajupay_account_id' => app(CajuPayAccountResolver::class)->accountIdForPayment($tenantId, $paymentMethod),
             'metadata' => $metadata,
             'period_start' => $periodStart,
             'period_end' => $periodEnd,

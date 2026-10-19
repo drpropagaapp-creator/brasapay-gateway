@@ -55,6 +55,50 @@ const props = defineProps({
 
 const { href } = useMemberAreaHref(props.slug, props.base_url);
 
+function productCardNeedsPurchase(mod) {
+    return !mod.has_access && mod.access_type === 'paid';
+}
+
+function productCardHref(mod) {
+    if (productCardNeedsPurchase(mod)) {
+        return mod.related_product?.checkout_url || (mod.related_product?.checkout_slug ? `/c/${mod.related_product.checkout_slug}` : '#');
+    }
+    return mod.related_product?.access_url || '#';
+}
+
+/** Nova aba só para checkout, links externos e deliverables — área de membros fica na mesma aba. */
+function productCardOpensInNewTab(mod) {
+    if (productCardNeedsPurchase(mod)) {
+        return true;
+    }
+    if (mod.related_product?.type === 'area_membros') {
+        return false;
+    }
+    const url = productCardHref(mod);
+    if (!url || url === '#') {
+        return false;
+    }
+    return /^https?:\/\//i.test(url) || url.startsWith('/a/');
+}
+
+function productCardUsesPlainAnchor(mod) {
+    return productCardNeedsPurchase(mod) || productCardOpensInNewTab(mod) || /^https?:\/\//i.test(productCardHref(mod));
+}
+
+function accessOpensInNewTab(url, type) {
+    if (type === 'area_membros') {
+        return false;
+    }
+    if (!url || url === '#') {
+        return false;
+    }
+    return /^https?:\/\//i.test(url) || url.startsWith('/a/');
+}
+
+function internalProductAccessHref(ip) {
+    return ip.access_url || href('/loja');
+}
+
 const hero = props.config?.hero ?? {};
 const heroDesktopBg = hero.image_url_desktop || hero.image_url || null;
 const heroMobileBg = hero.image_url_mobile || hero.image_url_desktop || hero.image_url || null;
@@ -228,18 +272,18 @@ function checkoutHref(item) {
                         </div>
                     </template>
                 </template>
-                <!-- Outros produtos: link para área do produto (se tem acesso) ou checkout (se pago) -->
+                <!-- Outros produtos: access_url do backend (área/link) ou checkout -->
                 <template v-else-if="(section.section_type ?? 'courses') === 'products'">
                     <component
                         v-for="mod in section.modules"
                         :key="mod.id"
-                        :is="(!mod.has_access && mod.access_type === 'paid') ? 'a' : Link"
-                        :href="(!mod.has_access && mod.access_type === 'paid') ? (mod.related_product?.checkout_url || `/c/${mod.related_product?.checkout_slug}`) : `/m/${mod.related_product?.member_area_slug ?? mod.related_product?.checkout_slug}`"
-                        :target="(!mod.has_access && mod.access_type === 'paid') ? '_blank' : undefined"
-                        :rel="(!mod.has_access && mod.access_type === 'paid') ? 'noopener' : undefined"
+                        :is="productCardUsesPlainAnchor(mod) ? 'a' : Link"
+                        :href="productCardHref(mod)"
+                        :target="productCardOpensInNewTab(mod) ? '_blank' : undefined"
+                        :rel="productCardOpensInNewTab(mod) ? 'noopener' : undefined"
                         :class="[
                             'flex w-64 shrink-0 flex-col rounded-xl overflow-hidden bg-zinc-800/50 text-left transition hover:bg-zinc-800',
-                            (!mod.has_access && mod.access_type === 'paid') ? 'touch-manipulation' : '',
+                            productCardNeedsPurchase(mod) ? 'touch-manipulation' : '',
                         ]"
                     >
                         <div :class="[(section.cover_mode === 'horizontal' ? 'aspect-video' : 'aspect-[2/3]'), 'relative w-full bg-zinc-700 flex items-center justify-center overflow-hidden']">
@@ -295,8 +339,17 @@ function checkoutHref(item) {
                     </div>
                     <div class="p-3">
                         <p class="font-medium truncate">{{ ip.name }}</p>
+                        <a
+                            v-if="ip.has_access && ip.access_url"
+                            :href="internalProductAccessHref(ip)"
+                            class="mt-2 inline-block text-sm text-[var(--ma-primary)] hover:underline"
+                            :target="accessOpensInNewTab(ip.access_url, ip.type) ? '_blank' : undefined"
+                            :rel="accessOpensInNewTab(ip.access_url, ip.type) ? 'noopener' : undefined"
+                        >
+                            Acessar
+                        </a>
                         <Link
-                            v-if="ip.has_access"
+                            v-else-if="ip.has_access"
                             :href="href('/loja')"
                             class="mt-2 inline-block text-sm text-[var(--ma-primary)] hover:underline"
                         >

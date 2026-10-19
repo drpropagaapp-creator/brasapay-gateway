@@ -8,6 +8,7 @@ import AuthPageShell from '@/components/auth/AuthPageShell.vue';
 import LegalFooterLinks from '@/components/legal/LegalFooterLinks.vue';
 import { useAuthBranding } from '@/composables/useAuthBranding';
 import { useLoginTemplate } from '@/composables/useLoginTemplate';
+import { isValidWhatsappPhoneInput, maskWhatsappPhone } from '@/utils/whatsappPhone';
 
 const page = usePage();
 const { primary, appName } = useAuthBranding();
@@ -165,9 +166,8 @@ async function validateCurrentStep() {
             wizardStepError.value = 'Informe um e-mail válido.';
             return false;
         }
-        const phoneDigits = digitsOnly(form.phone);
-        if (phoneDigits.length < 10 || phoneDigits.length > 11) {
-            wizardStepError.value = 'Informe um WhatsApp válido com DDD.';
+        if (!isValidWhatsappPhoneInput(form.phone)) {
+            wizardStepError.value = 'Informe um WhatsApp válido com DDI (ex.: +351...) ou DDD brasileiro.';
             return false;
         }
         if (!form.birth_date) {
@@ -546,11 +546,7 @@ function maskCep(v) {
 }
 
 function maskPhone(v) {
-    const d = digitsOnly(v).slice(0, 11);
-    if (d.length <= 2) return d;
-    if (d.length <= 6) return `(${d.slice(0, 2)}) ${d.slice(2)}`;
-    if (d.length <= 10) return `(${d.slice(0, 2)}) ${d.slice(2, 6)}-${d.slice(6)}`;
-    return `(${d.slice(0, 2)}) ${d.slice(2, 7)}-${d.slice(7)}`;
+    return maskWhatsappPhone(v);
 }
 
 function prevStep() {
@@ -741,11 +737,11 @@ function submitRegistration() {
                                 inputmode="tel"
                                 required
                                 autocomplete="tel"
-                                placeholder="(11) 99999-9999"
+                                placeholder="(11) 99999-9999 ou +351..."
                                 class="wl-input mt-1 w-full rounded-xl border border-zinc-300 bg-white px-4 py-3 dark:border-zinc-600 dark:bg-zinc-950 dark:text-white"
                                 @input="form.phone = maskPhone($event.target.value)"
                             />
-                            <p class="mt-1 text-xs text-zinc-500">Usado para contato da plataforma com você.</p>
+                            <p class="mt-1 text-xs text-zinc-500">Brasil com DDD ou internacional com +DDI. Usado para contato da plataforma.</p>
                             <p v-if="form.errors.phone" class="mt-1 text-sm text-red-600">{{ form.errors.phone }}</p>
                         </div>
                         <div>

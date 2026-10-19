@@ -1,8 +1,8 @@
 import { ensureFbcFromFbclid, getAttributionPayload } from '@/lib/metaTracking/attribution.js';
-import { mirrorMetaPurchaseToServer } from '@/lib/metaTracking/serverMirror.js';
+import { mirrorMetaAddPaymentInfoToServer, mirrorMetaPurchaseToServer } from '@/lib/metaTracking/serverMirror.js';
+import { getMetaEntries, buildCheckoutEventPayload, buildPurchaseEventPayload, trackMetaEvent, initMetaPixels, buildAdvancedMatching } from '@/lib/metaTracking/browserPixel.js';
 import { sendPurchasePixelAck } from '@/composables/usePurchasePixelAck.js';
 import { fireMetaPurchaseReliable } from '@/composables/useMetaCheckoutTracking.js';
-import { getMetaEntries } from '@/lib/metaTracking/browserPixel.js';
 
 function safeStorageGet(key) {
     try {
@@ -33,6 +33,10 @@ function purchaseDedupeKey(orderId) {
  * @param {'approved'|'pix'|'boleto'} [options.triggerType]
  * @param {number} [options.value]
  * @param {string} [options.currency]
+ * @param {string} [options.contentKey]
+ * @param {Array<{id: string, quantity?: number, item_price?: number}>|null} [options.contents]
+ * @param {string} [options.contentName]
+ * @param {object|null} [options.customer]
  * @param {object} [options.pixels]
  * @param {{ firePurchaseReliable?: Function }|null} [options.conversionPixelsApi]
  * @param {number} [options.settleDelayMs]
@@ -45,6 +49,10 @@ export async function trackCheckoutPurchase({
     triggerType = 'approved',
     value = 0,
     currency = 'BRL',
+    contentKey = '',
+    contents = null,
+    contentName = '',
+    customer = null,
     pixels = {},
     conversionPixelsApi = null,
     settleDelayMs = 350,
@@ -71,6 +79,8 @@ export async function trackCheckoutPurchase({
         triggerType,
     });
 
+    const purchaseLines = buildPurchaseEventPayload(value, currency, oid, contentKey, contents);
+
     mirrorMetaPurchaseToServer({
         checkoutSessionToken,
         orderId: oid,
@@ -79,7 +89,8 @@ export async function trackCheckoutPurchase({
         value,
         currency,
         eventSourceUrl,
-        contentIds: [oid],
+        contentIds: purchaseLines.content_ids,
+        contentName: contentName || undefined,
     });
 
     if (beaconOnly) {
@@ -95,7 +106,10 @@ export async function trackCheckoutPurchase({
             oid,
             false,
             triggerType,
-            settleDelayMs
+            settleDelayMs,
+            contentKey,
+            customer,
+            contents
         );
         tracked = true;
     } else if (getMetaEntries(pixels).length > 0) {
@@ -104,6 +118,9 @@ export async function trackCheckoutPurchase({
             value,
             currency,
             orderId: oid,
+            contentKey,
+            contents,
+            customer,
             triggerType,
             settleDelayMs,
         });
@@ -122,4 +139,67 @@ export async function trackCheckoutPurchase({
  */
 export function trackCheckoutPurchaseBeacon(options) {
     return trackCheckoutPurchase({ ...options, beaconOnly: true });
+}
+
+function paymentInfoDedupeKey(orderId) {
+    const oid = orderId ? String(orderId) : '';
+    return oid ? `px:add_payment_info:${oid}` : '';
+}
+
+/**
+ * AddPaymentInfo quando o PIX, boleto ou checkout de pagamento é criado.
+ * Purchase continua só depois da confirmação.
+ */
+export async function trackCheckoutAddPaymentInfo({
+    orderId,
+    checkoutSessionToken = '',
+    value = 0,
+    currency = 'BRL',
+    contentKey = '',
+    contents = null,
+    contentName = '',
+    customer = null,
+    pixels = {},
+}) {
+    const oid = orderId !== null && orderId !== undefined ? String(orderId) : '';
+    const token = String(checkoutSessionToken || '').trim();
+    if (!oid || !token) {
+        return { ok: false, reason: 'missing_ids' };
+    }
+
+    const dedupeKey = paymentInfoDedupeKey(oid);
+    if (dedupeKey && safeStorageGet(dedupeKey) === '1') {
+        return { ok: false, reason: 'already_sent' };
+    }
+
+    ensureFbcFromFbclid();
+    const attribution = getAttributionPayload();
+    const eventId = `pay:${oid}`;
+    const payload = contents
+        ? buildPurchaseEventPayload(value, currency, oid, contentKey, contents)
+        : buildCheckoutEventPayload(value, currency, contentKey);
+
+    mirrorMetaAddPaymentInfoToServer({
+        checkoutSessionToken: token,
+        orderId: oid,
+        eventId,
+        ...attribution,
+        value: payload.value,
+        currency: payload.currency,
+        contentIds: payload.content_ids,
+        contentName: contentName || undefined,
+    });
+
+    const metaEntries = getMetaEntries(pixels);
+    if (metaEntries.length) {
+        const matching = customer ? buildAdvancedMatching(customer) : null;
+        await initMetaPixels(metaEntries, matching && Object.keys(matching).length ? matching : null);
+        trackMetaEvent('AddPaymentInfo', payload, eventId);
+    }
+
+    if (dedupeKey) {
+        safeStorageSet(dedupeKey, '1');
+    }
+
+    return { ok: true };
 }

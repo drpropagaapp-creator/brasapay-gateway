@@ -36,6 +36,7 @@ import { watchEffect } from 'vue';
 import { resolvePageComponent } from 'laravel-vite-plugin/inertia-helpers';
 import { createPinia } from 'pinia';
 import { resolveLoginPathForExpiredSession } from './lib/sessionExpired';
+import PlatformGa4Tracker from './components/analytics/PlatformGa4Tracker.vue';
 
 // Envia o CSRF da meta em toda visita Inertia (evita 419 após sessão longa ou abas antigas)
 router.on('before', (event) => {
@@ -130,7 +131,7 @@ createInertiaApp({
     },
     setup({ el, App, props, plugin }) {
         const vueApp = createVueApp({
-            render: () => h('div', { class: 'contents' }, [h(App, props), h(CsrfSync)]),
+            render: () => h('div', { class: 'contents' }, [h(App, props), h(CsrfSync), h(PlatformGa4Tracker)]),
         });
         vueApp.use(plugin);
         vueApp.use(createPinia());

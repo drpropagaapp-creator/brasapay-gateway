@@ -23,6 +23,7 @@ return [
             'cart_recovery' => 'Oi {nome}! Seu {produto} ainda está disponível. Finalize aqui: {link}',
             'pix_generated' => '{nome}, seu PIX de {valor} para {produto} está pronto. Pague para concluir: {link}',
             'pix_reminder' => '{nome}, ainda dá tempo de pagar o PIX de {valor} para {produto}: {link}',
+            'order_paid' => '{nome}, seu PIX de {valor} para {produto} foi confirmado. Obrigado pela compra! Acesso: {link_acesso}',
         ],
     ],
 
@@ -34,9 +35,9 @@ return [
     ],
 
     'labels' => [
-        'abandoned' => ['name' => 'Stacker · abandonou', 'color' => 16],
-        'hot' => ['name' => 'Stacker · quente', 'color' => 2],
-        'paid' => ['name' => 'Stacker · pagou', 'color' => 15],
+        'abandoned' => ['name' => '{platform} · abandonou', 'color' => 16],
+        'hot' => ['name' => '{platform} · quente', 'color' => 2],
+        'paid' => ['name' => '{platform} · pagou', 'color' => 15],
     ],
 
     'campaign' => [

@@ -6,6 +6,7 @@ use App\Gateways\GatewayRegistry;
 use App\Models\CajuPayAccount;
 use App\Models\GatewayCredential;
 use App\Models\Setting;
+use App\Support\GatewayAdminFeeSummary;
 use App\Support\GatewayInboundWebhookAuth;
 use App\Support\GatewayPluginRequirement;
 use App\Support\GatewayWebhookSecurityAlert;
@@ -28,7 +29,22 @@ trait ProvidesPlatformGatewayProps
             'card' => GatewayRegistry::filterSlugsToAllowedAcquirers($gatewayOrder['card'] ?? []),
             'boleto' => GatewayRegistry::filterSlugsToAllowedAcquirers($gatewayOrder['boleto'] ?? []),
             'pix_auto' => GatewayRegistry::filterSlugsToAllowedAcquirers($gatewayOrder['pix_auto'] ?? []),
+            'wallet' => self::walletGatewaySlugs($gatewayOrder['wallet'] ?? ($default['wallet'] ?? ['cajupay', 'stripe'])),
         ];
+    }
+
+    /**
+     * @param  array<int, mixed>  $slugs
+     * @return list<string>
+     */
+    protected static function walletGatewaySlugs(array $slugs): array
+    {
+        $filtered = GatewayRegistry::filterSlugsToAllowedAcquirers($slugs);
+
+        return array_values(array_filter(
+            $filtered,
+            fn ($slug) => in_array($slug, ['cajupay', 'stripe'], true)
+        ));
     }
 
     /**
@@ -66,6 +82,7 @@ trait ProvidesPlatformGatewayProps
                 'is_enabled' => $isCajuPayMulti
                     ? $cajupayStatus['is_enabled']
                     : ($cred === null ? true : ($cred->is_enabled ?? true)),
+                'admin_fee_label' => GatewayAdminFeeSummary::labelForCredential($slug, $cred),
                 'multi_account' => $isCajuPayMulti,
                 'inbound_webhook_secret_required' => in_array($slug, ['asaas', 'pushinpay', 'spacepag', 'woovi'], true),
                 'webhook_secret_configured' => $isCajuPayMulti

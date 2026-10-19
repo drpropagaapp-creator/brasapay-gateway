@@ -383,7 +383,7 @@ class InfoprodutorRegistrationController extends Controller
 
         $phoneDigits = $this->normalizePhoneDigits((string) ($validated['phone'] ?? ''));
         if ($phoneDigits === null) {
-            return back()->withErrors(['phone' => 'Informe um WhatsApp válido com DDD (10 ou 11 dígitos).'])->withInput();
+            return back()->withErrors(['phone' => 'Informe um WhatsApp válido com DDI (ex.: +351...) ou DDD brasileiro.'])->withInput();
         }
 
         $user = User::create([
@@ -589,7 +589,7 @@ class InfoprodutorRegistrationController extends Controller
 
         $phoneDigits = $this->normalizePhoneDigits((string) ($validated['phone'] ?? ''));
         if ($phoneDigits === null) {
-            return back()->withErrors(['phone' => 'Informe um WhatsApp válido com DDD (10 ou 11 dígitos).'])->withInput();
+            return back()->withErrors(['phone' => 'Informe um WhatsApp válido com DDI (ex.: +351...) ou DDD brasileiro.'])->withInput();
         }
 
         $user->update([
@@ -826,22 +826,11 @@ class InfoprodutorRegistrationController extends Controller
     }
 
     /**
-     * Normaliza WhatsApp BR para dígitos (com 55 se vier só DDD+número).
+     * Normaliza WhatsApp para dígitos E.164 (BR por padrão se vier só DDD+número).
      */
     private function normalizePhoneDigits(string $phone): ?string
     {
-        $digits = preg_replace('/\D/', '', $phone) ?? '';
-        if (strlen($digits) < 10) {
-            return null;
-        }
-        if (strlen($digits) <= 11 && ! str_starts_with($digits, '55')) {
-            $digits = '55'.$digits;
-        }
-        if (strlen($digits) < 12 || strlen($digits) > 13) {
-            return null;
-        }
-
-        return $digits;
+        return \App\Support\WhatsappPhoneNormalizer::normalize($phone);
     }
 
     private function withReferralCookie(Request $request, Response $response): Response

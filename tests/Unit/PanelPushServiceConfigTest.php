@@ -72,7 +72,7 @@ class PanelPushServiceConfigTest extends TestCase
         $this->assertSame($keys['privateKey'], config('getfy.pwa.vapid_private'));
     }
 
-    public function test_send_to_subscriptions_deduplicates_by_user(): void
+    public function test_send_to_subscriptions_delivers_to_each_device_of_the_same_user(): void
     {
         $keys = $this->configureTestVapidPush();
         PanelPushSettings::storeVapidKeys($keys['publicKey'], $keys['privateKey']);
@@ -97,16 +97,16 @@ class PanelPushServiceConfigTest extends TestCase
             'vapid_public_key' => $keys['publicKey'],
         ]);
 
-        $deliveredEndpoint = null;
+        $deliveredEndpoints = [];
         $dispatcher = Mockery::mock(PanelPushDispatcher::class);
         $dispatcher->shouldReceive('send')
             ->once()
-            ->withArgs(function (Collection $subscriptions) use (&$deliveredEndpoint) {
-                $deliveredEndpoint = $subscriptions->first()?->endpoint;
+            ->withArgs(function (Collection $subscriptions) use (&$deliveredEndpoints) {
+                $deliveredEndpoints = $subscriptions->pluck('endpoint')->all();
 
-                return $subscriptions->count() === 1;
+                return $subscriptions->count() === 2;
             })
-            ->andReturn(['sent' => 1, 'failed' => 0, 'invalid' => 0, 'expired' => 0, 'total' => 1]);
+            ->andReturn(['sent' => 2, 'failed' => 0, 'invalid' => 0, 'expired' => 0, 'total' => 2]);
 
         $this->app->instance(PanelPushDispatcher::class, $dispatcher);
 
@@ -118,7 +118,10 @@ class PanelPushServiceConfigTest extends TestCase
             'pix_1'
         );
 
-        $this->assertSame('https://push.example.com/sub/newer', $deliveredEndpoint);
+        $this->assertEqualsCanonicalizing(
+            ['https://push.example.com/sub/older', 'https://push.example.com/sub/newer'],
+            $deliveredEndpoints
+        );
     }
 
     public function test_send_to_subscriptions_deduplicates_by_endpoint(): void
@@ -148,11 +151,14 @@ class PanelPushServiceConfigTest extends TestCase
         ]);
         $subB->forceFill(['updated_at' => now()->subMinute()])->save();
 
+        $deliveredCount = 0;
         $dispatcher = Mockery::mock(PanelPushDispatcher::class);
         $dispatcher->shouldReceive('send')
             ->once()
-            ->withArgs(function (Collection $subscriptions) {
-                return $subscriptions->count() === 1;
+            ->withArgs(function (Collection $subscriptions) use (&$deliveredCount) {
+                $deliveredCount = $subscriptions->count();
+
+                return $deliveredCount === 1;
             })
             ->andReturn(['sent' => 1, 'failed' => 0, 'invalid' => 0, 'expired' => 0, 'total' => 1]);
 
@@ -164,5 +170,7 @@ class PanelPushServiceConfigTest extends TestCase
             'Corpo',
             '/test'
         );
+
+        $this->assertSame(1, $deliveredCount);
     }
 }

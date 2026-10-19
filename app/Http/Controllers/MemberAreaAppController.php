@@ -2,6 +2,8 @@
 
 namespace App\Http\Controllers;
 
+use App\Exceptions\MemberPdfWatermarkException;
+use App\Models\BrandingSetting;
 use App\Models\MemberCertificateIssued;
 use App\Models\MemberComment;
 use App\Models\MemberCommunityPage;
@@ -12,23 +14,27 @@ use App\Models\MemberInternalProduct;
 use App\Models\MemberLesson;
 use App\Models\MemberModule;
 use App\Models\MemberSection;
-use App\Models\BrandingSetting;
 use App\Models\Order;
 use App\Models\Product;
 use App\Models\User;
+use App\Services\DeliverableAccessLinkService;
 use App\Services\GamificationService;
 use App\Services\MemberAreaResolver;
 use App\Services\MemberCommentService;
+use App\Services\MemberLessonPdfSource;
+use App\Services\MemberLessonPdfWatermarker;
 use App\Services\MemberModuleAccessService;
 use App\Services\MemberProgressService;
 use App\Services\MemberStudentActivityLogService;
 use App\Services\StorageService;
 use App\Support\MemberAreaAdminPreview;
+use App\Support\PublicAppUrl;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
+use Symfony\Component\HttpFoundation\Response as HttpResponse;
 
 class MemberAreaAppController extends Controller
 {
@@ -52,7 +58,7 @@ class MemberAreaAppController extends Controller
         $continueWatching = $this->getContinueWatching($product, $user);
         $internalProducts = $product->memberInternalProducts()->with('relatedProduct')->orderBy('position')->get();
         $baseUrl = $this->baseUrlForRequest($product, $request);
-        $userProductIds = $user->products()->pluck('products.id')->flip()->all();
+        $userProductIds = $this->userOwnedProductIdMap($user);
         $push = $this->pushProps($product);
 
         return Inertia::render('MemberAreaApp/Show', [
@@ -70,10 +76,14 @@ class MemberAreaAppController extends Controller
             'internal_products' => $internalProducts->map(fn (MemberInternalProduct $ip) => [
                 'id' => $ip->related_product_id,
                 'name' => $ip->relatedProduct?->name,
+                'type' => $ip->relatedProduct?->type,
                 'image_url' => $ip->relatedProduct?->image ? (new StorageService($product->tenant_id))->url($ip->relatedProduct->image) : null,
                 'checkout_slug' => $ip->relatedProduct?->checkout_slug,
                 'checkout_url' => $ip->relatedProduct?->checkout_slug ? url('/c/'.$ip->relatedProduct->checkout_slug) : null,
-                'has_access' => $user->products()->where('products.id', $ip->related_product_id)->exists(),
+                'access_url' => $ip->relatedProduct
+                    ? $this->relatedProductAccessUrl($ip->relatedProduct, $user, isset($userProductIds[(string) $ip->related_product_id]))
+                    : null,
+                'has_access' => isset($userProductIds[(string) $ip->related_product_id]),
             ])->values()->all(),
             'community_enabled' => (bool) ($config['community_enabled'] ?? false),
             'base_url' => $baseUrl,
@@ -120,10 +130,14 @@ class MemberAreaAppController extends Controller
         ] + $this->gamificationProps($product, $user));
     }
 
-    public function moduleContent(Request $request, string $slug, MemberModule $module): Response|RedirectResponse
+    public function moduleContent(Request $request): Response|RedirectResponse
     {
+        // Só Request na assinatura: em host customizado o Dispatcher (array_values)
+        // deslocava Product/slug e gerava TypeError 500 em MemberModule/Lesson.
+        $slug = $this->routeSlug($request);
+        $module = $this->routeMemberModule($request);
         $product = $this->getProduct($request);
-        if ($module->product_id !== $product->id) {
+        if (! $this->belongsToMemberProduct($module->product_id, $product)) {
             abort(404);
         }
         $user = $request->user();
@@ -253,10 +267,12 @@ class MemberAreaAppController extends Controller
         ]);
     }
 
-    public function lesson(Request $request, string $slug, MemberLesson $lesson): Response|RedirectResponse
+    public function lesson(Request $request): Response|RedirectResponse
     {
+        $slug = $this->routeSlug($request);
+        $lesson = $this->routeMemberLesson($request);
         $product = $this->getProduct($request);
-        if ($lesson->product_id !== $product->id) {
+        if (! $this->belongsToMemberProduct($lesson->product_id, $product)) {
             abort(404);
         }
         $user = $request->user();
@@ -340,14 +356,16 @@ class MemberAreaAppController extends Controller
         ] + $this->gamificationProps($product, $user));
     }
 
-    public function completeLesson(Request $request, string $slug, MemberLesson $lesson): JsonResponse|RedirectResponse
+    public function completeLesson(Request $request): JsonResponse|RedirectResponse
     {
+        $slug = $this->routeSlug($request);
+        $lesson = $this->routeMemberLesson($request);
         $user = $request->user();
         if (! $user) {
             return response()->json(['success' => false, 'message' => 'Não autenticado.'], 401);
         }
         $product = $this->getProduct($request);
-        if ($lesson->product_id !== $product->id) {
+        if (! $this->belongsToMemberProduct($lesson->product_id, $product)) {
             abort(404);
         }
         $this->assertNotAdminPreviewMutation($request, $product);
@@ -385,14 +403,20 @@ class MemberAreaAppController extends Controller
         return response()->json(['success' => true, 'progress_percent' => $percent, 'newly_unlocked_achievements' => $newlyUnlocked]);
     }
 
-    public function downloadLessonMaterial(Request $request, string $slug, MemberLesson $lesson, int $index): RedirectResponse
-    {
+    public function downloadLessonMaterial(
+        Request $request,
+        MemberLessonPdfSource $pdfSource,
+        MemberLessonPdfWatermarker $pdfWatermarker,
+    ): RedirectResponse|HttpResponse {
+        $slug = $this->routeSlug($request);
+        $lesson = $this->routeMemberLesson($request);
+        $index = (int) $request->route('index');
         $user = $request->user();
         if (! $user) {
             abort(401);
         }
         $product = $this->getProduct($request);
-        if ($lesson->product_id !== $product->id) {
+        if (! $this->belongsToMemberProduct($lesson->product_id, $product)) {
             abort(404);
         }
         $now = now();
@@ -406,6 +430,19 @@ class MemberAreaAppController extends Controller
         $file = $files[$index] ?? null;
         if ($file === null) {
             abort(404, 'Material não encontrado.');
+        }
+
+        if ((bool) ($lesson->watermark_enabled ?? false) && $this->lessonMaterialIsPdf($file)) {
+            return $this->downloadWatermarkedLessonPdf(
+                $request,
+                $user,
+                $product,
+                $lesson,
+                $file,
+                $index,
+                $pdfSource,
+                $pdfWatermarker,
+            );
         }
 
         $this->studentActivity->recordMaterialDownload(
@@ -432,6 +469,84 @@ class MemberAreaAppController extends Controller
     }
 
     /**
+     * @param  array{url: string, name: string}  $file
+     */
+    private function downloadWatermarkedLessonPdf(
+        Request $request,
+        User $user,
+        Product $product,
+        MemberLesson $lesson,
+        array $file,
+        int $index,
+        MemberLessonPdfSource $pdfSource,
+        MemberLessonPdfWatermarker $pdfWatermarker,
+    ): HttpResponse {
+        $tenantId = $product->tenant_id !== null && $product->tenant_id !== ''
+            ? (int) $product->tenant_id
+            : null;
+
+        try {
+            $binary = $pdfSource->read((string) ($file['url'] ?? ''), $tenantId);
+            $stamped = $pdfWatermarker->stamp($binary, $this->getStudentWatermarkData($user, $product));
+        } catch (MemberPdfWatermarkException $e) {
+            return response()->json([
+                'message' => $e->getMessage(),
+            ], 422, [
+                'X-Content-Type-Options' => 'nosniff',
+                'Cache-Control' => 'private, no-store',
+            ]);
+        }
+
+        $this->studentActivity->recordMaterialDownload(
+            $user,
+            $product,
+            $lesson,
+            $request,
+            $index,
+            (string) ($file['name'] ?? 'Material')
+        );
+
+        $filename = $this->pdfDownloadFilename((string) ($file['name'] ?? 'material.pdf'));
+
+        $encodedName = rawurlencode($filename);
+
+        return response($stamped, 200, [
+            'Content-Type' => 'application/pdf',
+            'Content-Length' => (string) strlen($stamped),
+            'Content-Disposition' => 'attachment; filename="'.$filename.'"; filename*=UTF-8\'\''.$encodedName,
+            'Cache-Control' => 'private, no-store',
+            'X-Content-Type-Options' => 'nosniff',
+        ]);
+    }
+
+    /**
+     * @param  array{url?: string, name?: string}  $file
+     */
+    private function lessonMaterialIsPdf(array $file): bool
+    {
+        $name = strtolower(trim((string) ($file['name'] ?? '')));
+        if (str_ends_with($name, '.pdf')) {
+            return true;
+        }
+
+        $path = parse_url((string) ($file['url'] ?? ''), PHP_URL_PATH);
+
+        return is_string($path) && str_ends_with(strtolower($path), '.pdf');
+    }
+
+    private function pdfDownloadFilename(string $name): string
+    {
+        $base = pathinfo($name, PATHINFO_FILENAME);
+        $base = preg_replace('/[^A-Za-z0-9._-]+/', '-', $base) ?? '';
+        $base = trim((string) $base, '.-');
+        if ($base === '') {
+            $base = 'material';
+        }
+
+        return substr($base, 0, 80).'.pdf';
+    }
+
+    /**
      * @return list<array{url: string, name: string}>
      */
     private function normalizeLessonContentFiles(MemberLesson $lesson): array
@@ -444,6 +559,7 @@ class MemberAreaAppController extends Controller
                 if ($url !== '') {
                     $out[] = ['url' => $url, 'name' => 'Material'];
                 }
+
                 continue;
             }
             if (! is_array($item)) {
@@ -470,7 +586,13 @@ class MemberAreaAppController extends Controller
     {
         $files = $this->normalizeLessonContentFiles($lesson);
         foreach ($files as $i => $file) {
-            $files[$i]['url'] = $this->lessonMaterialDownloadPath($request, $slug, (int) $lesson->id, $i);
+            $files[$i]['url'] = $this->lessonMaterialDownloadPath(
+                $request,
+                $slug,
+                (int) $lesson->id,
+                $i,
+                $this->publicMaterialFilename((string) ($file['name'] ?? ''), (string) ($file['url'] ?? ''))
+            );
         }
 
         return $files;
@@ -488,9 +610,32 @@ class MemberAreaAppController extends Controller
         return $lesson->content_url ?: null;
     }
 
-    private function lessonMaterialDownloadPath(Request $request, string $slug, int $lessonId, int $index): string
+    private function publicMaterialFilename(string $name, string $url): string
     {
-        $suffix = '/aula/'.$lessonId.'/material/'.$index;
+        $candidate = trim($name);
+        if ($candidate === '') {
+            $path = parse_url($url, PHP_URL_PATH);
+            $candidate = is_string($path) ? basename($path) : '';
+        }
+
+        $extension = strtolower(pathinfo($candidate, PATHINFO_EXTENSION));
+        if (! preg_match('/^[a-z0-9]{1,8}$/', $extension)) {
+            $extension = 'bin';
+        }
+
+        $base = pathinfo($candidate, PATHINFO_FILENAME);
+        $base = preg_replace('/[^A-Za-z0-9._-]+/', '-', (string) $base) ?? '';
+        $base = trim($base, '.-');
+        if ($base === '') {
+            $base = 'material';
+        }
+
+        return substr($base, 0, 80).'.'.$extension;
+    }
+
+    private function lessonMaterialDownloadPath(Request $request, string $slug, int $lessonId, int $index, string $filename): string
+    {
+        $suffix = '/aula/'.$lessonId.'/material/'.$index.'/'.$filename;
         if ($this->isHostMemberAreaRequest($request)) {
             return $suffix;
         }
@@ -498,11 +643,13 @@ class MemberAreaAppController extends Controller
         return '/m/'.$slug.$suffix;
     }
 
-    public function storeLessonComment(Request $request, string $slug, MemberLesson $lesson): JsonResponse|RedirectResponse
+    public function storeLessonComment(Request $request): JsonResponse|RedirectResponse
     {
+        $slug = $this->routeSlug($request);
+        $lesson = $this->routeMemberLesson($request);
         $product = $this->getProduct($request);
         $this->assertNotAdminPreviewMutation($request, $product);
-        if ($lesson->product_id !== $product->id) {
+        if (! $this->belongsToMemberProduct($lesson->product_id, $product)) {
             abort(404);
         }
         $lesson->loadMissing('module');
@@ -547,17 +694,21 @@ class MemberAreaAppController extends Controller
         $product = $this->getProduct($request);
         $user = $request->user();
         $internalProducts = $product->memberInternalProducts()->with('relatedProduct')->orderBy('position')->get();
-        $userProductIds = $user->products()->pluck('products.id')->flip()->all();
+        $userProductIds = $this->userOwnedProductIdMap($user);
 
         $items = $internalProducts->map(fn (MemberInternalProduct $ip) => [
             'id' => $ip->related_product_id,
             'name' => $ip->relatedProduct?->name,
+            'type' => $ip->relatedProduct?->type,
             'description' => $ip->relatedProduct?->description,
             'image_url' => $ip->relatedProduct?->image ? (new StorageService($product->tenant_id))->url($ip->relatedProduct->image) : null,
             'checkout_slug' => $ip->relatedProduct?->checkout_slug,
             'checkout_url' => $ip->relatedProduct?->checkout_slug ? url('/c/'.$ip->relatedProduct->checkout_slug) : null,
+            'access_url' => $ip->relatedProduct
+                ? $this->relatedProductAccessUrl($ip->relatedProduct, $user, isset($userProductIds[(string) $ip->related_product_id]))
+                : null,
             'price' => $ip->relatedProduct?->price,
-            'has_access' => isset($userProductIds[$ip->related_product_id]),
+            'has_access' => isset($userProductIds[(string) $ip->related_product_id]),
         ])->values()->all();
 
         return Inertia::render('MemberAreaApp/Loja', [
@@ -955,12 +1106,93 @@ class MemberAreaAppController extends Controller
 
     private function getProduct(Request $request): Product
     {
-        $product = $request->route('product') ?? $request->attributes->get('member_area_product');
+        $product = $request->attributes->get('member_area_product')
+            ?? $request->route('product');
         if (! $product instanceof Product) {
             abort(404);
         }
 
         return $product;
+    }
+
+    private function routeSlug(Request $request): string
+    {
+        return (string) ($request->route('slug') ?? $request->attributes->get('member_area_slug') ?? '');
+    }
+
+    private function routeMemberModule(Request $request): MemberModule
+    {
+        $module = $request->route('module');
+        if ($module instanceof MemberModule) {
+            return $module;
+        }
+        if ($module === null || $module === '') {
+            abort(404);
+        }
+
+        return MemberModule::query()->findOrFail($module);
+    }
+
+    private function routeMemberLesson(Request $request): MemberLesson
+    {
+        $lesson = $request->route('lesson');
+        if ($lesson instanceof MemberLesson) {
+            return $lesson;
+        }
+        if ($lesson === null || $lesson === '') {
+            abort(404);
+        }
+
+        return MemberLesson::query()->findOrFail($lesson);
+    }
+
+    private function belongsToMemberProduct(mixed $ownerProductId, Product $product): bool
+    {
+        return (string) $ownerProductId === (string) $product->id;
+    }
+
+    /**
+     * @return array<string, int>
+     */
+    private function userOwnedProductIdMap(User $user): array
+    {
+        return $user->products()
+            ->pluck('products.id')
+            ->map(fn ($id) => (string) $id)
+            ->flip()
+            ->all();
+    }
+
+    /**
+     * URL de acesso ao produto relacionado no card (área de membros, link rastreado, etc.).
+     * Nunca força /m/{checkout_slug} para produtos que não são área de membros.
+     */
+    private function relatedProductAccessUrl(Product $related, User $user, bool $hasAccess): ?string
+    {
+        if (! $hasAccess) {
+            return null;
+        }
+
+        if ($related->type === Product::TYPE_AREA_MEMBROS && $related->checkout_slug) {
+            return $this->resolver->baseUrlForProduct($related);
+        }
+
+        if (in_array($related->type, DeliverableAccessLinkService::trackedProductTypes(), true)) {
+            $tracked = app(DeliverableAccessLinkService::class)->trackedUrl($user, $related);
+            if (is_string($tracked) && $tracked !== '') {
+                return $tracked;
+            }
+        }
+
+        if ($related->type === Product::TYPE_AREA_MEMBROS_EXTERNA) {
+            $config = is_array($related->checkout_config) ? $related->checkout_config : [];
+            $external = trim((string) ($config['deliverable_link'] ?? $config['external_member_area_url'] ?? ''));
+            if ($external !== '' && preg_match('#^https?://#i', $external)) {
+                return $external;
+            }
+        }
+
+        return null;
     }
 
     /** @return array{push_enabled: bool, vapid_public: string|null} */
@@ -1084,7 +1316,13 @@ class MemberAreaAppController extends Controller
 
         if ($sectionType === 'products') {
             $related = $m->relatedProduct;
-            $hasAccess = $m->related_product_id ? isset($userProductIds[$m->related_product_id]) : false;
+            $hasAccess = $m->related_product_id
+                ? isset($userProductIds[(string) $m->related_product_id])
+                : false;
+            // access_type free: liberado sem compra
+            if (($m->access_type ?? '') === 'free') {
+                $hasAccess = true;
+            }
 
             return [
                 'id' => $m->id,
@@ -1096,10 +1334,13 @@ class MemberAreaAppController extends Controller
                 'related_product' => $related ? [
                     'id' => $related->id,
                     'name' => $related->name,
+                    'type' => $related->type,
                     'image_url' => $related->image ? (new StorageService($product->tenant_id))->url($related->image) : null,
                     'checkout_slug' => $related->checkout_slug,
-                    'checkout_url' => url('/c/'.$related->checkout_slug),
-                    'member_area_slug' => $related->checkout_slug,
+                    'checkout_url' => $related->checkout_slug
+                        ? rtrim(PublicAppUrl::base(), '/').'/c/'.$related->checkout_slug
+                        : null,
+                    'access_url' => $this->relatedProductAccessUrl($related, $user, $hasAccess),
                 ] : null,
                 'has_access' => $hasAccess,
             ];
@@ -1213,20 +1454,33 @@ class MemberAreaAppController extends Controller
     }
 
     /**
-     * Dados do aluno para marca d'água (nome, email, cpf se houver no pedido).
+     * Dados do aluno para marca d'água (nome, e-mail, CPF e número do cliente quando houver pedido).
+     *
+     * @return array{name: string, email: string, cpf: string|null, customer_number: string}
      */
     private function getStudentWatermarkData(User $user, Product $product): array
     {
-        $cpf = Order::where('user_id', $user->id)
+        $order = Order::query()
+            ->where('user_id', $user->id)
             ->where('product_id', $product->id)
             ->where('status', 'completed')
-            ->latest()
-            ->value('cpf');
-        if (is_string($cpf) && trim($cpf) !== '') {
-            return ['name' => $user->name ?? '', 'email' => $user->email ?? '', 'cpf' => trim($cpf)];
-        }
+            ->latest('id')
+            ->first(['id', 'cpf', 'email', 'public_reference']);
 
-        return ['name' => $user->name ?? '', 'email' => $user->email ?? '', 'cpf' => null];
+        $cpf = is_string($order?->cpf) && trim($order->cpf) !== '' ? trim($order->cpf) : null;
+        $email = is_string($order?->email) && trim($order->email) !== ''
+            ? trim($order->email)
+            : (string) ($user->email ?? '');
+        $number = is_string($order?->public_reference) && trim($order->public_reference) !== ''
+            ? trim($order->public_reference)
+            : (string) $user->id;
+
+        return [
+            'name' => (string) ($user->name ?? ''),
+            'email' => $email,
+            'cpf' => $cpf,
+            'customer_number' => $number,
+        ];
     }
 
     public function manifest(Request $request, ?string $slug = null): \Illuminate\Http\JsonResponse

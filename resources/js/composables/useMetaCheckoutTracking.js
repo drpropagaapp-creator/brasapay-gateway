@@ -6,6 +6,7 @@ import {
     trackMetaEvent,
     buildCheckoutEventPayload,
     buildPurchaseEventPayload,
+    buildAdvancedMatching,
 } from '@/lib/metaTracking/browserPixel.js';
 import { mirrorMetaEventToServer } from '@/lib/metaTracking/serverMirror.js';
 
@@ -142,18 +143,30 @@ export async function runCheckoutMetaTracking({
     return result;
 }
 
+export async function applyMetaAdvancedMatching(pixels, customer) {
+    const metaEntries = getMetaEntries(pixels);
+    if (!metaEntries.length || !customer) return false;
+    const matching = buildAdvancedMatching(customer);
+    if (!Object.keys(matching).length) return false;
+    return initMetaPixels(metaEntries, matching);
+}
+
 export async function fireMetaPurchaseReliable({
     pixels,
     value,
     currency = 'BRL',
     orderId,
+    contentKey = '',
+    contents = null,
+    customer = null,
     triggerType = 'approved',
     isOrderBump = false,
     settleDelayMs = 450,
 }) {
     const metaEntries = getMetaEntries(pixels);
     if (metaEntries.length) {
-        await initMetaPixels(metaEntries);
+        const matching = customer ? buildAdvancedMatching(customer) : null;
+        await initMetaPixels(metaEntries, matching && Object.keys(matching).length ? matching : null);
     }
 
     const shouldFireForEntry = (entry) => {
@@ -163,7 +176,7 @@ export async function fireMetaPurchaseReliable({
         return true;
     };
 
-    const purchasePayload = buildPurchaseEventPayload(value, currency, orderId);
+    const purchasePayload = buildPurchaseEventPayload(value, currency, orderId, contentKey, contents);
     const eventID = eventIdPurchase(orderId);
 
     if (typeof window.fbq === 'function') {
@@ -182,5 +195,6 @@ export function useMetaCheckoutTracking() {
     return {
         runCheckoutMetaTracking,
         fireMetaPurchaseReliable,
+        applyMetaAdvancedMatching,
     };
 }

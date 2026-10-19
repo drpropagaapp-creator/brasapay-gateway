@@ -42,7 +42,7 @@ class PaymentService
             if (! $this->isPixAcquirerAllowedForOrder($gatewaySlug, $order)) {
                 continue;
             }
-            $resolved = $this->resolveGatewayPaymentContext($tenantId, $gatewaySlug);
+            $resolved = $this->resolveGatewayPaymentContext($tenantId, $gatewaySlug, 'pix');
             if ($resolved === null) {
                 continue;
             }
@@ -138,7 +138,7 @@ class PaymentService
             if (microtime(true) > $deadline) {
                 break;
             }
-            $resolved = $this->resolveGatewayPaymentContext($tenantId, $gatewaySlug);
+            $resolved = $this->resolveGatewayPaymentContext($tenantId, $gatewaySlug, 'card');
             if ($resolved === null) {
                 continue;
             }
@@ -207,6 +207,49 @@ class PaymentService
     }
 
     /**
+     * Apple Pay / Google Pay na Stripe: cobra só nesse adquirente, sem cair na redundância do cartão.
+     *
+     * @param  array{name: string, document: string, email: string}  $consumer
+     * @param  array<string, mixed>  $card
+     * @return array{transaction_id: string, gateway: string, status?: string, client_secret?: string}
+     */
+    public function createStripeWalletPayment(Order $order, array $consumer, array $card): array
+    {
+        $resolved = $this->resolveGatewayPaymentContext($order->tenant_id, 'stripe', 'card');
+        if ($resolved === null || empty($resolved['credentials'])) {
+            throw new \RuntimeException('Stripe não está disponível para Apple Pay ou Google Pay.');
+        }
+
+        $driver = GatewayRegistry::driver('stripe');
+        if (! $driver) {
+            throw new \RuntimeException('Stripe não está disponível para Apple Pay ou Google Pay.');
+        }
+
+        $result = $driver->createCardPayment(
+            $resolved['credentials'],
+            (float) $order->amount,
+            $consumer,
+            (string) $order->id,
+            $card
+        );
+        $order->update([
+            'gateway' => 'stripe',
+            'gateway_id' => $result['transaction_id'] ?? null,
+        ]);
+
+        $return = [
+            'transaction_id' => $result['transaction_id'] ?? '',
+            'gateway' => 'stripe',
+            'status' => $result['status'] ?? null,
+        ];
+        if (isset($result['client_secret'])) {
+            $return['client_secret'] = $result['client_secret'];
+        }
+
+        return $return;
+    }
+
+    /**
      * Cria pagamento por boleto. Tenta gateways na ordem de redundância até um suceder.
      *
      * @param  array{name: string, document: string, email: string}  $consumer
@@ -224,7 +267,7 @@ class PaymentService
             if (microtime(true) > $deadline) {
                 break;
             }
-            $resolved = $this->resolveGatewayPaymentContext($tenantId, $gatewaySlug);
+            $resolved = $this->resolveGatewayPaymentContext($tenantId, $gatewaySlug, 'boleto');
             if ($resolved === null) {
                 continue;
             }
@@ -291,7 +334,7 @@ class PaymentService
     {
         $orderSlugs = $this->getGatewayOrderForMethod($tenantId, $method, $product, $gatewayConfigOverride);
         foreach ($orderSlugs as $gatewaySlug) {
-            $resolved = $this->resolveGatewayPaymentContext($tenantId, $gatewaySlug);
+            $resolved = $this->resolveGatewayPaymentContext($tenantId, $gatewaySlug, $method);
             if ($resolved === null) {
                 continue;
             }
@@ -369,7 +412,51 @@ class PaymentService
             'pix_auto' => $pick('pix_auto'),
             'open_finance' => $pick('open_finance'),
             'paypal' => $pick('paypal'),
+            'wallet' => $pick('wallet'),
         ];
+    }
+
+    /**
+     * Adquirente da carteira Apple Pay / Google Pay (CajuPay ou Stripe), na ordem salva em Adquirentes.
+     */
+    public function getFirstAvailableWalletGateway(?int $tenantId, ?Product $product = null): ?string
+    {
+        $slugs = $this->getGatewayOrderForMethod($tenantId, 'wallet', $product);
+        $allowed = ['cajupay', 'stripe'];
+        $slugs = array_values(array_filter($slugs, fn ($slug) => in_array($slug, $allowed, true)));
+        if ($slugs === []) {
+            $slugs = $allowed;
+        }
+
+        foreach ($slugs as $slug) {
+            $resolved = $this->resolveGatewayPaymentContext($tenantId, $slug, 'card');
+            if ($resolved === null || empty($resolved['credentials'])) {
+                continue;
+            }
+            if ($slug === 'stripe') {
+                $secret = trim((string) ($resolved['credentials']['secret_key'] ?? ''));
+                $publishable = trim((string) ($resolved['credentials']['publishable_key'] ?? ''));
+                if ($secret === '' || $publishable === '') {
+                    continue;
+                }
+            }
+
+            return $slug;
+        }
+
+        return null;
+    }
+
+    /**
+     * @return array{label: string}|null
+     */
+    public function walletAcquirerLabel(?int $tenantId, ?Product $product = null): ?string
+    {
+        return match ($this->getFirstAvailableWalletGateway($tenantId, $product)) {
+            'stripe' => 'Stripe',
+            'cajupay' => 'CajuPay',
+            default => null,
+        };
     }
 
     public function getGatewayOrderForMethod(?int $tenantId, string $method, ?Product $product = null, ?array $gatewayConfigOverride = null): array
@@ -506,7 +593,7 @@ class PaymentService
 
             foreach ($slugsToCheck as $slug) {
                 if ($slug === 'cajupay') {
-                    if (! app(CajuPayAccountResolver::class)->isAvailableForTenant($tenantId)) {
+                    if (app(CajuPayAccountResolver::class)->resolveForPayment($tenantId, $methodKey) === null) {
                         continue;
                     }
                 } else {
@@ -531,24 +618,6 @@ class PaymentService
                             'gateway_name' => $gateway['name'] ?? $slug,
                         ];
                     }
-                    if ($slug === 'cajupay') {
-                        if (($enabled['apple_pay'] ?? true) !== false) {
-                            $methods[] = [
-                                'id' => 'apple_pay',
-                                'label' => 'Apple Pay',
-                                'gateway_slug' => 'cajupay',
-                                'gateway_name' => 'Apple Pay',
-                            ];
-                        }
-                        if (($enabled['google_pay'] ?? true) !== false) {
-                            $methods[] = [
-                                'id' => 'google_pay',
-                                'label' => 'Google Pay',
-                                'gateway_slug' => 'cajupay',
-                                'gateway_name' => 'Google Pay',
-                            ];
-                        }
-                    }
                 } else {
                     $methods[] = [
                         'id' => $meta['id'],
@@ -558,6 +627,29 @@ class PaymentService
                     ];
                 }
                 break;
+            }
+        }
+
+        $walletSlug = $this->getFirstAvailableWalletGateway($tenantId, $product);
+        if ($walletSlug !== null) {
+            $walletName = $walletSlug === 'stripe' ? 'Stripe' : 'CajuPay';
+            if (($enabled['apple_pay'] ?? true) !== false) {
+                $methods[] = [
+                    'id' => 'apple_pay',
+                    'label' => 'Apple Pay',
+                    'gateway_slug' => $walletSlug,
+                    'gateway_name' => 'Apple Pay',
+                    'wallet_via' => $walletName,
+                ];
+            }
+            if (($enabled['google_pay'] ?? true) !== false) {
+                $methods[] = [
+                    'id' => 'google_pay',
+                    'label' => 'Google Pay',
+                    'gateway_slug' => $walletSlug,
+                    'gateway_name' => 'Google Pay',
+                    'wallet_via' => $walletName,
+                ];
             }
         }
 
@@ -581,14 +673,7 @@ class PaymentService
             $slugsToCheck = $this->getGatewayOrderForMethod($tenantId, $methodKey, $product);
             foreach ($slugsToCheck as $slug) {
                 if ($slug === 'cajupay') {
-                    if (app(CajuPayAccountResolver::class)->isAvailableForTenant($tenantId)) {
-                        $out[$methodKey] = true;
-                        break;
-                    }
-                    continue;
-                }
-                if ($slug === 'cajupay') {
-                    if (! app(CajuPayAccountResolver::class)->isAvailableForTenant($tenantId)) {
+                    if (app(CajuPayAccountResolver::class)->resolveForPayment($tenantId, $methodKey) === null) {
                         continue;
                     }
                 } else {
@@ -610,7 +695,7 @@ class PaymentService
         $firstCardSlug = null;
         foreach ($this->getGatewayOrderForMethod($tenantId, 'card', $product) as $slug) {
             if ($slug === 'cajupay') {
-                if (app(CajuPayAccountResolver::class)->isAvailableForTenant($tenantId)) {
+                if (app(CajuPayAccountResolver::class)->resolveForPayment($tenantId, 'card') !== null) {
                     $firstCardSlug = $slug;
                     break;
                 }
@@ -625,7 +710,7 @@ class PaymentService
                 break;
             }
         }
-        if ($firstCardSlug === 'cajupay') {
+        if ($this->getFirstAvailableWalletGateway($tenantId, $product) !== null) {
             if (PlatformPaymentMethods::isEnabled('apple_pay')) {
                 $out['apple_pay'] = true;
             }
@@ -691,14 +776,17 @@ class PaymentService
     /**
      * @return array{credentials: array<string, mixed>, cajupay_account_id: ?int, gateway_credential_id: ?int}|null
      */
-    private function resolveGatewayPaymentContext(?int $tenantId, string $gatewaySlug): ?array
+    private function resolveGatewayPaymentContext(?int $tenantId, string $gatewaySlug, ?string $method = null): ?array
     {
         if (! GatewayPluginRequirement::isUnlocked($gatewaySlug)) {
             return null;
         }
 
         if ($gatewaySlug === 'cajupay') {
-            $account = app(CajuPayAccountResolver::class)->resolveForTenant($tenantId);
+            $resolver = app(CajuPayAccountResolver::class);
+            $account = $method !== null && $method !== ''
+                ? $resolver->resolveForPayment($tenantId, $method)
+                : $resolver->resolveForTenant($tenantId);
             if ($account === null) {
                 return null;
             }

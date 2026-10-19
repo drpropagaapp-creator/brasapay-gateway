@@ -31,11 +31,13 @@ use App\Services\SellerIntegrationVisibility;
 use App\Services\StorageService;
 use App\Services\TeamAccessService;
 use App\Support\CardInstallments;
+use App\Support\EmailLogoImage;
 use App\Support\HtmlSanitizer;
 use App\Support\MoneyDecimal;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -574,6 +576,7 @@ class ProdutosController extends Controller
             'exchange_rates' => $rates,
             'checkout_gateway_ui' => $checkoutGatewayUi,
             'global_payment_methods_available' => $globalPaymentMethodsAvailable,
+            'wallet_acquirer_label' => $paymentService->walletAcquirerLabel($tenantId, $produto),
             'cademi_integrations' => $cademiIntegrations,
             'cademi_available' => $cademiAvailable,
             'shipping_stores' => PhysicalProductAccess::globalEnabled() ? $shippingStores : [],
@@ -761,6 +764,9 @@ class ProdutosController extends Controller
         }
 
         $validated['is_active'] = $request->boolean('is_active', true);
+        if (Schema::hasColumn('products', 'show_in_marketplace')) {
+            $validated['show_in_marketplace'] = $request->boolean('show_in_marketplace');
+        }
         $validated['currency'] = $validated['currency'] ?? config('products.currency_default', 'BRL');
         $validated['price'] = MoneyDecimal::storageFromBrl(
             (float) $validated['price'],
@@ -1065,9 +1071,10 @@ class ProdutosController extends Controller
         ]);
 
         $file = $request->file('logo');
-        $ext = strtolower((string) ($file->guessExtension() ?: $file->getClientOriginalExtension() ?: 'png'));
-        if (! in_array($ext, ['jpg', 'jpeg', 'png', 'gif', 'webp'], true)) {
-            $ext = 'png';
+        try {
+            [$binary, $ext] = EmailLogoImage::prepareForEmail($file);
+        } catch (\RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
         }
 
         $storage = app(StorageService::class);
@@ -1079,8 +1086,23 @@ class ProdutosController extends Controller
             }
         }
         $filename = 'logo-'.strtolower((string) Str::ulid()).'.'.$ext;
-        $path = $dir.'/'.$filename;
-        $storage->putFileAs($dir, $file, $filename);
+        $tmpPath = tempnam(sys_get_temp_dir(), 'emlogo');
+        if ($tmpPath === false) {
+            return response()->json(['message' => 'Falha ao processar a logo.'], 500);
+        }
+        file_put_contents($tmpPath, $binary);
+        try {
+            $uploaded = new \Illuminate\Http\UploadedFile(
+                $tmpPath,
+                $filename,
+                $ext === 'jpg' ? 'image/jpeg' : 'image/png',
+                null,
+                true
+            );
+            $path = $storage->putFileAs($dir, $uploaded, $filename);
+        } finally {
+            @unlink($tmpPath);
+        }
         $logoUrl = $storage->url($path);
 
         $config = $produto->checkout_config ?? [];
@@ -1092,6 +1114,30 @@ class ProdutosController extends Controller
         $produto->update(['checkout_config' => $config]);
 
         return response()->json(['logo_url' => $logoUrl]);
+    }
+
+    public function deleteEmailTemplateLogo(Product $produto)
+    {
+        $this->authorizeProduct($produto);
+
+        $storage = app(StorageService::class);
+        $dir = 'email-templates/'.$produto->id;
+        $disk = $storage->disk();
+        if ($disk->exists($dir)) {
+            foreach ($disk->files($dir) as $existing) {
+                $storage->delete($existing);
+            }
+        }
+
+        $config = $produto->checkout_config ?? [];
+        $config['email_template'] = array_merge(
+            Product::defaultEmailTemplate(),
+            $config['email_template'] ?? [],
+            ['logo_url' => '']
+        );
+        $produto->update(['checkout_config' => $config]);
+
+        return response()->json(['logo_url' => '']);
     }
 
     public function storeOffer(Request $request, Product $produto)
@@ -1435,6 +1481,7 @@ class ProdutosController extends Controller
             'price_eur' => $priceEur,
             'price_usd' => $priceUsd,
             'is_active' => $p->is_active,
+            'show_in_marketplace' => (bool) ($p->show_in_marketplace ?? false),
             'available_for_purchase' => $p->isAvailableForPurchase(),
             'approval' => app(ProductApprovalService::class)->sellerFacingStatus($p),
             'conversion_pixels' => $p->conversion_pixels,

@@ -123,23 +123,18 @@ class PanelPwaController extends Controller
 
             $subscription = PanelPushSubscription::updateOrCreate(
                 [
-                    'user_id' => $user->id,
-                    'provider' => PanelPushSubscription::PROVIDER_FCM,
+                    'fcm_token' => $validated['fcm_token'],
                 ],
                 [
+                    'user_id' => $user->id,
                     'tenant_id' => $user->tenant_id,
-                    'fcm_token' => $validated['fcm_token'],
+                    'provider' => PanelPushSubscription::PROVIDER_FCM,
                     'endpoint' => 'fcm:'.$validated['fcm_token'],
                     'keys' => null,
                     'user_agent' => $request->userAgent(),
                     'device_label' => $validated['device_label'] ?? null,
                 ]
             );
-
-            PanelPushSubscription::query()
-                ->where('user_id', $user->id)
-                ->where('provider', PanelPushSubscription::PROVIDER_VAPID)
-                ->delete();
 
             return response()->json([
                 'success' => true,
@@ -179,17 +174,6 @@ class PanelPwaController extends Controller
                 'device_label' => $validated['device_label'] ?? null,
             ]
         );
-
-        PanelPushSubscription::query()
-            ->where('user_id', $user->id)
-            ->where('provider', PanelPushSubscription::PROVIDER_VAPID)
-            ->where('id', '!=', $subscription->id)
-            ->delete();
-
-        PanelPushSubscription::query()
-            ->where('user_id', $user->id)
-            ->where('provider', PanelPushSubscription::PROVIDER_FCM)
-            ->delete();
 
         return response()->json([
             'success' => true,

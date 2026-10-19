@@ -22,9 +22,11 @@ use App\Support\ProductApprovalSettings;
 use App\Support\KycRequirementSettings;
 use App\Support\SellerPanelSupportSettings;
 use App\Support\PlatformCompanySettings;
+use App\Support\PlatformGa4Settings;
 use App\Support\DatabaseBackupSettings;
 use App\Services\Platform\DatabaseBackupService;
 use App\Support\BrazilianDocuments;
+use App\Services\CurrencyRateSyncService;
 use App\Services\InstallationPublicUrlService;
 use App\Services\Stacker\ContainerRestartRequestService;
 use App\Support\DockerSetupState;
@@ -157,6 +159,7 @@ class SettingsController extends Controller
                 ...($tenantId === null ? KycRequirementSettings::forSettingsForm() : []),
                 ...($tenantId === null ? AccountManagerSettings::forSettingsForm() : []),
                 ...($tenantId === null ? SellerPanelSupportSettings::forSettingsForm() : []),
+                ...($tenantId === null ? PlatformGa4Settings::forSettingsForm() : []),
                 ...($tenantId === null ? PlatformCompanySettings::forSettingsForm() : []),
                 ...($tenantId === null ? [
                     'legal_privacy_policy_html' => $legalForm['legal_privacy_policy_html'],
@@ -177,6 +180,7 @@ class SettingsController extends Controller
             ] : null,
             'legal_defaults' => $tenantId === null ? ($legalForm['legal_defaults'] ?? []) : [],
             'seller_integrations_catalog' => $tenantId === null ? SellerIntegrationVisibility::catalog() : [],
+            'currencies_rates_updated_at_label' => $tenantId === null ? CurrencyRateSyncService::updatedAtLabel() : null,
         ]);
     }
 
@@ -241,6 +245,9 @@ class SettingsController extends Controller
             'seller_panel_support_url' => ['nullable', 'string', 'max:2048'],
             'seller_panel_support_icon' => ['nullable', 'string', 'in:whatsapp,message,headset,help,custom'],
             'seller_panel_support_color' => ['nullable', 'string', 'max:16'],
+            'platform_ga4_enabled' => ['nullable', 'boolean'],
+            'platform_ga4_measurement_id' => ['nullable', 'string', 'max:32'],
+            'platform_ga4_api_secret' => ['nullable', 'string', 'max:128'],
             'legal_privacy_policy_html' => ['nullable', 'string', 'max:200000'],
             'legal_terms_of_use_html' => ['nullable', 'string', 'max:200000'],
             'legal_privacy_contact_email' => ['nullable', 'email', 'max:255'],
@@ -358,6 +365,7 @@ class SettingsController extends Controller
             }
 
             SellerPanelSupportSettings::persistFromValidated($validated);
+            PlatformGa4Settings::persistFromValidated($validated);
             PlatformCompanySettings::persistFromValidated($validated);
             KycRequirementSettings::persistFromValidated($validated);
             DatabaseBackupSettings::persistFromValidated($validated, $request);
@@ -408,6 +416,7 @@ class SettingsController extends Controller
             'seller_panel_support_icon',
             'seller_panel_support_color',
         ];
+        $platformGa4Keys = PlatformGa4Settings::FORM_KEYS;
         $platformCompanyKeys = [
             'platform_legal_name',
             'platform_cnpj',
@@ -475,6 +484,9 @@ class SettingsController extends Controller
                 continue;
             }
             if (in_array($key, $sellerPanelSupportKeys, true)) {
+                continue;
+            }
+            if (in_array($key, $platformGa4Keys, true)) {
                 continue;
             }
             if (in_array($key, $platformCompanyKeys, true)) {

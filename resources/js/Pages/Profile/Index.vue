@@ -7,6 +7,7 @@ import ProfileTotpSection from '@/components/profile/ProfileTotpSection.vue';
 import KycDocumentsForm from '@/components/kyc/KycDocumentsForm.vue';
 import { Camera, IdCard, Lock, Loader2, Building2, X } from 'lucide-vue-next';
 import axios from 'axios';
+import { maskWhatsappPhone } from '@/utils/whatsappPhone';
 
 defineOptions({ layout: LayoutInfoprodutor });
 
@@ -138,15 +139,7 @@ function submitPassword() {
 }
 
 function maskPhone(value) {
-    let digits = String(value || '').replace(/\D/g, '');
-    if (digits.startsWith('55') && digits.length >= 12) {
-        digits = digits.slice(2);
-    }
-    digits = digits.slice(0, 11);
-    if (digits.length <= 2) return digits;
-    if (digits.length <= 6) return `(${digits.slice(0, 2)}) ${digits.slice(2)}`;
-    if (digits.length <= 10) return `(${digits.slice(0, 2)}) ${digits.slice(2, 6)}-${digits.slice(6)}`;
-    return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7)}`;
+    return maskWhatsappPhone(value);
 }
 
 function submitWhatsapp() {
@@ -514,7 +507,7 @@ function cancelConversion() {
                                     @input="whatsappForm.phone = maskPhone($event.target.value)"
                                 />
                                 <p class="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-                                    Número usado para contato da plataforma. A chave PIX de saque não muda.
+                                    Brasil com DDD ou internacional com +DDI. A chave PIX de saque não muda.
                                 </p>
                                 <p v-if="whatsappForm.errors.phone" class="mt-1 text-sm text-red-600 dark:text-red-400">
                                     {{ whatsappForm.errors.phone }}

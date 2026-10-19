@@ -25,6 +25,17 @@ function checkoutHref(item) {
     }
     return '#';
 }
+
+/** Área de membros na mesma aba; links/deliverables em nova aba. */
+function accessOpensInNewTab(url, type) {
+    if (type === 'area_membros') {
+        return false;
+    }
+    if (!url || url === '#') {
+        return false;
+    }
+    return /^https?:\/\//i.test(url) || url.startsWith('/a/');
+}
 </script>
 
 <template>
@@ -40,7 +51,14 @@ function checkoutHref(item) {
                     <h2 class="font-semibold">{{ item.name }}</h2>
                     <p v-if="item.description" class="mt-1 text-sm text-zinc-400 line-clamp-2">{{ item.description }}</p>
                     <div class="mt-4">
-                        <Link v-if="item.has_access" :href="href('/')" class="text-sm text-[var(--ma-primary)] hover:underline">Acessar área</Link>
+                        <a
+                            v-if="item.has_access && item.access_url"
+                            :href="item.access_url"
+                            class="text-sm text-[var(--ma-primary)] hover:underline"
+                            :target="accessOpensInNewTab(item.access_url, item.type) ? '_blank' : undefined"
+                            :rel="accessOpensInNewTab(item.access_url, item.type) ? 'noopener' : undefined"
+                        >Acessar</a>
+                        <Link v-else-if="item.has_access" :href="href('/')" class="text-sm text-[var(--ma-primary)] hover:underline">Acessar área</Link>
                         <Button
                             v-else
                             as="a"

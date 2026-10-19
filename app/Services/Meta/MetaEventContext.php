@@ -5,7 +5,9 @@ namespace App\Services\Meta;
 class MetaEventContext
 {
     /**
+     * @param  array<int, string>  $externalIds
      * @param  array<int, string>  $contentIds
+     * @param  array<int, array{id: string, quantity: int, item_price?: float}>  $contents
      */
     public function __construct(
         public readonly ?string $fbp = null,
@@ -22,10 +24,17 @@ class MetaEventContext
         public readonly ?string $country = null,
         public readonly ?string $zip = null,
         public readonly ?string $externalId = null,
+        public readonly array $externalIds = [],
+        public readonly ?string $cpf = null,
+        public readonly ?string $subscriptionId = null,
         public readonly ?float $value = null,
         public readonly string $currency = 'BRL',
         public readonly array $contentIds = [],
         public readonly ?string $contentName = null,
+        public readonly array $contents = [],
+        public readonly ?string $orderId = null,
+        public readonly ?string $customerSegmentation = null,
+        public readonly ?int $originalPurchaseEventTime = null,
         public readonly int $numItems = 1,
         public readonly ?int $eventTime = null,
     ) {}
@@ -50,10 +59,15 @@ class MetaEventContext
             'country' => $this->country,
             'zip' => $this->zip,
             'external_id' => $this->externalId,
+            'external_ids' => $this->externalIds,
+            'subscription_id' => $this->subscriptionId,
             'value' => $this->value,
             'currency' => $this->currency,
             'content_ids' => $this->contentIds,
             'content_name' => $this->contentName,
+            'contents' => $this->contents,
+            'order_id' => $this->orderId,
+            'customer_segmentation' => $this->customerSegmentation,
             'num_items' => $this->numItems,
             'event_time' => $this->eventTime,
         ];

@@ -74,21 +74,24 @@ self.addEventListener('push', function (event) {
       payload.body = event.data.text();
     } catch (_) {}
   }
-  const fallbackIcon = new URL('/icons/icon-192x192.png', self.location.origin).href;
-  const icon = payload.icon || payload.badge || fallbackIcon;
-  const badge = payload.badge || payload.icon || icon;
+  const icon = payload.icon || payload.badge || null;
   event.waitUntil(
     (async function () {
-      await self.registration.showNotification(payload.title, {
+      const options = {
         body: payload.body,
-        icon: icon,
-        badge: badge,
         tag: payload.tag || payload.url || 'panel-push',
         renotify: false,
         silent: false,
         vibrate: [200, 100, 200],
         data: { url: payload.url },
-      });
+      };
+      // No Android o ícone do PWA (logo da plataforma no manifesto) já fica à esquerda.
+      // icon/badge desenham uma segunda logo à direita.
+      const android = /Android/i.test((self.navigator && self.navigator.userAgent) || '');
+      if (!android && icon) {
+        options.icon = icon;
+      }
+      await self.registration.showNotification(payload.title, options);
       // Som personalizado: SW não tem Audio; avisa as janelas abertas do painel para tocarem.
       try {
         const clientList = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });

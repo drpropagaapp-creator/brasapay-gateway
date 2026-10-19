@@ -4,7 +4,9 @@ namespace App\Http\Controllers;
 
 use App\Mail\CampaignMail;
 use App\Models\EmailCampaign;
+use App\Models\OutboundEmail;
 use App\Models\Product;
+use App\Models\User;
 use App\Services\BrandingEmailData;
 use App\Services\EmailCampaignRecipientsService;
 use App\Services\PlatformAuditService;
@@ -14,6 +16,7 @@ use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -26,7 +29,7 @@ class EmailMarketingController extends Controller
         protected EmailCampaignRecipientsService $recipientsService
     ) {}
 
-    public function index(): Response
+    public function index(Request $request): Response
     {
         $tenantId = null;
         $emailConfigured = $this->mailConfig->isEmailConfigured($tenantId);
@@ -67,6 +70,16 @@ class EmailMarketingController extends Controller
             ? $appUrl . '/cron?token=' . urlencode($cronSecret)
             : null;
 
+        $section = $request->query('aba') === 'enviados' ? 'enviados' : 'marketing';
+        $status = (string) $request->query('status', '');
+        if (! in_array($status, ['sent', 'failed', 'opened', 'sending'], true)) {
+            $status = '';
+        }
+        $search = trim((string) $request->query('q', ''));
+        if (mb_strlen($search) > 120) {
+            $search = mb_substr($search, 0, 120);
+        }
+
         return Inertia::render('EmailMarketing/Index', [
             'campaigns' => $campaigns,
             'email_configured' => $emailConfigured,
@@ -77,7 +90,69 @@ class EmailMarketingController extends Controller
             'cron_url' => $cronUrl,
             'schedule_ok' => $scheduleOk,
             'queue_ok' => $queueOk,
+            'section' => $section,
+            'email_filters' => [
+                'status' => $status !== '' ? $status : null,
+                'q' => $search !== '' ? $search : null,
+            ],
+            'sent_emails' => $this->sentEmails($status, $search),
         ]);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function sentEmails(string $status, string $search): array
+    {
+        if (! Schema::hasTable('outbound_emails')) {
+            return ['data' => [], 'links' => [], 'total' => 0];
+        }
+
+        $like = '%'.addcslashes($search, '%_\\').'%';
+
+        $paginator = OutboundEmail::query()
+            ->when($status === 'opened', fn ($q) => $q->whereNotNull('opened_at'))
+            ->when($status === 'sent', fn ($q) => $q->where('status', OutboundEmail::STATUS_SENT)->whereNull('opened_at'))
+            ->when($status === 'failed', fn ($q) => $q->where('status', OutboundEmail::STATUS_FAILED))
+            ->when($status === 'sending', fn ($q) => $q->where('status', OutboundEmail::STATUS_SENDING))
+            ->when($search !== '', function ($q) use ($like) {
+                $q->where(function ($inner) use ($like) {
+                    $inner->where('recipient_email', 'like', $like)
+                        ->orWhere('recipient_name', 'like', $like)
+                        ->orWhere('subject', 'like', $like)
+                        ->orWhere('mail_label', 'like', $like);
+                });
+            })
+            ->orderByDesc('id')
+            ->paginate(25)
+            ->withQueryString()
+            ->through(fn (OutboundEmail $row) => [
+                'id' => $row->id,
+                'recipient_email' => $row->recipient_email,
+                'recipient_name' => $row->recipient_name,
+                'recipient_role' => $this->recipientRoleLabel($row->recipient_role),
+                'subject' => $row->subject,
+                'mail_label' => $row->mail_label,
+                'status' => $row->displayStatus(),
+                'error_message' => $row->error_message,
+                'sent_at' => $row->sent_at?->toIso8601String(),
+                'opened_at' => $row->opened_at?->toIso8601String(),
+                'open_count' => (int) $row->open_count,
+                'created_at' => $row->created_at?->toIso8601String(),
+            ]);
+
+        return $paginator->toArray();
+    }
+
+    private function recipientRoleLabel(?string $role): ?string
+    {
+        return match ($role) {
+            User::ROLE_INFOPRODUTOR => 'Infoprodutor',
+            User::ROLE_CLIENTE, User::ROLE_ALUNO => 'Cliente',
+            User::ROLE_PLATFORM_ADMIN, User::ROLE_ADMIN => 'Admin',
+            User::ROLE_TEAM => 'Equipe',
+            default => null,
+        };
     }
 
     public function create(): Response

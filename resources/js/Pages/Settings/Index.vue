@@ -22,6 +22,7 @@ import {
     Scale,
     PlayCircle,
     Headset,
+    ChartNoAxesCombined,
     DatabaseBackup,
     Puzzle,
     Globe,
@@ -41,6 +42,7 @@ import KycTab from '@/Pages/Settings/Tabs/KycTab.vue';
 import DemoTab from '@/Pages/Settings/Tabs/DemoTab.vue';
 import LegalTab from '@/Pages/Settings/Tabs/LegalTab.vue';
 import SellerPanelSupportTab from '@/Pages/Settings/Tabs/SellerPanelSupportTab.vue';
+import GoogleAnalyticsTab from '@/Pages/Settings/Tabs/GoogleAnalyticsTab.vue';
 import BackupTab from '@/Pages/Settings/Tabs/BackupTab.vue';
 import PublicUrlTab from '@/Pages/Settings/Tabs/PublicUrlTab.vue';
 import PlatformDataTab from '@/Pages/Settings/Tabs/PlatformDataTab.vue';
@@ -51,6 +53,10 @@ const props = defineProps({
     settings: {
         type: Object,
         required: true,
+    },
+    currencies_rates_updated_at_label: {
+        type: String,
+        default: '',
     },
     current_version: {
         type: String,
@@ -123,7 +129,7 @@ const props = defineProps({
 });
 
 function allAllowedTabIds() {
-    const core = ['email', 'storage', 'backup', 'personalizacao', 'banners_dashboard', 'template_dashboard', 'idiomas', 'traducoes', 'moedas', 'recursos', 'suporte_painel', 'seguranca', 'kyc', 'lgpd', 'integracoes', 'dados_plataforma', 'url_publica', 'cron', 'update', 'demo'];
+    const core = ['email', 'storage', 'backup', 'personalizacao', 'banners_dashboard', 'template_dashboard', 'idiomas', 'traducoes', 'moedas', 'recursos', 'suporte_painel', 'google_analytics', 'seguranca', 'kyc', 'lgpd', 'integracoes', 'dados_plataforma', 'url_publica', 'cron', 'update', 'demo'];
     const extra = (props.settings_plugin_tabs || []).map((t) => t.id).filter(Boolean);
     return [...core, ...extra];
 }
@@ -251,6 +257,10 @@ const form = useForm({
     seller_panel_support_icon: props.settings.seller_panel_support_icon ?? 'whatsapp',
     seller_panel_support_icon_image: props.settings.seller_panel_support_icon_image ?? '',
     seller_panel_support_color: props.settings.seller_panel_support_color ?? '#25D366',
+    platform_ga4_enabled: props.settings.platform_ga4_enabled ?? '0',
+    platform_ga4_measurement_id: props.settings.platform_ga4_measurement_id ?? '',
+    platform_ga4_api_secret: '',
+    platform_ga4_api_secret_configured: Boolean(props.settings.platform_ga4_api_secret_configured),
     platform_legal_name: props.settings.platform_legal_name ?? '',
     platform_cnpj: props.settings.platform_cnpj ?? '',
     platform_checkout_notice_enabled: props.settings.platform_checkout_notice_enabled ?? '0',
@@ -288,6 +298,7 @@ const coreTabsStatic = [
     { id: 'moedas', label: 'Moedas', icon: Banknote, group: 'internacional' },
     { id: 'recursos', label: 'Recursos', icon: Truck, group: 'operacao' },
     { id: 'suporte_painel', label: 'Suporte do painel', icon: Headset, group: 'operacao' },
+    { id: 'google_analytics', label: 'Google Analytics', icon: ChartNoAxesCombined, group: 'operacao' },
     { id: 'seguranca', label: 'Segurança', icon: Shield, group: 'seguranca' },
     { id: 'kyc', label: 'KYC', icon: BadgeCheck, group: 'seguranca' },
     { id: 'lgpd', label: 'LGPD', icon: Scale, group: 'seguranca' },
@@ -436,7 +447,7 @@ async function fetchRate(curr, index) {
     refreshLoadingByIndex.value = { ...refreshLoadingByIndex.value, [index]: true };
     rateFetchError.value = null;
     try {
-        const res = await fetch(`https://api.frankfurter.app/latest?from=BRL&to=${code}`);
+        const res = await fetch(`https://api.frankfurter.dev/v1/latest?from=BRL&to=${code}`);
         const data = await res.json();
         if (data.rates && typeof data.rates[code] === 'number') {
             curr.rate_to_brl = data.rates[code];
@@ -769,6 +780,18 @@ function syncSupportSettingsFromProps() {
     applySupportSettingsFromSettings(page.props.settings);
 }
 
+function applyGa4SettingsFromSettings(s) {
+    if (!s) return;
+    form.platform_ga4_enabled = s.platform_ga4_enabled ?? '0';
+    form.platform_ga4_measurement_id = s.platform_ga4_measurement_id ?? '';
+    form.platform_ga4_api_secret = '';
+    form.platform_ga4_api_secret_configured = Boolean(s.platform_ga4_api_secret_configured);
+}
+
+function syncGa4SettingsFromProps() {
+    applyGa4SettingsFromSettings(page.props.settings);
+}
+
 function applyPlatformCompanySettingsFromSettings(s) {
     if (!s) return;
     form.platform_legal_name = s.platform_legal_name ?? '';
@@ -842,6 +865,13 @@ function buildSettingsPayload() {
             seller_panel_support_url: data.seller_panel_support_url,
             seller_panel_support_icon: data.seller_panel_support_icon,
             seller_panel_support_color: data.seller_panel_support_color,
+        };
+    }
+    if (activeTab.value === 'google_analytics') {
+        return {
+            platform_ga4_enabled: data.platform_ga4_enabled,
+            platform_ga4_measurement_id: data.platform_ga4_measurement_id,
+            platform_ga4_api_secret: data.platform_ga4_api_secret,
         };
     }
     if (activeTab.value === 'dados_plataforma') {
@@ -938,6 +968,7 @@ function putSettings(payload, { onSuccess } = {}) {
                 syncSecuritySettingsFromProps();
                 syncKycSettingsFromProps();
                 syncSupportSettingsFromProps();
+                syncGa4SettingsFromProps();
                 syncPlatformCompanySettingsFromProps();
             },
             onFinish: () => {
@@ -1491,7 +1522,10 @@ const selectClass =
                         <div class="border-b border-zinc-200 bg-zinc-50 px-6 py-5 dark:border-zinc-700 dark:bg-zinc-800">
                             <h2 class="text-base font-semibold text-zinc-900 dark:text-white">Moedas disponíveis no checkout</h2>
                             <p class="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
-                                Configure as moedas e suas taxas de conversão. Use o botão "Buscar taxa" para atualizar automaticamente.
+                                As taxas das moedas estrangeiras são atualizadas automaticamente de segunda a sexta, às 14:00 (horário de Brasília). O botão ao lado de cada moeda busca a cotação na hora; essa alteração manual só vale depois de salvar.
+                            </p>
+                            <p class="mt-2 text-sm font-medium text-zinc-800 dark:text-zinc-200">
+                                {{ currencies_rates_updated_at_label ? `Última atualização efetiva: ${currencies_rates_updated_at_label}` : 'Ainda não houve atualização efetiva.' }}
                             </p>
                         </div>
                         <div v-if="rateFetchError" class="mx-6 rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-800 dark:border-amber-800/50 dark:bg-amber-900/20 dark:text-amber-200">
@@ -1731,6 +1765,19 @@ const selectClass =
             >
                 <div v-show="activeTab === 'suporte_painel'" class="space-y-6">
                     <SellerPanelSupportTab :form="form" />
+                </div>
+            </Transition>
+
+            <Transition
+                enter-active-class="transition duration-200 ease-out"
+                enter-from-class="opacity-0"
+                enter-to-class="opacity-100"
+                leave-active-class="transition duration-150 ease-in"
+                leave-from-class="opacity-100"
+                leave-to-class="opacity-0"
+            >
+                <div v-show="activeTab === 'google_analytics'" class="space-y-6">
+                    <GoogleAnalyticsTab :form="form" />
                 </div>
             </Transition>
 

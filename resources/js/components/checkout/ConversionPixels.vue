@@ -1,5 +1,6 @@
 <script setup>
 import { onMounted, watch } from 'vue';
+import { usePage } from '@inertiajs/vue3';
 import {
     getMetaEntries,
     initMetaPixels,
@@ -12,6 +13,8 @@ import { fireMetaPurchaseReliable } from '@/composables/useMetaCheckoutTracking.
 const props = defineProps({
     pixels: { type: Object, default: () => ({}) },
 });
+
+const page = usePage();
 
 const emit = defineEmits(['ready', 'meta-ready']);
 
@@ -275,9 +278,28 @@ function fireInitiateCheckout(value, currency = 'BRL', checkoutKey = '') {
     });
 }
 
-function firePurchase(value, currency = 'BRL', orderId = '', isOrderBump = false, triggerType = 'approved') {
+function firePlatformGa4Purchase(purchasePayload, orderId) {
+    const cfg = page.props.platform_ga4;
+    if (!cfg?.enabled || !cfg?.browser_purchase || typeof window.gtag !== 'function') {
+        return false;
+    }
+    const id = String(cfg.measurement_id || '').trim();
+    if (!/^G-[A-Za-z0-9]+$/.test(id)) {
+        return false;
+    }
+    window.gtag('event', 'purchase', {
+        send_to: id,
+        value: purchasePayload.value,
+        currency: purchasePayload.currency,
+        transaction_id: orderId ? String(orderId) : '',
+    });
+
+    return true;
+}
+
+function firePurchase(value, currency = 'BRL', orderId = '', isOrderBump = false, triggerType = 'approved', contentKey = '', contents = null) {
     const p = props.pixels || {};
-    const purchasePayload = buildPurchaseEventPayload(value, currency, orderId);
+    const purchasePayload = buildPurchaseEventPayload(value, currency, orderId, contentKey, contents);
     const eventID = orderId ? `order:${orderId}` : undefined;
     let firedAny = false;
 
@@ -324,6 +346,9 @@ function firePurchase(value, currency = 'BRL', orderId = '', isOrderBump = false
             firedAny = true;
         });
     }
+    if (triggerType === 'approved' && firePlatformGa4Purchase(purchasePayload, orderId)) {
+        firedAny = true;
+    }
 
     return firedAny;
 }
@@ -340,7 +365,7 @@ defineExpose({
         if (settleDelayMs > 0) await sleep(settleDelayMs);
         return true;
     },
-    async firePurchaseReliable(value, currency = 'BRL', orderId = '', isOrderBump = false, triggerType = 'approved', settleDelayMs = 450) {
+    async firePurchaseReliable(value, currency = 'BRL', orderId = '', isOrderBump = false, triggerType = 'approved', settleDelayMs = 450, contentKey = '', customer = null, contents = null) {
         const oid = orderId ? String(orderId) : '';
         const dedupeKey = oid ? `px:purchase_sent:${oid}` : '';
         if (dedupeKey && safeStorageGet(dedupeKey) === '1') return;
@@ -354,6 +379,9 @@ defineExpose({
                 value,
                 currency,
                 orderId: oid,
+                contentKey,
+                contents,
+                customer,
                 isOrderBump,
                 triggerType,
                 settleDelayMs: 0,
@@ -362,7 +390,7 @@ defineExpose({
         }
 
         await waitForTrackers(2200);
-        const fired = firePurchase(value, currency, orderId, isOrderBump, triggerType);
+        const fired = firePurchase(value, currency, orderId, isOrderBump, triggerType, contentKey, contents);
         if (dedupeKey && (fired || metaFired)) safeStorageSet(dedupeKey, '1');
         if (settleDelayMs > 0) await sleep(settleDelayMs);
     },

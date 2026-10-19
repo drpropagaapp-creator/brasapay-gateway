@@ -16,6 +16,7 @@ use App\Models\User;
 use App\Services\AccessEmailService;
 use App\Services\MinimumChargeService;
 use App\Services\PaymentService;
+use App\Services\UtmifyService;
 use App\Support\SafeUrl;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -33,17 +34,17 @@ class UpsellController extends Controller
     private const TTL_MINUTES = 60;
 
     /**
-     * Config de checkout efetiva do pedido (plano > oferta > produto).
+     * Config de checkout efetiva do pedido (produto + oferta/plano).
+     * Upsell e downsell vêm sempre do produto.
      */
     private function getOrderCheckoutConfig(Order $order): array
     {
-        if ($order->subscriptionPlan && $order->subscriptionPlan->checkout_config) {
-            return array_replace_recursive(Product::defaultCheckoutConfig(), $order->subscriptionPlan->checkout_config);
+        $product = $order->product;
+        if (! $product) {
+            return [];
         }
-        if ($order->productOffer && $order->productOffer->checkout_config) {
-            return array_replace_recursive(Product::defaultCheckoutConfig(), $order->productOffer->checkout_config);
-        }
-        return $order->product ? $order->product->checkout_config : [];
+
+        return Product::resolvedCheckoutConfig($product, $order->productOffer, $order->subscriptionPlan);
     }
 
     /**
@@ -156,6 +157,13 @@ class UpsellController extends Controller
         $checkoutSessionToken = '';
         $orderStatus = null;
         $purchaseConfirmed = false;
+        $metaContents = [];
+        $tenantId = null;
+        $customerEmail = null;
+        $customerPhone = null;
+        $customerName = null;
+        $checkoutSlug = '';
+        $productName = '';
         if ($orderId > 0) {
             $order = Order::with('product')->find($orderId);
             $checkoutSessionToken = (string) (CheckoutSession::query()
@@ -165,6 +173,13 @@ class UpsellController extends Controller
             if ($order) {
                 $orderStatus = (string) $order->status;
                 $purchaseConfirmed = $order->status === 'completed';
+                $tenantId = $order->tenant_id;
+                $customerEmail = $order->email;
+                $customerPhone = $order->phone;
+                $customerName = $order->user?->name;
+                $checkoutSlug = $order->getCheckoutSlug();
+                $productName = (string) ($order->product?->name ?? '');
+                $metaContents = app(\App\Services\Meta\MetaEventContextResolver::class)->contentsForOrder($order);
             }
             if ($order && $order->product) {
                 $conversionPixels = AffiliateConversionPixels::forOrder($order);
@@ -198,8 +213,8 @@ class UpsellController extends Controller
                             $redirectLabel = 'Acessar conteúdo';
                             $subtitle = 'Seu pedido foi registrado. Acesse o conteúdo pelo link abaixo.';
                         } elseif ($order->product->type === Product::TYPE_AREA_MEMBROS) {
-                            $redirectLabel = 'Fazer login';
-                            $subtitle = 'Seu pedido foi registrado. Faça login para ver todos os seus produtos em Minha área.';
+                            $redirectLabel = 'Entrar na área de cursos';
+                            $subtitle = 'Seu pedido foi registrado. Entre na área de cursos com o e-mail e a senha enviados.';
                         } else {
                             $redirectLabel = 'Acessar';
                             $subtitle = 'Seu pedido foi registrado. Acesse pelo link abaixo.';
@@ -220,6 +235,13 @@ class UpsellController extends Controller
             'order_status' => $orderStatus,
             'purchase_confirmed' => $purchaseConfirmed,
             'checkout_session_token' => $checkoutSessionToken,
+            'tenant_id' => $tenantId,
+            'customer_email' => $customerEmail,
+            'customer_phone' => $customerPhone,
+            'customer_name' => $customerName,
+            'checkout_slug' => $checkoutSlug,
+            'product_name' => $productName,
+            'meta_contents' => $metaContents,
         ]);
     }
 
@@ -491,6 +513,7 @@ class UpsellController extends Controller
             $amount = $offer ? (float) $offer->price : (float) $product->price;
             app(MinimumChargeService::class)->assertPlatformCheckout($amount, (int) $order->tenant_id);
             $checkoutSlug = $offer && $offer->checkout_slug ? $offer->checkout_slug : $product->checkout_slug;
+            $inheritedTracking = app(UtmifyService::class)->trackingMetadataFromOrder($order);
 
             $newOrder = Order::create([
                 'tenant_id' => $order->tenant_id,
@@ -505,13 +528,15 @@ class UpsellController extends Controller
                 'email' => $order->email,
                 'cpf' => $order->cpf,
                 'phone' => $order->phone,
-                'customer_ip' => $request->ip(),
+                'customer_ip' => $request->ip() ?: $order->customer_ip,
                 'coupon_code' => null,
                 'status' => 'pending',
                 'gateway' => null,
                 'gateway_id' => null,
                 'payment_method' => 'pix',
-                'metadata' => ['checkout_payment_method' => 'pix'],
+                'metadata' => array_merge($inheritedTracking, [
+                    'checkout_payment_method' => 'pix',
+                ]),
             ]);
             OrderItem::create([
                 'order_id' => $newOrder->id,
@@ -576,6 +601,12 @@ class UpsellController extends Controller
                     'phone' => $order->phone,
                     'cpf' => $order->cpf,
                 ];
+                foreach (CheckoutSession::TRACKING_FIELD_KEYS as $trackingKey) {
+                    $trackingValue = $inheritedTracking[$trackingKey] ?? null;
+                    if (is_string($trackingValue) && $trackingValue !== '') {
+                        $params[$trackingKey] = $trackingValue;
+                    }
+                }
                 $firstRedirectUrl = route('checkout.show', ['slug' => $checkoutSlug]) . '?' . http_build_query(array_filter($params));
             }
         }

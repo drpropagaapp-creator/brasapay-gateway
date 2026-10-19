@@ -99,26 +99,33 @@ class WhatsappRecoveryGuard
             return [];
         }
 
-        $withCountry = str_starts_with($digits, '55') ? $digits : '55'.$digits;
-        $local = str_starts_with($withCountry, '55') ? substr($withCountry, 2) : $withCountry;
+        $variants = [$digits];
 
-        $variants = [$withCountry, $local, $digits];
+        $isBrWithCountry = str_starts_with($digits, '55') && (strlen($digits) === 12 || strlen($digits) === 13);
+        $looksBrLocal = ! str_starts_with($digits, '55') && strlen($digits) >= 10 && strlen($digits) <= 11;
 
-        if (strlen($local) === 11 && ($local[2] ?? '') === '9') {
-            $withoutNine = substr($local, 0, 2).substr($local, 3);
-            $variants[] = $withoutNine;
-            $variants[] = '55'.$withoutNine;
-        }
+        if ($isBrWithCountry || $looksBrLocal) {
+            $withCountry = str_starts_with($digits, '55') ? $digits : '55'.$digits;
+            $local = str_starts_with($withCountry, '55') ? substr($withCountry, 2) : $withCountry;
+            $variants[] = $withCountry;
+            $variants[] = $local;
 
-        if (strlen($local) === 10) {
-            $withNine = substr($local, 0, 2).'9'.substr($local, 2);
-            $variants[] = $withNine;
-            $variants[] = '55'.$withNine;
+            if (strlen($local) === 11 && ($local[2] ?? '') === '9') {
+                $withoutNine = substr($local, 0, 2).substr($local, 3);
+                $variants[] = $withoutNine;
+                $variants[] = '55'.$withoutNine;
+            }
+
+            if (strlen($local) === 10) {
+                $withNine = substr($local, 0, 2).'9'.substr($local, 2);
+                $variants[] = $withNine;
+                $variants[] = '55'.$withNine;
+            }
         }
 
         return array_values(array_unique(array_filter(
             $variants,
-            fn ($value) => is_string($value) && $value !== '' && strlen($value) >= 10
+            fn ($value) => is_string($value) && $value !== '' && strlen($value) >= 8
         )));
     }
 
@@ -129,18 +136,17 @@ class WhatsappRecoveryGuard
             return null;
         }
 
-        $local = str_starts_with($digits, '55') ? substr($digits, 2) : $digits;
-        if (strlen($local) < 4) {
+        if (strlen($digits) < 4) {
             return null;
         }
 
-        return substr($local, -4);
+        return substr($digits, -4);
     }
 
     private static function digitsOnly(string $phone): ?string
     {
         $digits = preg_replace('/\D+/', '', $phone);
-        if (! is_string($digits) || $digits === '' || strlen($digits) < 10) {
+        if (! is_string($digits) || $digits === '' || strlen($digits) < 8) {
             return null;
         }
 

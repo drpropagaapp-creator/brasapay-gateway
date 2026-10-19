@@ -123,7 +123,7 @@ const navGroupsCore = [
             { name: 'Métricas e Tracking', href: '/plataforma/metricas', icon: ChartNoAxesCombined },
             { name: 'Conquistas', href: '/plataforma/conquistas', icon: Trophy },
             { name: 'Indique e Ganhe', href: '/plataforma/indique-e-ganhe', icon: Gift },
-            { name: 'E-mail Marketing', href: '/plataforma/email-marketing', icon: Mail },
+            { name: 'Central de e-mails', href: '/plataforma/email-marketing', icon: Mail },
             { name: 'IntegraX SMS', href: '/plataforma/integrax', icon: MessageSquare },
             { name: 'WhatsApp', href: '/plataforma/uazapi', icon: MessageCircle },
             { name: 'App', href: '/plataforma/app', icon: Smartphone },

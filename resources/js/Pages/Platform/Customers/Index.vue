@@ -82,6 +82,30 @@ function deleteCustomerHistory(user) {
     }
     router.delete(customerActionUrl(user.id, '/historico-pedidos'), { preserveScroll: true });
 }
+
+function accessAsCustomer(user) {
+    const name = user.name || user.email || 'este cliente';
+    if (!confirm(`Abrir o painel de ${name} em uma nova aba?\n\nEsta lista continua aberta. A outra aba mostra as compras e os acessos dele, sem alterar a conta.`)) {
+        return;
+    }
+    postImpersonation(user.id);
+}
+
+function postImpersonation(userId) {
+    const token = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
+    const form = document.createElement('form');
+    form.method = 'POST';
+    form.action = `/plataforma/clientes/${userId}/acessar`;
+    form.target = '_blank';
+    const input = document.createElement('input');
+    input.type = 'hidden';
+    input.name = '_token';
+    input.value = token;
+    form.appendChild(input);
+    document.body.appendChild(form);
+    form.submit();
+    form.remove();
+}
 </script>
 
 <template>
@@ -169,6 +193,9 @@ function deleteCustomerHistory(user) {
                     <Link :href="`/plataforma/clientes/${u.id}`" class="block">
                         <Button type="button" size="sm" class="w-full justify-center">Visualizar</Button>
                     </Link>
+                    <Button type="button" size="sm" variant="secondary" class="w-full justify-center" @click="accessAsCustomer(u)">
+                        Acessar como cliente
+                    </Button>
                     <Button type="button" size="sm" variant="secondary" class="w-full justify-center" @click="deleteCustomerHistory(u)">
                         Excluir histórico
                     </Button>
@@ -222,6 +249,9 @@ function deleteCustomerHistory(user) {
                                     <Link :href="`/plataforma/clientes/${u.id}`">
                                         <Button type="button" size="sm">Visualizar</Button>
                                     </Link>
+                                    <Button type="button" size="sm" variant="secondary" @click="accessAsCustomer(u)">
+                                        Acessar como cliente
+                                    </Button>
                                     <Button type="button" size="sm" variant="secondary" @click="deleteCustomerHistory(u)">
                                         Excluir histórico
                                     </Button>

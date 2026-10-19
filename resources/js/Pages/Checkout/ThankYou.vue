@@ -4,6 +4,7 @@ import { Head } from '@inertiajs/vue3';
 import { CheckCircle2, XCircle } from 'lucide-vue-next';
 import ConversionPixels from '@/components/checkout/ConversionPixels.vue';
 import { trackCheckoutPurchase } from '@/composables/useCheckoutPurchaseTracking';
+import { splitCustomerName } from '@/lib/metaTracking/browserPixel.js';
 
 defineOptions({ layout: null });
 
@@ -21,6 +22,13 @@ const props = defineProps({
     order_status: { type: String, default: null },
     purchase_confirmed: { type: Boolean, default: false },
     checkout_session_token: { type: String, default: '' },
+    tenant_id: { type: [Number, String], default: null },
+    customer_email: { type: String, default: null },
+    customer_phone: { type: String, default: null },
+    customer_name: { type: String, default: null },
+    checkout_slug: { type: String, default: '' },
+    product_name: { type: String, default: '' },
+    meta_contents: { type: Array, default: () => [] },
 });
 
 const isRejected = computed(() => String(props.order_status || '').toLowerCase() === 'rejected');
@@ -41,6 +49,15 @@ async function onConversionPixelsMetaReady() {
         checkoutSessionToken: props.checkout_session_token || '',
         value: props.order_amount,
         currency: 'BRL',
+        contentKey: props.checkout_slug || '',
+        contents: props.meta_contents || [],
+        contentName: props.product_name || '',
+        customer: {
+            email: props.customer_email || '',
+            phone: props.customer_phone || '',
+            tenantId: props.tenant_id,
+            ...splitCustomerName(props.customer_name),
+        },
         triggerType: 'approved',
         pixels: props.conversion_pixels || {},
         conversionPixelsApi: conversionPixelsRef.value,

@@ -44,10 +44,11 @@ const methods = computed(() =>
 
 const isPluginLocked = computed(() => props.gateway.plugin_locked === true);
 
-/** CajuPay: cartão + wallets no checkout SDK; chips extras junto a PIX/Cartão. */
+/** CajuPay e Stripe: cartão + wallets; chips extras junto a PIX/Cartão. */
 const methodChips = computed(() => {
     const base = methods.value;
-    if ((props.gateway.slug || '').toLowerCase() !== 'cajupay') {
+    const slug = (props.gateway.slug || '').toLowerCase();
+    if (slug !== 'cajupay' && slug !== 'stripe') {
         return base;
     }
     const extra = ['Apple Pay', 'Google Pay'];
@@ -189,6 +190,12 @@ const canToggleEnabled = computed(
                     {{ method }}
                 </span>
             </div>
+            <p
+                v-if="gateway.admin_fee_label"
+                class="mt-1 text-[11px] leading-4 tabular-nums text-zinc-500 dark:text-zinc-400"
+            >
+                {{ gateway.admin_fee_label }}
+            </p>
             <div class="mt-1.5 flex flex-wrap items-center justify-between gap-2">
                 <div class="flex items-center gap-2 text-xs">
                     <span

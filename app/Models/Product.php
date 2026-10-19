@@ -63,6 +63,7 @@ class Product extends Model
         'price',
         'currency',
         'is_active',
+        'show_in_marketplace',
         'admin_blocked',
         'approval_status',
         'approval_reason',
@@ -90,6 +91,7 @@ class Product extends Model
         return [
             'price' => 'decimal:2',
             'is_active' => 'boolean',
+            'show_in_marketplace' => 'boolean',
             'admin_blocked' => 'boolean',
             'reviewed_at' => 'datetime',
             'checkout_config' => 'array',
@@ -386,7 +388,7 @@ class Product extends Model
             'logo_url' => '',
             'from_name' => '',
             'subject' => 'Seu acesso a {nome_produto}',
-            'body_html' => '<table width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:600px;margin:0 auto;font-family:\'Segoe UI\',Tahoma,sans-serif;background:#f8fafc;padding:32px 24px;"><tr><td style="background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.08);"><table width="100%" cellpadding="0" cellspacing="0"><tr><td style="padding:32px 32px 24px;text-align:center;border-bottom:1px solid #e2e8f0;"><h1 style="margin:0;font-size:22px;font-weight:600;color:#0f172a;">Olá, {nome_cliente}!</h1></td></tr><tr><td style="padding:28px 32px;"><p style="margin:0 0 16px;font-size:16px;line-height:1.6;color:#334155;">Obrigado por adquirir <strong>{nome_produto}</strong>.</p><p style="margin:0 0 24px;font-size:16px;line-height:1.6;color:#334155;">Clique no botão abaixo para fazer login e ver todos os seus produtos em Minha área:</p><p style="margin:0 0 24px;text-align:center;"><a href="{link_acesso}" style="display:inline-block;padding:14px 32px;background:#0ea5e9;color:#ffffff;text-decoration:none;font-weight:600;font-size:16px;border-radius:8px;">Fazer login</a></p><p style="margin:0 0 24px;font-size:14px;line-height:1.5;color:#64748b;">Ou copie e cole no navegador:<br/><a href="{link_acesso}" style="color:#0ea5e9;word-break:break-all;">{link_acesso}</a></p><div style="margin:28px 0 0;padding:20px;background:#fffbeb;border:1px solid #f59e0b;border-radius:8px;"><p style="margin:0 0 10px;font-size:14px;line-height:1.5;color:#92400e;"><strong>Guarde seus dados de acesso</strong></p><p style="margin:0 0 16px;font-size:14px;line-height:1.5;color:#78350f;">Na tela de login, entre com:</p><p style="margin:0 0 10px;font-size:14px;color:#0f172a;"><strong>E-mail:</strong> {email_cliente}</p><p style="margin:0 0 16px;font-size:15px;color:#0f172a;font-family:Consolas,\'Courier New\',monospace;font-weight:600;letter-spacing:0.02em;word-break:break-all;"><strong>Senha:</strong> {senha}</p><p style="margin:0;font-size:13px;line-height:1.5;color:#78350f;">Se você não tiver senha, use <a href="{link_esqueci_senha}" style="color:#2563eb;font-weight:600;">Esqueci minha senha</a> para criar uma nova.</p></div></td></tr><tr><td style="padding:20px 32px;background:#f1f5f9;border-radius:0 0 12px 12px;"><p style="margin:0;font-size:13px;color:#64748b;">Qualquer dúvida, responda este e-mail.</p></td></tr></table></td></tr></table>',
+            'body_html' => '<table width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:600px;margin:0 auto;font-family:\'Segoe UI\',Tahoma,sans-serif;background:#f8fafc;padding:32px 24px;"><tr><td style="background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.08);"><table width="100%" cellpadding="0" cellspacing="0"><tr><td style="padding:32px 32px 24px;text-align:center;border-bottom:1px solid #e2e8f0;"><h1 style="margin:0;font-size:22px;font-weight:600;color:#0f172a;">Olá, {nome_cliente}!</h1></td></tr><tr><td style="padding:28px 32px;"><p style="margin:0 0 16px;font-size:16px;line-height:1.6;color:#334155;">Obrigado por adquirir <strong>{nome_produto}</strong>.</p><p style="margin:0 0 24px;font-size:16px;line-height:1.6;color:#334155;">Clique no botão abaixo para entrar na sua área de cursos:</p><p style="margin:0 0 24px;text-align:center;"><a href="{link_acesso}" style="display:inline-block;padding:14px 32px;background:#0ea5e9;color:#ffffff;text-decoration:none;font-weight:600;font-size:16px;border-radius:8px;">Entrar na área de cursos</a></p><p style="margin:0 0 24px;font-size:14px;line-height:1.5;color:#64748b;">Ou copie e cole no navegador:<br/><a href="{link_acesso}" style="color:#0ea5e9;word-break:break-all;">{link_acesso}</a></p><div style="margin:28px 0 0;padding:20px;background:#fffbeb;border:1px solid #f59e0b;border-radius:8px;"><p style="margin:0 0 10px;font-size:14px;line-height:1.5;color:#92400e;"><strong>Guarde seus dados de acesso</strong></p><p style="margin:0 0 16px;font-size:14px;line-height:1.5;color:#78350f;">Na área de cursos, entre com:</p><p style="margin:0 0 10px;font-size:14px;color:#0f172a;"><strong>E-mail:</strong> {email_cliente}</p><p style="margin:0 0 16px;font-size:15px;color:#0f172a;font-family:Consolas,\'Courier New\',monospace;font-weight:600;letter-spacing:0.02em;word-break:break-all;"><strong>Senha:</strong> {senha}</p><p style="margin:0;font-size:13px;line-height:1.5;color:#78350f;">Se você não tiver senha, use <a href="{link_esqueci_senha}" style="color:#2563eb;font-weight:600;">Esqueci minha senha</a> para criar uma nova.</p></div><p style="margin:20px 0 0;font-size:15px;line-height:1.6;color:#334155;">Aqui você pode ver todas as suas compras: <a href="{link_plataforma}" style="color:#0ea5e9;font-weight:600;word-break:break-all;">{link_plataforma}</a></p></td></tr><tr><td style="padding:20px 32px;background:#f1f5f9;border-radius:0 0 12px 12px;"><p style="margin:0;font-size:13px;color:#64748b;">Qualquer dúvida, responda este e-mail.</p></td></tr></table></td></tr></table>',
         ];
     }
 
@@ -395,6 +397,28 @@ class Product extends Model
         $stored = is_array($value) ? $value : (is_string($value) ? json_decode($value, true) : []);
 
         return array_replace_recursive(static::defaultCheckoutConfig(), $stored ?? []);
+    }
+
+    /**
+     * Checkout efetivo: produto como base, oferta ou plano por cima.
+     * Upsell e downsell ficam só no produto (aba do produto). Checkout de oferta/plano
+     * não pode desligá-los — o builder grava o padrão desativado nesses escopos.
+     *
+     * @return array<string, mixed>
+     */
+    public static function resolvedCheckoutConfig(self $product, ?ProductOffer $offer = null, ?SubscriptionPlan $plan = null): array
+    {
+        $productConfig = is_array($product->checkout_config) ? $product->checkout_config : static::defaultCheckoutConfig();
+        $cfg = $productConfig;
+        if ($offer !== null && is_array($offer->checkout_config) && $offer->checkout_config !== []) {
+            $cfg = array_replace_recursive($cfg, $offer->checkout_config);
+        } elseif ($plan !== null && is_array($plan->checkout_config) && $plan->checkout_config !== []) {
+            $cfg = array_replace_recursive($cfg, $plan->checkout_config);
+        }
+        $cfg['upsell'] = $productConfig['upsell'] ?? [];
+        $cfg['downsell'] = $productConfig['downsell'] ?? [];
+
+        return $cfg;
     }
 
     /**

@@ -51,8 +51,14 @@ for item in "${INCLUDE[@]}"; do
   fi
 done
 
-# Garante build de produção sem resources/js
-rm -rf "$TMP/resources" "$TMP/node_modules" "$TMP/tests" "$TMP/.git" 2>/dev/null || true
+# Blade/runtime views precisam ir no zip (ex.: deliverable/redirecting.blade.php).
+# Não embalar resources/js nem resources/css — frontend já sai em public/build.
+if [ -d resources/views ]; then
+  mkdir -p "$TMP/resources"
+  cp -a resources/views "$TMP/resources/"
+fi
+
+rm -rf "$TMP/resources/js" "$TMP/resources/css" "$TMP/node_modules" "$TMP/tests" "$TMP/.git" 2>/dev/null || true
 rm -rf "$TMP/agent/node_modules" 2>/dev/null || true
 
 # Reduz vendor/ (tests, docs) para caber no limite de upload (~100MB via Cloudflare)

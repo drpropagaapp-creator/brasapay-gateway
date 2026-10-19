@@ -243,16 +243,10 @@ function safePluginSectionHtml(html) {
                         </p>
                         <div class="grid gap-3">
                             <button
-                                v-for="typeOption in productTypes"
+                                v-for="typeOption in availableTypes"
                                 :key="typeOption.value"
                                 type="button"
-                                :disabled="!typeOption.available"
-                                :class="[
-                                    'flex items-start gap-3 rounded-xl border p-4 text-left transition',
-                                    typeOption.available
-                                        ? 'border-zinc-200 bg-zinc-50 hover:border-[var(--color-primary)] hover:bg-[var(--color-primary)]/5 dark:border-zinc-700 dark:bg-zinc-800/50 dark:hover:border-[var(--color-primary)]'
-                                        : 'cursor-not-allowed border-zinc-200 bg-zinc-100/50 opacity-70 dark:border-zinc-800 dark:bg-zinc-800/30',
-                                ]"
+                                class="flex items-start gap-3 rounded-xl border border-zinc-200 bg-zinc-50 p-4 text-left transition hover:border-[var(--color-primary)] hover:bg-[var(--color-primary)]/5 dark:border-zinc-700 dark:bg-zinc-800/50 dark:hover:border-[var(--color-primary)]"
                                 @click="selectType(typeOption)"
                             >
                                 <span
@@ -264,25 +258,14 @@ function safePluginSectionHtml(html) {
                                     />
                                 </span>
                                 <div class="min-w-0 flex-1">
-                                    <div class="flex items-center gap-2">
-                                        <span class="font-medium text-zinc-900 dark:text-white">
-                                            {{ typeOption.label }}
-                                        </span>
-                                        <span
-                                            v-if="!typeOption.available"
-                                            class="rounded bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-900/50 dark:text-amber-200"
-                                        >
-                                            {{ t('common.coming_soon', 'Em breve') }}
-                                        </span>
-                                    </div>
+                                    <span class="font-medium text-zinc-900 dark:text-white">
+                                        {{ typeOption.label }}
+                                    </span>
                                     <p class="mt-0.5 text-sm text-zinc-500 dark:text-zinc-400">
                                         {{ typeOption.description }}
                                     </p>
                                 </div>
-                                <ChevronRight
-                                    v-if="typeOption.available"
-                                    class="h-5 w-5 shrink-0 text-zinc-400"
-                                />
+                                <ChevronRight class="h-5 w-5 shrink-0 text-zinc-400" />
                             </button>
                         </div>
                     </div>

@@ -24,11 +24,13 @@ use App\Support\LoginTemplate;
 use App\Support\PanelColorScheme;
 use App\Support\PublicAppUrl;
 use App\Support\SellerDashboardTemplate;
+use App\Support\PlatformGa4Settings;
 use App\Support\SellerPanelSupportSettings;
 use App\Support\ReferralProgramSettings;
 use App\Support\ProductApprovalSettings;
 use App\Services\ProductApprovalService;
 use App\Support\MemberAreaAdminPreview;
+use App\Support\CustomerImpersonation;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Schema;
 use Inertia\Middleware;
@@ -309,6 +311,7 @@ class HandleInertiaRequests extends Middleware
             'member_certificate' => $memberCertificate,
             'member_area_admin_preview' => $memberAreaAdminPreview,
             'customer_panel' => $customerPanel,
+            'customer_impersonation' => CustomerImpersonation::inertiaPayload($request),
             // Template vale para o painel do infoprodutor E o painel da plataforma (admin);
             // apenas a área de membros (customer_panel) fica sempre no padrão.
             'seller_dashboard_template' => ($user && ! $customerPanel)
@@ -350,6 +353,7 @@ class HandleInertiaRequests extends Middleware
                 ? \App\Services\PixGoAccess::sidebarLabel()
                 : \App\Services\PixGoAccess::DEFAULT_SIDEBAR_LABEL,
             'legal' => $sharedCache->legalPublicLinks(),
+            'platform_ga4' => PlatformGa4Settings::inertiaConfig(),
         ];
 
         if ($user && ($user->canAccessSellerPanel() || $user->canAccessPlatformPanel())) {

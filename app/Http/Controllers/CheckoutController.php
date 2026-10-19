@@ -53,6 +53,7 @@ use App\Support\CheckoutCardContract;
 use App\Support\CheckoutPaymentConsumer;
 use App\Support\CheckoutTranslations;
 use App\Support\CheckoutTurnstileSettings;
+use App\Support\MoneyDecimal;
 use App\Support\PlatformCompanySettings;
 use App\Support\SafeUrl;
 use App\Support\GatewayWebhookUrl;
@@ -194,14 +195,7 @@ class CheckoutController extends Controller
         }
 
         $product = $resolved['product'];
-        $defaults = Product::defaultCheckoutConfig();
-        $productConfig = $product->checkout_config ?? [];
-        $config = array_replace_recursive($defaults, $productConfig);
-        if ($resolved['offer'] && $resolved['offer']->checkout_config !== null && $resolved['offer']->checkout_config !== []) {
-            $config = array_replace_recursive($config, $resolved['offer']->checkout_config);
-        } elseif ($resolved['plan'] && $resolved['plan']->checkout_config !== null && $resolved['plan']->checkout_config !== []) {
-            $config = array_replace_recursive($config, $resolved['plan']->checkout_config);
-        }
+        $config = Product::resolvedCheckoutConfig($product, $resolved['offer'], $resolved['plan']);
         $productArray = $this->productToCheckoutArray($product, $resolved['offer'], $resolved['plan'], $resolved['amount'], $resolved['currency'], $resolved['checkout_slug']);
         $payload = [
             'product' => $productArray,
@@ -279,7 +273,7 @@ class CheckoutController extends Controller
             }
         }
         foreach ($payload['available_payment_methods'] as $m) {
-            if (($m['id'] ?? '') === 'card' && ($m['gateway_slug'] ?? '') === 'stripe') {
+            if (($m['gateway_slug'] ?? '') === 'stripe' && in_array($m['id'] ?? '', ['card', 'apple_pay', 'google_pay'], true)) {
                 $cred = GatewayCredential::resolveForTenantOrGlobal($product->tenant_id, 'stripe');
                 if ($cred) {
                     $creds = $cred->getDecryptedCredentials();
@@ -381,6 +375,8 @@ class CheckoutController extends Controller
                 'cta_title' => $b->cta_title,
                 'amount_brl' => $effectiveBrl,
                 'original_amount_brl' => $originalBrl > $effectiveBrl ? $originalBrl : null,
+                'content_id' => $b->targetProductOffer?->checkout_slug
+                    ?: ($target?->checkout_slug ?: ($target ? 'product:'.$target->id : null)),
                 'target_product_id' => $b->target_product_id,
                 'target_product_offer_id' => $b->target_product_offer_id,
                 'image_url' => $imageUrl,
@@ -405,6 +401,14 @@ class CheckoutController extends Controller
                 $checkoutSession = $existingCheckoutSession;
                 $sessionToken = $existingCheckoutSession->session_token;
                 $reusedCheckoutSession = true;
+                app(MetaTrackingService::class)->captureRequestAttribution($checkoutSession, $request);
+                if (trim((string) ($checkoutSession->meta_page_url ?? '')) === '') {
+                    app(MetaTrackingService::class)->persistSessionAttribution($checkoutSession, [
+                        'event_source_url' => $request->fullUrl(),
+                        'user_agent' => (string) $request->userAgent(),
+                    ]);
+                    $checkoutSession->refresh();
+                }
             } else {
                 $checkoutSession = CheckoutSession::create(
                     CheckoutSession::filterAttributesForExistingColumns(array_merge([
@@ -417,8 +421,14 @@ class CheckoutController extends Controller
                         'step' => CheckoutSession::STEP_VISIT,
                         'customer_ip' => $request->ip(),
                         'affiliate_ref' => $affiliateRef !== '' ? $affiliateRef : null,
-                    ], CheckoutSession::trackingFromQuery($request), CheckoutSession::metaAttributionFromQuery($request)))
+                        'meta_page_url' => CheckoutSession::truncateTrackingValue($request->fullUrl(), 2048),
+                        'meta_user_agent' => CheckoutSession::truncateTrackingValue((string) $request->userAgent(), 1024),
+                    ], CheckoutSession::trackingFromQuery($request), app(MetaTrackingService::class)->attributionAttributesFromRequest($request)))
                 );
+            }
+
+            if ($checkoutSession instanceof CheckoutSession) {
+                $checkoutSession->captureMarketplaceOrigin($request);
             }
 
             if (! $reusedCheckoutSession) {
@@ -632,12 +642,19 @@ class CheckoutController extends Controller
         $firstPixGateway = $paymentMethodForRules === 'pix'
             ? $paymentService->getFirstAvailableGatewayForMethod($product->tenant_id, 'pix', $product)
             : null;
+        $isWalletPayment = in_array($paymentMethodForRules, ['apple_pay', 'google_pay'], true);
+        $walletGatewayForRules = $isWalletPayment
+            ? $paymentService->getFirstAvailableWalletGateway($product->tenant_id, $product)
+            : null;
         $firstCardGatewayForRules = in_array($paymentMethodForRules, ['card', 'apple_pay', 'google_pay'], true)
-            ? $paymentService->getFirstAvailableGatewayForMethod($product->tenant_id, 'card', $product)
+            ? ($isWalletPayment
+                ? $walletGatewayForRules
+                : $paymentService->getFirstAvailableGatewayForMethod($product->tenant_id, 'card', $product))
             : null;
         $requireCpf = (($customerFields['cpf'] ?? false) && $displayCurrency === 'BRL')
             || ($firstCardGatewayForRules === 'pagarme' && $displayCurrency === 'BRL')
-            || $paymentMethodForRules === 'open_finance';
+            || $paymentMethodForRules === 'open_finance'
+            || ($paymentMethodForRules === 'pix' && $firstPixGateway === 'stripe');
         $phoneRequiredForCheckout = ($customerFields['phone'] ?? false)
             || ($paymentMethodForRules === 'pix' && $firstPixGateway === 'pagarme');
 
@@ -1601,7 +1618,12 @@ class CheckoutController extends Controller
             event(new OrderPending($order));
             $paymentServiceCard = app(PaymentService::class);
             $firstCardGwForSdk = $paymentServiceCard->getFirstAvailableGatewayForMethod($product->tenant_id, 'card', $product);
-            if ($firstCardGwForSdk === 'cajupay') {
+            $walletGateway = in_array($paymentMethod, ['apple_pay', 'google_pay'], true)
+                ? $paymentServiceCard->getFirstAvailableWalletGateway($product->tenant_id, $product)
+                : null;
+            $useCajuPaySdk = ($paymentMethod === 'card' && $firstCardGwForSdk === 'cajupay')
+                || $walletGateway === 'cajupay';
+            if ($useCajuPaySdk) {
                 $nonce = Str::random(40);
                 $wallet = match ($paymentMethod) {
                     'apple_pay' => 'apple_pay',
@@ -1666,11 +1688,7 @@ class CheckoutController extends Controller
                 $card['card_expiry_year'] = trim((string) $validated['card_expiry_year']);
                 $card['card_ccv'] = trim((string) $validated['card_ccv']);
             }
-            $checkoutConfig = $offer && $offer->checkout_config !== null && $offer->checkout_config !== []
-                ? array_replace_recursive(Product::defaultCheckoutConfig(), $offer->checkout_config)
-                : ($plan && $plan->checkout_config !== null && $plan->checkout_config !== []
-                    ? array_replace_recursive(Product::defaultCheckoutConfig(), $plan->checkout_config)
-                    : ($product->checkout_config ?? []));
+            $checkoutConfig = Product::resolvedCheckoutConfig($product, $offer, $plan);
             $cardInstallments = $checkoutConfig['card_installments'] ?? ['enabled' => false, 'max' => 1];
             $resolvedInstallments = PlatformCardInstallments::forProductConfig(
                 is_array($cardInstallments) ? $cardInstallments : [],
@@ -1692,7 +1710,7 @@ class CheckoutController extends Controller
                     'installments' => $installments,
                 ]),
             ]);
-            $card['currency'] = strtolower($currency);
+            $card['currency'] = $walletGateway === 'stripe' ? 'brl' : strtolower($currency);
             if ($checkoutSlug !== '') {
                 $card['return_url'] = url()->route('checkout.show', ['slug' => $checkoutSlug]);
             }
@@ -1710,7 +1728,9 @@ class CheckoutController extends Controller
             }
             try {
                 $paymentService = app(PaymentService::class);
-                $cardResult = $paymentService->createCardPayment($order, $product, $consumer, $card);
+                $cardResult = $walletGateway === 'stripe'
+                    ? $paymentService->createStripeWalletPayment($order, $consumer, $card)
+                    : $paymentService->createCardPayment($order, $product, $consumer, $card);
                 $status = is_string($cardResult['status'] ?? null)
                     ? strtolower(trim((string) $cardResult['status']))
                     : null;
@@ -1741,12 +1761,12 @@ class CheckoutController extends Controller
                     $order->update(['status' => 'completed']);
                     $order->load('orderItems');
                     $grantAccessForOrder($order);
-                    if ($plan) {
-                        $result = app(SubscriptionRenewalService::class)->syncFromPaidOrder($order->fresh());
-                        $subscription = $result['subscription'] ?? null;
-                        if ($subscription) {
-                            $this->attachStripeSavedPaymentMethodForSubscription($subscription, $order, $card, $tenantId, $user->id);
-                        }
+                    // Sempre sincroniza assinatura: o service resolve o plano do pedido
+                    // (ou da assinatura existente) mesmo quando $plan veio null no request.
+                    $result = app(SubscriptionRenewalService::class)->syncFromPaidOrder($order->fresh());
+                    $subscription = $result['subscription'] ?? null;
+                    if ($subscription) {
+                        $this->attachStripeSavedPaymentMethodForSubscription($subscription, $order, $card, $tenantId, $user->id);
                     }
                     event(new OrderCompleted($order));
                 } elseif ($isApproved && $alreadyCompleted) {
@@ -1756,26 +1776,11 @@ class CheckoutController extends Controller
                     event(new OrderRejected($order));
                 }
 
-                $config = $this->getOrderCheckoutConfigForProcess($order, $product, $offer, $plan);
-                $redirectUrl = null;
-                if ($isApproved) {
-                    $upsell = $config['upsell'] ?? [];
-                    if (! empty($upsell['enabled']) && ! empty($upsell['products']) && is_array($upsell['products'])) {
-                        $upsellToken = Str::random(64);
-                        Cache::put('upsell_token.'.$upsellToken, ['order_id' => $order->id, 'gateway' => $order->gateway], now()->addMinutes(60));
-                        $redirectUrl = route('checkout.upsell', ['token' => $upsellToken]);
-                    } else {
-                        $customRedirect = $config['redirect_after_purchase'] ?? null;
-                        if (is_string($customRedirect) && trim($customRedirect) !== '') {
-                            $redirectUrl = SafeUrl::normalizeCheckoutRedirect($customRedirect);
-                        }
-                        if ($redirectUrl === null) {
-                            $next = ($order->user_id && User::find($order->user_id)) ? 'member-area' : 'login';
-                            $redirectUrl = route('checkout.thank-you', ['order_id' => $order->id, 'next' => $next]);
-                        }
-                    }
-                }
+                $redirectUrl = $isApproved
+                    ? $this->postPurchaseRedirectUrl($order, $product, $offer, $plan)
+                    : null;
                 $wantsJson = $request->expectsJson() || $request->header('X-Requested-With') === 'XMLHttpRequest';
+                $statusToken = ($wantsJson && ! $isRejected) ? $this->rememberCardStatusToken($order) : null;
                 if ($wantsJson) {
                     if ($isRejected) {
                         return $this->idempotencyReturn($idempotencyKey, response()->json([
@@ -1796,6 +1801,7 @@ class CheckoutController extends Controller
                             ? 'Pagamento aprovado.'
                             : 'Pagamento em processamento. Aguarde a confirmação.',
                         'redirect_url' => $isApproved ? $redirectUrl : null,
+                        'status_token' => $statusToken,
                     ];
                     if ($status === 'requires_action' && ! empty($cardResult['client_secret'])) {
                         $json['success'] = true;
@@ -1931,18 +1937,99 @@ class CheckoutController extends Controller
     }
 
     /**
-     * Config de checkout efetiva no process (já temos product, offer, plan).
+     * Config de checkout efetiva (produto + oferta/plano). Upsell e downsell vêm do produto.
      */
-    private function getOrderCheckoutConfigForProcess(Order $order, Product $product, ?ProductOffer $offer, ?SubscriptionPlan $plan): array
+    private function getOrderCheckoutConfig(Order $order): array
     {
-        if ($plan && $plan->checkout_config) {
-            return array_replace_recursive(Product::defaultCheckoutConfig(), $plan->checkout_config);
-        }
-        if ($offer && $offer->checkout_config) {
-            return array_replace_recursive(Product::defaultCheckoutConfig(), $offer->checkout_config);
+        $product = $order->product;
+        if (! $product) {
+            return [];
         }
 
-        return $product->checkout_config;
+        return Product::resolvedCheckoutConfig($product, $order->productOffer, $order->subscriptionPlan);
+    }
+
+    private function upsellHasConfiguredProduct(array $upsell): bool
+    {
+        if (empty($upsell['enabled']) || empty($upsell['products']) || ! is_array($upsell['products'])) {
+            return false;
+        }
+        foreach ($upsell['products'] as $item) {
+            if (is_array($item) && trim((string) ($item['product_id'] ?? '')) !== '') {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * URL pós-compra: upsell do produto, redirect personalizado ou página de obrigado.
+     */
+    private function postPurchaseRedirectUrl(Order $order, ?Product $product = null, ?ProductOffer $offer = null, ?SubscriptionPlan $plan = null): string
+    {
+        if ($order->api_application_id) {
+            return route('api-checkout.thank-you', ['order_id' => $order->id]);
+        }
+
+        $product = $product ?? $order->product;
+        if (! $product) {
+            $next = ($order->user_id && User::find($order->user_id)) ? 'member-area' : 'login';
+
+            return route('checkout.thank-you', ['order_id' => $order->id, 'next' => $next]);
+        }
+        if ($offer === null && $order->product_offer_id) {
+            $offer = $order->productOffer;
+        }
+        if ($plan === null && $order->subscription_plan_id) {
+            $plan = $order->subscriptionPlan;
+        }
+
+        $config = Product::resolvedCheckoutConfig($product, $offer, $plan);
+        $upsell = is_array($config['upsell'] ?? null) ? $config['upsell'] : [];
+        if ($this->upsellHasConfiguredProduct($upsell)) {
+            $upsellToken = Str::random(64);
+            Cache::put('upsell_token.'.$upsellToken, [
+                'order_id' => $order->id,
+                'gateway' => $order->gateway ?: 'checkout',
+            ], now()->addMinutes(60));
+
+            return route('checkout.upsell', ['token' => $upsellToken]);
+        }
+
+        $customRedirect = $config['redirect_after_purchase'] ?? null;
+        if (is_string($customRedirect) && trim($customRedirect) !== '') {
+            $normalized = SafeUrl::normalizeCheckoutRedirect($customRedirect);
+            if ($normalized !== null) {
+                return $normalized;
+            }
+        }
+
+        $next = ($order->user_id && User::find($order->user_id)) ? 'member-area' : 'login';
+
+        return route('checkout.thank-you', ['order_id' => $order->id, 'next' => $next]);
+    }
+
+    private function redirectAfterPurchase(Order $order): RedirectResponse
+    {
+        $url = $this->postPurchaseRedirectUrl($order);
+        $host = request()->getSchemeAndHttpHost();
+        if (str_starts_with($url, 'http') && ! str_starts_with($url, $host)) {
+            return redirect()->away($url);
+        }
+
+        return redirect()->to($url);
+    }
+
+    private function rememberCardStatusToken(Order $order): string
+    {
+        $token = Str::random(32);
+        session()->put('card_display.'.$token, [
+            'order_id' => $order->id,
+            'created_at' => time(),
+        ]);
+
+        return $token;
     }
 
     private const PIX_EXPIRY_SECONDS = 900; // 15 min
@@ -2003,6 +2090,8 @@ class CheckoutController extends Controller
             'customer_name' => $stored['customer_name'] ?? null,
             'customer_email' => $stored['customer_email'] ?? null,
             'customer_phone' => $stored['customer_phone'] ?? null,
+            'tenant_id' => $order->tenant_id,
+            'meta_contents' => $this->metaCheckoutContents($order),
             'created_at' => $createdAt,
             'expiry_seconds' => self::PIX_EXPIRY_SECONDS,
             'conversion_pixels' => $conversionPixels,
@@ -2048,27 +2137,7 @@ class CheckoutController extends Controller
 
         $order->refresh();
         if ($order->status === 'completed') {
-            $config = $this->getOrderCheckoutConfig($order);
-            $upsell = $config['upsell'] ?? [];
-            if (! empty($upsell['enabled']) && ! empty($upsell['products']) && is_array($upsell['products'])) {
-                $upsellToken = Str::random(64);
-                Cache::put('upsell_token.'.$upsellToken, [
-                    'order_id' => $order->id,
-                    'gateway' => 'open_finance',
-                ], now()->addMinutes(60));
-
-                return redirect()->route('checkout.upsell', ['token' => $upsellToken]);
-            }
-            $customRedirect = $config['redirect_after_purchase'] ?? null;
-            if (is_string($customRedirect) && trim($customRedirect) !== '') {
-                $url = SafeUrl::normalizeCheckoutRedirect($customRedirect);
-                if ($url !== null) {
-                    return redirect()->away($url);
-                }
-            }
-            $next = ($order->user_id && User::find($order->user_id)) ? 'member-area' : 'login';
-
-            return redirect()->route('checkout.thank-you', ['order_id' => $order->id, 'next' => $next]);
+            return $this->redirectAfterPurchase($order);
         }
 
         $waitToken = Str::random(32);
@@ -2115,10 +2184,7 @@ class CheckoutController extends Controller
         }
 
         if ($order->status === 'completed') {
-            return redirect()->route('checkout.thank-you', [
-                'order_id' => $order->id,
-                'next' => ($order->user_id && User::find($order->user_id)) ? 'member-area' : 'login',
-            ]);
+            return $this->redirectAfterPurchase($order);
         }
 
         $amount = (float) ($stored['amount'] ?? $order->amount);
@@ -2137,6 +2203,8 @@ class CheckoutController extends Controller
             'customer_name' => $stored['customer_name'] ?? $order->user?->name,
             'customer_email' => $stored['customer_email'] ?? $order->email,
             'customer_phone' => $stored['customer_phone'] ?? $order->phone,
+            'tenant_id' => $order->tenant_id,
+            'meta_contents' => $this->metaCheckoutContents($order),
             'created_at' => (int) ($stored['created_at'] ?? time()),
             'expiry_seconds' => 1800,
             'status' => $order->status,
@@ -2192,6 +2260,8 @@ class CheckoutController extends Controller
             'customer_name' => $stored['customer_name'] ?? null,
             'customer_email' => $stored['customer_email'] ?? null,
             'customer_phone' => $stored['customer_phone'] ?? null,
+            'tenant_id' => $order->tenant_id,
+            'meta_contents' => $this->metaCheckoutContents($order),
             'conversion_pixels' => $conversionPixels,
         ]);
     }
@@ -2263,7 +2333,8 @@ class CheckoutController extends Controller
 
         $totalAmount = (float) $context['total_amount'];
 
-        $account = app(\App\Services\CajuPay\CajuPayAccountResolver::class)->resolveForTenant($product->tenant_id);
+        $method = (string) $validated['payment_method'];
+        $account = app(\App\Services\CajuPay\CajuPayAccountResolver::class)->resolveForPayment($product->tenant_id, $method);
         if (! $account) {
             return response()->json(['message' => 'CajuPay não está conectado.'], 422);
         }
@@ -2272,7 +2343,6 @@ class CheckoutController extends Controller
             return response()->json(['message' => 'CajuPay: chaves de API não configuradas.'], 422);
         }
 
-        $method = $validated['payment_method'];
         $defaultMethodMap = [
             'card' => 'card',
             'apple_pay' => 'apple_pay',
@@ -2357,6 +2427,7 @@ class CheckoutController extends Controller
             'card_installments_enabled' => ! empty($installmentFlags['allow_card_installments']),
             'card_max_installments' => (int) ($installmentFlags['card_max_installments'] ?? 1),
             'tenant_id' => $product->tenant_id,
+            'cajupay_account_id' => (int) $account->id > 0 ? (int) $account->id : null,
             'external_id' => $externalRef,
             'methods_available' => $availableMethods,
             'created_at' => time(),
@@ -2521,6 +2592,8 @@ class CheckoutController extends Controller
      */
     public function paypalCreateOrder(Request $request): JsonResponse
     {
+        $this->forgetInvalidMetricsSessionKey($request);
+
         $product = Product::where('id', $request->input('product_id'))->availableForPurchase()->first();
         if (! $product) {
             return response()->json(['message' => 'Produto não encontrado.'], 404);
@@ -2652,11 +2725,9 @@ class CheckoutController extends Controller
             $this->updateCheckoutSessionForCajuPayOrder($order, $validated);
         }
 
-        $chargeCurrency = strtoupper((string) ($validated['display_currency'] ?? $order->currency ?? 'BRL'));
-        if (strlen($chargeCurrency) !== 3) {
-            $chargeCurrency = 'BRL';
-        }
-        $chargeAmount = (float) ($context['total_amount'] ?? $order->amount);
+        // Conta PayPal Brasil só liquida em BRL. display_currency fica na tela;
+        // a PayPal converte para a moeda do comprador.
+        $chargeAmount = round((float) ($context['total_amount'] ?? $order->amount), 2);
 
         try {
             /** @var \App\Gateways\PayPal\PayPalDriver|null $driver */
@@ -2667,7 +2738,7 @@ class CheckoutController extends Controller
             $paypalResult = $driver->createPayPalOrder(
                 $credentials,
                 $chargeAmount,
-                $chargeCurrency,
+                'BRL',
                 (string) $order->id,
                 [
                     'name' => $validated['name'] ?? '',
@@ -2807,7 +2878,7 @@ class CheckoutController extends Controller
             $order->load('orderItems');
             $order->grantPurchasedProductAccessToBuyer();
 
-            if ($plan && $order->user_id) {
+            if ($order->user_id) {
                 app(SubscriptionRenewalService::class)->syncFromPaidOrder($order->fresh());
             }
 
@@ -2893,26 +2964,7 @@ class CheckoutController extends Controller
             return route('checkout.thank-you', ['order_id' => $order->id, 'next' => $next]);
         }
 
-        $config = $this->getOrderCheckoutConfigForProcess($order, $product, $offer, $plan);
-        $upsell = $config['upsell'] ?? [];
-        if (! empty($upsell['enabled']) && ! empty($upsell['products']) && is_array($upsell['products'])) {
-            $upsellToken = Str::random(64);
-            Cache::put('upsell_token.'.$upsellToken, ['order_id' => $order->id, 'gateway' => $order->gateway], now()->addMinutes(60));
-
-            return route('checkout.upsell', ['token' => $upsellToken]);
-        }
-
-        $customRedirect = $config['redirect_after_purchase'] ?? null;
-        if (is_string($customRedirect) && trim($customRedirect) !== '') {
-            $normalized = SafeUrl::normalizeCheckoutRedirect($customRedirect);
-            if ($normalized !== null) {
-                return $normalized;
-            }
-        }
-
-        $next = ($order->user_id && User::find($order->user_id)) ? 'member-area' : 'login';
-
-        return route('checkout.thank-you', ['order_id' => $order->id, 'next' => $next]);
+        return $this->postPurchaseRedirectUrl($order, $product, $offer, $plan);
     }
 
     /**
@@ -3163,7 +3215,10 @@ class CheckoutController extends Controller
             'gateway' => $gatewaySlug,
             'gateway_id' => $draft['gateway_id'] ?? $draft['checkout_session_id'] ?? null,
             'cajupay_account_id' => $gatewaySlug === 'cajupay'
-                ? app(\App\Services\CajuPay\CajuPayAccountResolver::class)->accountIdForTenant($tenantId)
+                ? ($draft['cajupay_account_id'] ?? app(\App\Services\CajuPay\CajuPayAccountResolver::class)->accountIdForPayment(
+                    $tenantId,
+                    (string) ($draft['payment_method'] ?? 'card')
+                ))
                 : null,
             'payment_method' => $orderPaymentMethod,
         ];
@@ -3238,6 +3293,9 @@ class CheckoutController extends Controller
         }
         if (! is_array($stored)) {
             $stored = session('lina_display.'.$token);
+        }
+        if (! is_array($stored)) {
+            $stored = session('card_display.'.$token);
         }
         if (! is_array($stored)) {
             return response()->json(['status' => 'not_found'], 404);
@@ -3331,32 +3389,7 @@ class CheckoutController extends Controller
         }
 
         $status = $order->status;
-        $redirectUrl = null;
-        if ($status === 'completed') {
-            if ($order->api_application_id) {
-                $redirectUrl = route('api-checkout.thank-you', ['order_id' => $order->id]);
-            } else {
-                $config = $this->getOrderCheckoutConfig($order);
-                $upsell = $config['upsell'] ?? [];
-                if (! empty($upsell['enabled']) && ! empty($upsell['products']) && is_array($upsell['products'])) {
-                    $upsellToken = Str::random(64);
-                    Cache::put('upsell_token.'.$upsellToken, [
-                        'order_id' => $order->id,
-                        'gateway' => 'pix',
-                    ], now()->addMinutes(60));
-                    $redirectUrl = route('checkout.upsell', ['token' => $upsellToken]);
-                } else {
-                    $customRedirect = $config['redirect_after_purchase'] ?? null;
-                    if (is_string($customRedirect) && trim($customRedirect) !== '') {
-                        $redirectUrl = SafeUrl::normalizeCheckoutRedirect($customRedirect);
-                    }
-                    if ($redirectUrl === null) {
-                        $next = ($order->user_id && User::find($order->user_id)) ? 'member-area' : 'login';
-                        $redirectUrl = route('checkout.thank-you', ['order_id' => $order->id, 'next' => $next]);
-                    }
-                }
-            }
-        }
+        $redirectUrl = $status === 'completed' ? $this->postPurchaseRedirectUrl($order) : null;
 
         return response()->json([
             'status' => $status,
@@ -3366,18 +3399,11 @@ class CheckoutController extends Controller
     }
 
     /**
-     * Config de checkout efetiva do pedido (plano > oferta > produto).
+     * @return array<int, array{id: string, quantity: int, item_price: float}>
      */
-    private function getOrderCheckoutConfig(Order $order): array
+    private function metaCheckoutContents(Order $order): array
     {
-        if ($order->subscriptionPlan && $order->subscriptionPlan->checkout_config) {
-            return array_replace_recursive(Product::defaultCheckoutConfig(), $order->subscriptionPlan->checkout_config);
-        }
-        if ($order->productOffer && $order->productOffer->checkout_config) {
-            return array_replace_recursive(Product::defaultCheckoutConfig(), $order->productOffer->checkout_config);
-        }
-
-        return $order->product ? $order->product->checkout_config : [];
+        return app(\App\Services\Meta\MetaEventContextResolver::class)->contentsForOrder($order);
     }
 
     /**
@@ -3414,6 +3440,7 @@ class CheckoutController extends Controller
             'previous_price' => $previousPrice,
             'product_offer_id' => $offer?->id,
             'subscription_plan_id' => $plan?->id,
+            'tenant_id' => $product->tenant_id,
             'requires_shipping' => $product->requiresShippingAddress(),
             'free_shipping' => $product->hasFreeShipping(),
             'shipping_store_id' => $product->shipping_store_id,
@@ -3647,6 +3674,45 @@ class CheckoutController extends Controller
         }
     }
 
+    /**
+     * Converte valor em BRL para a moeda de exibição do checkout (mesmas taxas do front).
+     */
+    private function convertBrlAmountToDisplayCurrency(float $amountBrl, string $displayCurrency): float
+    {
+        $displayCurrency = strtoupper(trim($displayCurrency));
+        if ($displayCurrency === '' || $displayCurrency === 'BRL') {
+            return round($amountBrl, 2);
+        }
+
+        $currenciesRaw = Setting::get('currencies', null, null);
+        $currencies = $currenciesRaw
+            ? (is_string($currenciesRaw) ? json_decode($currenciesRaw, true) : $currenciesRaw)
+            : config('products.currencies');
+        $currencies = is_array($currencies) ? $currencies : config('products.currencies');
+
+        $rates = [
+            'brl_eur' => (float) config('products.rates.brl_eur', 0.16),
+            'brl_usd' => (float) config('products.rates.brl_usd', 0.18),
+        ];
+        foreach ($currencies as $currency) {
+            if (! is_array($currency)) {
+                continue;
+            }
+            $code = strtoupper((string) ($currency['code'] ?? ''));
+            $rate = (float) ($currency['rate_to_brl'] ?? 0);
+            if ($rate <= 0) {
+                continue;
+            }
+            if ($code === 'EUR') {
+                $rates['brl_eur'] = $rate;
+            } elseif ($code === 'USD') {
+                $rates['brl_usd'] = $rate;
+            }
+        }
+
+        return MoneyDecimal::storageFromBrl($amountBrl, $displayCurrency, $rates);
+    }
+
     private function resolveValidMetricsSessionKey(mixed $candidate): ?string
     {
         if (! is_string($candidate) || $candidate === '') {
@@ -3747,7 +3813,7 @@ class CheckoutController extends Controller
                 $orderMetadata = AffiliateOrderMetadata::merge($orderMetadata, $product, $affiliateRef, $session);
             }
 
-            return $orderMetadata;
+            return CheckoutSession::applyMarketplaceOrigin($orderMetadata, $session);
         }
 
         foreach ($fromRequest as $key => $value) {
