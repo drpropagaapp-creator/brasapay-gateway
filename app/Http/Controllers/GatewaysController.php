@@ -103,6 +103,7 @@ class GatewaysController extends Controller
         }
 
         $webhookUrl = null;
+        $webhookUrls = null;
         $webhookHelp = null;
         if ($slug === 'pushinpay') {
             $webhookUrl = GatewayWebhookUrl::forGateway('pushinpay');
@@ -111,6 +112,14 @@ class GatewaysController extends Controller
             $webhookHelp = 'Cadastre esta URL HTTPS no painel Woovi (API/Plugins → Webhooks), evento OPENPIX:CHARGE_COMPLETED. No cadastro do webhook, preencha o campo authorization com um token secreto e cole o mesmo valor em Webhook Secret abaixo. Sem esse secret, as notificações de pagamento são rejeitadas.';
         } elseif ($slug === 'onlyup') {
             $webhookUrl = GatewayWebhookUrl::forGateway('onlyup');
+        } elseif ($slug === 'efi') {
+            $webhookUrls = [
+                ['label' => 'PIX', 'url' => GatewayWebhookUrl::forGateway('efi.pix')],
+                ['label' => 'PIX automático', 'url' => GatewayWebhookUrl::forGateway('efi.pix_auto')],
+                ['label' => 'Cartão e boleto', 'url' => GatewayWebhookUrl::forGateway('efi.notification')],
+            ];
+            $webhookUrl = $webhookUrls[0]['url'];
+            $webhookHelp = 'Cadastre cada URL HTTPS no painel Efí. PIX: webhook da chave PIX. PIX automático: webhook de recorrência. Cartão e boleto: URL de notificação da cobrança. Se usar HMAC, cole o mesmo valor no campo de assinatura do webhook.';
         } elseif ($slug === 'cajupay') {
             $webhookUrl = GatewayWebhookUrl::forGateway('cajupay');
             $webhookHelp = 'Cadastre esta URL HTTPS no painel CajuPay (Webhooks) ou use “Testar conexão” para registro automático. Eventos: payment.paid, payment.failed, payment.refunded, checkout.payment.paid/failed/refunded/disputed, card.payment.*. Cole o signing secret (cwhsec_…) no campo abaixo.';
@@ -135,6 +144,9 @@ class GatewaysController extends Controller
         } elseif ($slug === 'stripe') {
             $webhookUrl = GatewayWebhookUrl::forGateway('stripe');
             $webhookHelp = 'Cadastre esta URL HTTPS no Stripe Dashboard (Developers → Webhooks), no mesmo modo da Secret Key (teste ou live). Evento: payment_intent.succeeded. Depois cole o signing secret (whsec_…) no campo Webhook Secret abaixo.';
+        } elseif ($slug === 'asaas') {
+            $webhookUrl = GatewayWebhookUrl::forGateway('asaas');
+            $webhookHelp = 'Cadastre esta URL HTTPS no painel Asaas (Integrações → Webhooks), método POST. Eventos: PAYMENT_RECEIVED, PAYMENT_CONFIRMED, PAYMENT_REFUNDED, PAYMENT_DELETED e PAYMENT_CHARGEBACK_REQUESTED. No cadastro do webhook, defina um token de autenticação e cole o mesmo valor no campo Token de autenticação do webhook abaixo. A Asaas envia esse token no header asaas-access-token.';
         } elseif ($slug === 'paypal') {
             $webhookUrl = GatewayWebhookUrl::forGateway('paypal');
             $webhookHelp = 'Cadastre esta URL HTTPS no PayPal Developer Dashboard (Webhooks) do mesmo app REST. Eventos: PAYMENT.CAPTURE.COMPLETED, PAYMENT.CAPTURE.DENIED, PAYMENT.CAPTURE.REFUNDED. Depois cole o Webhook ID no campo abaixo. Não altera PIX/cartão das outras adquirentes.';
@@ -199,6 +211,7 @@ class GatewaysController extends Controller
             'certificate_configured' => $certificateConfigured,
             'certificate_filename' => $certificateFilename && is_string($certificateFilename) ? $certificateFilename : null,
             'webhook_url' => $webhookUrl,
+            'webhook_urls' => $webhookUrls,
             'webhook_help' => $webhookHelp,
             'uses_oauth' => $usesOauth,
             'oauth_client_configured' => $oauthClientConfigured,
