@@ -8,6 +8,7 @@ import { htmlToText } from '@/lib/sanitizeHtml';
 import {
     MoreVertical,
     FileText,
+    User,
     CheckCircle,
     Ban,
     RotateCcw,
@@ -210,6 +211,11 @@ function approveQuerySuffix() {
 /** action: aprovar-manualmente | cancelar | reembolsar | reembolso-manual | marcar-med */
 function orderActionUrl(action, id) {
     return `/plataforma/transacoes/pedidos/${id}/${action}${approveQuerySuffix()}`;
+}
+
+function openCustomer(row) {
+    if (!row?.customer_url) return;
+    router.visit(row.customer_url);
 }
 
 function approvePendingOrder(id) {
@@ -988,6 +994,15 @@ const tableColCount = computed(() => (isRefundRequestsFilter.value ? 12 : 11));
                 >
                     <FileText class="h-4 w-4 shrink-0" />
                     Detalhes
+                </button>
+                <button
+                    v-if="menuOrder.customer_url"
+                    type="button"
+                    class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                    @click="runMenuAction((r) => openCustomer(r))"
+                >
+                    <User class="h-4 w-4 shrink-0" />
+                    Ver cliente
                 </button>
                 <template v-if="menuOrder.status === 'pending'">
                     <button

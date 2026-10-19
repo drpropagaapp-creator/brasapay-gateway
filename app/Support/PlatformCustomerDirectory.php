@@ -92,9 +92,7 @@ final class PlatformCustomerDirectory
             return false;
         }
 
-        return $user->orders()
-            ->where('status', self::STATUS_COMPLETED)
-            ->exists();
+        return $user->orders()->exists();
     }
 
     /**

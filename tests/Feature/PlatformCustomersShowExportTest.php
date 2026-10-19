@@ -142,7 +142,7 @@ class PlatformCustomersShowExportTest extends TestCase
             ->assertNotFound();
     }
 
-    public function test_customer_without_completed_orders_is_not_viewable(): void
+    public function test_customer_with_only_pending_order_is_viewable(): void
     {
         $admin = $this->platformAdmin();
         $seller = $this->seller();
@@ -163,7 +163,11 @@ class PlatformCustomersShowExportTest extends TestCase
 
         $this->actingAs($admin)
             ->get(route('plataforma.clientes.show', $customer))
-            ->assertNotFound();
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->component('Platform/Customers/Show')
+                ->where('customer.id', $customer->id)
+            );
     }
 
     public function test_customer_without_cpf_phone_address_shows_safely(): void
