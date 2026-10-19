@@ -42,7 +42,7 @@ const credentialValues = ref({});
 const certificateFile = ref(null);
 /** Arquivos extras (ex.: OnlyUp mTLS) por campo `credential_keys.key` */
 const extraFileUploads = ref({});
-const webhookCopied = ref(false);
+const webhookCopied = ref('');
 const disconnecting = ref(false);
 
 const stepUpOpen = ref(false);
@@ -60,15 +60,25 @@ function totpErrorMessage(err) {
     return err?.response?.data?.message || 'Informe o código 2FA para continuar.';
 }
 
-async function copyWebhookUrl() {
+const webhookEntries = computed(() => {
+    const list = gateway.value?.webhook_urls;
+    if (Array.isArray(list) && list.length > 0) {
+        return list.filter((item) => item && typeof item.url === 'string' && item.url !== '');
+    }
     const url = gateway.value?.webhook_url;
+    return url ? [{ label: '', url }] : [];
+});
+
+async function copyWebhookUrl(url) {
     if (!url) return;
     try {
         await navigator.clipboard.writeText(url);
-        webhookCopied.value = true;
-        setTimeout(() => { webhookCopied.value = false; }, 2000);
+        webhookCopied.value = url;
+        setTimeout(() => {
+            if (webhookCopied.value === url) webhookCopied.value = '';
+        }, 2000);
     } catch {
-        webhookCopied.value = false;
+        webhookCopied.value = '';
     }
 }
 
@@ -517,7 +527,7 @@ const canTestConnection = computed(() => {
 
                     <!-- URL do webhook para configurar no painel do gateway -->
                     <div
-                        v-if="gateway.webhook_url"
+                        v-if="webhookEntries.length"
                         class="mb-6 rounded-xl border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-600 dark:bg-zinc-800/50"
                     >
                         <h3 class="mb-2 text-sm font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
@@ -526,22 +536,27 @@ const canTestConnection = computed(() => {
                         <p class="mb-2 text-xs text-zinc-600 dark:text-zinc-400">
                             Configure esta URL no painel do {{ gateway.name }} (notificações de pagamento).
                         </p>
-                        <div class="flex gap-2">
-                            <input
-                                :value="gateway.webhook_url"
-                                type="text"
-                                readonly
-                                class="flex-1 rounded-lg border border-zinc-200 bg-white px-3 py-2 text-xs text-zinc-700 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-300"
-                            />
-                            <button
-                                type="button"
-                                class="flex shrink-0 items-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-3 py-2 text-xs font-medium text-zinc-700 transition hover:bg-zinc-50 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"
-                                @click="copyWebhookUrl"
-                            >
-                                <Check v-if="webhookCopied" class="h-4 w-4 text-emerald-600" />
-                                <Copy v-else class="h-4 w-4" />
-                                {{ webhookCopied ? 'Copiado!' : 'Copiar' }}
-                            </button>
+                        <div v-for="entry in webhookEntries" :key="entry.url" class="mb-2 last:mb-0">
+                            <p v-if="entry.label" class="mb-1 text-xs font-medium text-zinc-700 dark:text-zinc-300">
+                                {{ entry.label }}
+                            </p>
+                            <div class="flex gap-2">
+                                <input
+                                    :value="entry.url"
+                                    type="text"
+                                    readonly
+                                    class="flex-1 rounded-lg border border-zinc-200 bg-white px-3 py-2 text-xs text-zinc-700 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-300"
+                                />
+                                <button
+                                    type="button"
+                                    class="flex shrink-0 items-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-3 py-2 text-xs font-medium text-zinc-700 transition hover:bg-zinc-50 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"
+                                    @click="copyWebhookUrl(entry.url)"
+                                >
+                                    <Check v-if="webhookCopied === entry.url" class="h-4 w-4 text-emerald-600" />
+                                    <Copy v-else class="h-4 w-4" />
+                                    {{ webhookCopied === entry.url ? 'Copiado!' : 'Copiar' }}
+                                </button>
+                            </div>
                         </div>
                         <p
                             v-if="gateway.webhook_help"

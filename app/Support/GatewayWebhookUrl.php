@@ -19,6 +19,7 @@ final class GatewayWebhookUrl
         return match ($gatewaySlug) {
             'efi' => '/webhooks/gateways/efi/pix',
             'efi.pix' => '/webhooks/gateways/efi/pix',
+            'efi.pix_auto' => '/webhooks/gateways/efi/pix-recorrente',
             'efi.notification' => '/webhooks/gateways/efi/notification',
             'spacepag' => '/webhooks/gateways/spacepag',
             'cajupay' => '/webhooks/gateways/cajupay',
