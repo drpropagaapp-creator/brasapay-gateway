@@ -1,31 +1,13 @@
 <script setup>
-import { ref, computed, onMounted, provide, watch, defineAsyncComponent } from 'vue';
+import { ref, computed, onMounted, provide, watch } from 'vue';
 import { router, usePage } from '@inertiajs/vue3';
 import LayoutInfoprodutor from '@/Layouts/LayoutInfoprodutor.vue';
 import { useI18n } from '@/composables/useI18n';
-import { useSellerDashboardTemplate } from '@/composables/useSellerDashboardTemplate';
+import DashboardViewDefault from '@/components/dashboard/DashboardViewDefault.vue';
 
 defineOptions({ layout: LayoutInfoprodutor });
 
 const page = usePage();
-const { isAurora, isKawaii, isPrime, isStudio } = useSellerDashboardTemplate();
-
-const dashboardView = computed(() => {
-    if (isKawaii.value) {
-        return defineAsyncComponent(() => import('@/components/dashboard/DashboardViewKawaii.vue'));
-    }
-    if (isAurora.value) {
-        return defineAsyncComponent(() => import('@/components/dashboard/DashboardViewAurora.vue'));
-    }
-    if (isPrime.value) {
-        return defineAsyncComponent(() => import('@/components/dashboard/DashboardViewPrime.vue'));
-    }
-    if (isStudio.value) {
-        return defineAsyncComponent(() => import('@/components/dashboard/DashboardViewStudio.vue'));
-    }
-
-    return defineAsyncComponent(() => import('@/components/dashboard/DashboardViewDefault.vue'));
-});
 const hasAchievementsProgress = computed(() => !!(page.props.achievementsProgress ?? null));
 const { t } = useI18n();
 
@@ -230,20 +212,6 @@ const chartOptions = computed(() => ({
     },
 }));
 
-provide('auroraDashboard', {
-    vendas_totais: computed(() => props.vendas_totais),
-    grafico_vendas: computed(() => props.grafico_vendas),
-    valuesVisible,
-    formatCurrency: computed(() => formatBRL),
-});
-
-provide('kawaiiDashboard', {
-    vendas_totais: computed(() => props.vendas_totais),
-    grafico_vendas: computed(() => props.grafico_vendas),
-    valuesVisible,
-    formatCurrency: computed(() => formatBRL),
-});
-
 const sharedViewProps = computed(() => ({
     title: t('dashboard.title', 'Dashboard'),
     subtitle: t('dashboard.subtitle', 'Visão geral de desempenho, vendas e métricas do período.'),
@@ -277,9 +245,7 @@ const sharedViewProps = computed(() => ({
 
 <template>
     <div class="space-y-6">
-        <component
-            :is="dashboardView"
-            v-if="dashboardView"
+        <DashboardViewDefault
             v-bind="sharedViewProps"
             @update:period="setPeriod"
             @toggle-values="valuesVisible = !valuesVisible"

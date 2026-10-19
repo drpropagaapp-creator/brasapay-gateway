@@ -1,13 +1,16 @@
 <script setup>
 import { computed } from 'vue';
 import { Link, usePage } from '@inertiajs/vue3';
-import { PanelsTopLeft } from 'lucide-vue-next';
+import { Menu } from 'lucide-vue-next';
 import { useSidebar } from '@/composables/useSidebar';
 import ThemeToggler from '@/components/layout/ThemeToggler.vue';
 import UserMenu from '@/components/layout/UserMenu.vue';
+import { useThemedPageHeading } from '@/composables/useThemedPageHeading';
 
 const page = usePage();
-const pageTitle = computed(() => page.props.pageTitle ?? null);
+const { heading } = useThemedPageHeading();
+const pageTitle = computed(() => heading.value.title || page.props.pageTitle || null);
+const pageSubtitle = computed(() => heading.value.subtitle || '');
 const urlPath = computed(() => page.url.split('?')[0] || '');
 const isPlatformArea = computed(() => urlPath.value.startsWith('/plataforma'));
 
@@ -24,48 +27,47 @@ const quickLinks = [
 
 <template>
     <header
-        class="z-[99998] flex shrink-0 w-full flex-col gap-2 bg-transparent px-4 py-3 lg:px-6 lg:py-4"
+        class="relative z-[99998] flex w-full shrink-0 flex-col gap-4 px-1 pb-2 pt-2 lg:pb-4 lg:pt-1"
         :class="isMobile && isMobileOpen ? 'pointer-events-none' : ''"
     >
-        <div class="flex w-full items-center justify-between gap-4">
-        <div class="flex min-w-0 flex-1 flex-col gap-2 sm:flex-row sm:items-center sm:gap-4">
-            <button
-                v-if="isMobile && !isMobileOpen"
-                type="button"
-                class="tpl-icon-btn flex h-9 w-9 shrink-0 touch-manipulation cursor-pointer select-none items-center justify-center rounded-lg text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
-                aria-label="Abrir menu"
-                @click="toggleSidebar"
+        <div class="pn-topbar">
+            <div class="pn-topbar__title min-w-0 flex-1">
+                <button v-if="isMobile && !isMobileOpen" type="button" class="pn-iconbtn pn-keep-shape shrink-0" aria-label="Abrir menu" @click="toggleSidebar">
+                    <Menu class="h-5 w-5" />
+                </button>
+                <div v-if="pageTitle" class="min-w-0">
+                    <h1 class="pn-page-title truncate">{{ pageTitle }}</h1>
+                    <p v-if="pageSubtitle" class="truncate">{{ pageSubtitle }}</p>
+                </div>
+            </div>
+            <div class="pn-topbar__tools shrink-0">
+                <ThemeToggler />
+                <UserMenu />
+            </div>
+        </div>
+        <nav v-if="isPlatformArea" class="pn-tabs self-start" aria-label="Atalhos da plataforma">
+            <Link
+                v-for="item in quickLinks"
+                :key="item.href"
+                :href="item.href"
+                class="pn-tab inline-flex items-center no-underline hover:no-underline"
+                :class="item.match(urlPath) ? 'pn-tab--active' : ''"
             >
-                <PanelsTopLeft class="h-5 w-5" aria-hidden="true" />
-            </button>
-            <h1 v-if="pageTitle" class="tpl-fg min-w-0 truncate text-xl font-semibold text-zinc-900 dark:text-white md:text-2xl">
-                {{ pageTitle }}
-            </h1>
-            <nav
-                v-if="isPlatformArea"
-                class="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 overflow-x-auto text-sm"
-                aria-label="Atalhos da plataforma"
-            >
-                <span v-if="pageTitle" class="tpl-fg-subtle text-zinc-300 dark:text-zinc-600" aria-hidden="true">|</span>
-                <Link
-                    v-for="item in quickLinks"
-                    :key="item.href"
-                    :href="item.href"
-                    class="whitespace-nowrap font-medium transition-colors"
-                    :class="
-                        item.match(urlPath)
-                            ? 'platform-quicklink-active text-[var(--color-primary)]'
-                            : 'platform-quicklink text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-200'
-                    "
-                >
-                    {{ item.label }}
-                </Link>
-            </nav>
-        </div>
-        <div class="flex shrink-0 items-center gap-2">
-            <ThemeToggler />
-            <UserMenu />
-        </div>
-        </div>
+                {{ item.label }}
+            </Link>
+        </nav>
     </header>
 </template>
+
+<style scoped>
+.pn-page-title {
+    font: 500 26px/32px var(--font-display);
+    letter-spacing: var(--tracking-heading);
+}
+@media (min-width: 768px) {
+    .pn-page-title {
+        font: var(--text-h2);
+        letter-spacing: var(--tracking-heading);
+    }
+}
+</style>

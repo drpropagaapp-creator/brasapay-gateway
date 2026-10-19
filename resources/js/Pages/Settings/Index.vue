@@ -16,7 +16,6 @@ import {
     Tag,
     Palette,
     Images,
-    LayoutGrid,
     Truck,
     Shield,
     Scale,
@@ -35,7 +34,6 @@ import EmailProviderSidebar from '@/components/EmailProviderSidebar.vue';
 import PlatformStepUpModal from '@/components/platform/PlatformStepUpModal.vue';
 import BrandingTab from '@/Pages/Settings/Tabs/BrandingTab.vue';
 import DashboardBannersTab from '@/Pages/Settings/Tabs/DashboardBannersTab.vue';
-import DashboardTemplateTab from '@/Pages/Settings/Tabs/DashboardTemplateTab.vue';
 import LanguagesTab from '@/Pages/Settings/Tabs/LanguagesTab.vue';
 import SecurityTab from '@/Pages/Settings/Tabs/SecurityTab.vue';
 import KycTab from '@/Pages/Settings/Tabs/KycTab.vue';
@@ -129,7 +127,7 @@ const props = defineProps({
 });
 
 function allAllowedTabIds() {
-    const core = ['email', 'storage', 'backup', 'personalizacao', 'banners_dashboard', 'template_dashboard', 'idiomas', 'traducoes', 'moedas', 'recursos', 'suporte_painel', 'google_analytics', 'seguranca', 'kyc', 'lgpd', 'integracoes', 'dados_plataforma', 'url_publica', 'cron', 'update', 'demo'];
+    const core = ['email', 'storage', 'backup', 'personalizacao', 'banners_dashboard', 'idiomas', 'traducoes', 'moedas', 'recursos', 'suporte_painel', 'google_analytics', 'seguranca', 'kyc', 'lgpd', 'integracoes', 'dados_plataforma', 'url_publica', 'cron', 'update', 'demo'];
     const extra = (props.settings_plugin_tabs || []).map((t) => t.id).filter(Boolean);
     return [...core, ...extra];
 }
@@ -292,7 +290,6 @@ const coreTabsStatic = [
     { id: 'backup', label: 'Backup', icon: DatabaseBackup, group: 'operacao' },
     { id: 'personalizacao', label: 'Personalização', icon: Palette, group: 'aparencia' },
     { id: 'banners_dashboard', label: 'Banners do dashboard', icon: Images, group: 'aparencia' },
-    { id: 'template_dashboard', label: 'Template do dashboard', icon: LayoutGrid, group: 'aparencia' },
     { id: 'idiomas', label: 'Idiomas', icon: Languages, group: 'internacional' },
     { id: 'traducoes', label: 'Traduções', icon: Languages, group: 'internacional', hideOnMobile: true },
     { id: 'moedas', label: 'Moedas', icon: Banknote, group: 'internacional' },
@@ -1139,7 +1136,7 @@ const selectClass =
                 </div>
 
         <form
-            v-show="activeTab !== 'update' && activeTab !== 'cron' && activeTab !== 'banners_dashboard' && activeTab !== 'template_dashboard' && activeTab !== 'idiomas' && activeTab !== 'demo' && !isPluginTab(activeTab)"
+            v-show="activeTab !== 'update' && activeTab !== 'cron' && activeTab !== 'banners_dashboard' && activeTab !== 'idiomas' && activeTab !== 'demo' && !isPluginTab(activeTab)"
             class="w-full max-w-full space-y-6"
             novalidate
             @submit.prevent="submitSettings"
@@ -1871,18 +1868,6 @@ const selectClass =
             </div>
         </Transition>
 
-        <Transition
-            enter-active-class="transition duration-200 ease-out"
-            enter-from-class="opacity-0"
-            enter-to-class="opacity-100"
-            leave-active-class="transition duration-150 ease-in"
-            leave-from-class="opacity-100"
-            leave-to-class="opacity-0"
-        >
-            <div v-show="activeTab === 'template_dashboard'" class="w-full max-w-full space-y-6">
-                <DashboardTemplateTab />
-            </div>
-        </Transition>
 
         <Transition
             enter-active-class="transition duration-200 ease-out"

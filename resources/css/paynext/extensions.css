@@ -1,0 +1,84 @@
+/*
+ * Paynext — extensões do Design System para padrões que o app precisa e o DS não
+ * define como componente (menus suspensos, cabeçalho de página, painel de contraste).
+ * Construídas só com os tokens do DS.
+ */
+
+/* Menu suspenso: vidro forte, hairline, entrada fade-up */
+.pn-popover {
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--glass-border);
+    background: rgba(255, 255, 255, 0.94);
+    -webkit-backdrop-filter: var(--glass-blur);
+    backdrop-filter: var(--glass-blur);
+    box-shadow: var(--shadow-lg);
+    animation: pn-fade-up var(--dur-base) var(--ease-out) both;
+}
+html.dark .pn-popover {
+    background: rgba(18, 21, 22, 0.9);
+    border-color: var(--border-strong);
+}
+.pn-popover__item {
+    display: flex;
+    width: 100%;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-md);
+    min-height: 40px;
+    padding: 0 var(--space-md);
+    border: 0;
+    border-radius: var(--radius-full);
+    background: transparent;
+    color: var(--text-secondary);
+    font: 300 13.5px/20px var(--font-body);
+    text-align: left;
+    cursor: pointer;
+    transition:
+        background var(--dur-fast),
+        color var(--dur-fast);
+}
+.pn-popover__item:hover {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+}
+.pn-popover__item--active {
+    background: var(--bg-selected);
+    color: var(--text-primary);
+}
+.pn-popover__sep {
+    height: 1px;
+    margin: 6px 8px;
+    background: var(--border-default);
+}
+
+/* Eyebrow (rótulo em caixa alta) */
+.pn-eyebrow {
+    font: var(--text-label-s);
+    letter-spacing: var(--tracking-label-s);
+    text-transform: uppercase;
+    color: var(--text-tertiary);
+}
+
+/* Ponto final lime nos títulos de destaque ("Bem-vindo de volta.") */
+.pn-dot {
+    color: var(--lime-300);
+}
+html:not(.dark) .pn-dot {
+    color: var(--lime-500);
+}
+
+/* Contador sobre botão de ícone (sino) */
+.pn-iconbtn__count {
+    position: absolute;
+    top: -4px;
+    right: -4px;
+    min-width: 20px;
+    height: 20px;
+    padding: 0 6px;
+    border-radius: var(--radius-full);
+    background: var(--lime-300);
+    color: var(--ink-900);
+    font: 500 10.5px/20px var(--font-body);
+    text-align: center;
+    box-shadow: 0 0 12px rgba(225, 251, 77, 0.55);
+}

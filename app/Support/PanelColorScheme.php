@@ -28,7 +28,7 @@ class PanelColorScheme
     public static function defaults(): array
     {
         return [
-            'mode' => self::MODE_DARK,
+            'mode' => self::MODE_SYSTEM,
             'locked' => false,
         ];
     }

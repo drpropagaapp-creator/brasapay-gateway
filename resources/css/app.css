@@ -1,8 +1,8 @@
 @import 'tailwindcss';
 @import './paynext/tokens.css';
 @import './paynext/components.css';
+@import './paynext/extensions.css';
 @import './paynext/overrides.css';
-@import './platform-templates.css';
 
 @source '../../vendor/laravel/framework/src/Illuminate/Pagination/resources/views/*.blade.php';
 @source '../../storage/framework/views/*.php';

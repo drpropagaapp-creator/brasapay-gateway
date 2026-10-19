@@ -20,8 +20,6 @@ const {
     pageClass,
     mobileCardClass,
     tablePanel,
-    themePrefix,
-    isThemedShell,
 } = usePanelThemeClasses();
 
 const props = defineProps({
@@ -324,11 +322,7 @@ onUnmounted(() => {
         <div class="flex flex-wrap items-start justify-between gap-3">
             <div class="flex flex-col flex-wrap gap-3 sm:flex-row sm:flex-nowrap sm:items-center">
                 <nav
-                    :class="[
-                        themePrefix
-                            ? `${themePrefix}-subnav`
-                            : 'inline-flex rounded-xl bg-zinc-100/80 p-1 dark:bg-zinc-800/80',
-                    ]"
+                    class="pn-seg max-w-full flex-wrap"
                     :aria-label="t('students.filter', 'Filtrar alunos')"
                 >
                     <button
@@ -336,16 +330,7 @@ onUnmounted(() => {
                         :key="opt.value"
                         type="button"
                         :aria-current="filter === opt.value ? 'true' : undefined"
-                        :class="[
-                            themePrefix
-                                ? [`${themePrefix}-subnav-item`, filter === opt.value && `${themePrefix}-subnav-item-active`]
-                                : [
-                                    'rounded-lg px-4 py-2.5 text-sm font-medium transition-all duration-200',
-                                    filter === opt.value
-                                        ? 'bg-white text-[var(--color-primary)] shadow-sm dark:bg-zinc-700 dark:text-[var(--color-primary)]'
-                                        : 'text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-white',
-                                ],
-                        ]"
+                        :class="['pn-tab pn-keep-shape', filter === opt.value ? 'pn-tab--active' : '']"
                         @click="setFilter(opt.value)"
                     >
                         {{ opt.label }}
@@ -443,7 +428,7 @@ onUnmounted(() => {
 
         <AuroraPageSection flush>
         <!-- Tabela de alunos -->
-        <div v-if="alunosList.length" :class="['sm:hidden space-y-3', isThemedShell && 'p-4']">
+        <div v-if="alunosList.length" class="space-y-3 sm:hidden">
             <div
                 v-for="a in alunosList"
                 :key="a.id"

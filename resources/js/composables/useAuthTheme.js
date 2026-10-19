@@ -2,7 +2,7 @@ import { computed, watch, onMounted } from 'vue';
 import { usePage } from '@inertiajs/vue3';
 import { resolvePanelTheme } from '@/composables/usePanelColorScheme';
 
-const DEFAULT_SCHEME = { mode: 'dark', locked: false };
+const DEFAULT_SCHEME = { mode: 'system', locked: false };
 
 /**
  * Tema das telas de autenticação — segue apenas panel_color_scheme (ignora localStorage do painel).

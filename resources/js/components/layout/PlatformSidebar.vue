@@ -40,24 +40,6 @@ const { isExpanded, isMobileOpen, toggleSidebar, isMobile, closeMobileSidebarIfO
 
 const showText = () => isExpanded.value || isMobileOpen.value;
 
-const appSettings = () => page.props.appSettings ?? {};
-const appName = () => appSettings().app_name || 'Stacker';
-const hasLogoFull = () => !!(appSettings().app_logo || appSettings().app_logo_dark);
-const hasLogoIcon = () => !!(appSettings().app_logo_icon || appSettings().app_logo_icon_dark);
-
-/** Classes da imagem conforme Configurações → Personalização (mesma origem do painel vendedor). */
-const headerLogoImgClass = computed(() => {
-    const expanded = isExpanded.value || isMobileOpen.value;
-    return expanded
-        ? 'h-10 max-w-[200px] object-contain object-left'
-        : 'h-8 max-w-[56px] object-contain object-center';
-});
-
-const headerIconImgClass = computed(() => {
-    const expanded = isExpanded.value || isMobileOpen.value;
-    return expanded ? 'h-9 w-9 shrink-0 object-contain' : 'h-8 w-8 shrink-0 object-contain';
-});
-
 const iconMap = {
     Puzzle,
     Plug,
@@ -264,133 +246,84 @@ function isActive(href) {
     return url === href || url.startsWith(`${href}/`);
 }
 
-const linkActive =
-    'platform-nav-active bg-[var(--color-primary)]/10 text-zinc-900 dark:text-white';
-const linkInactive =
-    'text-zinc-600 hover:bg-zinc-200/60 dark:text-zinc-400 dark:hover:bg-zinc-800/70';
+import PnWordmark from '@/components/paynext/PnWordmark.vue';
 </script>
 
 <template>
     <aside
-        class="platform-sidebar fixed inset-y-0 left-0 z-[99999] flex h-screen w-[260px] flex-col border-r border-zinc-200 bg-zinc-100 transition-all duration-300 ease-in-out dark:border-zinc-800 dark:bg-zinc-900"
+        class="pn-platform-sidebar pn-glass pn-glass--strong z-[99999] flex flex-col gap-1"
         :class="[
             {
-                'translate-x-0 shadow-xl': isMobileOpen,
+                'w-[280px] translate-x-0': isMobileOpen,
                 '-translate-x-full': !isMobileOpen,
                 'pointer-events-none': isMobile && !isMobileOpen,
-                'lg:translate-x-0': true,
-                'lg:w-[260px]': isExpanded || isMobileOpen,
-                'lg:w-[72px]': !isExpanded && !isMobileOpen,
+                'lg:pointer-events-auto lg:translate-x-0': true,
+                'lg:w-[264px]': isExpanded || isMobileOpen,
+                'lg:w-[88px]': !isExpanded && !isMobileOpen,
             },
         ]"
     >
-        <div class="platform-sidebar-head flex h-14 shrink-0 items-center justify-between gap-2 border-b border-zinc-200 px-3 dark:border-zinc-800">
+        <div :class="['flex items-center px-5 pb-2 pt-6', showText() ? 'justify-between gap-2' : 'lg:justify-center lg:px-0']">
             <Link
                 href="/plataforma/dashboard"
-                class="flex min-w-0 flex-1 cursor-pointer touch-manipulation items-center overflow-hidden py-1.5"
-                :class="showText() ? 'justify-start gap-2' : 'justify-center'"
+                class="flex min-w-0 flex-1 items-center no-underline hover:no-underline"
+                :class="showText() ? '' : 'justify-center'"
                 @click="closeMobileSidebarIfOpen"
             >
-                <template v-if="hasLogoFull()">
-                    <img
-                        v-if="appSettings().app_logo"
-                        :src="appSettings().app_logo"
-                        :alt="appName()"
-                        :class="[headerLogoImgClass, appSettings().app_logo_dark ? 'dark:hidden' : '']"
-                    />
-                    <img
-                        v-if="appSettings().app_logo_dark"
-                        :src="appSettings().app_logo_dark"
-                        :alt="appName()"
-                        :class="['hidden dark:block', headerLogoImgClass]"
-                    />
-                </template>
-                <template v-else-if="hasLogoIcon()">
-                    <img
-                        v-if="appSettings().app_logo_icon"
-                        :src="appSettings().app_logo_icon"
-                        :alt="appName()"
-                        :class="[headerIconImgClass, appSettings().app_logo_icon_dark ? 'dark:hidden' : '']"
-                    />
-                    <img
-                        v-if="appSettings().app_logo_icon_dark"
-                        :src="appSettings().app_logo_icon_dark"
-                        :alt="appName()"
-                        :class="['hidden dark:block', headerIconImgClass]"
-                    />
-                </template>
-                <Shield v-else class="h-8 w-8 shrink-0 text-[var(--color-primary)]" />
+                <PnWordmark :variant="showText() ? 'full' : 'icon'" />
             </Link>
             <button
-                v-if="isMobile"
+                v-if="showText()"
                 type="button"
-                class="tpl-icon-btn flex h-9 w-9 shrink-0 touch-manipulation cursor-pointer select-none items-center justify-center text-zinc-500 hover:bg-zinc-200/80 dark:hover:bg-zinc-800"
-                aria-label="Fechar menu"
+                class="pn-iconbtn pn-keep-shape shrink-0"
+                style="width: 38px; height: 38px"
+                :aria-label="isMobile ? 'Fechar menu' : 'Recolher menu'"
                 @click="toggleSidebar"
             >
-                <X class="h-5 w-5" />
-            </button>
-            <button
-                v-else
-                type="button"
-                class="tpl-icon-btn hidden h-9 w-9 shrink-0 items-center justify-center text-zinc-500 hover:bg-zinc-200/80 lg:flex dark:hover:bg-zinc-800"
-                :title="isExpanded ? 'Recolher' : 'Expandir'"
-                aria-label="Alternar largura do menu"
-                @click="toggleSidebar"
-            >
-                <PanelRightOpen class="h-5 w-5" />
+                <X v-if="isMobile" class="h-[18px] w-[18px]" />
+                <PanelRightOpen v-else class="h-[18px] w-[18px]" />
             </button>
         </div>
+        <button
+            v-if="!showText()"
+            type="button"
+            class="pn-iconbtn pn-keep-shape mx-auto mb-1 hidden lg:inline-flex"
+            style="width: 38px; height: 38px"
+            aria-label="Expandir menu"
+            @click="toggleSidebar"
+        >
+            <PanelRightOpen class="h-[18px] w-[18px]" mirrored />
+        </button>
 
-        <nav class="flex-1 space-y-5 overflow-y-auto px-0 py-3">
+        <nav class="no-scrollbar flex-1 overflow-y-auto px-3 pb-3" :class="showText() ? '' : 'lg:px-[18px]'">
             <div v-for="group in navGroups" :key="group.id">
-                <p
-                    v-if="group.label && showText()"
-                    class="platform-group-label mb-1.5 px-4 text-[10px] font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500"
-                >
-                    {{ group.label }}
-                </p>
-                <div
-                    v-else-if="group.label && !showText()"
-                    class="platform-group-divider mx-auto mb-1.5 h-px w-6 bg-zinc-300 dark:bg-zinc-700"
-                    aria-hidden="true"
-                />
-                <div>
+                <p v-if="group.label && showText()" class="pn-sidebar__sec">{{ group.label }}</p>
+                <div v-else-if="group.label" class="mx-auto my-3 h-px w-7" style="background: var(--border-default)" aria-hidden="true" />
+                <div class="flex flex-col gap-1">
                     <Link
                         v-for="item in group.items"
                         :key="item.href"
                         :href="item.href"
-                        class="platform-nav-link relative flex cursor-pointer touch-manipulation items-center gap-3 px-4 py-2.5 text-sm font-medium transition-colors"
-                        :class="[
-                            isNavItemActive(item.href) ? linkActive : linkInactive,
-                            showText() ? '' : 'justify-center px-0',
-                        ]"
+                        class="pn-nav no-underline hover:no-underline"
+                        :class="[isNavItemActive(item.href) ? 'pn-nav--active' : '', showText() ? '' : 'pn-nav--rail-lg']"
                         :title="!showText() ? item.name : undefined"
                         @click="closeMobileSidebarIfOpen"
                     >
-                        <span
-                            v-if="isNavItemActive(item.href)"
-                            class="absolute inset-y-0 left-0 w-0.5 bg-[var(--color-primary)]"
-                            aria-hidden="true"
-                        />
                         <span class="relative shrink-0">
-                            <component
-                                :is="item.icon"
-                                class="h-5 w-5"
-                                :class="isNavItemActive(item.href) ? 'text-[var(--color-primary)]' : ''"
-                            />
+                            <component :is="item.icon" class="h-5 w-5" :weight="isNavItemActive(item.href) ? 'fill' : 'duotone'" />
                             <span
                                 v-if="item.badgeKey && badgeCount(item.badgeKey) > 0 && !showText()"
-                                class="absolute -right-1.5 -top-1.5 inline-flex min-h-[1rem] min-w-[1rem] items-center justify-center rounded-full bg-orange-500 px-1 text-[9px] font-bold leading-none text-white"
+                                class="pn-iconbtn__count"
+                                style="top: -9px; right: -11px; min-width: 18px; height: 18px; line-height: 18px; font-size: 9.5px"
                                 :aria-label="`${badgeCount(item.badgeKey)} pendente(s)`"
                             >
                                 {{ badgeCount(item.badgeKey) > 9 ? '9+' : badgeLabel(badgeCount(item.badgeKey)) }}
                             </span>
                         </span>
-                        <span v-show="showText()" class="min-w-0 flex-1 truncate">{{ item.name }}</span>
+                        <span v-show="showText()" class="pn-nav__label truncate">{{ item.name }}</span>
                         <span
                             v-if="item.badgeKey && badgeCount(item.badgeKey) > 0 && showText()"
-                            class="ml-auto inline-flex min-w-[1.25rem] shrink-0 items-center justify-center rounded-full bg-orange-500 px-1.5 py-0.5 text-[10px] font-semibold leading-none text-white"
+                            class="pn-nav__count"
                             :aria-label="`${badgeCount(item.badgeKey)} pendente(s)`"
                         >
                             {{ badgeLabel(badgeCount(item.badgeKey)) }}
@@ -400,11 +333,33 @@ const linkInactive =
             </div>
         </nav>
 
-        <div
-            v-show="showText()"
-            class="platform-sidebar-foot border-t border-zinc-200 px-4 py-3 text-xs text-zinc-500 dark:border-zinc-800 dark:text-zinc-500"
-        >
-            Operador do gateway
+        <div v-show="showText()" class="mx-4 mb-5 border-t pt-3" style="border-color: var(--border-default)">
+            <span class="pn-eyebrow">Operador do gateway</span>
         </div>
     </aside>
 </template>
+
+<style scoped>
+.pn-platform-sidebar {
+    position: fixed;
+    inset: 0 auto 0 0;
+    border-radius: 0 28px 28px 0;
+    box-shadow: var(--shadow-md);
+    transition:
+        width var(--dur-base) var(--ease-out),
+        transform var(--dur-base) var(--ease-out);
+}
+@media (min-width: 1024px) {
+    .pn-platform-sidebar {
+        inset: 16px auto 16px 16px;
+        border-radius: var(--radius-2xl);
+    }
+    .pn-nav--rail-lg {
+        width: 52px;
+        height: 52px;
+        padding: 0;
+        justify-content: center;
+        border-radius: 18px;
+    }
+}
+</style>

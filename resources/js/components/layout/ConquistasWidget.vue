@@ -4,14 +4,13 @@ import { Link } from '@inertiajs/vue3';
 import { usePage } from '@inertiajs/vue3';
 import { formatCompactCurrency } from '@/lib/utils';
 import { navPrefetch } from '@/composables/useAppSidebarNav';
-import { useSellerDashboardTemplate } from '@/composables/useSellerDashboardTemplate';
+import PnMeter from '@/components/paynext/PnMeter.vue';
 import { useSidebar } from '@/composables/useSidebar';
 
 const props = defineProps({
     variant: { type: String, default: 'header' }, // 'header' | 'sidebar' | 'dashboard'
 });
 
-const { isAurora, isKawaii, isThemedShell } = useSellerDashboardTemplate();
 const { closeMobileSidebarIfOpen, isMobile } = useSidebar();
 
 const page = usePage();
@@ -60,76 +59,57 @@ const totalLabel = computed(() => {
         v-if="progress"
         href="/conquistas"
         :prefetch="navPrefetch(isMobile)"
-        class="group flex shrink-0 cursor-pointer touch-manipulation items-center gap-3 rounded-lg px-3 py-2 transition-colors hover:bg-zinc-100 dark:hover:bg-zinc-800"
+        class="pn-conquistas group flex shrink-0 cursor-pointer touch-manipulation items-center gap-3 no-underline hover:no-underline"
         :class="{
-            'flex-col items-stretch gap-2': props.variant === 'sidebar',
-            'w-full rounded-xl border border-zinc-200 px-4 py-3 dark:border-zinc-700': props.variant === 'dashboard',
-            '!border-0 !bg-transparent !p-0 hover:!bg-transparent': isAurora && props.variant === 'sidebar',
+            'pn-conquistas--header': props.variant === 'header',
+            'pn-glass w-full px-4 py-3': props.variant === 'dashboard',
+            'pn-conquistas--sidebar w-full flex-col items-stretch gap-2.5': props.variant === 'sidebar',
         }"
         title="Conquistas"
         @click="closeMobileSidebarIfOpen"
     >
-        <div
-            class="flex shrink-0 items-center justify-center overflow-hidden rounded-xl bg-zinc-100 dark:bg-zinc-800"
-            :class="[
-                props.variant === 'sidebar' ? 'h-12 w-12' : 'h-10 w-10',
-                { 'opacity-60 grayscale': isLocked },
-            ]"
+        <span
+            class="pn-kpi__icon shrink-0 overflow-hidden"
+            :class="{ 'opacity-60 grayscale': isLocked }"
+            :style="props.variant === 'sidebar' ? 'width:48px;height:48px' : ''"
         >
-            <img
-                v-if="iconUrl"
-                :src="iconUrl"
-                alt=""
-                :class="[
-                    props.variant === 'sidebar' ? 'h-8 w-8' : 'h-7 w-7',
-                    'object-contain',
-                ]"
-            />
-        </div>
-        <div
-            class="min-w-0 flex-1"
-            :class="[
-                props.variant === 'sidebar' ? 'w-full' : '',
-                props.variant === 'dashboard' ? 'w-full' : '',
-                props.variant === 'header' ? 'hidden w-[130px] sm:block' : '',
-            ]"
-        >
-            <p
-                v-if="props.variant === 'header' || props.variant === 'dashboard' || (isThemedShell && props.variant === 'sidebar')"
-                class="mb-1 text-[10px] font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-400"
-                :class="isAurora && props.variant === 'sidebar' ? 'aurora-fg-muted' : isKawaii && props.variant === 'sidebar' ? 'kawaii-fg-muted' : ''"
-            >
-                FATURAMENTO
+            <img v-if="iconUrl" :src="iconUrl" alt="" class="h-7 w-7 object-contain" />
+        </span>
+        <div class="min-w-0 flex-1" :class="props.variant === 'header' ? 'hidden w-[140px] sm:block' : 'w-full'">
+            <p class="pn-eyebrow mb-2">Faturamento</p>
+            <PnMeter :value="progressPercent" :show-marker="props.variant !== 'header'" style="height: 8px" />
+            <p class="mt-1.5 truncate text-[11px] font-light" style="color: var(--text-secondary)">
+                {{ totalLabel }}<span v-if="nextLabel"> → {{ nextLabel }}</span>
             </p>
-            <div
-                class="w-full overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-700"
-                :class="[
-                    props.variant === 'sidebar' || props.variant === 'dashboard' ? 'h-2.5' : 'h-2',
-                ]"
-            >
-                <div
-                    class="h-full rounded-full bg-[var(--color-primary)] transition-all duration-500"
-                    :style="{ width: `${progressPercent}%` }"
-                />
-            </div>
-            <p
-                class="mt-1 truncate text-zinc-500 dark:text-zinc-400"
-                :class="[
-                    props.variant === 'sidebar' || props.variant === 'dashboard' ? 'text-xs' : 'text-[11px]',
-                ]"
-            >
-                {{ totalLabel }}
-                <span v-if="nextLabel"> → {{ nextLabel }}</span>
-            </p>
-            <p
-                v-if="remainingLabel"
-                class="truncate text-zinc-400 dark:text-zinc-500"
-                :class="[
-                    props.variant === 'sidebar' || props.variant === 'dashboard' ? 'text-[10px]' : 'text-[10px]',
-                ]"
-            >
+            <p v-if="remainingLabel && props.variant !== 'header'" class="truncate text-[10.5px] font-light" style="color: var(--text-tertiary)">
                 Faltam {{ remainingLabel }}
             </p>
         </div>
     </Link>
 </template>
+
+<style scoped>
+.pn-conquistas--header {
+    height: 46px;
+    padding: 0 16px 0 6px;
+    border-radius: var(--radius-full);
+    border: 1px solid var(--border-strong);
+    background: var(--glass-bg);
+    -webkit-backdrop-filter: var(--glass-blur);
+    backdrop-filter: var(--glass-blur);
+    transition: background var(--dur-fast);
+}
+.pn-conquistas--header:hover {
+    background: var(--glass-bg-strong);
+}
+.pn-conquistas--header .pn-kpi__icon {
+    width: 34px;
+    height: 34px;
+}
+.pn-conquistas--sidebar {
+    padding: 14px;
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--border-default);
+    background: var(--bg-subtle);
+}
+</style>

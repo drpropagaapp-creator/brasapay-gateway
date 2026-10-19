@@ -1,25 +1,28 @@
 <script setup>
-import { ref } from 'vue';
+import { computed, ref } from 'vue';
 import { Link } from '@inertiajs/vue3';
 import { PanelRightOpen, X } from 'lucide-vue-next';
 import { useSidebar } from '@/composables/useSidebar';
 import ConquistasWidget from '@/components/layout/ConquistasWidget.vue';
 import AppSidebarNavList from '@/components/layout/sidebar/AppSidebarNavList.vue';
+import PnWordmark from '@/components/paynext/PnWordmark.vue';
 import { useAppSidebarNav, navPrefetch } from '@/composables/useAppSidebarNav';
 
 const { isExpanded, isMobileOpen, toggleSidebar, isMobile, closeMobileSidebarIfOpen } = useSidebar();
-const {
-    page,
-    homeHref,
-    appSettings,
-    appName,
-    hasLogoFull,
-    hasLogoIcon,
-    navItems,
-    isActive,
-} = useAppSidebarNav();
+const { page, homeHref, navItems, isActive } = useAppSidebarNav();
 
 const showText = () => isExpanded.value || isMobileOpen.value;
+
+const user = computed(() => page.props.auth?.user ?? null);
+const userInitials = computed(() =>
+    String(user.value?.name || '?')
+        .trim()
+        .split(/\s+/)
+        .slice(0, 2)
+        .map((p) => p.charAt(0).toUpperCase())
+        .join(''),
+);
+const userRole = computed(() => (page.props.customer_panel ? 'Área do cliente' : 'Infoprodutor'));
 
 const hoverLabel = ref('');
 const hoverX = ref(0);
@@ -46,83 +49,96 @@ function onItemMouseLeave() {
 <template>
     <aside
         :class="[
-            'fixed left-0 top-0 z-[99999] flex h-screen flex-col rounded-r-2xl bg-zinc-100 transition-all duration-300 ease-in-out dark:bg-zinc-900',
+            'pn-app-sidebar pn-glass pn-glass--strong fixed z-[99999] flex flex-col gap-1 transition-[width,transform] duration-300 ease-[cubic-bezier(.16,1,.3,1)]',
+            'inset-y-0 left-0 rounded-none rounded-r-[28px] lg:inset-y-4 lg:left-4 lg:rounded-[36px]',
             {
-                'w-[260px] translate-x-0': isMobileOpen,
+                'w-[280px] translate-x-0': isMobileOpen,
                 '-translate-x-full': !isMobileOpen,
                 'pointer-events-none': isMobile && !isMobileOpen,
-                'lg:translate-x-0': true,
-                'lg:w-[260px]': isExpanded || isMobileOpen,
-                'lg:w-[72px]': !isExpanded && !isMobileOpen,
+                'lg:pointer-events-auto lg:translate-x-0': true,
+                'lg:w-[264px]': isExpanded || isMobileOpen,
+                'lg:w-[88px]': !isExpanded && !isMobileOpen,
             },
         ]"
     >
-        <div
-            :class="[
-                'flex items-center border-b border-zinc-200/60 px-4 py-5 dark:border-zinc-700/60',
-                showText() ? 'justify-between gap-2' : 'lg:justify-center',
-            ]"
-        >
-            <template v-if="showText()">
-                <Link
-                    :href="homeHref"
-                    :prefetch="navPrefetch(isMobile)"
-                    class="flex min-w-0 flex-1 cursor-pointer touch-manipulation items-center gap-2 overflow-hidden text-zinc-900 dark:text-white"
-                    @click="closeMobileSidebarIfOpen"
-                >
-                    <template v-if="hasLogoFull()">
-                        <img v-if="appSettings().app_logo" :src="appSettings().app_logo" :alt="appName()" class="h-10 max-w-[200px] object-contain object-left" :class="appSettings().app_logo_dark ? 'dark:hidden' : ''" />
-                        <img v-if="appSettings().app_logo_dark" :src="appSettings().app_logo_dark" :alt="appName()" class="hidden h-10 max-w-[200px] object-contain object-left dark:block" />
-                    </template>
-                    <span v-else class="truncate text-lg font-semibold">{{ appName() }}</span>
-                </Link>
-                <button
-                    type="button"
-                    class="flex h-8 w-8 shrink-0 touch-manipulation cursor-pointer select-none items-center justify-center rounded-lg text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
-                    :aria-label="isMobile ? 'Fechar menu' : 'Recolher menu'"
-                    @click="toggleSidebar"
-                >
-                    <X v-if="isMobile" class="h-5 w-5" aria-hidden="true" />
-                    <PanelRightOpen v-else class="h-5 w-5" aria-hidden="true" />
-                </button>
-            </template>
+        <div :class="['flex items-center px-5 pb-3 pt-6', showText() ? 'justify-between gap-2' : 'lg:justify-center lg:px-0']">
+            <Link
+                v-if="showText()"
+                :href="homeHref"
+                :prefetch="navPrefetch(isMobile)"
+                class="flex min-w-0 flex-1 items-center no-underline hover:no-underline"
+                @click="closeMobileSidebarIfOpen"
+            >
+                <PnWordmark />
+            </Link>
             <button
-                v-else
+                v-if="showText()"
                 type="button"
-                class="flex h-14 w-14 items-center justify-center rounded-lg text-zinc-600 transition-colors hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
-                aria-label="Expandir menu"
+                class="pn-iconbtn pn-keep-shape shrink-0"
+                style="width: 38px; height: 38px"
+                :aria-label="isMobile ? 'Fechar menu' : 'Recolher menu'"
                 @click="toggleSidebar"
             >
-                <template v-if="hasLogoIcon()">
-                    <img v-if="appSettings().app_logo_icon" :src="appSettings().app_logo_icon" :alt="appName()" class="h-12 w-12 object-contain" :class="appSettings().app_logo_icon_dark ? 'dark:hidden' : ''" />
-                    <img v-if="appSettings().app_logo_icon_dark" :src="appSettings().app_logo_icon_dark" :alt="appName()" class="hidden h-12 w-12 object-contain dark:block" />
-                </template>
-                <span v-else class="flex h-12 w-12 items-center justify-center rounded-lg bg-zinc-200 text-lg font-semibold text-zinc-700 dark:bg-zinc-700 dark:text-zinc-200">
-                    {{ appName().charAt(0) }}
-                </span>
+                <X v-if="isMobile" class="h-[18px] w-[18px]" />
+                <PanelRightOpen v-else class="h-[18px] w-[18px]" />
+            </button>
+            <button v-else type="button" class="pn-keep-shape rounded-full" aria-label="Expandir menu" @click="toggleSidebar">
+                <PnWordmark variant="icon" />
             </button>
         </div>
-        <nav class="flex-1 overflow-y-auto overflow-x-visible no-scrollbar px-3 py-4">
+
+        <nav class="no-scrollbar flex-1 overflow-y-auto overflow-x-visible px-3 py-2" :class="showText() ? '' : 'lg:px-[18px]'">
             <AppSidebarNavList
                 :items="navItems"
                 :show-text="showText()"
                 :is-active="isActive"
                 :is-mobile="isMobile"
-                variant="default"
                 @item-mouseenter="onItemMouseEnter"
                 @item-mousemove="onItemMouseMove"
                 @item-mouseleave="onItemMouseLeave"
             />
         </nav>
-        <div v-if="isMobile && showText()" class="space-y-2 px-4 py-4 lg:hidden">
-            <ConquistasWidget v-if="!page.props.customer_panel" variant="sidebar" />
+
+        <div v-if="isMobile && showText() && !page.props.customer_panel" class="px-4 lg:hidden">
+            <ConquistasWidget variant="sidebar" />
+        </div>
+
+        <div
+            v-if="user"
+            class="mx-3 mb-4 mt-1 flex items-center gap-2.5 border-t pt-3"
+            :class="showText() ? 'px-1.5' : 'lg:justify-center lg:px-0'"
+            style="border-color: var(--border-default)"
+        >
+            <span class="pn-avatar pn-avatar--md">{{ userInitials }}</span>
+            <span v-if="showText()" class="min-w-0">
+                <b class="block truncate text-[13px] font-normal" style="color: var(--text-primary)">{{ user.name }}</b>
+                <small class="block truncate text-[11px] font-light" style="color: var(--text-tertiary)">{{ userRole }}</small>
+            </span>
         </div>
     </aside>
     <div
         v-if="hoverLabel"
-        class="pointer-events-none fixed z-[100001] hidden -translate-y-1/2 whitespace-nowrap rounded-md bg-zinc-900 px-2.5 py-1 text-xs font-medium text-white shadow-lg dark:bg-zinc-100 dark:text-zinc-900 lg:block"
+        class="pointer-events-none fixed z-[100001] hidden -translate-y-1/2 whitespace-nowrap rounded-full px-3 py-1.5 text-xs lg:block"
+        style="background: rgba(12, 14, 15, 0.9); color: #f4f6f7; box-shadow: var(--shadow-lg); backdrop-filter: var(--glass-blur)"
         :style="{ left: `${hoverX}px`, top: `${hoverY}px` }"
     >
         {{ hoverLabel }}
     </div>
 </template>
+
+<style scoped>
+/* .pn-glass define position/raio/transição; a sidebar flutuante precisa dos seus. */
+.pn-app-sidebar {
+    position: fixed;
+    border-radius: 0 28px 28px 0;
+    box-shadow: var(--shadow-md);
+    transition:
+        width var(--dur-base) var(--ease-out),
+        transform var(--dur-base) var(--ease-out);
+}
+@media (min-width: 1024px) {
+    .pn-app-sidebar {
+        border-radius: var(--radius-2xl);
+    }
+}
+</style>

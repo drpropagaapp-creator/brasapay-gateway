@@ -1,11 +1,11 @@
 <script setup>
-import { computed, ref, watch, watchEffect, provide, onBeforeUnmount, onMounted } from 'vue';
+import { computed, ref, watch, provide, onBeforeUnmount } from 'vue';
 import { usePage } from '@inertiajs/vue3';
 import { useSidebarProvider } from '@/composables/useSidebar';
 import { usePanelPushSubscribe } from '@/composables/usePanelPushSubscribe';
-import { useSellerDashboardTemplate } from '@/composables/useSellerDashboardTemplate';
 import { useThemedPageHeading } from '@/composables/useThemedPageHeading';
 import AppSidebar from '@/components/layout/AppSidebar.vue';
+import PnAurora from '@/components/paynext/PnAurora.vue';
 import AppHeader from '@/components/layout/AppHeader.vue';
 import MobileBottomNav from '@/components/layout/MobileBottomNav.vue';
 import PwaInstallPrompt from '@/components/layout/PwaInstallPrompt.vue';
@@ -22,9 +22,8 @@ import DemoModeBanner from '@/components/layout/DemoModeBanner.vue';
 import MedAlertBanner from '@/components/layout/MedAlertBanner.vue';
 import CustomerImpersonationBanner from '@/components/layout/CustomerImpersonationBanner.vue';
 
-const { isExpanded, setExpanded } = useSidebarProvider();
+const { isExpanded } = useSidebarProvider();
 usePanelPushSubscribe();
-const { isAurora, isKawaii, isPrime, isStudio, isThemedShell, templateId } = useSellerDashboardTemplate();
 const { clearHeading } = useThemedPageHeading();
 const page = usePage();
 
@@ -77,87 +76,16 @@ function onNotificationsUnreadCountUpdate(count) {
     notificationsUnreadCount.value = count;
 }
 
-watchEffect(() => {
-    const primary = page.props.appSettings?.theme_primary || '#0050fc';
-    document.documentElement.style.setProperty('--color-primary', primary);
-});
+/* Sidebar flutuante: 16px de margem + 264px (ou rail de 88px) + 16px de respiro. */
+const mainOffsetClass = computed(() => (isExpanded.value ? 'lg:pl-[296px]' : 'lg:pl-[120px]'));
 
-function applyThemedSidebarExpanded() {
-    // Prime tem sidebar recolhível própria; não força expandido.
-    if (isThemedShell.value && !isPrime.value && typeof window !== 'undefined' && window.innerWidth >= 1024) {
-        setExpanded(true);
-    }
-}
+const contentShellClass = computed(() =>
+    isPixGoRoute.value ? 'flex min-h-[100dvh] flex-1 flex-col' : 'flex min-h-0 flex-1 flex-col',
+);
 
-onMounted(() => {
-    applyThemedSidebarExpanded();
-});
+const mainAreaPaddingClass = computed(() => (isPixGoRoute.value ? 'p-0' : 'px-3 pt-3 md:px-5 md:pt-5 lg:pr-8 lg:pt-6'));
 
-watch(isThemedShell, () => {
-    applyThemedSidebarExpanded();
-});
-
-const shellDataAttrs = computed(() => {
-    if (customerPanel.value) {
-        return {};
-    }
-    return {
-        'data-seller-template': templateId.value,
-    };
-});
-
-const mainOffsetClass = computed(() => {
-    if (customerPanel.value) {
-        return isExpanded.value ? 'lg:ml-[260px]' : 'lg:ml-[64px]';
-    }
-    if (isPrime.value) {
-        return isExpanded.value ? 'lg:ml-[280px]' : 'lg:ml-[88px]';
-    }
-    if (isStudio.value) {
-        return 'lg:ml-[288px]';
-    }
-    if (isThemedShell.value) {
-        return 'lg:ml-[276px]';
-    }
-    return isExpanded.value ? 'lg:ml-[260px]' : 'lg:ml-[64px]';
-});
-
-const contentShellClass = computed(() => {
-    if (isPixGoRoute.value) {
-        return 'flex min-h-[calc(100dvh-0px)] flex-1 flex-col overflow-hidden rounded-none bg-white shadow-none dark:bg-[#0a0a0a] lg:min-h-[calc(100dvh-1rem)]';
-    }
-    if (isThemedShell.value && !customerPanel.value) {
-        const prefix = isKawaii.value
-            ? 'kawaii-content-shell'
-            : isPrime.value
-              ? 'prime-content-shell'
-              : isStudio.value
-                ? 'studio-content-shell'
-                : 'aurora-content-shell';
-        return `${prefix} flex min-h-0 flex-1 flex-col overflow-hidden rounded-none`;
-    }
-    return 'flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl bg-white shadow-sm dark:bg-zinc-800';
-});
-
-const mainAreaPaddingClass = computed(() => {
-    if (isPixGoRoute.value) {
-        return 'p-0';
-    }
-    if (isThemedShell.value && !customerPanel.value) {
-        return 'p-3 pt-2 md:p-4 md:pt-2 lg:px-6 lg:pb-6 lg:pt-3';
-    }
-    return 'p-3 md:p-4 lg:p-6';
-});
-
-const mainContentPaddingClass = computed(() => {
-    if (isPixGoRoute.value) {
-        return 'flex-1 p-0';
-    }
-    if (isThemedShell.value && !customerPanel.value) {
-        return 'flex-1 px-4 pb-24 pt-2 md:px-6 md:pt-2 lg:pb-8';
-    }
-    return 'flex-1 px-4 pb-24 pt-4 md:px-6 md:pt-6 lg:pb-8';
-});
+const mainContentPaddingClass = computed(() => (isPixGoRoute.value ? 'flex-1 p-0' : 'flex-1 px-1 pb-28 pt-2 md:pt-3 lg:pb-10'));
 
 const dashboardCurrentBanner = computed(() => {
     if (!dashboardBanners.value.length) return null;
@@ -198,39 +126,29 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-    <div
-        class="min-h-screen"
-        :class="[
-            isThemedShell && !customerPanel ? 'seller-shell-root' : 'bg-zinc-100 dark:bg-zinc-900',
-            isKawaii && !customerPanel ? 'kawaii-shell-root' : '',
-        ]"
-        v-bind="shellDataAttrs"
-    >
+    <div class="pn-shell min-h-screen">
+        <PnAurora />
         <CustomerImpersonationBanner />
         <AppSidebar />
         <slot name="sidebar-after-nav" />
         <Backdrop />
         <div
-            class="flex min-h-screen flex-col transition-all duration-300 ease-in-out"
+            class="flex min-h-screen flex-col transition-[padding] duration-300 ease-[cubic-bezier(.16,1,.3,1)]"
             :class="[mainOffsetClass, mainAreaPaddingClass]"
         >
             <div class="flex w-full shrink-0 flex-col gap-2">
-                <div v-if="!customerPanel && !isPixGoRoute" class="-mx-3 md:-mx-4 lg:-mx-6">
+                <div v-if="!customerPanel && !isPixGoRoute" class="flex flex-col gap-2">
                     <DemoModeBanner />
                     <TotpPromptBanner />
-                    <DemoExploreBanner class="mx-3 mb-2 md:mx-4 lg:mx-6" />
-                    <MedAlertBanner class="mx-3 mb-2 md:mx-4 lg:mx-6" />
+                    <DemoExploreBanner />
+                    <MedAlertBanner />
                     <CloudBillingBanner />
                     <KycBanner />
                 </div>
                 <AppHeader v-if="showAppHeader" :page-title="pageTitle" :page-title-badge="pageTitleBadge" />
                 <slot name="header-actions" />
             </div>
-            <div
-                v-if="isSellerDashboard && dashboardBanners.length"
-                class="mb-4 overflow-hidden rounded-2xl border border-zinc-200 bg-zinc-50 shadow-sm dark:border-zinc-700 dark:bg-zinc-800/40"
-                :class="isThemedShell ? (isKawaii ? 'kawaii-card border' : isPrime ? 'prime-surface prime-divider border' : isStudio ? 'studio-surface studio-divider border' : 'aurora-surface aurora-divider border') : ''"
-            >
+            <div v-if="isSellerDashboard && dashboardBanners.length" class="pn-glass mb-4 overflow-hidden">
                 <div class="relative aspect-[1200/420] w-full overflow-hidden md:aspect-[1600/320]">
                     <img
                         v-if="dashboardCurrentBanner"
@@ -257,7 +175,7 @@ onBeforeUnmount(() => {
                 v-if="showSellerSupportFab"
                 :config="sellerPanelSupport"
             />
-            <div v-if="!customerPanel && !isPixGoRoute" class="px-4 pt-3 lg:px-6">
+            <div v-if="!customerPanel && !isPixGoRoute" class="pt-2">
                 <PushNotificationsBanner />
             </div>
             <PwaInstallPrompt v-if="!isPixGoRoute" />

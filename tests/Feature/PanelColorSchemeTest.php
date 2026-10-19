@@ -19,7 +19,7 @@ class PanelColorSchemeTest extends TestCase
         $this->actingAs($admin)
             ->getJson(route('plataforma.settings.panel-color-scheme.data'))
             ->assertOk()
-            ->assertJsonPath('mode', 'dark')
+            ->assertJsonPath('mode', 'system')
             ->assertJsonPath('locked', false);
 
         $this->actingAs($admin)

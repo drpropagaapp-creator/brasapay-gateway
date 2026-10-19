@@ -3,11 +3,9 @@ import { computed } from 'vue';
 import { Link, usePage } from '@inertiajs/vue3';
 import { Package, Handshake, UserPlus } from 'lucide-vue-next';
 import { useI18n } from '@/composables/useI18n';
-import { useSellerDashboardTemplate } from '@/composables/useSellerDashboardTemplate';
 
 const page = usePage();
 const { t } = useI18n();
-const { isAurora, isKawaii, themePrefix } = useSellerDashboardTemplate();
 
 const path = computed(() => page.url.split('?')[0]);
 
@@ -38,22 +36,11 @@ const isProdutos = computed(() => {
     return p === '/produtos' || /^\/produtos\/[^/]+/.test(p);
 });
 
-const navClass = computed(() => {
-    if (isAurora.value) return 'aurora-subnav';
-    if (isKawaii.value) return 'kawaii-subnav';
-    return 'inline-flex rounded-xl bg-zinc-100/80 p-1 dark:bg-zinc-800/80';
-});
+/** Abas no padrão Paynext DS: barra preta em pílula, ativa em lime. */
+const navClass = 'pn-tabs max-w-full';
 
 function linkClass(active) {
-    if (themePrefix.value) {
-        return [`${themePrefix.value}-subnav-item flex items-center gap-2`, active && `${themePrefix.value}-subnav-item-active`];
-    }
-    return [
-        'flex items-center gap-2 rounded-lg px-4 py-2.5 text-sm font-medium transition-all duration-200',
-        active
-            ? 'bg-white text-[var(--color-primary)] shadow-sm dark:bg-zinc-700 dark:text-[var(--color-primary)]'
-            : 'text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-white',
-    ];
+    return ['pn-tab pn-keep-shape inline-flex items-center gap-2 no-underline hover:no-underline', active ? 'pn-tab--active' : ''];
 }
 </script>
 

@@ -32,29 +32,15 @@ function apply() {
 </script>
 
 <template>
-    <form
-        v-if="visible"
-        class="flex flex-wrap items-end gap-2"
-        @submit.prevent="apply"
-    >
-        <label class="text-sm text-zinc-600 dark:text-zinc-400">
-            {{ startLabel }}
-            <input
-                v-model="fromDate"
-                type="date"
-                class="mt-1 block rounded-xl border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 dark:border-zinc-600 dark:bg-zinc-900 dark:text-white"
-            />
+    <form v-if="visible" class="pn-glass pn-anim flex flex-wrap items-end gap-4 p-5" @submit.prevent="apply">
+        <label class="pn-field">
+            <span class="pn-field__label">{{ startLabel }}</span>
+            <span class="pn-field__box"><input v-model="fromDate" type="date" /></span>
         </label>
-        <label class="text-sm text-zinc-600 dark:text-zinc-400">
-            {{ endLabel }}
-            <input
-                v-model="toDate"
-                type="date"
-                class="mt-1 block rounded-xl border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 dark:border-zinc-600 dark:bg-zinc-900 dark:text-white"
-            />
+        <label class="pn-field">
+            <span class="pn-field__label">{{ endLabel }}</span>
+            <span class="pn-field__box"><input v-model="toDate" type="date" /></span>
         </label>
-        <button type="submit" class="h-10 rounded-xl bg-[var(--color-primary)] px-4 text-sm font-medium text-white">
-            {{ applyLabel }}
-        </button>
+        <button type="submit" class="pn-btn pn-btn--primary pn-keep-shape">{{ applyLabel }}</button>
     </form>
 </template>

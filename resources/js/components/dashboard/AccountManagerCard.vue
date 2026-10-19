@@ -2,35 +2,18 @@
 import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import { usePage } from '@inertiajs/vue3';
 import { X } from 'lucide-vue-next';
-import { useSellerDashboardTemplate } from '@/composables/useSellerDashboardTemplate';
 
 const props = defineProps({
     manager: { type: Object, default: null },
-    variant: {
-        type: String,
-        default: 'default',
-        validator: (v) => ['default', 'kawaii', 'aurora'].includes(v),
-    },
+    /** Mantido por compatibilidade; o visual é sempre o do Paynext DS. */
+    variant: { type: String, default: 'default' },
 });
 
 const page = usePage();
-const { isAurora, isKawaii } = useSellerDashboardTemplate();
 
 const manager = computed(() => props.manager ?? page.props.account_manager ?? null);
 const open = ref(false);
 
-const resolvedVariant = computed(() => {
-    if (props.variant !== 'default') return props.variant;
-    if (isKawaii.value) return 'kawaii';
-    if (isAurora.value) return 'aurora';
-    return 'default';
-});
-
-const iconBtnClass = computed(() => {
-    if (resolvedVariant.value === 'kawaii') return 'kawaii-icon-btn';
-    if (resolvedVariant.value === 'aurora') return 'aurora-icon-btn';
-    return 'text-zinc-500 hover:bg-zinc-100 hover:text-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200';
-});
 
 const initial = computed(() => (manager.value?.name || '?').charAt(0).toUpperCase());
 
@@ -70,8 +53,7 @@ onBeforeUnmount(() => {
     <template v-if="manager">
         <button
             type="button"
-            class="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-lg transition-colors"
-            :class="iconBtnClass"
+            class="pn-iconbtn pn-keep-shape shrink-0"
             :title="`Gerente: ${manager.name}`"
             :aria-label="`Gerente de conta: ${manager.name}`"
             @click="openModal"
@@ -80,11 +62,11 @@ onBeforeUnmount(() => {
                 v-if="manager.photo_url"
                 :src="manager.photo_url"
                 :alt="manager.name"
-                class="h-6 w-6 rounded-full object-cover ring-1 ring-zinc-200/80 dark:ring-zinc-600/80"
+                class="h-8 w-8 rounded-full object-cover"
             />
             <span
                 v-else
-                class="flex h-6 w-6 items-center justify-center rounded-full bg-zinc-200 text-[10px] font-semibold text-zinc-600 dark:bg-zinc-700 dark:text-zinc-200"
+                class="pn-avatar" style="width:32px;height:32px"
             >
                 {{ initial }}
             </span>

@@ -40,8 +40,6 @@ const {
     btnSecondary,
     stackClass,
     tablePanel,
-    themePrefix,
-    isThemedShell,
     subnavClass,
 } = usePanelThemeClasses();
 
@@ -633,7 +631,7 @@ const exportXlsUrl = computed(() => `/vendas/export?${buildExportSearchParams('x
 
         <AuroraPageSection>
             <div class="flex items-center justify-between gap-3">
-                <p class="aurora-section-title">
+                <p class="pn-eyebrow">
                     {{ t('sales.metrics.summary', 'Resumo do período') }}
                 </p>
                 <button
@@ -674,11 +672,7 @@ const exportXlsUrl = computed(() => `/vendas/export?${buildExportSearchParams('x
         <AuroraPageSection>
             <div class="flex flex-wrap items-center justify-between gap-3">
                 <nav
-                    :class="[
-                        themePrefix
-                            ? `${themePrefix}-subnav`
-                            : 'inline-flex rounded-xl bg-zinc-100/80 p-1 dark:bg-zinc-800/80',
-                    ]"
+                    class="pn-seg max-w-full flex-wrap"
                     :aria-label="t('sales.filter.label', 'Filtro de status')"
                 >
                     <button
@@ -686,16 +680,7 @@ const exportXlsUrl = computed(() => `/vendas/export?${buildExportSearchParams('x
                         :key="opt.value"
                         type="button"
                         :aria-current="status_filter === opt.value ? 'true' : undefined"
-                        :class="[
-                            themePrefix
-                                ? [`${themePrefix}-subnav-item`, status_filter === opt.value && `${themePrefix}-subnav-item-active`]
-                                : [
-                                    'rounded-lg px-4 py-2.5 text-sm font-medium transition-all duration-200',
-                                    status_filter === opt.value
-                                        ? 'bg-white text-[var(--color-primary)] shadow-sm dark:bg-zinc-700 dark:text-[var(--color-primary)]'
-                                        : 'text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-white',
-                                ],
-                        ]"
+                        :class="['pn-tab pn-keep-shape', status_filter === opt.value ? 'pn-tab--active' : '']"
                         @click="setFilter(opt.value)"
                     >
                         {{ opt.label }}
@@ -959,7 +944,7 @@ const exportXlsUrl = computed(() => `/vendas/export?${buildExportSearchParams('x
 
         <AuroraPageSection flush>
         <!-- Tabela de vendas -->
-        <div :class="['sm:hidden space-y-3', isThemedShell && 'p-4']">
+        <div class="space-y-3 sm:hidden">
             <div
                 v-for="v in vendasList"
                 :key="vendaRowKey(v)"

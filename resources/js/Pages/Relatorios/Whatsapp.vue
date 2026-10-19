@@ -29,7 +29,6 @@ const { t } = useI18n();
 const {
     pageClass,
     tablePanel,
-    themePrefix,
     innerPanelClass,
 } = usePanelThemeClasses();
 
@@ -158,7 +157,7 @@ async function resendFailed(row) {
         <AuroraPageSection>
             <div class="flex flex-wrap items-center justify-between gap-3">
                 <nav
-                    :class="themePrefix ? `${themePrefix}-subnav flex-wrap` : 'flex flex-wrap items-center gap-1'"
+                    class="pn-seg max-w-full flex-wrap"
                     aria-label="Período"
                 >
                     <button
@@ -166,15 +165,7 @@ async function resendFailed(row) {
                         :key="opt.value"
                         type="button"
                         :aria-current="period === opt.value ? 'true' : undefined"
-                        :class="[
-                            themePrefix
-                                ? [`${themePrefix}-subnav-item`, period === opt.value && `${themePrefix}-subnav-item-active`]
-                                : 'rounded-lg px-3 py-2 text-sm font-medium transition-colors',
-                            !themePrefix &&
-                                (period === opt.value
-                                    ? 'bg-[var(--color-primary)] text-white'
-                                    : 'text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200'),
-                        ]"
+                        :class="['pn-tab pn-keep-shape', period === opt.value ? 'pn-tab--active' : '']"
                         @click="setPeriod(opt.value)"
                     >
                         {{ opt.label }}
@@ -256,7 +247,7 @@ async function resendFailed(row) {
         </AuroraPageSection>
 
         <AuroraPageSection flush>
-            <h2 class="px-4 pt-4 text-sm font-semibold aurora-fg">Últimos envios</h2>
+            <h2 class="px-4 pt-4 text-sm font-semibold">Últimos envios</h2>
             <p v-if="resendError" class="px-4 pt-2 text-sm text-red-600">{{ resendError }}</p>
             <p v-if="resendSuccess" class="px-4 pt-2 text-sm text-emerald-600">{{ resendSuccess }}</p>
             <div class="mt-4 overflow-hidden" :class="tablePanel">

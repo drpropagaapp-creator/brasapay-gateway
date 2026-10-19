@@ -1,6 +1,6 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref, useAttrs } from 'vue';
-import { Moon, Sun } from 'lucide-vue-next';
+import { Check } from 'lucide-vue-next';
 import { router, usePage } from '@inertiajs/vue3';
 import ThemeToggler from '@/components/layout/ThemeToggler.vue';
 import LocaleFlag from '@/components/ui/LocaleFlag.vue';
@@ -10,34 +10,20 @@ import { usePanelColorScheme } from '@/composables/usePanelColorScheme';
 defineOptions({ inheritAttrs: false });
 
 const props = defineProps({
-    variant: {
-        type: String,
-        default: 'default',
-        validator: (v) => ['default', 'kawaii', 'aurora'].includes(v),
-    },
-    /** cycle = um ícone que alterna; toggle = dois botões (desktop) */
-    themeStyle: {
-        type: String,
-        default: 'cycle',
-        validator: (v) => ['cycle', 'toggle'].includes(v),
-    },
-    size: {
-        type: String,
-        default: 'sm',
-        validator: (v) => ['sm', 'md'].includes(v),
-    },
+    /** Mantido por compatibilidade; o visual é sempre o do Paynext DS. */
+    variant: { type: String, default: 'default' },
+    themeStyle: { type: String, default: 'cycle' },
+    size: { type: String, default: 'sm' },
     languageOnly: { type: Boolean, default: false },
     themeOnly: { type: Boolean, default: false },
 });
 
 const attrs = useAttrs();
 const page = usePage();
-const showLanguage = computed(
-    () => !props.themeOnly && !!page.props?.auth?.user && !page.url.startsWith('/plataforma'),
-);
+const showLanguage = computed(() => !props.themeOnly && !!page.props?.auth?.user && !page.url.startsWith('/plataforma'));
 const showTheme = computed(() => !props.languageOnly);
 
-const { theme, showToggler, setTheme } = usePanelColorScheme();
+const { showToggler } = usePanelColorScheme();
 const switchingLanguage = ref(false);
 const languageOpen = ref(false);
 const rootRef = ref(null);
@@ -47,41 +33,7 @@ const currentLanguageName = computed(() => {
     const current = (availableLanguages.value || []).find((lang) => lang.code === locale.value);
     return current?.name || t('header.language', 'Idioma');
 });
-
-const flagSize = computed(() => (props.size === 'md' ? 'md' : 'sm'));
-
-const btnSizeClass = computed(() => (props.size === 'md' ? 'h-9 w-9' : 'h-8 w-8'));
-const iconSizeClass = computed(() => (props.size === 'md' ? 'h-5 w-5' : 'h-4 w-4'));
-
-const iconBtnClass = computed(() => {
-    if (props.variant === 'kawaii') return 'kawaii-icon-btn';
-    if (props.variant === 'aurora') return 'aurora-icon-btn';
-    return 'text-zinc-500 hover:bg-zinc-100 hover:text-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200';
-});
-
-const dropdownClass = computed(() => {
-    if (props.variant === 'kawaii') {
-        return 'border-[var(--kawaii-border)] bg-[var(--kawaii-surface)] shadow-lg';
-    }
-    if (props.variant === 'aurora') {
-        return 'aurora-surface aurora-divider border shadow-lg';
-    }
-    return 'border-zinc-200 bg-white shadow-xl dark:border-zinc-700 dark:bg-zinc-900';
-});
-
-const dropdownItemClass = computed(() => {
-    if (props.variant === 'kawaii') {
-        return 'text-[var(--kawaii-fg)] hover:bg-[var(--kawaii-surface-hover)]';
-    }
-    if (props.variant === 'aurora') {
-        return 'aurora-fg hover:bg-white/5';
-    }
-    return 'text-zinc-700 hover:bg-zinc-100 dark:text-zinc-200 dark:hover:bg-zinc-800';
-});
-
-function cycleTheme() {
-    setTheme(theme.value === 'dark' ? 'light' : 'dark');
-}
+const btnStyle = computed(() => (props.size === 'md' ? '' : 'width:38px;height:38px'));
 
 async function switchLanguage(nextLocale) {
     if (!nextLocale || switchingLanguage.value || nextLocale === locale.value) return;
@@ -102,63 +54,40 @@ function onDocumentClick(event) {
     }
 }
 
-onMounted(() => {
-    document.addEventListener('click', onDocumentClick);
-});
-
-onBeforeUnmount(() => {
-    document.removeEventListener('click', onDocumentClick);
-});
+onMounted(() => document.addEventListener('click', onDocumentClick));
+onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick));
 </script>
 
 <template>
-    <div ref="rootRef" v-bind="attrs" class="flex shrink-0 items-center gap-0.5">
+    <div ref="rootRef" v-bind="attrs" class="flex shrink-0 items-center gap-2">
         <div v-if="showLanguage" class="relative">
             <button
                 type="button"
-                class="flex items-center justify-center rounded-lg transition-colors"
-                :class="[btnSizeClass, iconBtnClass]"
+                class="pn-iconbtn pn-keep-shape"
+                :style="btnStyle"
                 :aria-label="t('header.language', 'Idioma')"
                 :title="currentLanguageName"
                 @click.stop="languageOpen = !languageOpen"
             >
-                <LocaleFlag :locale="locale" :size="flagSize" />
+                <LocaleFlag :locale="locale" :size="size === 'md' ? 'md' : 'sm'" />
             </button>
-            <div
-                v-if="languageOpen"
-                class="absolute right-0 z-[100002] mt-1.5 min-w-[180px] overflow-hidden rounded-xl border"
-                :class="dropdownClass"
-            >
+            <div v-if="languageOpen" class="pn-popover absolute right-0 z-[100002] mt-2 min-w-[200px] p-1.5">
                 <button
                     v-for="lang in availableLanguages"
                     :key="lang.code"
                     type="button"
-                    class="flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-sm transition"
-                    :class="dropdownItemClass"
+                    class="pn-popover__item"
+                    :class="lang.code === locale ? 'pn-popover__item--active' : ''"
                     @click="switchLanguage(lang.code)"
                 >
                     <span class="flex min-w-0 items-center gap-2.5">
                         <LocaleFlag :locale="lang.code" size="sm" />
                         <span class="truncate">{{ lang.name }}</span>
                     </span>
-                    <span v-if="lang.code === locale" class="shrink-0 text-xs text-[var(--color-primary)]">✓</span>
+                    <Check v-if="lang.code === locale" class="h-4 w-4 shrink-0" weight="fill" />
                 </button>
             </div>
         </div>
-        <template v-if="showTheme">
-            <ThemeToggler v-if="showToggler && themeStyle === 'toggle'" />
-            <button
-                v-else-if="showToggler && themeStyle === 'cycle'"
-                type="button"
-                class="flex items-center justify-center rounded-lg transition-colors"
-                :class="[btnSizeClass, iconBtnClass]"
-                :aria-label="theme === 'dark' ? 'Ativar tema claro' : 'Ativar tema escuro'"
-                :title="theme === 'dark' ? 'Tema claro' : 'Tema escuro'"
-                @click="cycleTheme"
-            >
-                <Sun v-if="theme === 'light'" :class="iconSizeClass" aria-hidden="true" />
-                <Moon v-else :class="iconSizeClass" aria-hidden="true" />
-            </button>
-        </template>
+        <ThemeToggler v-if="showTheme && showToggler" :size="size" />
     </div>
 </template>

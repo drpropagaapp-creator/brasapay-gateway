@@ -4,175 +4,78 @@ import { navPrefetch } from '@/composables/useAppSidebarNav';
 import { useSidebar } from '@/composables/useSidebar';
 import PwaInstallButton from '@/components/layout/PwaInstallButton.vue';
 
+/** Navegação no padrão Paynext: pílulas, ativo em lime com ícone fill, rail em quadrados 52px. */
 const props = defineProps({
     items: { type: Array, default: () => [] },
     showText: { type: Boolean, default: true },
     isActive: { type: Function, required: true },
-    /** default | aurora | kawaii | prime | studio */
-    variant: { type: String, default: 'default' },
     isMobile: { type: Boolean, default: false },
 });
 
 const emit = defineEmits(['item-mouseenter', 'item-mousemove', 'item-mouseleave']);
 const { closeMobileSidebarIfOpen } = useSidebar();
 
-function onMouseEnter(e, label) {
-    emit('item-mouseenter', e, label);
-}
-
-function onMouseMove(e) {
-    emit('item-mousemove', e);
-}
-
-function onMouseLeave() {
-    emit('item-mouseleave');
-}
-
-function onNavClick() {
-    closeMobileSidebarIfOpen();
-}
-
-function linkPrefetch() {
-    return navPrefetch(props.isMobile);
-}
-
 function linkClasses(href, isChild = false) {
-    const active = props.isActive(href);
-    if (props.variant === 'aurora') {
-        return [
-            'aurora-nav-link flex cursor-pointer touch-manipulation items-center gap-3 rounded-lg text-[13px] font-medium transition-colors',
-            isChild ? 'py-2 pl-9 pr-3' : 'px-3 py-2.5',
-            active ? 'aurora-nav-active' : '',
-        ];
-    }
-    if (props.variant === 'kawaii') {
-        return [
-            'kawaii-nav-link flex cursor-pointer touch-manipulation items-center gap-3 text-[13px] font-semibold transition-colors',
-            isChild ? 'py-2 pl-9 pr-3' : 'px-3 py-2.5',
-            active ? 'kawaii-nav-active' : '',
-        ];
-    }
-    if (props.variant === 'prime') {
-        return [
-            'prime-nav-link flex items-center gap-3 rounded-lg text-[13px] font-medium transition-colors',
-            props.showText
-                ? (isChild ? 'py-2 pl-9 pr-3' : 'px-3 py-2.5')
-                : 'justify-center px-0 py-2.5',
-            active ? 'prime-nav-active' : '',
-        ];
-    }
-    if (props.variant === 'studio') {
-        return [
-            'studio-nav-link flex items-center gap-3 text-[14px] font-medium transition-colors',
-            isChild ? 'py-2.5 pl-10 pr-3' : 'px-3.5 py-3',
-            active ? 'studio-nav-active' : '',
-        ];
-    }
     return [
-        'menu-item group relative cursor-pointer touch-manipulation',
-        isChild ? 'py-2 pl-9' : '',
-        props.showText ? 'justify-start' : 'lg:justify-center',
-        active ? 'menu-item-active' : 'menu-item-inactive',
+        'pn-nav no-underline hover:no-underline',
+        props.isActive(href) ? 'pn-nav--active' : '',
+        isChild ? 'pn-nav--child' : '',
     ];
-}
-
-function iconClasses(href) {
-    const active = props.isActive(href);
-    if (props.variant === 'aurora') {
-        return ['aurora-nav-icon h-[17px] w-[17px] shrink-0'];
-    }
-    if (props.variant === 'kawaii') {
-        return ['kawaii-nav-icon h-[17px] w-[17px] shrink-0'];
-    }
-    if (props.variant === 'prime') {
-        return ['prime-nav-icon h-[17px] w-[17px] shrink-0'];
-    }
-    if (props.variant === 'studio') {
-        return ['studio-nav-icon h-[18px] w-[18px] shrink-0'];
-    }
-    return [active ? 'menu-item-icon-active' : 'menu-item-icon-inactive', 'shrink-0'];
 }
 </script>
 
 <template>
-    <ul
-        :class="[
-            'flex flex-col overflow-visible',
-            variant === 'default' ? 'gap-1' : variant === 'kawaii' ? 'gap-0.5' : 'gap-1',
-        ]"
-    >
+    <ul class="flex flex-col gap-1 overflow-visible">
         <template v-for="(item, index) in items" :key="item.separator ? `sep-${index}` : item.pwaInstall ? `pwa-${index}` : (item.href ?? index)">
-            <li v-if="item.separator" class="py-1" aria-hidden="true">
-                <hr
-                    :class="[
-                        'border-t',
-                        variant === 'default'
-                            ? 'border-zinc-200 dark:border-zinc-700'
-                            : variant === 'aurora'
-                              ? 'border-[var(--aurora-border)]'
-                              : variant === 'prime'
-                                ? 'border-[var(--prime-border)]'
-                                : variant === 'studio'
-                                  ? 'border-[var(--studio-border)]'
-                                  : 'border-[var(--kawaii-border)]',
-                    ]"
-                />
+            <li v-if="item.separator" class="px-4 py-2" aria-hidden="true">
+                <hr class="border-0 border-t" style="border-color: var(--border-default)" />
             </li>
             <li v-else-if="item.pwaInstall && isMobile && showText" class="pt-1.5 lg:hidden">
-                <PwaInstallButton variant="banner" :theme="variant" />
+                <PwaInstallButton variant="banner" />
             </li>
             <li v-else-if="!item.pwaInstall" class="overflow-visible">
                 <Link
                     :href="item.href"
-                    :prefetch="linkPrefetch()"
+                    :prefetch="navPrefetch(isMobile)"
                     :title="showText ? '' : item.name"
-                    :class="linkClasses(item.href)"
-                    @click="onNavClick"
-                    @mouseenter="(e) => onMouseEnter(e, item.name)"
-                    @mousemove="onMouseMove"
-                    @mouseleave="onMouseLeave"
+                    :class="[linkClasses(item.href), showText ? '' : 'pn-nav--rail-lg']"
+                    @click="closeMobileSidebarIfOpen"
+                    @mouseenter="(e) => emit('item-mouseenter', e, item.name)"
+                    @mousemove="(e) => emit('item-mousemove', e)"
+                    @mouseleave="emit('item-mouseleave')"
                 >
-                    <span :class="iconClasses(item.href)">
-                        <component :is="item.icon" class="h-5 w-5" aria-hidden="true" />
-                    </span>
-                    <span v-if="showText" class="flex min-w-0 flex-1 items-center gap-2 truncate">
+                    <component
+                        :is="item.icon"
+                        class="h-5 w-5 shrink-0"
+                        :weight="isActive(item.href) ? 'fill' : 'duotone'"
+                        aria-hidden="true"
+                    />
+                    <span v-if="showText" class="pn-nav__label flex min-w-0 items-center gap-2 truncate">
                         <span class="truncate">{{ item.name }}</span>
-                        <span
-                            v-if="item.badge === 'pix-in-out'"
-                            class="inline-flex shrink-0 flex-wrap items-center gap-0.5"
-                        >
-                            <span
-                                class="rounded border border-emerald-200 bg-emerald-50 px-1 py-px text-[9px] font-semibold uppercase tracking-wide text-emerald-900 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-200"
-                            >
-                                in
-                            </span>
-                            <span
-                                class="rounded border border-sky-200 bg-sky-50 px-1 py-px text-[9px] font-semibold uppercase tracking-wide text-sky-900 dark:border-sky-800 dark:bg-sky-950/40 dark:text-sky-200"
-                            >
-                                out
-                            </span>
+                        <span v-if="item.badge === 'pix-in-out'" class="inline-flex shrink-0 items-center gap-0.5">
+                            <span class="pn-badge pn-badge--success pn-badge--nodot" style="height: 18px; padding: 0 6px; font-size: 9.5px">in</span>
+                            <span class="pn-badge pn-badge--info pn-badge--nodot" style="height: 18px; padding: 0 6px; font-size: 9.5px">out</span>
                         </span>
                     </span>
-                    <span v-else class="hidden">{{ item.name }}</span>
                 </Link>
-                <ul
-                    v-if="showText && item.children?.length"
-                    class="mt-0.5 flex flex-col gap-0.5"
-                >
+                <ul v-if="showText && item.children?.length" class="mt-1 flex flex-col gap-0.5 pl-4">
                     <li v-for="child in item.children" :key="child.href">
                         <Link
                             :href="child.href"
-                            :prefetch="linkPrefetch()"
+                            :prefetch="navPrefetch(isMobile)"
                             :class="linkClasses(child.href, true)"
-                            @click="onNavClick"
-                            @mouseenter="(e) => onMouseEnter(e, child.name)"
-                            @mousemove="onMouseMove"
-                            @mouseleave="onMouseLeave"
+                            @click="closeMobileSidebarIfOpen"
+                            @mouseenter="(e) => emit('item-mouseenter', e, child.name)"
+                            @mousemove="(e) => emit('item-mousemove', e)"
+                            @mouseleave="emit('item-mouseleave')"
                         >
-                            <span :class="iconClasses(child.href)">
-                                <component :is="child.icon" class="h-4 w-4" aria-hidden="true" />
-                            </span>
-                            <span class="truncate text-[13px]">{{ child.name }}</span>
+                            <component
+                                :is="child.icon"
+                                class="h-4 w-4 shrink-0"
+                                :weight="isActive(child.href) ? 'fill' : 'duotone'"
+                                aria-hidden="true"
+                            />
+                            <span class="pn-nav__label truncate text-[13px]">{{ child.name }}</span>
                         </Link>
                     </li>
                 </ul>
@@ -180,3 +83,18 @@ function iconClasses(href) {
         </template>
     </ul>
 </template>
+
+<style scoped>
+.pn-nav--child {
+    height: 40px;
+}
+@media (min-width: 1024px) {
+    .pn-nav--rail-lg {
+        width: 52px;
+        height: 52px;
+        padding: 0;
+        justify-content: center;
+        border-radius: 18px;
+    }
+}
+</style>

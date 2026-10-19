@@ -1,7 +1,7 @@
 import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue';
 import { usePage } from '@inertiajs/vue3';
 
-const DEFAULT_SCHEME = { mode: 'dark', locked: false };
+const DEFAULT_SCHEME = { mode: 'system', locked: false };
 
 function readStoredTheme() {
     try {

@@ -36,8 +36,6 @@ const {
     tablePanel,
     filterPanelClass,
     innerPanelClass,
-    themePrefix,
-    isThemedShell,
 } = usePanelThemeClasses();
 
 const panelCardClass = innerPanelClass;
@@ -238,11 +236,7 @@ const chartOptionsFormas = computed(() => ({
         <AuroraPageSection>
             <div class="flex flex-wrap items-center justify-between gap-3">
                 <nav
-                    :class="[
-                        themePrefix
-                            ? `${themePrefix}-subnav flex-wrap`
-                            : 'flex flex-wrap items-center gap-1',
-                    ]"
+                    class="pn-seg max-w-full flex-wrap"
                     :aria-label="t('dashboard.period', 'Período')"
                 >
                     <button
@@ -250,15 +244,7 @@ const chartOptionsFormas = computed(() => ({
                         :key="opt.value"
                         type="button"
                         :aria-current="period === opt.value ? 'true' : undefined"
-                        :class="[
-                            themePrefix
-                                ? [`${themePrefix}-subnav-item`, period === opt.value && `${themePrefix}-subnav-item-active`]
-                                : 'rounded-lg px-3 py-2 text-sm font-medium transition-colors',
-                            !themePrefix &&
-                                (period === opt.value
-                                    ? 'bg-[var(--color-primary)] text-white'
-                                    : 'text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200'),
-                        ]"
+                        :class="['pn-tab pn-keep-shape', period === opt.value ? 'pn-tab--active' : '']"
                         @click="setPeriod(opt.value)"
                     >
                         {{ opt.label }}
@@ -340,7 +326,7 @@ const chartOptionsFormas = computed(() => ({
                     <p :class="statCardValue">
                         {{ displayNumber(abandonados_total) }}
                     </p>
-                    <p class="mt-1 text-xs aurora-fg-muted">
+                    <p class="mt-1 text-xs text-[var(--text-secondary)]">
                         {{ t('reports.rate', 'Taxa') }}: {{ valuesVisible ? `${taxa_conversao}%` : '—' }} {{ t('reports.conversion', 'conversão') }}
                     </p>
                 </div>
@@ -436,7 +422,7 @@ const chartOptionsFormas = computed(() => ({
 
         <AuroraPageSection flush>
             <div class="flex flex-wrap items-center justify-between gap-3 p-4 pb-0">
-                <h2 class="flex items-center gap-2 text-sm font-semibold aurora-fg">
+                <h2 class="flex items-center gap-2 text-sm font-semibold">
                     <XCircle class="h-4 w-4 text-zinc-500" />
                     Vendas abandonadas com e-mail (para recuperação)
                 </h2>
@@ -458,7 +444,7 @@ const chartOptionsFormas = computed(() => ({
                     </Link>
                 </div>
             </div>
-            <p class="aurora-fg-muted mt-2 px-4 text-xs">
+            <p class="mt-2 px-4 text-xs text-[var(--text-secondary)]">
                 {{ t('reports.export_abandoned_hint', 'Inclui apenas formulários abandonados com e-mail (1 registro por e-mail e produto no período).') }}
             </p>
             <div

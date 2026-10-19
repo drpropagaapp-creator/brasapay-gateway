@@ -1,74 +1,41 @@
 <script setup>
-import { useSellerDashboardTemplate } from '@/composables/useSellerDashboardTemplate';
+import { computed } from 'vue';
+import PnGlassCard from '@/components/paynext/PnGlassCard.vue';
 
-defineProps({
+/** Cartão de métrica no padrão KpiCard do Paynext DS (valor já formatado pela página). */
+const props = defineProps({
     icon: { type: Object, required: true },
     label: { type: String, required: true },
     value: { type: String, required: true },
 });
 
-const { isAurora, isKawaii, isPrime, isStudio } = useSellerDashboardTemplate();
+/* "R$ 1.234,56" → R$ em sobrescrito pequeno, como os números do DS */
+const parts = computed(() => {
+    const raw = String(props.value ?? '');
+    const match = raw.match(/^\s*(R\$)\s*(.+)$/);
+    return match ? { currency: match[1], amount: match[2] } : { currency: '', amount: raw };
+});
 </script>
 
 <template>
-    <div
-        v-if="isAurora"
-        class="aurora-stat-card"
-    >
-        <div class="aurora-stat-card-label">
-            <component :is="icon" class="h-5 w-5 text-[var(--color-primary)]" aria-hidden="true" />
-            <span>{{ label }}</span>
+    <PnGlassCard lift class="pn-kpi pn-stat-card">
+        <div class="pn-kpi__top">
+            <span class="min-w-0 truncate">{{ label }}</span>
+            <span class="pn-kpi__icon shrink-0"><component :is="icon" class="h-5 w-5" aria-hidden="true" /></span>
         </div>
-        <p class="aurora-stat-card-value">
-            {{ value }}
-        </p>
-    </div>
-    <div
-        v-else-if="isPrime"
-        class="prime-stat-card"
-    >
-        <div class="prime-stat-card-label">
-            <component :is="icon" class="h-4 w-4 text-[var(--color-primary)]" aria-hidden="true" />
-            <span>{{ label }}</span>
+        <div class="pn-kpi__value truncate">
+            <sup v-if="parts.currency">{{ parts.currency }}</sup>{{ parts.amount }}
         </div>
-        <p class="prime-stat-card-value">
-            {{ value }}
-        </p>
-    </div>
-    <div
-        v-else-if="isStudio"
-        class="studio-stat-card"
-    >
-        <div class="studio-stat-card-label">
-            <component :is="icon" class="h-4 w-4 text-[var(--color-primary)]" aria-hidden="true" />
-            <span>{{ label }}</span>
-        </div>
-        <p class="studio-stat-card-value">
-            {{ value }}
-        </p>
-    </div>
-    <div
-        v-else-if="isKawaii"
-        class="kawaii-stat-card"
-    >
-        <div class="kawaii-stat-card-label flex items-center gap-2">
-            <component :is="icon" class="h-5 w-5 text-[var(--kawaii-accent-text)]" aria-hidden="true" />
-            <span>{{ label }}</span>
-        </div>
-        <p class="kawaii-stat-card-value">
-            {{ value }}
-        </p>
-    </div>
-    <div
-        v-else
-        class="rounded-xl border border-zinc-200 bg-zinc-50 p-5 dark:border-zinc-700 dark:bg-zinc-800/50"
-    >
-        <div class="flex items-center gap-2 text-zinc-600 dark:text-zinc-400">
-            <component :is="icon" class="h-5 w-5" aria-hidden="true" />
-            <span class="text-sm font-medium">{{ label }}</span>
-        </div>
-        <p class="mt-2 text-2xl font-bold text-zinc-900 dark:text-white">
-            {{ value }}
-        </p>
-    </div>
+    </PnGlassCard>
 </template>
+
+<style scoped>
+.pn-stat-card {
+    padding: 20px 22px;
+    gap: 12px;
+}
+.pn-stat-card .pn-kpi__value {
+    font: 400 28px/34px var(--font-display);
+    letter-spacing: var(--tracking-heading);
+}
+</style>

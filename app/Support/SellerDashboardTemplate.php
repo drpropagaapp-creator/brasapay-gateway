@@ -2,41 +2,32 @@
 
 namespace App\Support;
 
-use App\Models\Setting;
-
+/**
+ * O painel tem um único visual (Paynext Design System). Os templates de dashboard
+ * (Aurora, Kawaii, Prime, Studio) foram removidos; valores antigos gravados em
+ * settings são ignorados e tudo resolve para o padrão.
+ */
 class SellerDashboardTemplate
 {
     public const KEY = 'seller_dashboard_template';
 
     public const DEFAULT = 'default';
 
-    public const AURORA = 'aurora';
-
-    public const KAWAII = 'kawaii';
-
-    public const PRIME = 'prime';
-
-    public const STUDIO = 'studio';
-
     /**
      * @return list<string>
      */
     public static function allowed(): array
     {
-        return [self::DEFAULT, self::AURORA, self::KAWAII, self::PRIME, self::STUDIO];
+        return [self::DEFAULT];
     }
 
     public static function resolve(?string $raw): string
     {
-        $value = is_string($raw) ? strtolower(trim($raw)) : '';
-
-        return in_array($value, self::allowed(), true) ? $value : self::DEFAULT;
+        return self::DEFAULT;
     }
 
     public static function current(): string
     {
-        $raw = Setting::get(self::KEY, self::DEFAULT, null);
-
-        return self::resolve(is_string($raw) ? $raw : null);
+        return self::DEFAULT;
     }
 }
