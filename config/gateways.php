@@ -514,6 +514,7 @@ return [
         'pix_auto' => ['efi', 'pushinpay', 'versell'],
         'open_finance' => ['linaopenx'],
         'paypal' => ['paypal'],
+        'wallet' => ['cajupay', 'stripe'],
         'crypto' => [],
     ],
 ];

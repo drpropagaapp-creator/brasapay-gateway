@@ -576,6 +576,7 @@ class ProdutosController extends Controller
             'exchange_rates' => $rates,
             'checkout_gateway_ui' => $checkoutGatewayUi,
             'global_payment_methods_available' => $globalPaymentMethodsAvailable,
+            'wallet_acquirer_label' => $paymentService->walletAcquirerLabel($tenantId, $produto),
             'cademi_integrations' => $cademiIntegrations,
             'cademi_available' => $cademiAvailable,
             'shipping_stores' => PhysicalProductAccess::globalEnabled() ? $shippingStores : [],

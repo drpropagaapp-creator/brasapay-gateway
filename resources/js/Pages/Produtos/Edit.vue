@@ -107,6 +107,7 @@ const props = defineProps({
         type: Object,
         default: () => ({ pix: false, card: false, boleto: false, pix_auto: false, apple_pay: false, google_pay: false, paypal: false }),
     },
+    wallet_acquirer_label: { type: String, default: '' },
     shipping_stores: { type: Array, default: () => [] },
     coproduction_readonly: { type: Boolean, default: false },
 });
@@ -470,8 +471,8 @@ watch(
 const paymentMethodMeta = {
     pix: { label: 'PIX', hint: 'Pagamento instantâneo', visual: 'pix' },
     card: { label: 'Cartão', hint: 'Crédito ou débito', visual: 'card' },
-    apple_pay: { label: 'Apple Pay', hint: 'Wallet CajuPay em qualquer dispositivo', visual: 'apple_pay' },
-    google_pay: { label: 'Google Pay', hint: 'Wallet CajuPay em qualquer dispositivo', visual: 'google_pay' },
+    apple_pay: { label: 'Apple Pay', hint: '', visual: 'apple_pay' },
+    google_pay: { label: 'Google Pay', hint: '', visual: 'google_pay' },
     boleto: { label: 'Boleto', hint: 'Compensação bancária', visual: 'boleto' },
     pix_auto: { label: 'PIX automático', hint: 'Débito recorrente na assinatura', visual: 'pix_auto' },
     open_finance: { label: 'Open Finance', hint: 'Pagamento autorizado no app do banco', visual: 'open_finance' },
@@ -485,9 +486,18 @@ const paymentMethodCardsList = computed(() => {
     if (form.billing_type === 'subscription') {
         order.push('pix_auto');
     }
+    const walletHint = props.wallet_acquirer_label
+        ? `Wallet via ${props.wallet_acquirer_label}`
+        : 'Wallet via CajuPay ou Stripe';
     return order
         .filter((key) => avail[key] === true && paymentMethodMeta[key])
-        .map((key) => ({ key, ...paymentMethodMeta[key] }));
+        .map((key) => {
+            const meta = { ...paymentMethodMeta[key] };
+            if (key === 'apple_pay' || key === 'google_pay') {
+                meta.hint = walletHint;
+            }
+            return { key, ...meta };
+        });
 });
 
 /** Grid compacto: mais colunas, cartões menores. */
@@ -1901,7 +1911,7 @@ function submit() {
                             v-if="paymentMethodCardsList.some((m) => m.key === 'apple_pay' || m.key === 'google_pay')"
                             class="text-[11px] leading-snug text-zinc-400 dark:text-zinc-500"
                         >
-                            Apple Pay e Google Pay aparecem juntos no checkout em qualquer aparelho, quando os dois estiverem ligados. O botão nativo só conclui se a carteira estiver disponível; caso contrário o pagador usa cartão.
+                            Apple Pay e Google Pay usam a carteira definida em Adquirentes → Prioridade por método. O botão nativo só conclui se a carteira estiver disponível no aparelho.
                         </p>
                         <p
                             v-if="paymentMethodCardsList.length === 0"

@@ -36,6 +36,8 @@ export const gatewayMethodComponents = {
         card: StripeCard,
         pix: DefaultMethodCard,
         boleto: DefaultMethodCard,
+        apple_pay: DefaultMethodCard,
+        google_pay: DefaultMethodCard,
     },
     paypal: {
         paypal: PaypalMethod,

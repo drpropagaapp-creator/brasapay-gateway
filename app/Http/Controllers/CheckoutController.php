@@ -273,7 +273,7 @@ class CheckoutController extends Controller
             }
         }
         foreach ($payload['available_payment_methods'] as $m) {
-            if (($m['id'] ?? '') === 'card' && ($m['gateway_slug'] ?? '') === 'stripe') {
+            if (($m['gateway_slug'] ?? '') === 'stripe' && in_array($m['id'] ?? '', ['card', 'apple_pay', 'google_pay'], true)) {
                 $cred = GatewayCredential::resolveForTenantOrGlobal($product->tenant_id, 'stripe');
                 if ($cred) {
                     $creds = $cred->getDecryptedCredentials();
@@ -642,8 +642,14 @@ class CheckoutController extends Controller
         $firstPixGateway = $paymentMethodForRules === 'pix'
             ? $paymentService->getFirstAvailableGatewayForMethod($product->tenant_id, 'pix', $product)
             : null;
+        $isWalletPayment = in_array($paymentMethodForRules, ['apple_pay', 'google_pay'], true);
+        $walletGatewayForRules = $isWalletPayment
+            ? $paymentService->getFirstAvailableWalletGateway($product->tenant_id, $product)
+            : null;
         $firstCardGatewayForRules = in_array($paymentMethodForRules, ['card', 'apple_pay', 'google_pay'], true)
-            ? $paymentService->getFirstAvailableGatewayForMethod($product->tenant_id, 'card', $product)
+            ? ($isWalletPayment
+                ? $walletGatewayForRules
+                : $paymentService->getFirstAvailableGatewayForMethod($product->tenant_id, 'card', $product))
             : null;
         $requireCpf = (($customerFields['cpf'] ?? false) && $displayCurrency === 'BRL')
             || ($firstCardGatewayForRules === 'pagarme' && $displayCurrency === 'BRL')
@@ -1611,7 +1617,12 @@ class CheckoutController extends Controller
             event(new OrderPending($order));
             $paymentServiceCard = app(PaymentService::class);
             $firstCardGwForSdk = $paymentServiceCard->getFirstAvailableGatewayForMethod($product->tenant_id, 'card', $product);
-            if ($firstCardGwForSdk === 'cajupay') {
+            $walletGateway = in_array($paymentMethod, ['apple_pay', 'google_pay'], true)
+                ? $paymentServiceCard->getFirstAvailableWalletGateway($product->tenant_id, $product)
+                : null;
+            $useCajuPaySdk = ($paymentMethod === 'card' && $firstCardGwForSdk === 'cajupay')
+                || $walletGateway === 'cajupay';
+            if ($useCajuPaySdk) {
                 $nonce = Str::random(40);
                 $wallet = match ($paymentMethod) {
                     'apple_pay' => 'apple_pay',
@@ -1698,7 +1709,7 @@ class CheckoutController extends Controller
                     'installments' => $installments,
                 ]),
             ]);
-            $card['currency'] = strtolower($currency);
+            $card['currency'] = $walletGateway === 'stripe' ? 'brl' : strtolower($currency);
             if ($checkoutSlug !== '') {
                 $card['return_url'] = url()->route('checkout.show', ['slug' => $checkoutSlug]);
             }
@@ -1716,7 +1727,9 @@ class CheckoutController extends Controller
             }
             try {
                 $paymentService = app(PaymentService::class);
-                $cardResult = $paymentService->createCardPayment($order, $product, $consumer, $card);
+                $cardResult = $walletGateway === 'stripe'
+                    ? $paymentService->createStripeWalletPayment($order, $consumer, $card)
+                    : $paymentService->createCardPayment($order, $product, $consumer, $card);
                 $status = is_string($cardResult['status'] ?? null)
                     ? strtolower(trim((string) $cardResult['status']))
                     : null;

@@ -58,6 +58,50 @@ class PlatformPaymentMethodsTest extends TestCase
         $ids = array_column($methods, 'id');
         $this->assertNotContains('apple_pay', $ids);
         $this->assertContains('google_pay', $ids);
+        $google = collect($methods)->firstWhere('id', 'google_pay');
+        $this->assertSame('cajupay', $google['gateway_slug'] ?? null);
+        $this->assertSame('CajuPay', $google['wallet_via'] ?? null);
+    }
+
+    public function test_wallet_priority_uses_stripe_when_it_is_first(): void
+    {
+        Setting::set('gateway_order', [
+            'pix' => ['efi'],
+            'card' => ['cajupay'],
+            'boleto' => [],
+            'pix_auto' => [],
+            'wallet' => ['stripe', 'cajupay'],
+        ], null);
+
+        $product = $this->createTestProduct(['tenant_id' => 1]);
+
+        $credCard = new GatewayCredential([
+            'tenant_id' => null,
+            'gateway_slug' => 'cajupay',
+            'is_connected' => true,
+        ]);
+        $credCard->setEncryptedCredentials(['public_key' => 'pk', 'secret_key' => 'sk']);
+        $credCard->save();
+
+        $credStripe = new GatewayCredential([
+            'tenant_id' => null,
+            'gateway_slug' => 'stripe',
+            'is_connected' => true,
+        ]);
+        $credStripe->setEncryptedCredentials([
+            'secret_key' => 'sk_test_wallet',
+            'publishable_key' => 'pk_test_wallet',
+        ]);
+        $credStripe->save();
+
+        $methods = app(PaymentService::class)->availablePaymentMethodsForCheckout($product, null, null);
+        $apple = collect($methods)->firstWhere('id', 'apple_pay');
+        $google = collect($methods)->firstWhere('id', 'google_pay');
+
+        $this->assertSame('stripe', $apple['gateway_slug'] ?? null);
+        $this->assertSame('Stripe', $apple['wallet_via'] ?? null);
+        $this->assertSame('stripe', $google['gateway_slug'] ?? null);
+        $this->assertSame('Stripe', app(PaymentService::class)->walletAcquirerLabel(1, $product));
     }
 
     public function test_platform_payment_methods_defaults_all_enabled(): void

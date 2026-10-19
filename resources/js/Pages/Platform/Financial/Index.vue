@@ -16,6 +16,7 @@ import {
     QrCode,
     Repeat,
     SlidersHorizontal,
+    Smartphone,
     Zap,
 } from 'lucide-vue-next';
 import Button from '@/components/ui/Button.vue';
@@ -51,7 +52,7 @@ const props = defineProps({
     },
     gateway_order: {
         type: Object,
-        default: () => ({ pix: [], card: [], boleto: [], pix_auto: [] }),
+        default: () => ({ pix: [], card: [], boleto: [], pix_auto: [], wallet: [] }),
     },
     merchant_fee_rules: {
         type: Object,
@@ -164,6 +165,7 @@ const primaryPix = ref('');
 const primaryCard = ref('');
 const primaryBoleto = ref('');
 const primaryPixAuto = ref('');
+const primaryWallet = ref('');
 const savingAcquirerOrder = ref(false);
 const acquirerOrderMessage = ref(null);
 const acquirerOrderError = ref(false);
@@ -190,7 +192,32 @@ function connectedCajuAccounts() {
  * @param {string} method
  * @returns {{ value: string, label: string }[]}
  */
+function walletPriorityOptions() {
+    const options = [];
+    for (const slug of ['cajupay', 'stripe']) {
+        const gateway = (props.gateways || []).find(
+            (item) => item.slug === slug && gatewayActiveForPayments(item)
+        );
+        if (!gateway) continue;
+        options.push({
+            value: slug,
+            label: slug === 'stripe' ? 'Stripe' : 'CajuPay',
+        });
+    }
+    return options;
+}
+
+function buildWalletOrder(primary) {
+    const connected = walletPriorityOptions().map((option) => option.value);
+    if (connected.length === 0) return [];
+    const first = connected.includes(primary) ? primary : connected[0];
+    return [first, ...connected.filter((slug) => slug !== first)];
+}
+
 function priorityOptions(method) {
+    if (method === 'wallet') {
+        return walletPriorityOptions();
+    }
     const accounts = connectedCajuAccounts();
     const options = [];
     for (const gateway of connectedGatewaysForMethod(method)) {
@@ -247,6 +274,7 @@ function syncPrimaryFromProps() {
     primaryCard.value = selectionForMethod('card');
     primaryBoleto.value = selectionForMethod('boleto');
     primaryPixAuto.value = selectionForMethod('pix_auto');
+    primaryWallet.value = selectionForMethod('wallet');
 }
 
 watch(
@@ -297,12 +325,14 @@ async function saveAcquirerOrder() {
             card: primaryCard.value,
             boleto: primaryBoleto.value,
             pix_auto: primaryPixAuto.value,
+            wallet: primaryWallet.value,
         };
         const gateway_order = {
             pix: buildGatewayOrderList('pix', slugFromSelection(selections.pix)),
             card: buildGatewayOrderList('card', slugFromSelection(selections.card)),
             boleto: buildGatewayOrderList('boleto', slugFromSelection(selections.boleto)),
             pix_auto: buildGatewayOrderList('pix_auto', slugFromSelection(selections.pix_auto)),
+            wallet: buildWalletOrder(slugFromSelection(selections.wallet)),
         };
         const cajupay_method_accounts = {
             pix: accountIdFromSelection(selections.pix),
@@ -1204,6 +1234,46 @@ function submitSettlement() {
                                     class="mt-2 text-xs leading-snug text-zinc-500 dark:text-zinc-400"
                                 >
                                     Conecte um adquirente com cartão nos cartões acima.
+                                </p>
+                            </div>
+
+                            <!-- Wallet Apple Pay e Google Pay -->
+                            <div
+                                class="group flex flex-col rounded-2xl border border-zinc-200/90 bg-gradient-to-b from-white to-zinc-50/80 p-4 shadow-sm transition hover:border-zinc-500/30 hover:shadow-md dark:border-zinc-700 dark:from-zinc-900/90 dark:to-zinc-950/50 dark:hover:border-zinc-400/25"
+                            >
+                                <div class="mb-4 flex items-start justify-between gap-2">
+                                    <div class="flex items-center gap-3">
+                                        <span
+                                            class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-zinc-900/8 text-zinc-800 ring-1 ring-zinc-900/10 dark:bg-white/10 dark:text-white dark:ring-white/10"
+                                        >
+                                            <Smartphone class="h-5 w-5" stroke-width="2" aria-hidden="true" />
+                                        </span>
+                                        <div>
+                                            <p class="text-sm font-semibold text-zinc-900 dark:text-white">Wallet · Apple Pay e Google Pay</p>
+                                            <p class="text-xs text-zinc-500 dark:text-zinc-400">CajuPay ou Stripe</p>
+                                        </div>
+                                    </div>
+                                </div>
+                                <label class="sr-only" for="acq-primary-wallet">Adquirente da carteira</label>
+                                <select
+                                    id="acq-primary-wallet"
+                                    v-model="primaryWallet"
+                                    class="w-full cursor-pointer rounded-xl border border-zinc-200 bg-white px-3.5 py-2.5 text-sm font-medium text-zinc-900 shadow-sm outline-none transition focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20 disabled:cursor-not-allowed disabled:opacity-60 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-100"
+                                    :disabled="priorityOptions('wallet').length === 0"
+                                >
+                                    <option v-if="priorityOptions('wallet').length === 0" value="" disabled>
+                                        Conecte CajuPay ou Stripe
+                                    </option>
+                                    <option
+                                        v-for="option in priorityOptions('wallet')"
+                                        :key="option.value"
+                                        :value="option.value"
+                                    >
+                                        {{ option.label }}
+                                    </option>
+                                </select>
+                                <p class="mt-2 text-xs leading-snug text-zinc-500 dark:text-zinc-400">
+                                    O primeiro entra no checkout. O outro fica como alternativa se o principal não estiver conectado.
                                 </p>
                             </div>
 
