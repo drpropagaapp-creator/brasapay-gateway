@@ -5,7 +5,13 @@
  * O Paynext DS usa Phosphor em duotone (e fill no estado ativo). O pacote Vue oficial
  * embute os 6 pesos de cada ícone; aqui extraímos só duotone e fill dos SVGs crus de
  * @phosphor-icons/core. Para usar um ícone Lucide novo numa tela, adicione o nome ao
- * JSON (Lucide → Phosphor) e rode: node scripts/generate-paynext-icons.mjs
+ * JSON (Lucide → Phosphor) e rode:
+ *
+ *   PHOSPHOR_CORE_DIR=<pasta>/node_modules/@phosphor-icons/core node scripts/generate-paynext-icons.mjs
+ *
+ * @phosphor-icons/core não fica nas dependências do projeto: são ~9 mil SVGs, que em
+ * disco exFAT (blocos de 1 MB) ocupam ~9 GB. Instale numa pasta temporária
+ * (npm i --prefix <pasta> @phosphor-icons/core) e aponte PHOSPHOR_CORE_DIR para ela.
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -14,7 +20,12 @@ import { fileURLToPath } from 'node:url';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const mapFile = path.join(root, 'resources/js/components/icons/paynext-icon-map.json');
 const outFile = path.join(root, 'resources/js/components/icons/paynext-icons.js');
-const assets = path.join(root, 'node_modules/@phosphor-icons/core/assets');
+const coreDir = process.env.PHOSPHOR_CORE_DIR || path.join(root, 'node_modules/@phosphor-icons/core');
+const assets = path.join(coreDir, 'assets');
+if (!fs.existsSync(assets)) {
+    console.error(`@phosphor-icons/core não encontrado em ${coreDir}. Veja o comentário no topo deste script.`);
+    process.exit(1);
+}
 const WEIGHTS = ['duotone', 'fill'];
 const MIRRORED = new Set(['PanelRightOpen']);
 
