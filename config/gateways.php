@@ -148,7 +148,7 @@ return [
             'slug' => 'stripe',
             'name' => 'Stripe',
             'image' => 'images/gateways/stripe.png',
-            'methods' => ['card'],
+            'methods' => ['pix', 'card'],
             'scope' => 'international',
             'country_flag' => 'global.png',
             'country_name' => 'Global',
@@ -508,7 +508,7 @@ return [
     |--------------------------------------------------------------------------
     */
     'default_order' => [
-        'pix' => ['cajupay', /* 'spacepag', */ 'woovi', 'bspay', 'onlyup', 'efi', 'mercadopago', 'pagarme', 'pushinpay', 'asaas', 'versell', 'cielo', 'xflow', 'okto'],
+        'pix' => ['cajupay', /* 'spacepag', */ 'woovi', 'bspay', 'onlyup', 'efi', 'mercadopago', 'pagarme', 'pushinpay', 'asaas', 'versell', 'cielo', 'xflow', 'okto', 'stripe'],
         'card' => ['cajupay', 'efi', 'stripe', 'mercadopago', 'pagarme', 'asaas', 'cielo'],
         'boleto' => ['efi', 'mercadopago', 'pagarme', 'asaas'],
         'pix_auto' => ['efi', 'pushinpay', 'versell'],

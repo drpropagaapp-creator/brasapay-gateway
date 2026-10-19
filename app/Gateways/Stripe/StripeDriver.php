@@ -8,9 +8,10 @@ use Stripe\Exception\ApiErrorException;
 use Stripe\StripeClient;
 
 /**
- * Stripe driver – cartão de crédito (global).
- * Ver: https://docs.stripe.com/api, https://stripe.com/docs/currencies
- * Parcelamento não utilizado neste gateway; pagamento sempre à vista (1x).
+ * Stripe driver – PIX (BRL) e cartão.
+ * PIX: https://docs.stripe.com/payments/pix/accept-a-payment
+ * Cartão: https://docs.stripe.com/api
+ * Parcelamento não utilizado neste gateway; cartão sempre à vista (1x).
  */
 class StripeDriver implements GatewayDriver
 {
@@ -44,7 +45,108 @@ class StripeDriver implements GatewayDriver
         string $postbackUrl,
         array $options = []
     ): array {
-        throw new \RuntimeException('Stripe não suporta PIX neste gateway. Use cartão de crédito.');
+        $secret = trim((string) ($credentials['secret_key'] ?? ''));
+        if ($secret === '') {
+            throw new \RuntimeException('Stripe: chave secreta não configurada.');
+        }
+
+        $amountCents = $this->amountToSmallestUnit($amount, 'brl');
+        if ($amountCents < 50) {
+            throw new \RuntimeException('Stripe: o valor mínimo do PIX é R$ 0,50.');
+        }
+
+        $document = preg_replace('/\D/', '', (string) ($consumer['document'] ?? '')) ?? '';
+        if (strlen($document) !== 11) {
+            throw new \RuntimeException('Informe um CPF válido para pagar com PIX na Stripe.');
+        }
+
+        $name = trim((string) ($consumer['name'] ?? ''));
+        if ($name === '') {
+            throw new \RuntimeException('Informe o nome para pagar com PIX na Stripe.');
+        }
+
+        $email = trim((string) ($consumer['email'] ?? ''));
+        if ($email === '' || ! filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            throw new \RuntimeException('Informe um e-mail válido para pagar com PIX na Stripe.');
+        }
+
+        $stripe = new StripeClient($secret);
+        try {
+            $paymentIntent = $stripe->paymentIntents->create([
+                'amount' => $amountCents,
+                'currency' => 'brl',
+                'payment_method_types' => ['pix'],
+                'confirm' => true,
+                'payment_method_data' => [
+                    'type' => 'pix',
+                    'billing_details' => [
+                        'name' => $name,
+                        'email' => $email,
+                        'tax_id' => $this->formatCpf($document),
+                    ],
+                ],
+                'payment_method_options' => [
+                    'pix' => [
+                        'expires_after_seconds' => 900,
+                    ],
+                ],
+                'metadata' => ['order_id' => $externalId],
+            ], [
+                'idempotency_key' => 'getfy-stripe-pix-'.$externalId,
+            ]);
+        } catch (ApiErrorException $e) {
+            Log::warning('StripeDriver createPixPayment failed', [
+                'order_id' => $externalId,
+                'code' => $e->getStripeCode(),
+                'message' => $e->getMessage(),
+            ]);
+            $message = strtolower($e->getMessage());
+            if (str_contains($message, 'tax') || str_contains($message, 'cpf')) {
+                throw new \RuntimeException('CPF não aceito pela Stripe. Confira o documento e tente novamente.');
+            }
+            if (str_contains($message, 'pix')) {
+                throw new \RuntimeException('A Stripe recusou o PIX. Ative o Pix no painel da Stripe e tente novamente.');
+            }
+            throw new \RuntimeException('Não foi possível gerar o PIX na Stripe. Tente novamente.');
+        } catch (\Throwable $e) {
+            Log::warning('StripeDriver createPixPayment error', [
+                'order_id' => $externalId,
+                'message' => $e->getMessage(),
+            ]);
+            throw new \RuntimeException('Não foi possível gerar o PIX na Stripe. Tente novamente.');
+        }
+
+        return $this->pixChargeFromPaymentIntent($paymentIntent);
+    }
+
+    /**
+     * @param  object  $paymentIntent
+     * @return array{transaction_id: string, qrcode?: string, copy_paste?: string, status?: string}
+     */
+    public function pixChargeFromPaymentIntent(object $paymentIntent): array
+    {
+        $payload = method_exists($paymentIntent, 'toArray') ? $paymentIntent->toArray() : [];
+        $pix = is_array($payload['next_action']['pix_display_qr_code'] ?? null)
+            ? $payload['next_action']['pix_display_qr_code']
+            : [];
+        $copyPaste = trim((string) ($pix['data'] ?? ''));
+        $qrcode = trim((string) ($pix['image_url_png'] ?? $pix['image_url_svg'] ?? ''));
+        $transactionId = trim((string) ($payload['id'] ?? ''));
+        if ($transactionId === '' || ($copyPaste === '' && $qrcode === '')) {
+            throw new \RuntimeException('A Stripe não devolveu o código PIX. Tente novamente.');
+        }
+
+        return [
+            'transaction_id' => $transactionId,
+            'copy_paste' => $copyPaste,
+            'qrcode' => $qrcode,
+            'status' => 'pending',
+        ];
+    }
+
+    private function formatCpf(string $digits): string
+    {
+        return substr($digits, 0, 3).'.'.substr($digits, 3, 3).'.'.substr($digits, 6, 3).'-'.substr($digits, 9, 2);
     }
 
     public function createBoletoPayment(
