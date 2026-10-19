@@ -1,0 +1,380 @@
+/*
+ * Paynext — regras globais.
+ * Este arquivo fica fora das camadas do Tailwind (@layer), então prevalece sobre as
+ * classes utilitárias das telas. É o que leva o Design System para todas as telas
+ * existentes sem editar cada uma: superfícies de vidro, controles em pílula, cor de
+ * marca legível nos dois temas, tabelas, modais, foco e gráficos.
+ */
+
+/* ── Base ─────────────────────────────────────────────────────────────── */
+html {
+    background: var(--bg-canvas);
+}
+body {
+    min-height: 100vh;
+    margin: 0;
+    font: var(--text-body-m);
+    font-family: var(--font-body);
+    color: var(--text-primary);
+    background: transparent;
+    -webkit-font-smoothing: antialiased;
+    font-feature-settings: 'tnum' 1;
+}
+/* Aurora fixa atrás de todas as telas + grade de 64px mascarada */
+body::before,
+body::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+}
+body::before {
+    background: var(--bg-aurora);
+}
+body::after {
+    background-image:
+        linear-gradient(var(--chart-grid) 1px, transparent 1px),
+        linear-gradient(90deg, var(--chart-grid) 1px, transparent 1px);
+    background-size: 64px 64px;
+    -webkit-mask: radial-gradient(70% 60% at 50% 40%, #000, transparent 80%);
+    mask: radial-gradient(70% 60% at 50% 40%, #000, transparent 80%);
+    opacity: 0.6;
+}
+h1,
+h2,
+h3,
+h4 {
+    font-family: var(--font-display);
+    letter-spacing: var(--tracking-heading);
+}
+::selection {
+    background: var(--lime-300);
+    color: var(--ink-900);
+}
+:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 4px var(--focus-ring);
+}
+input[type='checkbox'],
+input[type='radio'],
+input[type='range'],
+progress {
+    accent-color: var(--lime-300);
+}
+* {
+    scrollbar-width: thin;
+    scrollbar-color: var(--border-strong) transparent;
+}
+*::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+*::-webkit-scrollbar-track {
+    background: transparent;
+}
+*::-webkit-scrollbar-thumb {
+    background: var(--border-strong);
+    border-radius: 999px;
+}
+*::-webkit-scrollbar-thumb:hover {
+    background: var(--text-tertiary);
+}
+
+/* O fundo das telas passa a ser a aurora do body */
+.min-h-screen.bg-zinc-50,
+.min-h-screen.bg-white,
+.min-h-screen.bg-zinc-100,
+html.dark .min-h-screen.dark\:bg-zinc-950,
+html.dark .min-h-screen.dark\:bg-zinc-900 {
+    background: transparent;
+}
+
+/* ── Superfícies: vidro ───────────────────────────────────────────────── */
+/* Claro: cartões brancos viram vidro branco sobre o céu */
+html:not(.dark) .bg-white:is(.rounded-lg, .rounded-xl, .rounded-2xl, .rounded-3xl),
+html:not(.dark) .bg-white\/80,
+html:not(.dark) .bg-white\/90,
+html:not(.dark) .bg-white\/95 {
+    background-color: var(--glass-bg-strong);
+    -webkit-backdrop-filter: var(--glass-blur);
+    backdrop-filter: var(--glass-blur);
+}
+html:not(.dark) :is(.bg-white, .bg-zinc-50):is(.rounded-xl, .rounded-2xl, .rounded-3xl):is(.border, .shadow, .shadow-sm) {
+    border-color: var(--glass-border);
+    box-shadow: var(--shadow-sm);
+}
+/* Escuro: superfícies zinc viram vidro sobre a aurora */
+html.dark :is(.dark\:bg-zinc-900, .dark\:bg-zinc-900\/80, .dark\:bg-zinc-900\/90, .dark\:bg-zinc-900\/95, .dark\:bg-zinc-950) {
+    background-color: var(--glass-bg);
+}
+html.dark :is(.dark\:bg-zinc-900\/50, .dark\:bg-zinc-900\/60, .dark\:bg-zinc-900\/70, .dark\:bg-zinc-900\/40, .dark\:bg-zinc-950\/50) {
+    background-color: var(--bg-subtle);
+}
+html.dark :is(.dark\:bg-zinc-800, .dark\:bg-zinc-800\/80, .dark\:bg-zinc-800\/60, .dark\:bg-zinc-700) {
+    background-color: var(--bg-muted);
+}
+html.dark :is(.dark\:bg-zinc-800\/50, .dark\:bg-zinc-800\/40, .dark\:bg-zinc-800\/30, .dark\:bg-zinc-700\/50) {
+    background-color: var(--bg-subtle);
+}
+html.dark :is(.dark\:bg-zinc-900, .dark\:bg-zinc-900\/80, .dark\:bg-zinc-900\/90, .dark\:bg-zinc-950):is(.rounded-lg, .rounded-xl, .rounded-2xl, .rounded-3xl) {
+    -webkit-backdrop-filter: var(--glass-blur);
+    backdrop-filter: var(--glass-blur);
+    box-shadow: var(--shadow-sm);
+}
+/* Popovers, menus e modais sobrepostos: vidro forte */
+html.dark :is(.absolute, .fixed):is(.dark\:bg-zinc-900, .dark\:bg-zinc-800, .dark\:bg-zinc-950) {
+    background-color: rgba(18, 21, 22, 0.86);
+    -webkit-backdrop-filter: var(--glass-blur);
+    backdrop-filter: var(--glass-blur);
+    box-shadow: var(--shadow-lg);
+}
+html:not(.dark) :is(.absolute, .fixed).bg-white {
+    background-color: rgba(255, 255, 255, 0.92);
+    -webkit-backdrop-filter: var(--glass-blur);
+    backdrop-filter: var(--glass-blur);
+    box-shadow: var(--shadow-lg);
+}
+
+/* Hairlines: bordas viram linhas finas do vidro */
+html.dark :is(.dark\:border-zinc-700, .dark\:border-zinc-800, .dark\:border-zinc-600, .dark\:border-zinc-700\/80, .dark\:border-zinc-700\/50, .dark\:border-zinc-800\/80, .dark\:divide-zinc-700, .dark\:divide-zinc-800) {
+    border-color: var(--border-default);
+}
+html.dark :is(.dark\:border-zinc-600, .dark\:border-zinc-500) {
+    border-color: var(--border-strong);
+}
+html:not(.dark) :is(.border-zinc-100, .border-zinc-200, .divide-zinc-100, .divide-zinc-200) {
+    border-color: var(--border-default);
+}
+html:not(.dark) .border-zinc-300 {
+    border-color: var(--border-strong);
+}
+
+/* Texto: hierarquia do DS */
+html.dark :is(.dark\:text-zinc-400, .dark\:text-gray-400) {
+    color: var(--text-secondary);
+}
+html.dark :is(.dark\:text-zinc-500, .dark\:text-gray-500) {
+    color: var(--text-tertiary);
+}
+html.dark .dark\:text-zinc-300 {
+    color: rgba(244, 246, 247, 0.82);
+}
+html:not(.dark) :is(.text-zinc-500, .text-gray-500) {
+    color: var(--text-secondary);
+}
+html:not(.dark) :is(.text-zinc-400, .text-gray-400) {
+    color: var(--text-tertiary);
+}
+
+/* ── Cor de marca (lime) ──────────────────────────────────────────────── */
+/* Fundo lime sempre com texto ink (texto branco em lime seria ilegível) */
+.bg-\[var\(--color-primary\)\],
+.bg-lime-300,
+.bg-lime-400 {
+    color: var(--ink-900);
+}
+.bg-\[var\(--color-primary\)\] :is(.text-white, .text-zinc-50, .text-zinc-100),
+.bg-\[var\(--color-primary\)\]:is(.text-white, .text-zinc-50, .text-zinc-100) {
+    color: var(--ink-900);
+}
+button.bg-\[var\(--color-primary\)\]:not(:disabled):hover,
+a.bg-\[var\(--color-primary\)\]:hover {
+    background-color: var(--lime-200);
+    box-shadow: var(--shadow-glow);
+}
+/* Claro: lime como texto/borda/anel vira ink (text-brand do DS) */
+html:not(.dark) :is(.text-\[var\(--color-primary\)\], .text-lime-300, .text-lime-400, .text-lime-500) {
+    color: var(--text-brand);
+}
+html:not(.dark) :is(.border-\[var\(--color-primary\)\], .border-lime-300, .border-lime-400) {
+    border-color: var(--border-brand);
+}
+html:not(.dark) .ring-\[var\(--color-primary\)\] {
+    --tw-ring-color: var(--ink-900);
+}
+html:not(.dark) :is(.bg-\[var\(--color-primary\)\]\/5, .bg-\[var\(--color-primary\)\]\/10, .bg-\[var\(--color-primary\)\]\/15, .bg-\[var\(--color-primary\)\]\/20) {
+    background-color: var(--bg-selected);
+}
+/* Botão "acento" do DS (ink sólido no claro / branco no escuro) */
+html:not(.dark) :is(button, a).bg-zinc-900 {
+    color: var(--text-inverse);
+}
+
+/* ── Controles em pílula ──────────────────────────────────────────────── */
+:is(button, [role='button'], input[type='submit'], input[type='button']):is(.rounded, .rounded-md, .rounded-lg, .rounded-xl):not(.pn-keep-shape),
+a:is(.rounded, .rounded-md, .rounded-lg):is([class*='px-'], [class*=' py-']):not(.pn-keep-shape) {
+    border-radius: var(--radius-full);
+}
+:is(button, a, [role='button']):is(.rounded-lg, .rounded-xl, .rounded-md):not(:disabled):active {
+    transform: scale(0.97);
+}
+:is(button, a, [role='button']) {
+    transition-property: color, background-color, border-color, box-shadow, transform, opacity;
+    transition-duration: var(--dur-fast);
+    transition-timing-function: var(--ease-out);
+}
+/* Botões secundários: vidro */
+html.dark button:is(.dark\:bg-zinc-800, .dark\:bg-zinc-900):is(.border),
+html:not(.dark) button.bg-white.border {
+    -webkit-backdrop-filter: var(--glass-blur);
+    backdrop-filter: var(--glass-blur);
+}
+
+/* Campos: pílula de vidro com foco lime */
+:is(
+        input:not([type='checkbox'], [type='radio'], [type='range'], [type='file'], [type='color'], [type='hidden']),
+        select
+    ):is(.rounded, .rounded-md, .rounded-lg, .rounded-xl):not(.pn-keep-shape) {
+    border-radius: var(--radius-full);
+    padding-left: max(1rem, var(--pn-input-pl, 1rem));
+}
+textarea:is(.rounded, .rounded-md, .rounded-lg, .rounded-xl) {
+    border-radius: var(--radius-lg);
+}
+:is(input:not([type='checkbox'], [type='radio'], [type='range'], [type='file'], [type='color']), select, textarea) {
+    font-family: var(--font-body);
+    font-weight: 300;
+}
+:is(input:not([type='checkbox'], [type='radio'], [type='range'], [type='file'], [type='color']), select, textarea):is(.border, [class*='border-']) {
+    transition:
+        border-color var(--dur-fast),
+        box-shadow var(--dur-base) var(--ease-out),
+        background-color var(--dur-fast);
+}
+:is(input:not([type='checkbox'], [type='radio'], [type='range'], [type='file'], [type='color']), select, textarea):is(.border, [class*='border-']):focus {
+    border-color: var(--border-brand);
+    box-shadow: 0 0 0 4px var(--focus-ring);
+    outline: none;
+}
+html.dark :is(input, select, textarea):is(.dark\:bg-zinc-800, .dark\:bg-zinc-900, .dark\:bg-zinc-950, .dark\:bg-zinc-800\/50) {
+    background-color: var(--glass-bg);
+}
+html:not(.dark) :is(input, select, textarea):is(.bg-white, .bg-zinc-50) {
+    background-color: rgba(255, 255, 255, 0.7);
+}
+/* Ícone de busca/prefixo posicionado dentro de campo: compensa o padding da pílula */
+.relative > input.pl-9,
+.relative > input.pl-10 {
+    --pn-input-pl: 2.6rem;
+    padding-left: 2.6rem;
+}
+
+/* ── Tabelas: cabeçalho em eyebrow, linhas com hover ──────────────────── */
+table {
+    font-feature-settings: 'tnum' 1;
+}
+thead th {
+    font: var(--text-label-s);
+    letter-spacing: var(--tracking-label-s);
+    text-transform: uppercase;
+    color: var(--text-tertiary);
+}
+html.dark thead:is(.dark\:bg-zinc-800, .dark\:bg-zinc-800\/50, .dark\:bg-zinc-900, .dark\:bg-zinc-900\/50),
+html.dark thead tr:is(.dark\:bg-zinc-800, .dark\:bg-zinc-800\/50) {
+    background-color: transparent;
+}
+html:not(.dark) thead:is(.bg-zinc-50, .bg-zinc-100, .bg-gray-50),
+html:not(.dark) thead tr:is(.bg-zinc-50, .bg-zinc-100) {
+    background-color: transparent;
+}
+tbody tr {
+    transition:
+        background-color var(--dur-fast),
+        transform var(--dur-base) var(--ease-out);
+}
+tbody tr:hover {
+    background-color: var(--bg-hover);
+}
+
+/* ── Modais e scrims ──────────────────────────────────────────────────── */
+.fixed.inset-0:is(.bg-black\/30, .bg-black\/40, .bg-black\/50, .bg-black\/60, .bg-black\/70, .bg-zinc-900\/50, .bg-zinc-900\/60, .bg-zinc-950\/60, .bg-zinc-950\/70) {
+    background-color: var(--bg-overlay);
+    -webkit-backdrop-filter: blur(7px);
+    backdrop-filter: blur(7px);
+}
+[role='dialog'] > :is(.rounded-lg, .rounded-xl, .rounded-2xl),
+.fixed.inset-0 > :is(.rounded-xl, .rounded-2xl):is(.bg-white, .dark\:bg-zinc-900) {
+    border-radius: var(--radius-xl);
+    animation: pn-fade-up var(--dur-slow) var(--ease-out) both;
+}
+
+/* ── Selos (badges) de status: pílula suave ──────────────────────────── */
+span.rounded-full:is(.px-2, .px-2\.5, .px-3):is(.text-xs, .text-\[11px\], .text-\[10px\]) {
+    letter-spacing: 0;
+    font-weight: 400;
+}
+
+/* ── Gráficos (ApexCharts) ────────────────────────────────────────────── */
+.apexcharts-canvas,
+.apexcharts-text,
+.apexcharts-legend-text,
+.apexcharts-title-text,
+.apexcharts-datalabel,
+.apexcharts-tooltip {
+    font-family: var(--font-body) !important;
+}
+.apexcharts-text tspan,
+.apexcharts-legend-text {
+    fill: var(--text-tertiary);
+    color: var(--text-secondary) !important;
+}
+.apexcharts-gridline,
+.apexcharts-grid line {
+    stroke: var(--chart-grid);
+}
+.apexcharts-tooltip,
+.apexcharts-tooltip.apexcharts-theme-light,
+.apexcharts-tooltip.apexcharts-theme-dark,
+.apexcharts-xaxistooltip,
+.apexcharts-yaxistooltip {
+    background: rgba(12, 14, 15, 0.86) !important;
+    color: #f4f6f7 !important;
+    border: 1px solid rgba(255, 255, 255, 0.14) !important;
+    border-radius: var(--radius-md) !important;
+    -webkit-backdrop-filter: var(--glass-blur);
+    backdrop-filter: var(--glass-blur);
+    box-shadow: var(--shadow-lg) !important;
+}
+.apexcharts-tooltip-title {
+    background: transparent !important;
+    color: #f4f6f7 !important;
+    border-bottom-color: rgba(255, 255, 255, 0.1) !important;
+    font-family: var(--font-body) !important;
+}
+.apexcharts-tooltip-text-y-label,
+.apexcharts-tooltip-text-y-value,
+.apexcharts-tooltip-text-goals-label,
+.apexcharts-tooltip-text-goals-value,
+.apexcharts-tooltip-text-z-label,
+.apexcharts-tooltip-text-z-value {
+    color: #f4f6f7 !important;
+}
+.apexcharts-xaxistooltip-bottom::before,
+.apexcharts-xaxistooltip-bottom::after {
+    border-bottom-color: rgba(12, 14, 15, 0.86) !important;
+}
+
+/* ── Movimento: entrada das páginas ───────────────────────────────────── */
+main > *:not(.pn-no-anim) {
+    animation: pn-fade-up var(--dur-slow) var(--ease-out) both;
+}
+main > *:nth-child(2) {
+    animation-delay: 70ms;
+}
+main > *:nth-child(3) {
+    animation-delay: 140ms;
+}
+main > *:nth-child(4) {
+    animation-delay: 210ms;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        animation-duration: 0.001ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.001ms !important;
+    }
+}

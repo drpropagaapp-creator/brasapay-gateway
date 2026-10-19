@@ -1,8 +1,7 @@
 @import 'tailwindcss';
-@import './dashboard-templates.css';
-@import './dashboard-templates-kawaii.css';
-@import './dashboard-templates-prime.css';
-@import './dashboard-templates-studio.css';
+@import './paynext/tokens.css';
+@import './paynext/components.css';
+@import './paynext/overrides.css';
 @import './platform-templates.css';
 
 @source '../../vendor/laravel/framework/src/Illuminate/Pagination/resources/views/*.blade.php';
@@ -13,28 +12,288 @@
 /* Dark mode via .dark class on html */
 @custom-variant dark (&:where(.dark, .dark *));
 
+/*
+ * Ponte Tailwind → Paynext. As telas usam a paleta do Tailwind (zinc, emerald, red...);
+ * aqui cada escala passa a apontar para a paleta do Design System, então todas as
+ * telas herdam as cores, a fonte, os raios e as sombras do Paynext.
+ */
 @theme {
-    --font-sans: 'Instrument Sans', ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji',
-        'Segoe UI Symbol', 'Noto Color Emoji';
+    --font-sans: 'Lexend', ui-sans-serif, system-ui, sans-serif;
+    --font-display: 'Lexend', ui-sans-serif, system-ui, sans-serif;
 
-    /* Sombras leves para layout */
-    --shadow-theme-xs: 0px 1px 2px 0px rgba(0, 0, 0, 0.05);
-    --shadow-theme-sm: 0px 1px 3px 0px rgba(0, 0, 0, 0.08), 0px 1px 2px 0px rgba(0, 0, 0, 0.04);
+    /* Neutros → Ink */
+    --color-zinc-50: #f4f6f7;
+    --color-zinc-100: #e8ebec;
+    --color-zinc-200: #d3d8da;
+    --color-zinc-300: #b1b8bb;
+    --color-zinc-400: #8a9296;
+    --color-zinc-500: #687074;
+    --color-zinc-600: #4a5154;
+    --color-zinc-700: #2f3437;
+    --color-zinc-800: #212527;
+    --color-zinc-900: #151718;
+    --color-zinc-950: #0c0e0f;
+    --color-gray-50: #f4f6f7;
+    --color-gray-100: #e8ebec;
+    --color-gray-200: #d3d8da;
+    --color-gray-300: #b1b8bb;
+    --color-gray-400: #8a9296;
+    --color-gray-500: #687074;
+    --color-gray-600: #4a5154;
+    --color-gray-700: #2f3437;
+    --color-gray-800: #212527;
+    --color-gray-900: #151718;
+    --color-gray-950: #0c0e0f;
+    --color-slate-50: #f4f6f7;
+    --color-slate-100: #e8ebec;
+    --color-slate-200: #d3d8da;
+    --color-slate-300: #b1b8bb;
+    --color-slate-400: #8a9296;
+    --color-slate-500: #687074;
+    --color-slate-600: #4a5154;
+    --color-slate-700: #2f3437;
+    --color-slate-800: #212527;
+    --color-slate-900: #151718;
+    --color-slate-950: #0c0e0f;
+    --color-neutral-50: #f4f6f7;
+    --color-neutral-100: #e8ebec;
+    --color-neutral-200: #d3d8da;
+    --color-neutral-300: #b1b8bb;
+    --color-neutral-400: #8a9296;
+    --color-neutral-500: #687074;
+    --color-neutral-600: #4a5154;
+    --color-neutral-700: #2f3437;
+    --color-neutral-800: #212527;
+    --color-neutral-900: #151718;
+    --color-neutral-950: #0c0e0f;
+    --color-stone-50: #f4f6f7;
+    --color-stone-100: #e8ebec;
+    --color-stone-200: #d3d8da;
+    --color-stone-300: #b1b8bb;
+    --color-stone-400: #8a9296;
+    --color-stone-500: #687074;
+    --color-stone-600: #4a5154;
+    --color-stone-700: #2f3437;
+    --color-stone-800: #212527;
+    --color-stone-900: #151718;
+    --color-stone-950: #0c0e0f;
 
-    /* Acente neutro para item ativo (zinc-600 / zinc-400 dark) */
-    --color-accent: #52525b;
-    --color-accent-hover: #3f3f46;
+    /* Lime — acento único do DS */
+    --color-lime-50: #faffd9;
+    --color-lime-100: #f3ffa6;
+    --color-lime-200: #ebfe7a;
+    --color-lime-300: #e1fb4d;
+    --color-lime-400: #cfeb2b;
+    --color-lime-500: #b5d11a;
+    --color-lime-600: #8fa611;
+    --color-lime-700: #687a0e;
+    --color-lime-800: #4f5d0b;
+    --color-lime-900: #3a4508;
+    --color-lime-950: #212804;
+
+    /* Sucesso (DS success 400/600) */
+    --color-emerald-50: #eafbf2;
+    --color-emerald-100: #cff6e2;
+    --color-emerald-200: #a3edc8;
+    --color-emerald-300: #72e3ae;
+    --color-emerald-400: #4ade9b;
+    --color-emerald-500: #22c27e;
+    --color-emerald-600: #0e9f63;
+    --color-emerald-700: #0b7c4e;
+    --color-emerald-800: #0a5f3d;
+    --color-emerald-900: #084a31;
+    --color-emerald-950: #042a1c;
+    --color-green-50: #eafbf2;
+    --color-green-100: #cff6e2;
+    --color-green-200: #a3edc8;
+    --color-green-300: #72e3ae;
+    --color-green-400: #4ade9b;
+    --color-green-500: #22c27e;
+    --color-green-600: #0e9f63;
+    --color-green-700: #0b7c4e;
+    --color-green-800: #0a5f3d;
+    --color-green-900: #084a31;
+    --color-green-950: #042a1c;
+    --color-teal-50: #eafbf2;
+    --color-teal-100: #cff6e2;
+    --color-teal-200: #a3edc8;
+    --color-teal-300: #72e3ae;
+    --color-teal-400: #4ade9b;
+    --color-teal-500: #22c27e;
+    --color-teal-600: #0e9f63;
+    --color-teal-700: #0b7c4e;
+    --color-teal-800: #0a5f3d;
+    --color-teal-900: #084a31;
+    --color-teal-950: #042a1c;
+
+    /* Erro (DS error 400/600) */
+    --color-red-50: #fff1f1;
+    --color-red-100: #ffdcdc;
+    --color-red-200: #ffbdbd;
+    --color-red-300: #ff9393;
+    --color-red-400: #ff6b6b;
+    --color-red-500: #ef4f4f;
+    --color-red-600: #d43b3b;
+    --color-red-700: #b02c2c;
+    --color-red-800: #8c2424;
+    --color-red-900: #6e1f1f;
+    --color-red-950: #3d0e0e;
+    --color-rose-50: #fff1f1;
+    --color-rose-100: #ffdcdc;
+    --color-rose-200: #ffbdbd;
+    --color-rose-300: #ff9393;
+    --color-rose-400: #ff6b6b;
+    --color-rose-500: #ef4f4f;
+    --color-rose-600: #d43b3b;
+    --color-rose-700: #b02c2c;
+    --color-rose-800: #8c2424;
+    --color-rose-900: #6e1f1f;
+    --color-rose-950: #3d0e0e;
+
+    /* Alerta (DS warning 400/600) */
+    --color-amber-50: #fff9eb;
+    --color-amber-100: #fff0cc;
+    --color-amber-200: #ffe29a;
+    --color-amber-300: #ffd574;
+    --color-amber-400: #ffc857;
+    --color-amber-500: #e8a21f;
+    --color-amber-600: #b97800;
+    --color-amber-700: #925f05;
+    --color-amber-800: #744b0a;
+    --color-amber-900: #5c3c0c;
+    --color-amber-950: #332004;
+    --color-yellow-50: #fff9eb;
+    --color-yellow-100: #fff0cc;
+    --color-yellow-200: #ffe29a;
+    --color-yellow-300: #ffd574;
+    --color-yellow-400: #ffc857;
+    --color-yellow-500: #e8a21f;
+    --color-yellow-600: #b97800;
+    --color-yellow-700: #925f05;
+    --color-yellow-800: #744b0a;
+    --color-yellow-900: #5c3c0c;
+    --color-yellow-950: #332004;
+    --color-orange-50: #fff9eb;
+    --color-orange-100: #fff0cc;
+    --color-orange-200: #ffe29a;
+    --color-orange-300: #ffd574;
+    --color-orange-400: #ffc857;
+    --color-orange-500: #e8a21f;
+    --color-orange-600: #b97800;
+    --color-orange-700: #925f05;
+    --color-orange-800: #744b0a;
+    --color-orange-900: #5c3c0c;
+    --color-orange-950: #332004;
+
+    /* Informação / Sky (DS sky + info) */
+    --color-sky-50: #f2f8ff;
+    --color-sky-100: #e6f2ff;
+    --color-sky-200: #dbeeff;
+    --color-sky-300: #bbd9f7;
+    --color-sky-400: #7cc4ff;
+    --color-sky-500: #5e96d6;
+    --color-sky-600: #1c78c9;
+    --color-sky-700: #2f5a8f;
+    --color-sky-800: #234570;
+    --color-sky-900: #1a3352;
+    --color-sky-950: #0f1e31;
+    --color-blue-50: #f2f8ff;
+    --color-blue-100: #e6f2ff;
+    --color-blue-200: #dbeeff;
+    --color-blue-300: #bbd9f7;
+    --color-blue-400: #7cc4ff;
+    --color-blue-500: #5e96d6;
+    --color-blue-600: #1c78c9;
+    --color-blue-700: #2f5a8f;
+    --color-blue-800: #234570;
+    --color-blue-900: #1a3352;
+    --color-blue-950: #0f1e31;
+    --color-cyan-50: #f2f8ff;
+    --color-cyan-100: #e6f2ff;
+    --color-cyan-200: #dbeeff;
+    --color-cyan-300: #bbd9f7;
+    --color-cyan-400: #7cc4ff;
+    --color-cyan-500: #5e96d6;
+    --color-cyan-600: #1c78c9;
+    --color-cyan-700: #2f5a8f;
+    --color-cyan-800: #234570;
+    --color-cyan-900: #1a3352;
+    --color-cyan-950: #0f1e31;
+
+    /* Lilás (DS chart-3) */
+    --color-indigo-50: #f6f3ff;
+    --color-indigo-100: #ece6ff;
+    --color-indigo-200: #dcd2ff;
+    --color-indigo-300: #c9bcff;
+    --color-indigo-400: #b8a6ff;
+    --color-indigo-500: #9a83f0;
+    --color-indigo-600: #7b61d9;
+    --color-indigo-700: #6049b5;
+    --color-indigo-800: #4a398c;
+    --color-indigo-900: #382b69;
+    --color-indigo-950: #1f173d;
+    --color-violet-50: #f6f3ff;
+    --color-violet-100: #ece6ff;
+    --color-violet-200: #dcd2ff;
+    --color-violet-300: #c9bcff;
+    --color-violet-400: #b8a6ff;
+    --color-violet-500: #9a83f0;
+    --color-violet-600: #7b61d9;
+    --color-violet-700: #6049b5;
+    --color-violet-800: #4a398c;
+    --color-violet-900: #382b69;
+    --color-violet-950: #1f173d;
+    --color-purple-50: #f6f3ff;
+    --color-purple-100: #ece6ff;
+    --color-purple-200: #dcd2ff;
+    --color-purple-300: #c9bcff;
+    --color-purple-400: #b8a6ff;
+    --color-purple-500: #9a83f0;
+    --color-purple-600: #7b61d9;
+    --color-purple-700: #6049b5;
+    --color-purple-800: #4a398c;
+    --color-purple-900: #382b69;
+    --color-purple-950: #1f173d;
+    --color-fuchsia-50: #f6f3ff;
+    --color-fuchsia-100: #ece6ff;
+    --color-fuchsia-200: #dcd2ff;
+    --color-fuchsia-300: #c9bcff;
+    --color-fuchsia-400: #b8a6ff;
+    --color-fuchsia-500: #9a83f0;
+    --color-fuchsia-600: #7b61d9;
+    --color-fuchsia-700: #6049b5;
+    --color-fuchsia-800: #4a398c;
+    --color-fuchsia-900: #382b69;
+    --color-fuchsia-950: #1f173d;
+    --color-pink-50: #f6f3ff;
+    --color-pink-100: #ece6ff;
+    --color-pink-200: #dcd2ff;
+    --color-pink-300: #c9bcff;
+    --color-pink-400: #b8a6ff;
+    --color-pink-500: #9a83f0;
+    --color-pink-600: #7b61d9;
+    --color-pink-700: #6049b5;
+    --color-pink-800: #4a398c;
+    --color-pink-900: #382b69;
+    --color-pink-950: #1f173d;
+
+    /* Acento usado pelo menu legado */
+    --color-accent: #151718;
+    --color-accent-hover: #2f3437;
+
+    /*
+     * Raios (--radius-*), sombras (--shadow-*) e easing (--ease-out) têm o mesmo nome nos
+     * tokens do DS (paynext/tokens.css, fora das camadas) e por isso prevalecem sobre o
+     * tema do Tailwind: rounded-lg = 20px, rounded-xl = 28px, rounded-2xl = 36px.
+     */
+    --shadow-theme-xs: var(--shadow-xs);
+    --shadow-theme-sm: var(--shadow-sm);
+    --animate-pn-fade-up: pn-fade-up 700ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 @layer base {
     :root {
-        --color-primary: #0050fc;
-    }
-    body {
-        @apply bg-zinc-50 text-zinc-900 antialiased;
-    }
-    .dark body {
-        @apply bg-zinc-950 text-zinc-100;
+        --color-primary: #e1fb4d;
     }
     /* Member Builder em tela cheia: #app não deve capturar cliques para o overlay receber */
     body.member-builder-active #app {
@@ -42,34 +301,41 @@
     }
 }
 
-/* Utilities para sidebar */
+/* Itens de menu legados — no padrão de navegação do DS (pílula, ativo em lime) */
 @utility menu-item {
-    @apply relative flex items-center w-full gap-3 px-3 py-2.5 text-sm font-medium rounded-lg transition-colors touch-manipulation;
+    @apply relative flex items-center w-full gap-3 px-4 h-11 text-sm rounded-full touch-manipulation;
+    transition:
+        background var(--dur-fast),
+        color var(--dur-fast),
+        transform var(--dur-base) var(--ease-out);
 }
 
 @utility menu-item-active {
-    @apply relative bg-zinc-200 font-semibold text-zinc-900 dark:bg-zinc-800 dark:text-white before:absolute before:bottom-0 before:left-[-0.75rem] before:top-0 before:w-1.5 before:rounded-r-full before:content-[''] before:bg-[var(--color-primary)];
+    background: var(--lime-300);
+    color: var(--ink-900);
+    font-weight: 500;
+    box-shadow: 0 8px 26px rgba(225, 251, 77, 0.28);
 }
 
 @utility menu-item-inactive {
-    @apply text-zinc-600 dark:text-zinc-400;
+    color: var(--text-secondary);
+    font-weight: 300;
 }
 
 @media (hover: hover) and (pointer: fine) {
     .menu-item-inactive:hover {
-        @apply bg-zinc-100 text-zinc-800;
-    }
-    .dark .menu-item-inactive:hover {
-        @apply bg-zinc-800/80 text-zinc-200;
+        background: var(--bg-hover);
+        color: var(--text-primary);
+        transform: translateX(3px);
     }
 }
 
 @utility menu-item-icon-active {
-    @apply text-zinc-700 dark:text-zinc-200;
+    color: var(--ink-900);
 }
 
 @utility menu-item-icon-inactive {
-    @apply text-zinc-500 dark:text-zinc-500;
+    color: inherit;
 }
 
 @utility no-scrollbar {
@@ -80,75 +346,4 @@
     .no-scrollbar::-webkit-scrollbar {
         display: none;
     }
-}
-
-/* Scrollbar moderna (thin, arredondada) */
-@layer base {
-    * {
-        scrollbar-width: thin;
-        scrollbar-color: rgb(161 161 170) transparent; /* zinc-400 */
-    }
-    .dark * {
-        scrollbar-color: rgb(82 82 91) transparent; /* zinc-600 */
-    }
-}
-@layer utilities {
-    *::-webkit-scrollbar {
-        width: 8px;
-        height: 8px;
-    }
-    *::-webkit-scrollbar-track {
-        background: transparent;
-    }
-    *::-webkit-scrollbar-thumb {
-        background: rgb(212 212 216); /* zinc-300 */
-        border-radius: 9999px;
-    }
-    *::-webkit-scrollbar-thumb:hover {
-        background: rgb(161 161 170); /* zinc-400 */
-    }
-    *::-webkit-scrollbar-thumb:active {
-        background: rgb(113 113 122); /* zinc-500 */
-    }
-    .dark *::-webkit-scrollbar-thumb {
-        background: rgb(82 82 91); /* zinc-600 */
-    }
-    .dark *::-webkit-scrollbar-thumb:hover {
-        background: rgb(63 63 70); /* zinc-700 */
-    }
-    .dark *::-webkit-scrollbar-thumb:active {
-        background: rgb(39 39 42); /* zinc-800 */
-    }
-}
-
-/* ApexCharts tooltip: no dark mode o body é text-zinc-100 e o tema light
-   não define color — fundo branco + texto claro. Força contraste. */
-.apexcharts-tooltip.apexcharts-theme-light {
-    color: #18181b;
-}
-html.dark .apexcharts-tooltip,
-html.dark .apexcharts-tooltip.apexcharts-theme-light,
-html.dark .apexcharts-tooltip.apexcharts-theme-dark {
-    background: #18181b !important;
-    color: #fafafa !important;
-    border: 1px solid #3f3f46 !important;
-}
-html.dark .apexcharts-tooltip-title {
-    background: #27272a !important;
-    color: #fafafa !important;
-    border-bottom-color: #3f3f46 !important;
-}
-html.dark .apexcharts-tooltip-text-y-label,
-html.dark .apexcharts-tooltip-text-y-value,
-html.dark .apexcharts-tooltip-text-goals-label,
-html.dark .apexcharts-tooltip-text-goals-value,
-html.dark .apexcharts-tooltip-text-z-label,
-html.dark .apexcharts-tooltip-text-z-value {
-    color: #fafafa !important;
-}
-html.dark .apexcharts-xaxistooltip,
-html.dark .apexcharts-yaxistooltip {
-    background: #18181b !important;
-    color: #fafafa !important;
-    border-color: #3f3f46 !important;
 }
