@@ -95,37 +95,35 @@ defineExpose({ queryBase, setPeriod, setSeller, periodOptions });
 
 <template>
     <div class="flex flex-col gap-4">
-        <div class="flex flex-wrap gap-2 border-b border-zinc-200 pb-3 dark:border-zinc-700">
+        <nav class="pn-tabs self-start" aria-label="Métricas">
             <Link
                 v-for="t in tabs"
                 :key="t.id"
                 :href="tabHref(t.href)"
-                class="rounded-lg px-3 py-1.5 text-sm font-medium transition-colors"
-                :class="tab === t.id
-                    ? 'bg-zinc-900 text-white dark:bg-white dark:text-zinc-900'
-                    : 'text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800'"
+                class="pn-tab inline-flex items-center no-underline hover:no-underline"
+                :class="tab === t.id ? 'pn-tab--active' : ''"
             >
                 {{ t.label }}
             </Link>
-        </div>
+        </nav>
 
-        <div class="flex flex-wrap items-center gap-2">
-            <button
-                v-for="p in periodOptions"
-                :key="p.value"
-                type="button"
-                class="rounded-full px-3 py-1 text-xs font-medium transition-colors"
-                :class="period === p.value
-                    ? 'bg-emerald-600 text-white'
-                    : 'bg-zinc-100 text-zinc-700 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700'"
-                @click="setPeriod(p.value)"
-            >
-                {{ p.label }}
-            </button>
+        <div class="flex flex-wrap items-center gap-3">
+            <div class="pn-seg max-w-full flex-wrap" role="group" aria-label="Período">
+                <button
+                    v-for="p in periodOptions"
+                    :key="p.value"
+                    type="button"
+                    class="pn-tab pn-keep-shape"
+                    :class="period === p.value ? 'pn-tab--active' : ''"
+                    @click="setPeriod(p.value)"
+                >
+                    {{ p.label }}
+                </button>
+            </div>
 
             <select
                 v-if="isPlatform && sellers.length"
-                class="rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-xs dark:border-zinc-700 dark:bg-zinc-900"
+                class="h-9 rounded-lg border border-zinc-200 bg-white px-3 text-xs dark:border-zinc-700 dark:bg-zinc-900"
                 :value="sellerId || ''"
                 @change="setSeller($event.target.value || null)"
             >

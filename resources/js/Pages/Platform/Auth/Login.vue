@@ -4,12 +4,8 @@ import { useForm, Link, usePage, router } from '@inertiajs/vue3';
 import { Eye, EyeOff, UserCog, Mail, Lock, ArrowRight } from 'lucide-vue-next';
 import Button from '@/components/ui/Button.vue';
 import AuthPageShell from '@/components/auth/AuthPageShell.vue';
-import AuthSpotlightField from '@/components/auth/AuthSpotlightField.vue';
-import AuthImmersiveField from '@/components/auth/AuthImmersiveField.vue';
-import AuthSpotlightFormCard from '@/components/auth/AuthSpotlightFormCard.vue';
 import AuthTurnstileField from '@/components/auth/AuthTurnstileField.vue';
 import { useAuthFormStyles } from '@/composables/useAuthFormStyles';
-import { useLoginTemplate } from '@/composables/useLoginTemplate';
 
 const showPassword = ref(false);
 const page = usePage();
@@ -21,8 +17,6 @@ const sessionExpired = computed(() => {
 const demoMode = computed(() => page.props.demo_mode ?? {});
 
 const {
-    isSpotlight,
-    isImmersive,
     primary,
     inputClass,
     labelClass,
@@ -34,8 +28,6 @@ const {
     demoDividerClass,
 } = useAuthFormStyles();
 
-const { isModernLogin } = useLoginTemplate();
-
 const props = defineProps({
     login_turnstile: { type: Object, default: () => ({ enabled: false, site_key: '' }) },
 });
@@ -45,12 +37,8 @@ const turnstileActive = computed(
     () => Boolean(props.login_turnstile?.enabled && props.login_turnstile?.site_key)
 );
 
-const pageTitle = computed(() => (isModernLogin.value ? 'Bem-vindo de volta' : 'Entrar'));
-const pageSubtitle = computed(() => (
-    isModernLogin.value
-        ? 'Acesse o painel de operação da plataforma com segurança.'
-        : 'Painel da plataforma'
-));
+const pageTitle = computed(() => 'Bem-vindo de volta');
+const pageSubtitle = computed(() => 'Acesse o painel de operação da plataforma com segurança.');
 
 const form = useForm({
     email: '',
@@ -96,139 +84,8 @@ function loginDemoAdmin() {
             Sessão expirada. Tente entrar novamente.
         </p>
 
-        <form v-if="isImmersive" class="space-y-5" @submit.prevent="submit">
-            <AuthImmersiveField
-                id="email"
-                v-model="form.email"
-                label="E-mail"
-                type="email"
-                autocomplete="email"
-                placeholder="seu@email.com"
-                required
-                :error="form.errors.email"
-            >
-                <template #icon>
-                    <Mail class="h-4 w-4" />
-                </template>
-            </AuthImmersiveField>
 
-            <AuthImmersiveField
-                id="password"
-                v-model="form.password"
-                label="Senha"
-                :type="showPassword ? 'text' : 'password'"
-                autocomplete="current-password"
-                placeholder="••••••••"
-                required
-                :error="form.errors.password"
-            >
-                <template #icon>
-                    <Lock class="h-4 w-4" />
-                </template>
-                <template #trailing>
-                    <button
-                        type="button"
-                        class="rounded p-1 text-white/40 hover:text-white/70"
-                        @click="showPassword = !showPassword"
-                    >
-                        <Eye v-if="showPassword" class="h-4 w-4" />
-                        <EyeOff v-else class="h-4 w-4" />
-                    </button>
-                </template>
-            </AuthImmersiveField>
-
-            <div class="flex items-center gap-3">
-                <input id="remember" v-model="form.remember" type="checkbox" :class="checkboxClass" />
-                <label for="remember" :class="mutedTextClass">Lembrar de mim</label>
-            </div>
-
-            <AuthTurnstileField
-                :config="login_turnstile"
-                v-model="turnstileToken"
-                :error="form.errors.turnstile_token"
-            />
-
-            <button
-                type="submit"
-                :class="submitButtonClass"
-                :disabled="form.processing || (turnstileActive && !turnstileToken)"
-                :style="{ background: primary, color: '#0a0a0a' }"
-            >
-                <span class="inline-flex w-full items-center justify-center gap-2">
-                    {{ form.processing ? 'Entrando…' : (turnstileActive && !turnstileToken ? 'Aguardando verificação…' : 'Entrar na plataforma') }}
-                    <ArrowRight v-if="!form.processing" class="h-4 w-4" />
-                </span>
-            </button>
-        </form>
-
-        <AuthSpotlightFormCard v-else-if="isSpotlight">
-            <form class="space-y-5" @submit.prevent="submit">
-                <AuthSpotlightField
-                    id="email"
-                    v-model="form.email"
-                    label="E-mail"
-                    type="email"
-                    autocomplete="email"
-                    placeholder="seu@email.com"
-                    required
-                    :error="form.errors.email"
-                >
-                    <template #icon>
-                        <Mail class="h-4 w-4" />
-                    </template>
-                </AuthSpotlightField>
-
-                <AuthSpotlightField
-                    id="password"
-                    v-model="form.password"
-                    label="Senha"
-                    :type="showPassword ? 'text' : 'password'"
-                    autocomplete="current-password"
-                    placeholder="••••••••"
-                    required
-                    :error="form.errors.password"
-                >
-                    <template #icon>
-                        <Lock class="h-4 w-4" />
-                    </template>
-                    <template #trailing>
-                        <button
-                            type="button"
-                            class="rounded p-1 text-zinc-500 hover:text-zinc-300"
-                            @click="showPassword = !showPassword"
-                        >
-                            <Eye v-if="showPassword" class="h-4 w-4" />
-                            <EyeOff v-else class="h-4 w-4" />
-                        </button>
-                    </template>
-                </AuthSpotlightField>
-
-                <div class="flex items-center gap-3">
-                    <input id="remember" v-model="form.remember" type="checkbox" :class="checkboxClass" />
-                    <label for="remember" :class="mutedTextClass">Lembrar de mim</label>
-                </div>
-
-                <AuthTurnstileField
-                    :config="login_turnstile"
-                    v-model="turnstileToken"
-                    :error="form.errors.turnstile_token"
-                />
-
-                <button
-                    type="submit"
-                    :class="submitButtonClass"
-                    :disabled="form.processing || (turnstileActive && !turnstileToken)"
-                    :style="{ background: primary, color: '#0a0a0a' }"
-                >
-                    <span class="inline-flex w-full items-center justify-center gap-2">
-                        {{ form.processing ? 'Entrando…' : (turnstileActive && !turnstileToken ? 'Aguardando verificação…' : 'Entrar na plataforma') }}
-                        <ArrowRight v-if="!form.processing" class="h-4 w-4" />
-                    </span>
-                </button>
-            </form>
-        </AuthSpotlightFormCard>
-
-        <form v-else class="space-y-5" @submit.prevent="submit">
+        <form class="space-y-5" @submit.prevent="submit">
                 <div>
                     <label for="email" :class="labelClass">E-mail</label>
                     <input

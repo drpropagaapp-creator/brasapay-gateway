@@ -1,27 +1,17 @@
 import { computed } from 'vue';
-import { usePage } from '@inertiajs/vue3';
 
+/**
+ * As telas de autenticação têm um único layout (login imersivo do Paynext DS);
+ * as variantes Spotlight e Immersive foram removidas. Interface mantida para quem consulta.
+ */
 export function useLoginTemplate() {
-    const page = usePage();
-
-    const templateId = computed(() => {
-        const raw = page.props.public_branding?.login_template;
-        if (raw === 'spotlight' || raw === 'immersive') {
-            return raw;
-        }
-        return 'default';
-    });
-
-    const isDefault = computed(() => templateId.value === 'default');
-    const isSpotlight = computed(() => templateId.value === 'spotlight');
-    const isImmersive = computed(() => templateId.value === 'immersive');
-    const isModernLogin = computed(() => isSpotlight.value || isImmersive.value);
+    const no = computed(() => false);
 
     return {
-        templateId,
-        isDefault,
-        isSpotlight,
-        isImmersive,
-        isModernLogin,
+        templateId: computed(() => 'default'),
+        isDefault: computed(() => true),
+        isSpotlight: no,
+        isImmersive: no,
+        isModernLogin: no,
     };
 }

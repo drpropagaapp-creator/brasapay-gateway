@@ -3,7 +3,7 @@ import { computed } from 'vue';
 import { cn } from '@/lib/utils';
 
 /**
- * Botão do Paynext DS (pílula). primary = lime com brilho; default = acento (ink/branco);
+ * Botão do Paynext DS (pílula). default/primary = lime com brilho (ação principal);
  * secondary/outline = vidro; destructive = perigo; ghost/link = discretos.
  */
 const props = defineProps({
@@ -22,7 +22,7 @@ const props = defineProps({
 });
 
 const VARIANTS = {
-    default: 'pn-btn--accent',
+    default: 'pn-btn--primary',
     primary: 'pn-btn--primary',
     destructive: 'pn-btn--danger',
     outline: 'pn-btn--secondary',

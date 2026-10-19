@@ -7,12 +7,10 @@ import AuthTurnstileField from '@/components/auth/AuthTurnstileField.vue';
 import AuthPageShell from '@/components/auth/AuthPageShell.vue';
 import LegalFooterLinks from '@/components/legal/LegalFooterLinks.vue';
 import { useAuthBranding } from '@/composables/useAuthBranding';
-import { useLoginTemplate } from '@/composables/useLoginTemplate';
 import { isValidWhatsappPhoneInput, maskWhatsappPhone } from '@/utils/whatsappPhone';
 
 const page = usePage();
 const { primary, appName } = useAuthBranding();
-const { isSpotlight, isImmersive, isModernLogin } = useLoginTemplate();
 
 const props = defineProps({
     revenue_ranges: { type: Array, default: () => [] },
@@ -634,21 +632,13 @@ function submitRegistration() {
 
 <template>
     <AuthPageShell
-        :title="isModernLogin ? 'Criar conta' : ''"
-        :subtitle="isModernLogin ? tagline : ''"
+        title="Criar conta"
+        :subtitle="tagline"
         variant="seller"
         wide
     >
-        <p v-if="!isModernLogin" class="text-center text-sm font-medium text-teal-600 dark:text-teal-400">{{ tagline }}</p>
 
-        <div
-            class="mt-8 rounded-2xl border p-6 shadow-sm"
-            :class="isImmersive
-                ? 'border-zinc-200/90 bg-white/80 backdrop-blur-sm dark:border-white/15 dark:bg-white/5'
-                : isSpotlight
-                    ? 'border-zinc-200 bg-white/90 dark:border-zinc-700/80 dark:bg-zinc-900/50'
-                    : 'border-zinc-200 bg-zinc-50/80 dark:border-zinc-700 dark:bg-zinc-900/60'"
-        >
+        <div class="mt-2">
                 <div class="flex items-start justify-between gap-2 text-xs font-medium uppercase tracking-wide text-zinc-500">
                     <span>Etapa {{ step }} de {{ totalSteps }}</span>
                     <span class="text-[var(--color-primary)]">{{ stepTitle }}</span>
@@ -933,7 +923,7 @@ function submitRegistration() {
                 </form>
             </div>
 
-            <p class="mt-6 text-center text-sm text-zinc-600 dark:text-zinc-400" :class="isImmersive ? 'dark:text-white/55' : ''">
+            <p class="mt-6 text-center text-sm text-zinc-600 dark:text-zinc-400">
                 Já tem conta?
                 <Link href="/login" class="font-medium text-[var(--color-primary)] hover:underline">Entrar</Link>
             </p>

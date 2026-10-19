@@ -396,3 +396,63 @@ main > *:nth-child(4) {
         transition-duration: 0.001ms !important;
     }
 }
+
+/* ── Abas sublinhadas legadas (border-b-2) → abas em pílula do DS ─────── */
+:is(button, a).border-b-2 {
+    border-bottom-width: 0;
+    border-radius: var(--radius-full);
+    color: var(--text-secondary);
+    font-weight: 400;
+    transition:
+        background var(--dur-base) var(--ease-out),
+        color var(--dur-fast);
+}
+:is(button, a).border-b-2:hover {
+    color: var(--text-primary);
+    background: var(--bg-hover);
+}
+html :is(button, a).border-b-2.border-\[var\(--color-primary\)\] {
+    background: var(--lime-300);
+    color: var(--ink-900);
+    font-weight: 500;
+    box-shadow: 0 0 22px rgba(225, 251, 77, 0.3);
+}
+html :is(button, a).border-b-2.border-\[var\(--color-primary\)\] svg {
+    color: var(--ink-900);
+}
+
+/* ── Botões sólidos coloridos legados → botões do DS ──────────────────── */
+/* Ação (verde/azul/sky/roxo/âmbar sólido) → primário lime; o DS só tem lime como ação */
+:is(button, a, [role='button']):is(
+        .bg-emerald-500, .bg-emerald-600, .bg-emerald-700, .bg-green-500, .bg-green-600, .bg-green-700,
+        .bg-sky-500, .bg-sky-600, .bg-blue-500, .bg-blue-600, .bg-blue-700, .bg-indigo-500, .bg-indigo-600,
+        .bg-violet-500, .bg-violet-600, .bg-amber-500, .bg-amber-600, .bg-orange-500, .bg-orange-600
+    ) {
+    background-color: var(--lime-300);
+    color: var(--ink-900);
+    border-color: transparent;
+}
+:is(button, a, [role='button']):is(
+        .bg-emerald-500, .bg-emerald-600, .bg-emerald-700, .bg-green-500, .bg-green-600, .bg-green-700,
+        .bg-sky-500, .bg-sky-600, .bg-blue-500, .bg-blue-600, .bg-blue-700, .bg-indigo-500, .bg-indigo-600,
+        .bg-violet-500, .bg-violet-600, .bg-amber-500, .bg-amber-600, .bg-orange-500, .bg-orange-600
+    ):not(:disabled):hover {
+    background-color: var(--lime-200);
+    box-shadow: var(--shadow-glow);
+}
+:is(button, a, [role='button']):is(.bg-emerald-500, .bg-emerald-600, .bg-emerald-700, .bg-green-600, .bg-sky-500, .bg-sky-600, .bg-blue-600, .bg-indigo-600, .bg-violet-600, .bg-amber-600, .bg-orange-500) :is(svg, .text-white) {
+    color: var(--ink-900);
+}
+/* Perigo (vermelho sólido) → botão de perigo do DS */
+:is(button, a, [role='button']):is(.bg-red-500, .bg-red-600, .bg-red-700, .bg-rose-600) {
+    background-color: var(--status-error-bg);
+    color: var(--status-error-fg);
+    border: 1px solid var(--status-error-fg);
+}
+:is(button, a, [role='button']):is(.bg-red-500, .bg-red-600, .bg-red-700, .bg-rose-600):not(:disabled):hover {
+    background-color: var(--status-error-fg);
+    color: var(--ink-900);
+}
+:is(button, a, [role='button']):is(.bg-red-500, .bg-red-600, .bg-red-700, .bg-rose-600) :is(svg, .text-white) {
+    color: inherit;
+}

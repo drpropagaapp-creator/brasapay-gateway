@@ -535,8 +535,6 @@ Route::prefix('plataforma')->name('plataforma.')->group(function () {
         Route::get('/configuracoes/banners-dashboard/data', [\App\Http\Controllers\Platform\DashboardBannerController::class, 'data'])->name('settings.dashboard-banners.data');
         Route::put('/configuracoes/banners-dashboard', [\App\Http\Controllers\Platform\DashboardBannerController::class, 'update'])->name('settings.dashboard-banners.update');
         Route::post('/configuracoes/banners-dashboard/upload', [\App\Http\Controllers\Platform\DashboardBannerController::class, 'upload'])->name('settings.dashboard-banners.upload');
-        Route::get('/configuracoes/template-login/data', [\App\Http\Controllers\Platform\LoginTemplateController::class, 'data'])->name('settings.login-template.data');
-        Route::put('/configuracoes/template-login', [\App\Http\Controllers\Platform\LoginTemplateController::class, 'update'])->name('settings.login-template.update');
         Route::get('/configuracoes/panel-color-scheme/data', [\App\Http\Controllers\Platform\PanelColorSchemeController::class, 'data'])->name('settings.panel-color-scheme.data');
         Route::put('/configuracoes/panel-color-scheme', [\App\Http\Controllers\Platform\PanelColorSchemeController::class, 'update'])->name('settings.panel-color-scheme.update');
         Route::get('/configuracoes/personalizacao/data', [\App\Http\Controllers\BrandingSettingsController::class, 'data'])->name('settings.branding.data');

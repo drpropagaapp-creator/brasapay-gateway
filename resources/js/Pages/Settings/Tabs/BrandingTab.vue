@@ -149,7 +149,6 @@ const imageFields = [
     'app_logo_icon_dark',
     'pwa_nav_logo',
     'pwa_nav_logo_dark',
-    'login_hero_image',
     'favicon_url',
 ];
 
@@ -182,7 +181,7 @@ const pwaNavHint = 'Recomendado: PNG ou SVG quadrado (ex.: 96×96 px). Se vazio,
                         />
                     </div>
                     <div>
-                        <label class="block text-sm font-medium text-zinc-700 dark:text-zinc-300">Cor primária</label>
+                        <label class="block text-sm font-medium text-zinc-700 dark:text-zinc-300">Cor dos e-mails e do app instalado</label>
                         <div class="mt-1.5 flex gap-2">
                             <input
                                 v-model="form.theme_primary"
@@ -196,7 +195,7 @@ const pwaNavHint = 'Recomendado: PNG ou SVG quadrado (ex.: 96×96 px). Se vazio,
                 </div>
 
                 <div class="space-y-4">
-                    <h3 class="text-sm font-semibold text-zinc-800 dark:text-zinc-200">Textos do login (template Spotlight)</h3>
+                    <h3 class="text-sm font-semibold text-zinc-800 dark:text-zinc-200">Textos da tela de login</h3>
                     <p class="text-xs text-zinc-500 dark:text-zinc-400">
                         Exibidos no painel direito da tela de login no desktop. Vazio usa o padrão da plataforma.
                     </p>
