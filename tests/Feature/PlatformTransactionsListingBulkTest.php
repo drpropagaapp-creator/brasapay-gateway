@@ -99,6 +99,43 @@ class PlatformTransactionsListingBulkTest extends TestCase
             );
     }
 
+    public function test_transaction_row_links_to_customer_profile(): void
+    {
+        $admin = $this->platformAdmin();
+        $seller = $this->seller('Seller Cliente Link', 'seller.cliente.link@example.com');
+        $order = $this->makeOrder($seller, [
+            'status' => 'pending',
+            'email' => 'comprador.link@example.com',
+        ]);
+
+        $this->actingAs($admin)
+            ->get(route('plataforma.transacoes.index', ['q' => 'comprador.link@example.com']))
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->where('orders.data.0.id', $order->id)
+                ->where('orders.data.0.customer_url', route('plataforma.clientes.show', ['user' => $order->user_id]))
+            );
+    }
+
+    public function test_transaction_without_customer_account_has_no_profile_url(): void
+    {
+        $admin = $this->platformAdmin();
+        $seller = $this->seller('Seller Sem Conta', 'seller.sem.conta@example.com');
+        $order = $this->makeOrder($seller, [
+            'user_id' => null,
+            'email' => 'sem.conta@example.com',
+            'status' => 'pending',
+        ]);
+
+        $this->actingAs($admin)
+            ->get(route('plataforma.transacoes.index', ['q' => 'sem.conta@example.com']))
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->where('orders.data.0.id', $order->id)
+                ->where('orders.data.0.customer_url', null)
+            );
+    }
+
     public function test_per_page_whitelist_and_invalid_fallback(): void
     {
         $admin = $this->platformAdmin();

@@ -102,7 +102,8 @@ class TransactionsController extends Controller
                 ->flip()
                 ->all();
 
-            $ordersPaginator = $paginated->through(fn (Order $o) => $this->mapOrderForAdmin($o, $openMedOrderIds));
+            $viewableCustomerIds = $this->viewableCustomerIdSet($paginated->getCollection());
+            $ordersPaginator = $paginated->through(fn (Order $o) => $this->mapOrderForAdmin($o, $openMedOrderIds, $viewableCustomerIds));
         }
 
         return Inertia::render('Platform/Transactions/Index', [
@@ -144,7 +145,8 @@ class TransactionsController extends Controller
                 ->flip()
                 ->all();
 
-            $ordersPaginator = $paginated->through(fn (Order $o) => $this->mapOrderForAdmin($o, $openMedOrderIds));
+            $viewableCustomerIds = $this->viewableCustomerIdSet($paginated->getCollection());
+            $ordersPaginator = $paginated->through(fn (Order $o) => $this->mapOrderForAdmin($o, $openMedOrderIds, $viewableCustomerIds));
         }
 
         $apiCashoutsPaginator = new LengthAwarePaginator([], 0, $perPage, 1, [
@@ -207,10 +209,31 @@ class TransactionsController extends Controller
     }
 
     /**
+     * Compradores que podem abrir a ficha em Clientes.
+     *
+     * @param  \Illuminate\Support\Collection<int, Order>  $orders
+     * @return array<int, true>
+     */
+    private function viewableCustomerIdSet($orders): array
+    {
+        $set = [];
+        foreach ($orders as $order) {
+            $user = $order->user;
+            if ($user === null || $user->isPlatformAdmin() || $user->isTeam()) {
+                continue;
+            }
+            $set[(int) $user->id] = true;
+        }
+
+        return $set;
+    }
+
+    /**
      * @param  array<int, int>  $openMedOrderIds
+     * @param  array<int, true>  $viewableCustomerIds
      * @return array<string, mixed>
      */
-    private function mapOrderForAdmin(Order $o, array $openMedOrderIds): array
+    private function mapOrderForAdmin(Order $o, array $openMedOrderIds, array $viewableCustomerIds = []): array
     {
         $arr = $o->toArray();
         $breakdown = OrderFeeBreakdownService::forOrder($o);
@@ -228,6 +251,11 @@ class TransactionsController extends Controller
         $arr['amount_fee'] = $breakdown['fee'];
         $arr['amount_net'] = $breakdown['net'];
         $arr['product_label'] = $this->orderProductLabel($o);
+        $customerId = $o->user_id !== null && $o->user_id !== '' ? (int) $o->user_id : null;
+        $arr['customer_id'] = $customerId;
+        $arr['customer_url'] = ($customerId !== null && isset($viewableCustomerIds[$customerId]))
+            ? route('plataforma.clientes.show', ['user' => $customerId])
+            : null;
         $arr['customer_name'] = $o->user?->name ?? '—';
         $arr['customer_email'] = $o->user?->email ?? $o->email ?? '—';
         $arr['infoprodutor_name'] = $o->tenantOwner?->name ?? '—';
