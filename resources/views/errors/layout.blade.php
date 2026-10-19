@@ -2,6 +2,8 @@
     $appName = (string) config('getfy.app_name', config('app.name', 'Paynext'));
     $nameParts = preg_match('/^(.+?[a-zà-ú])([A-ZÀ-Ú].*)$/u', $appName, $m) ? [$m[1], $m[2]] : [$appName, ''];
     $favicon = config('getfy.favicon_url') ?: '/images/favicon.png';
+    $logo = config('getfy.app_logo');
+    $logoDark = config('getfy.app_logo_dark') ?: $logo;
 @endphp
 <!DOCTYPE html>
 <html lang="pt-BR">
@@ -27,7 +29,14 @@
     <span class="pn-orb" style="width:40vw;height:40vw;right:-14vw;top:-8vw;background:var(--orb-2);animation-delay:-7s"></span>
     <main class="pn-error">
         <div class="pn-glass pn-glass--strong pn-anim pn-error__card">
-            <span class="pn-wordmark" style="font-size:22px">{{ $nameParts[0] }}@if($nameParts[1] !== '')<b>{{ $nameParts[1] }}</b>@endif<i></i></span>
+            @if($logo)
+                <span>
+                    <img src="{{ $logo }}" alt="{{ $appName }}" class="h-9 w-auto object-contain dark:hidden">
+                    <img src="{{ $logoDark }}" alt="{{ $appName }}" class="hidden h-9 w-auto object-contain dark:block">
+                </span>
+            @else
+                <span class="pn-wordmark" style="font-size:22px">{{ $nameParts[0] }}@if($nameParts[1] !== '')<b>{{ $nameParts[1] }}</b>@endif<i></i></span>
+            @endif
             <div>
                 <div class="pn-error__code">@yield('code')<span class="pn-dot">.</span></div>
             </div>

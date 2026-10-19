@@ -37,16 +37,18 @@ const par = (d) => ({
     transform: `translate3d(${mouse.value.x * d}px, ${mouse.value.y * d}px, 0) rotateX(${-mouse.value.y * d * 0.15}deg) rotateY(${mouse.value.x * d * 0.2}deg)`,
 });
 
-/* "Bem-vindo de volta." — o ponto final do título vira lime */
-const titleParts = computed(() => {
-    const t = String(props.title || '').trim();
-    return t.endsWith('.') ? [t.slice(0, -1), true] : [t, false];
-});
-/* Frase de destaque (configurável no admin): última palavra em lime, ponto final lime */
+/* Pontuação final dos títulos em lime ("Bem-vindo de volta."); sem pontuação, ganha um ponto. */
+function splitEnding(text) {
+    const t = String(text || '').trim();
+    const m = t.match(/^(.*?)([.!?…]+)$/s);
+    return m ? [m[1], m[2]] : [t, '.'];
+}
+const titleParts = computed(() => splitEnding(props.title));
+/* Frase de destaque (configurável no admin): última palavra em lime */
 const heroParts = computed(() => {
-    const t = String(heroTagline.value || '').trim().replace(/\.$/, '');
-    const i = t.lastIndexOf(' ');
-    return i > 0 ? [t.slice(0, i + 1), t.slice(i + 1)] : ['', t];
+    const [body, end] = splitEnding(heroTagline.value);
+    const i = body.lastIndexOf(' ');
+    return i > 0 ? [body.slice(0, i + 1), body.slice(i + 1), end] : ['', body, end];
 });
 </script>
 
@@ -57,13 +59,13 @@ const heroParts = computed(() => {
 
         <div class="pn-auth__panel-wrap">
             <PnGlassCard variant="strong" animate class="pn-auth__panel">
-                <PnWordmark size="md" />
+                <PnWordmark size="lg" />
                 <div class="pn-auth__body">
                     <span class="pn-badge pn-badge--brand pn-badge--nodot mb-5 self-start">
                         {{ variant === 'platform' ? 'Painel da plataforma' : 'Gateway de pagamentos' }}
                     </span>
                     <h1 v-if="title" class="pn-auth__title">
-                        {{ titleParts[0] }}<span class="pn-dot">.</span>
+                        {{ titleParts[0] }}<span class="pn-dot">{{ titleParts[1] }}</span>
                     </h1>
                     <p v-if="subtitle" class="pn-auth__subtitle">{{ subtitle }}</p>
                     <div class="pn-auth__form">
@@ -78,8 +80,8 @@ const heroParts = computed(() => {
 
         <div class="pn-auth__hero" aria-hidden="true">
             <div class="pn-auth__hero-copy">
-                <p class="pn-eyebrow">{{ heroSubtagline }}</p>
-                <h2>{{ heroParts[0] }}<span class="pn-auth__hero-accent">{{ heroParts[1] }}</span><span class="pn-dot">.</span></h2>
+                <h2>{{ heroParts[0] }}<span class="pn-auth__hero-accent">{{ heroParts[1] }}</span><span class="pn-dot">{{ heroParts[2] }}</span></h2>
+                <p v-if="heroSubtagline" class="pn-auth__hero-sub">{{ heroSubtagline }}</p>
             </div>
             <div class="pn-auth__card pn-auth__card--volume" :style="par(24)">
                 <PnGlassCard variant="strong" :spotlight="false" class="pn-auth__float" style="padding: 26px">
@@ -210,8 +212,13 @@ const heroParts = computed(() => {
     left: 10%;
     right: 14%;
 }
+.pn-auth__hero-sub {
+    max-width: 520px;
+    margin-top: 16px;
+    font: var(--text-body-l);
+    color: var(--text-secondary);
+}
 .pn-auth__hero-copy h2 {
-    margin-top: 14px;
     font: 400 60px/66px var(--font-display);
     letter-spacing: -0.045em;
 }
