@@ -841,6 +841,8 @@ class GatewaysController extends Controller
             'gateway_order.boleto.*' => ['string', 'max:64'],
             'gateway_order.pix_auto' => ['nullable', 'array'],
             'gateway_order.pix_auto.*' => ['string', 'max:64'],
+            'gateway_order.wallet' => ['nullable', 'array'],
+            'gateway_order.wallet.*' => ['string', 'max:64'],
             'cajupay_method_accounts' => ['sometimes', 'array'],
             'cajupay_method_accounts.pix' => ['nullable', 'integer'],
             'cajupay_method_accounts.card' => ['nullable', 'integer'],
@@ -850,11 +852,25 @@ class GatewaysController extends Controller
 
         $tenantId = PlatformConfigContext::settingsTenantId();
         $go = $validated['gateway_order'];
+        $existing = Setting::get('gateway_order', null, $tenantId);
+        if (is_string($existing)) {
+            $decoded = json_decode($existing, true);
+            $existing = is_array($decoded) ? $decoded : [];
+        }
+        $existing = is_array($existing) ? $existing : [];
+        $walletSource = array_key_exists('wallet', $go)
+            ? ($go['wallet'] ?? [])
+            : ($existing['wallet'] ?? config('gateways.default_order.wallet', ['cajupay', 'stripe']));
+
         $sanitized = [
             'pix' => GatewayRegistry::filterSlugsToAllowedAcquirers($go['pix'] ?? []),
             'card' => GatewayRegistry::filterSlugsToAllowedAcquirers($go['card'] ?? []),
             'boleto' => GatewayRegistry::filterSlugsToAllowedAcquirers($go['boleto'] ?? []),
             'pix_auto' => GatewayRegistry::filterSlugsToAllowedAcquirers($go['pix_auto'] ?? []),
+            'wallet' => array_values(array_filter(
+                GatewayRegistry::filterSlugsToAllowedAcquirers(is_array($walletSource) ? $walletSource : []),
+                fn ($slug) => in_array($slug, ['cajupay', 'stripe'], true)
+            )),
         ];
         Setting::set('gateway_order', $sanitized, $tenantId);
 
@@ -941,6 +957,7 @@ class GatewaysController extends Controller
                 'card' => GatewayRegistry::filterSlugsToAllowedAcquirers($default['card'] ?? []),
                 'boleto' => GatewayRegistry::filterSlugsToAllowedAcquirers($default['boleto'] ?? []),
                 'pix_auto' => GatewayRegistry::filterSlugsToAllowedAcquirers($default['pix_auto'] ?? []),
+                'wallet' => $this->filterWalletSlugs($default['wallet'] ?? ['cajupay', 'stripe']),
             ];
         }
 
@@ -949,7 +966,20 @@ class GatewaysController extends Controller
             'card' => GatewayRegistry::filterSlugsToAllowedAcquirers($raw['card'] ?? $default['card'] ?? []),
             'boleto' => GatewayRegistry::filterSlugsToAllowedAcquirers($raw['boleto'] ?? $default['boleto'] ?? []),
             'pix_auto' => GatewayRegistry::filterSlugsToAllowedAcquirers($raw['pix_auto'] ?? $default['pix_auto'] ?? []),
+            'wallet' => $this->filterWalletSlugs($raw['wallet'] ?? $default['wallet'] ?? ['cajupay', 'stripe']),
         ];
+    }
+
+    /**
+     * @param  array<int, mixed>  $slugs
+     * @return list<string>
+     */
+    private function filterWalletSlugs(array $slugs): array
+    {
+        return array_values(array_filter(
+            GatewayRegistry::filterSlugsToAllowedAcquirers($slugs),
+            fn ($slug) => in_array($slug, ['cajupay', 'stripe'], true)
+        ));
     }
 
     /**

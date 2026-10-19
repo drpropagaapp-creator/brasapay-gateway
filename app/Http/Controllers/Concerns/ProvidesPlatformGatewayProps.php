@@ -29,7 +29,22 @@ trait ProvidesPlatformGatewayProps
             'card' => GatewayRegistry::filterSlugsToAllowedAcquirers($gatewayOrder['card'] ?? []),
             'boleto' => GatewayRegistry::filterSlugsToAllowedAcquirers($gatewayOrder['boleto'] ?? []),
             'pix_auto' => GatewayRegistry::filterSlugsToAllowedAcquirers($gatewayOrder['pix_auto'] ?? []),
+            'wallet' => self::walletGatewaySlugs($gatewayOrder['wallet'] ?? ($default['wallet'] ?? ['cajupay', 'stripe'])),
         ];
+    }
+
+    /**
+     * @param  array<int, mixed>  $slugs
+     * @return list<string>
+     */
+    protected static function walletGatewaySlugs(array $slugs): array
+    {
+        $filtered = GatewayRegistry::filterSlugsToAllowedAcquirers($slugs);
+
+        return array_values(array_filter(
+            $filtered,
+            fn ($slug) => in_array($slug, ['cajupay', 'stripe'], true)
+        ));
     }
 
     /**
