@@ -1,4 +1,5 @@
 <script setup>
+import { PN_PRIMARY, PN_CANVAS_DARK } from '@/lib/paynextBrand';
 import { computed, ref, onMounted, watch, onUnmounted } from 'vue';
 import { Link, usePage, Head, router } from '@inertiajs/vue3';
 import PwaInstallPrompt from '@/components/member-area/PwaInstallPrompt.vue';
@@ -321,7 +322,7 @@ const manifestUrl = computed(() => {
     return `${base.endsWith('/') ? base.slice(0, -1) : base}/manifest.json`;
 });
 
-const themeColor = computed(() => config.value?.pwa?.theme_color || '#0ea5e9');
+const themeColor = computed(() => PN_CANVAS_DARK);
 const appName = computed(() => config.value?.pwa?.name || product.value?.name || 'App');
 const pageTitle = computed(() => product.value?.name || config.value?.pwa?.name || 'Área de Membros');
 
@@ -516,10 +517,11 @@ watch(
     <div
         class="min-h-screen transition-colors"
         :style="{
-            '--ma-primary': theme.primary || '#0ea5e9',
-            '--ma-bg': theme.background || '#18181b',
-            '--ma-sidebar-bg': theme.sidebar_bg || '#27272a',
-            '--ma-text': theme.text || '#f8fafc',
+            // Paynext DS: cores do tema do produto não são aplicadas (área de membros no vidro escuro).
+            '--ma-primary': PN_PRIMARY,
+            '--ma-bg': 'transparent',
+            '--ma-sidebar-bg': 'rgba(255, 255, 255, 0.06)',
+            '--ma-text': '#F4F6F7',
         }"
     >
         <!-- Header: logo/nav à esquerda, conta e notificações à direita; overflow-visible para dropdowns não serem cortados -->

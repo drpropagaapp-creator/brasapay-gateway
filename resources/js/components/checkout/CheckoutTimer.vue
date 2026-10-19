@@ -1,4 +1,5 @@
 <script setup>
+import { PN_PRIMARY } from '@/lib/paynextBrand';
 import { ref, onMounted, onUnmounted, computed } from 'vue';
 import { Timer } from 'lucide-vue-next';
 
@@ -11,8 +12,8 @@ const props = defineProps({
 const enabled = computed(() => props.config?.enabled === true);
 const text = computed(() => props.config?.text || props.t('checkout.timer_text'));
 const minutes = computed(() => Math.max(1, parseInt(props.config?.minutes, 10) || 15));
-const bgColor = computed(() => props.config?.background_color || '#000000');
-const textColor = computed(() => props.config?.text_color || '#FFFFFF');
+const bgColor = computed(() => '#151718');
+const textColor = computed(() => '#E1FB4D');
 const sticky = computed(() => props.config?.sticky !== false);
 
 const display = ref(`${minutes.value}:00`);

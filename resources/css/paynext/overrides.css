@@ -244,7 +244,14 @@ html:not(.dark) button.bg-white.border {
         select
     ):is(.rounded, .rounded-md, .rounded-lg, .rounded-xl):not(.pn-keep-shape) {
     border-radius: var(--radius-full);
-    padding-left: max(1rem, var(--pn-input-pl, 1rem));
+}
+/* Recuo estreito (px-2/px-3) fica apertado na pílula; recuos maiores (ícones à esquerda) são preservados */
+:is(
+        input:not([type='checkbox'], [type='radio'], [type='range'], [type='file'], [type='color'], [type='hidden']),
+        select
+    ):is(.rounded, .rounded-md, .rounded-lg, .rounded-xl):is(.px-2, .px-2\.5, .px-3, .px-3\.5):not([class*='pl-'], [class*='ps-']) {
+    padding-left: 1rem;
+    padding-right: 1rem;
 }
 textarea:is(.rounded, .rounded-md, .rounded-lg, .rounded-xl) {
     border-radius: var(--radius-lg);
@@ -269,12 +276,6 @@ html.dark :is(input, select, textarea):is(.dark\:bg-zinc-800, .dark\:bg-zinc-900
 }
 html:not(.dark) :is(input, select, textarea):is(.bg-white, .bg-zinc-50) {
     background-color: rgba(255, 255, 255, 0.7);
-}
-/* Ícone de busca/prefixo posicionado dentro de campo: compensa o padding da pílula */
-.relative > input.pl-9,
-.relative > input.pl-10 {
-    --pn-input-pl: 2.6rem;
-    padding-left: 2.6rem;
 }
 
 /* ── Tabelas: cabeçalho em eyebrow, linhas com hover ──────────────────── */
@@ -455,4 +456,22 @@ html :is(button, a).border-b-2.border-\[var\(--color-primary\)\] svg {
 }
 :is(button, a, [role='button']):is(.bg-red-500, .bg-red-600, .bg-red-700, .bg-rose-600) :is(svg, .text-white) {
     color: inherit;
+}
+
+/* ── Checkout e área de membros: cor de marca aplicada por estilo inline ── */
+/* Fundo lime (inline) → texto ink; texto branco legado vira ink */
+[style*='background-color: rgb(225, 251, 77)'],
+[style*='background-color: var(--ma-primary)'],
+.bg-\[var\(--ma-primary\)\] {
+    color: var(--ink-900) !important;
+}
+:is([style*='background-color: rgb(225, 251, 77)'], [style*='background-color: var(--ma-primary)'], .bg-\[var\(--ma-primary\)\]) :is(.text-white, svg) {
+    color: var(--ink-900) !important;
+}
+:is(button, a)[style*='background-color: rgb(225, 251, 77)']:not(:disabled):hover {
+    box-shadow: var(--shadow-glow);
+}
+/* Texto lime (inline) no tema claro → ink (text-brand do DS) */
+html:not(.dark) [style*='color: rgb(225, 251, 77)']:not([style*='background-color: rgb(225, 251, 77)']) {
+    color: var(--text-brand) !important;
 }

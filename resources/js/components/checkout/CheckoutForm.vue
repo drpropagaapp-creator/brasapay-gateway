@@ -1,4 +1,5 @@
 <script setup>
+import { PN_PRIMARY } from '@/lib/paynextBrand';
 import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick, inject } from 'vue';
 import { useForm, router } from '@inertiajs/vue3';
 import axios from 'axios';
@@ -446,7 +447,7 @@ const showCpf = computed(() => {
 const showPhone = computed(() => customerFields.value.phone === true);
 const showCouponByConfig = computed(() => customerFields.value.coupon === true);
 const showCouponField = computed(() => showCouponByConfig.value || Boolean(props.prefillCoupon));
-const orderBumpColor = computed(() => props.config?.appearance?.order_bump_color || '#F59E0B');
+const orderBumpColor = computed(() => PN_PRIMARY);
 const { branding, appName } = usePlatformBranding();
 const platformLogoUrl = computed(() =>
     String(branding.value?.app_logo || branding.value?.app_logo_icon || '').trim()

@@ -1,4 +1,5 @@
 <script setup>
+import { PN_PRIMARY } from '@/lib/paynextBrand';
 import { ref, computed, watch, onMounted, onUnmounted, toRef, provide } from 'vue';
 import { getMetaEntries } from '@/lib/metaTracking/browserPixel.js';
 import { Head } from '@inertiajs/vue3';
@@ -219,8 +220,8 @@ const platformLogoUrl = computed(() =>
     String(branding.value?.app_logo || branding.value?.app_logo_icon || '').trim()
 );
 const appearance = computed(() => effectiveConfig.value?.appearance ?? {});
-const backgroundColor = computed(() => appearance.value.background_color || '#E3E3E3');
-const primaryColor = computed(() => appearance.value.primary_color || '#0ea5e9');
+const backgroundColor = computed(() => 'transparent');
+const primaryColor = computed(() => PN_PRIMARY);
 const banners = computed(() => appearance.value.banners ?? []);
 const sideBannersFiltered = computed(() => (appearance.value.side_banners ?? []).filter(Boolean));
 const timerConfig = computed(() => effectiveConfig.value?.timer ?? {});

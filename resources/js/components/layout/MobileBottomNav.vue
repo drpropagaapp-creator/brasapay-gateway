@@ -1,4 +1,5 @@
 <script setup>
+import PnWordmark from '@/components/paynext/PnWordmark.vue';
 import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { Link, usePage } from '@inertiajs/vue3';
 import { LayoutDashboard, CircleDollarSign, Package, Cable } from 'lucide-vue-next';
@@ -110,23 +111,8 @@ onUnmounted(() => {
                 aria-label="Home"
                 class="absolute bottom-1 left-1/2 z-10 flex -translate-x-1/2 cursor-pointer touch-manipulation items-center justify-center border-0 bg-transparent p-0 no-underline"
             >
-                <span
-                    class="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-white p-2.5 shadow-lg shadow-zinc-300/80 ring-2 ring-zinc-200 dark:bg-zinc-600 dark:shadow-black/50 dark:ring-zinc-400/40"
-                >
-                    <img
-                        :src="logoLight"
-                        alt=""
-                        class="block h-full w-full max-h-9 max-w-9 object-contain object-center"
-                        :class="showDualLogo ? 'dark:hidden' : ''"
-                        aria-hidden="true"
-                    />
-                    <img
-                        v-if="showDualLogo"
-                        :src="logoDark"
-                        alt=""
-                        class="hidden h-full w-full max-h-9 max-w-9 object-contain object-center dark:block"
-                        aria-hidden="true"
-                    />
+                <span class="pn-glass pn-glass--strong flex h-14 w-14 shrink-0 items-center justify-center !rounded-full" style="box-shadow: var(--shadow-md)">
+                    <PnWordmark variant="icon" />
                 </span>
             </Link>
         </div>

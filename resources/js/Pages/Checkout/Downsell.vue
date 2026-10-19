@@ -1,4 +1,5 @@
 <script setup>
+import { PN_PRIMARY } from '@/lib/paynextBrand';
 import { ref, computed } from 'vue';
 import { Head, router } from '@inertiajs/vue3';
 import axios from 'axios';
@@ -17,12 +18,12 @@ const props = defineProps({
     conversion_pixels: { type: Object, default: () => ({}) },
 });
 
-const primaryColor = computed(() => props.appearance.primary_color || '#0ea5e9');
+const primaryColor = computed(() => PN_PRIMARY);
 const title = computed(() => props.page?.headline || props.appearance.title || 'Última chance com desconto');
 const subtitle = computed(() => props.page?.subheadline || props.appearance.subtitle || 'Uma oferta que não pode ficar de fora');
 const buttonAccept = computed(() => props.appearance.button_accept || 'Aceitar oferta');
 const buttonDecline = computed(() => props.appearance.button_decline || 'Não, obrigado');
-const pageBackgroundColor = computed(() => props.page?.background_color || '#f3f4f6');
+const pageBackgroundColor = computed(() => 'transparent');
 
 const loadingAccept = ref(false);
 const loadingDecline = ref(false);

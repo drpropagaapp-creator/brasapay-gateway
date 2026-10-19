@@ -1,4 +1,5 @@
 <script setup>
+import { PN_PRIMARY } from '@/lib/paynextBrand';
 import { ref, computed } from 'vue';
 import { useForm, Head } from '@inertiajs/vue3';
 import { Eye, EyeOff, Smartphone } from 'lucide-vue-next';
@@ -51,7 +52,7 @@ const backgroundStyle = () => {
     if (props.product.background_image) {
         return { backgroundImage: `url(${props.product.background_image})` };
     }
-    return { backgroundColor: props.product.background_color || '#18181b' };
+    return { backgroundColor: 'transparent' };
 };
 </script>
 
@@ -59,13 +60,13 @@ const backgroundStyle = () => {
     <Head>
         <title>{{ product.title || product.name || 'Área de Membros' }}</title>
         <link v-if="manifestUrl" rel="manifest" :href="manifestUrl" />
-        <meta name="theme-color" :content="product.primary_color || '#0ea5e9'" />
+        <meta name="theme-color" :content="PN_PRIMARY" />
         <meta name="mobile-web-app-capable" content="yes" />
     </Head>
     <div
         class="flex min-h-screen flex-col items-center justify-center bg-cover bg-center px-4 py-12 transition-colors"
         :style="{
-            '--ma-primary': product.primary_color || '#0ea5e9',
+            '--ma-primary': PN_PRIMARY,
             ...backgroundStyle(),
         }"
     >
@@ -117,7 +118,7 @@ const backgroundStyle = () => {
                         <a
                             :href="forgotPasswordHref"
                             class="text-sm font-medium transition hover:underline"
-                            :style="{ color: product.primary_color || '#0ea5e9' }"
+                            :style="{ color: PN_PRIMARY }"
                         >
                             Esqueci minha senha
                         </a>
@@ -155,7 +156,7 @@ const backgroundStyle = () => {
                 <button
                     type="submit"
                     class="w-full rounded-xl px-4 py-3.5 font-semibold text-white shadow-lg transition hover:opacity-95 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-zinc-900 disabled:opacity-50"
-                    :style="{ backgroundColor: product.primary_color || '#0ea5e9' }"
+                    :style="{ backgroundColor: PN_PRIMARY }"
                     :disabled="form.processing"
                 >
                     {{ form.processing ? 'Entrando…' : 'Entrar' }}

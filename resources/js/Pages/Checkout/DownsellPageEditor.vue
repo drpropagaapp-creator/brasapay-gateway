@@ -188,13 +188,6 @@ const inputClass =
                             <input v-model="form.page.hero_video_url" type="url" :class="inputClass" placeholder="https://www.youtube.com/watch?v=..." />
                         </div>
                         <div>
-                            <label class="mb-1.5 block text-sm font-medium text-zinc-700 dark:text-zinc-300">Cor de fundo</label>
-                            <div class="flex gap-2">
-                                <input v-model="form.page.background_color" type="color" class="h-10 w-14 cursor-pointer rounded-lg border border-zinc-200 p-0.5 dark:border-zinc-600" />
-                                <input v-model="form.page.background_color" type="text" :class="inputClass + ' flex-1'" />
-                            </div>
-                        </div>
-                        <div>
                             <ImageUpload
                                 v-model="form.page.background_image"
                                 :upload-url="uploadUrl"
@@ -219,13 +212,6 @@ const inputClass =
                         <ChevronRight v-else class="h-5 w-5 shrink-0" />
                     </button>
                     <div v-show="sectionsOpen.appearance" class="space-y-4 border-t border-zinc-200 px-4 py-4 dark:border-zinc-700">
-                        <div>
-                            <label class="mb-1.5 block text-sm font-medium text-zinc-700 dark:text-zinc-300">Cor primária</label>
-                            <div class="flex gap-2">
-                                <input v-model="form.appearance.primary_color" type="color" class="h-10 w-14 cursor-pointer rounded-lg border border-zinc-200 p-0.5 dark:border-zinc-600" />
-                                <input v-model="form.appearance.primary_color" type="text" :class="inputClass + ' flex-1'" />
-                            </div>
-                        </div>
                         <div>
                             <label class="mb-1.5 block text-sm font-medium text-zinc-700 dark:text-zinc-300">Texto botão aceitar</label>
                             <input v-model="form.appearance.button_accept" type="text" :class="inputClass" />
@@ -292,13 +278,13 @@ const inputClass =
                     <p class="mb-4 text-sm font-medium text-zinc-600 dark:text-zinc-400">Preview (estático)</p>
                     <div
                         class="mx-auto max-w-2xl overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-lg"
-                        :style="{ backgroundColor: form.page.background_color || '#f3f4f6' }"
+                        :style="{ backgroundColor: 'transparent' }"
                     >
                         <div v-if="form.page.hero_image" class="aspect-video w-full overflow-hidden bg-zinc-200">
                             <img :src="form.page.hero_image" alt="Hero" class="h-full w-full object-cover" />
                         </div>
                         <div class="p-6 sm:p-8">
-                            <h2 class="mb-1 text-xl font-bold" :style="{ color: form.appearance.primary_color }">
+                            <h2 class="mb-1 text-xl font-bold" >
                                 {{ form.page.headline || 'Título' }}
                             </h2>
                             <p class="mb-4 text-sm text-zinc-600">

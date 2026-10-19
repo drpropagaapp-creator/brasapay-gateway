@@ -7,11 +7,20 @@
         || str_starts_with($path, 'redefinir-senha/')
         || str_starts_with($path, 'plataforma/login')
     );
+    // Paynext DS: checkout (feito para fundo claro) no vidro claro; área de membros no vidro escuro.
+    $forcedTheme = null;
+    if (str_starts_with($path, 'c/') || str_starts_with($path, 'checkout') || str_starts_with($path, 'api-checkout') || str_starts_with($path, 'pagar')) {
+        $forcedTheme = 'light';
+    } elseif (str_starts_with($path, 'm/') || request()->attributes->get('member_area_slug')) {
+        $forcedTheme = 'dark';
+    }
 @endphp
 <script>
 (function(){try{
     var policy=@json($scheme);
     var ignoreStored=@json($ignoreStoredTheme);
+    var forced=@json($forcedTheme);
+    if(forced){document.documentElement.classList.toggle('dark',forced==='dark');return;}
     var isDark=false;
     var stored=null;
     if(!policy.locked&&!ignoreStored){stored=localStorage.getItem('theme');}

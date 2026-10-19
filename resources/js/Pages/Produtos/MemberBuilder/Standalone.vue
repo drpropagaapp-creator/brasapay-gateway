@@ -2253,13 +2253,6 @@ const inputClass = 'block w-full rounded-lg border border-zinc-300 bg-white px-3
                                 <p class="mt-1 text-xs text-zinc-500 dark:text-zinc-400">Usado na aba do navegador e no PWA. Tamanho ideal: 192×192 ou 512×512 px. Máx. {{ uploadLimits.image_max_mb }} MB.</p>
                             </div>
                             <div>
-                                <input v-model="configForm.member_area_config.theme.primary" type="color" class="h-9 w-full cursor-pointer rounded-lg border dark:border-zinc-600" />
-                            </div>
-                            <div>
-                                <label class="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">Fundo</label>
-                                <input v-model="configForm.member_area_config.theme.background" type="color" class="h-9 w-full cursor-pointer rounded-lg border dark:border-zinc-600" />
-                            </div>
-                            <div>
                                 <label class="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">Banner do hero — Desktop</label>
                                 <input
                                     ref="heroDesktopFileInput"
@@ -2404,23 +2397,12 @@ const inputClass = 'block w-full rounded-lg border border-zinc-300 bg-white px-3
                                 </Button>
                             </div>
                             <div>
-                                <label class="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">Cor de fundo (sem imagem)</label>
-                                <div class="flex items-center gap-2">
-                                    <input v-model="configForm.member_area_config.login.background_color" type="color" class="h-9 w-20 cursor-pointer rounded-lg border dark:border-zinc-600" />
-                                    <input v-model="configForm.member_area_config.login.background_color" type="text" :class="inputClass" class="flex-1 font-mono text-sm" placeholder="#18181b" />
-                                </div>
-                            </div>
-                            <div>
                                 <label class="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">Título</label>
                                 <input v-model="configForm.member_area_config.login.title" type="text" :class="inputClass" placeholder="Área de Membros" />
                             </div>
                             <div>
                                 <label class="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">Subtítulo</label>
                                 <input v-model="configForm.member_area_config.login.subtitle" type="text" :class="inputClass" placeholder="Entre com seu e-mail e senha" />
-                            </div>
-                            <div>
-                                <label class="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">Cor primária (botão e links)</label>
-                                <input v-model="configForm.member_area_config.login.primary_color" type="color" class="h-9 w-full cursor-pointer rounded-lg border dark:border-zinc-600" />
                             </div>
                             <div class="border-t border-zinc-200 pt-4 dark:border-zinc-700">
                                 <label class="mb-2 block text-xs font-medium text-zinc-600 dark:text-zinc-400">Definir senha (novos acessos)</label>

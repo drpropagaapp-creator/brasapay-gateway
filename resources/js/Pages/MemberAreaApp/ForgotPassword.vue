@@ -1,4 +1,5 @@
 <script setup>
+import { PN_PRIMARY } from '@/lib/paynextBrand';
 import { computed } from 'vue';
 import { useForm, Head, usePage } from '@inertiajs/vue3';
 
@@ -23,19 +24,19 @@ const backgroundStyle = () => {
     if (props.product.background_image) {
         return { backgroundImage: `url(${props.product.background_image})` };
     }
-    return { backgroundColor: props.product.background_color || '#18181b' };
+    return { backgroundColor: 'transparent' };
 };
 </script>
 
 <template>
     <Head>
         <title>Recuperar senha – {{ product.title || product.name || 'Área de Membros' }}</title>
-        <meta name="theme-color" :content="product.primary_color || '#0ea5e9'" />
+        <meta name="theme-color" :content="PN_PRIMARY" />
     </Head>
     <div
         class="flex min-h-screen flex-col items-center justify-center bg-cover bg-center px-4 py-12 transition-colors"
         :style="{
-            '--ma-primary': product.primary_color || '#0ea5e9',
+            '--ma-primary': PN_PRIMARY,
             ...backgroundStyle(),
         }"
     >
@@ -79,7 +80,7 @@ const backgroundStyle = () => {
                 <button
                     type="submit"
                     class="w-full rounded-xl px-4 py-3.5 font-semibold text-white shadow-lg transition hover:opacity-95 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-zinc-900 disabled:opacity-50"
-                    :style="{ backgroundColor: product.primary_color || '#0ea5e9' }"
+                    :style="{ backgroundColor: PN_PRIMARY }"
                     :disabled="form.processing"
                 >
                     {{ form.processing ? 'Enviando…' : 'Enviar link' }}
@@ -90,7 +91,7 @@ const backgroundStyle = () => {
                 <a
                     :href="`/m/${slug}/login`"
                     class="text-sm font-medium transition hover:underline"
-                    :style="{ color: product.primary_color || '#0ea5e9' }"
+                    :style="{ color: PN_PRIMARY }"
                 >
                     Voltar ao login
                 </a>

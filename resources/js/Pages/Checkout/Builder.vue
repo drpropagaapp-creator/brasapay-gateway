@@ -326,26 +326,6 @@ function applyPreviewToIframeWindow(win, config) {
         applied = true;
     } catch (_) {}
 
-    /** Fallback visual imediato (mesma origem): força bg/primary no DOM do iframe. */
-    try {
-        const doc = win.document;
-        const root = doc?.getElementById('getfy-checkout-root');
-        const appearance = config?.appearance || {};
-        if (root && appearance.background_color) {
-            root.style.backgroundColor = appearance.background_color;
-            applied = true;
-        }
-        if (doc && appearance.primary_color) {
-            doc.documentElement.style.setProperty('--checkout-preview-primary', appearance.primary_color);
-            const buttons = doc.querySelectorAll('[data-checkout="form"] button[type="submit"], [style*="background"]');
-            buttons.forEach((el) => {
-                if (el instanceof HTMLElement && el.tagName === 'BUTTON' && el.type === 'submit') {
-                    el.style.backgroundColor = appearance.primary_color;
-                }
-            });
-        }
-    } catch (_) {}
-
     return applied;
 }
 
@@ -608,58 +588,9 @@ const inputClass =
                     </button>
                     <div v-show="sectionsOpen.appearance" class="border-t border-zinc-200 px-4 py-4 dark:border-zinc-700">
                         <div class="space-y-4">
-                            <div>
-                                <label class="mb-1.5 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
-                                    Cor de fundo
-                                </label>
-                                <div class="flex gap-2">
-                                    <input
-                                        v-model="configForm.appearance.background_color"
-                                        type="color"
-                                        class="h-10 w-14 cursor-pointer rounded-lg border border-zinc-200 p-0.5 dark:border-zinc-600"
-                                    />
-                                    <input
-                                        v-model="configForm.appearance.background_color"
-                                        type="text"
-                                        :class="inputClass + ' flex-1'"
-                                    />
-                                </div>
-                            </div>
-                            <div>
-                                <label class="mb-1.5 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
-                                    Cor primária
-                                </label>
-                                <div class="flex gap-2">
-                                    <input
-                                        v-model="configForm.appearance.primary_color"
-                                        type="color"
-                                        class="h-10 w-14 cursor-pointer rounded-lg border border-zinc-200 p-0.5 dark:border-zinc-600"
-                                    />
-                                    <input
-                                        v-model="configForm.appearance.primary_color"
-                                        type="text"
-                                        :class="inputClass + ' flex-1'"
-                                    />
-                                </div>
-                            </div>
-                            <div>
-                                <label class="mb-1.5 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
-                                    Cor do order bump
-                                </label>
-                                <div class="flex gap-2">
-                                    <input
-                                        v-model="configForm.appearance.order_bump_color"
-                                        type="color"
-                                        class="h-10 w-14 cursor-pointer rounded-lg border border-zinc-200 p-0.5 dark:border-zinc-600"
-                                    />
-                                    <input
-                                        v-model="configForm.appearance.order_bump_color"
-                                        type="text"
-                                        :class="inputClass + ' flex-1'"
-                                    />
-                                </div>
-                                <p class="mt-1 text-xs text-zinc-500 dark:text-zinc-400">Cor da borda, fundo e tag "Oferta especial" dos produtos sugeridos.</p>
-                            </div>
+                            <p class="rounded-[20px] bg-[var(--bg-subtle)] px-4 py-3 text-xs font-light text-[var(--text-secondary)]">
+                                As cores do checkout seguem o tema Paynext da plataforma (vidro claro com destaque lime), para manter a mesma identidade em todos os checkouts.
+                            </p>
                             <div>
                                 <label class="mb-1.5 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
                                     Banners principais
@@ -733,16 +664,6 @@ const inputClass =
                                 <div>
                                     <label class="mb-1.5 block text-sm font-medium text-zinc-700 dark:text-zinc-300">Tempo (minutos)</label>
                                     <input v-model.number="configForm.timer.minutes" type="number" min="1" max="999" :class="inputClass" />
-                                </div>
-                                <div class="grid grid-cols-2 gap-2">
-                                    <div>
-                                        <label class="mb-1 block text-xs text-zinc-500">Fundo</label>
-                                        <input v-model="configForm.timer.background_color" type="color" class="h-9 w-full cursor-pointer rounded border" />
-                                    </div>
-                                    <div>
-                                        <label class="mb-1 block text-xs text-zinc-500">Texto</label>
-                                        <input v-model="configForm.timer.text_color" type="color" class="h-9 w-full cursor-pointer rounded border" />
-                                    </div>
                                 </div>
                                 <div class="pt-2">
                                     <Toggle v-model="configForm.timer.sticky" label="Fixar no topo ao rolar" />

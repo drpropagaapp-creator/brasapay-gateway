@@ -1,4 +1,5 @@
 <script setup>
+import PnLogoImage from '@/components/paynext/PnLogoImage.vue';
 import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue';
 import { Head, useForm, usePage, router } from '@inertiajs/vue3';
 import { QrCode, Barcode, CreditCard, Receipt, ShieldCheck, AlertCircle, ArrowLeft } from 'lucide-vue-next';
@@ -536,12 +537,7 @@ async function submitCard(ev) {
                     Voltar
                 </a>
                 <div class="mt-6 flex justify-end items-center gap-3">
-                    <img
-                        v-if="app_logo_url"
-                        :src="app_logo_url"
-                        :alt="app_name"
-                        class="h-10 w-auto max-w-[160px] object-contain object-right"
-                    />
+                    <PnLogoImage v-if="app_logo_url" :src="app_logo_url" :alt="app_name" :height="30" :max-width="160" />
                     <span v-else class="text-lg font-semibold text-white">{{ app_name || 'Checkout' }}</span>
                 </div>
                 <div class="mt-10">

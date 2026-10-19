@@ -1,4 +1,5 @@
 <script setup>
+import PnLogoImage from '@/components/paynext/PnLogoImage.vue';
 import { computed, ref } from 'vue';
 import { Link, router, usePage } from '@inertiajs/vue3';
 import Button from '@/components/ui/Button.vue';
@@ -64,8 +65,8 @@ function copyLink(url) {
     <div class="wl-root flex min-h-screen">
         <div class="flex w-full flex-col justify-center px-8 py-12 lg:w-[36%] lg:min-w-[380px]">
             <div class="text-center">
-                <img :src="logoLight" :alt="appName" class="mx-auto mb-8 h-12 w-auto object-contain dark:hidden" />
-                <img :src="logoDark" :alt="appName" class="mx-auto mb-8 hidden h-12 w-auto object-contain dark:block" />
+                <div class="mb-8 flex justify-center dark:hidden"><PnLogoImage :src="logoLight" :alt="appName" :height="38" /></div>
+                <div class="mb-8 hidden justify-center dark:flex"><PnLogoImage :src="logoDark" :alt="appName" :height="38" /></div>
                 <h1 class="text-2xl font-bold text-zinc-900 dark:text-white">{{ t('products.join.title', 'Afiliação') }}</h1>
             </div>
 

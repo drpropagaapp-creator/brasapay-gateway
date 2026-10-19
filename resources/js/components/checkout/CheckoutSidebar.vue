@@ -1,4 +1,5 @@
 <script setup>
+import { PN_PRIMARY } from '@/lib/paynextBrand';
 import { computed } from 'vue';
 import CheckoutBanners from './CheckoutBanners.vue';
 import CheckoutReviews from './CheckoutReviews.vue';
@@ -23,7 +24,7 @@ const props = defineProps({
 });
 
 const appearance = computed(() => props.config?.appearance ?? {});
-const primaryColor = computed(() => appearance.value.primary_color || '#7427F1');
+const primaryColor = computed(() => PN_PRIMARY);
 const sideBanners = computed(() => appearance.value.side_banners ?? []);
 const hasReviews = computed(() => (props.config?.reviews ?? []).length > 0);
 </script>

@@ -1,6 +1,7 @@
 <script setup>
 import { Shield } from 'lucide-vue-next';
 import CheckoutPlatformNotice from './CheckoutPlatformNotice.vue';
+import PnLogoImage from '@/components/paynext/PnLogoImage.vue';
 
 defineProps({
     logoUrl: { type: String, default: '' },
@@ -13,12 +14,7 @@ defineProps({
 <template>
     <div data-checkout="legal-footer">
         <div v-if="logoUrl" class="mb-4 flex justify-center" data-checkout="platform-logo">
-            <img
-                :src="logoUrl"
-                :alt="appName"
-                class="h-8 w-auto max-w-[180px] object-contain"
-                loading="lazy"
-            />
+            <PnLogoImage :src="logoUrl" :alt="appName" :height="26" :max-width="160" />
         </div>
         <p v-if="showSecureLine" class="flex items-center justify-center gap-2 text-sm text-gray-500">
             <Shield class="h-4 w-4 shrink-0" aria-hidden="true" />
