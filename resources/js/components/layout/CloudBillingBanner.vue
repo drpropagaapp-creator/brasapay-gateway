@@ -1,7 +1,8 @@
 <script setup>
+import PnBanner from '@/components/paynext/PnBanner.vue';
 import { computed, onMounted, ref } from 'vue';
 import { usePage } from '@inertiajs/vue3';
-import { ExternalLink } from 'lucide-vue-next';
+import { AlertTriangle, ExternalLink, Info } from 'lucide-vue-next';
 import Button from '@/components/ui/Button.vue';
 
 const page = usePage();
@@ -175,34 +176,27 @@ const buttonVariant = computed(() => {
 </script>
 
 <template>
-    <div v-if="banner" class="w-full px-3 md:px-4 lg:px-6">
-        <div class="flex w-full items-start justify-between gap-3 rounded-xl border px-4 py-3" :class="toneClasses">
-            <div class="min-w-0">
-                <div class="text-sm font-semibold leading-5">
-                    {{ banner.title }}
-                </div>
-                <div class="mt-0.5 text-sm opacity-90">
-                    {{ banner.subtitle }}
-                </div>
-            </div>
-
-            <div class="shrink-0">
-                <Button
-                    v-if="banner.ctaUrl && banner.ctaLabel"
-                    as="a"
-                    :href="banner.ctaUrl"
-                    target="_blank"
-                    rel="noopener"
-                    size="sm"
-                    :variant="buttonVariant"
-                >
-                    {{ banner.ctaLabel }}
-                    <ExternalLink class="h-4 w-4" />
-                </Button>
-                <div v-else-if="loading" class="text-xs opacity-70">
-                    Carregando…
-                </div>
-            </div>
-        </div>
-    </div>
+    <PnBanner
+        v-if="banner"
+        :tone="banner.tone === 'danger' ? 'error' : banner.tone === 'warning' ? 'warning' : 'info'"
+        :icon="banner.tone === 'danger' || banner.tone === 'warning' ? AlertTriangle : Info"
+        :title="banner.title"
+        :text="banner.subtitle"
+    >
+        <template #actions>
+            <Button
+                v-if="banner.ctaUrl && banner.ctaLabel"
+                as="a"
+                :href="banner.ctaUrl"
+                target="_blank"
+                rel="noopener"
+                size="sm"
+                :variant="buttonVariant"
+            >
+                {{ banner.ctaLabel }}
+                <ExternalLink class="h-4 w-4" />
+            </Button>
+            <span v-else-if="loading" class="text-xs font-light" style="color: var(--text-tertiary)">Carregando…</span>
+        </template>
+    </PnBanner>
 </template>

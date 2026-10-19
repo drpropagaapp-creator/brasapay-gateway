@@ -1,4 +1,5 @@
 <script setup>
+import PnBanner from '@/components/paynext/PnBanner.vue';
 import { Link, usePage } from '@inertiajs/vue3';
 import { computed } from 'vue';
 import { ShieldAlert } from 'lucide-vue-next';
@@ -28,21 +29,11 @@ const financeiroKycHref = '/financeiro?tab=seus-dados';
 </script>
 
 <template>
-    <div
-        v-if="show"
-        class="border-b border-amber-200/80 bg-amber-50 px-4 py-3 dark:border-amber-900/50 dark:bg-amber-950/40"
-    >
-        <div class="mx-auto flex max-w-[1600px] flex-wrap items-center justify-center gap-3 text-center sm:text-left">
-            <ShieldAlert class="h-5 w-5 shrink-0 text-amber-700 dark:text-amber-400" aria-hidden="true" />
-            <p class="text-sm text-amber-950 dark:text-amber-100">
-                {{ message }}
-            </p>
-            <Link
-                :href="financeiroKycHref"
-                class="shrink-0 rounded-lg bg-amber-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-amber-700 dark:bg-amber-700 dark:hover:bg-amber-600"
-            >
+    <PnBanner v-if="show" tone="warning" :icon="ShieldAlert" :title="message">
+        <template #actions>
+            <Link :href="financeiroKycHref" class="pn-btn pn-btn--primary pn-btn--sm pn-keep-shape no-underline hover:no-underline">
                 {{ kycStatus === 'pending_review' ? 'Ver status' : 'Enviar documentos' }}
             </Link>
-        </div>
-    </div>
+        </template>
+    </PnBanner>
 </template>

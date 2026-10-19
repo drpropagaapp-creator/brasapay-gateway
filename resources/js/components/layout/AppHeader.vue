@@ -37,7 +37,7 @@ const { t } = useI18n();
 
 <template>
     <header
-        class="pn-topbar relative z-[99998] w-full shrink-0 px-1 pb-2 pt-2 lg:pb-4 lg:pt-1"
+        class="pn-topbar relative z-[40] w-full shrink-0 px-1 pb-2 pt-2 lg:pb-4 lg:pt-1"
         :class="isMobile && isMobileOpen ? 'pointer-events-none' : ''"
     >
         <div class="pn-topbar__title min-w-0 flex-1">
@@ -54,7 +54,7 @@ const { t } = useI18n();
                 <h1 class="pn-page-title truncate">
                     Olá{{ firstName ? `, ${firstName}` : '' }}<span class="pn-dot">.</span>
                 </h1>
-                <p class="truncate">Aqui está o resumo do seu negócio hoje.</p>
+                <p>Aqui está o resumo do seu negócio hoje.</p>
             </div>
             <div v-else-if="title" class="min-w-0">
                 <div class="flex min-w-0 items-center gap-3">

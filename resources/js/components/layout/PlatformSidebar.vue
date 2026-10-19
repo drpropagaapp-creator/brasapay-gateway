@@ -251,7 +251,7 @@ import PnWordmark from '@/components/paynext/PnWordmark.vue';
 
 <template>
     <aside
-        class="pn-platform-sidebar pn-glass pn-glass--strong z-[99999] flex flex-col gap-1"
+        class="pn-platform-sidebar pn-glass pn-glass--strong z-[45] flex flex-col gap-1"
         :class="[
             {
                 'w-[280px] translate-x-0': isMobileOpen,
@@ -284,16 +284,11 @@ import PnWordmark from '@/components/paynext/PnWordmark.vue';
                 <PanelRightOpen v-else class="h-[18px] w-[18px]" />
             </button>
         </div>
-        <button
-            v-if="!showText()"
-            type="button"
-            class="pn-iconbtn pn-keep-shape mx-auto mb-1 hidden lg:inline-flex"
-            style="width: 38px; height: 38px"
-            aria-label="Expandir menu"
-            @click="toggleSidebar"
-        >
-            <PanelRightOpen class="h-[18px] w-[18px]" mirrored />
-        </button>
+        <div v-if="!showText()" class="mb-1 hidden justify-center lg:flex">
+            <button type="button" class="pn-iconbtn pn-keep-shape" style="width: 38px; height: 38px" aria-label="Expandir menu" @click="toggleSidebar">
+                <PanelRightOpen class="h-[18px] w-[18px]" style="transform: scaleX(-1)" />
+            </button>
+        </div>
 
         <nav class="no-scrollbar flex-1 overflow-y-auto px-3 pb-3" :class="showText() ? '' : 'lg:px-[18px]'">
             <div v-for="group in navGroups" :key="group.id">

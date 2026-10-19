@@ -76,7 +76,7 @@ const totalLabel = computed(() => {
             <img v-if="iconUrl" :src="iconUrl" alt="" class="h-7 w-7 object-contain" />
         </span>
         <div class="min-w-0 flex-1" :class="props.variant === 'header' ? 'hidden w-[140px] sm:block' : 'w-full'">
-            <p class="pn-eyebrow mb-2">Faturamento</p>
+            <p class="pn-eyebrow" :class="props.variant === 'header' ? 'mb-2' : 'mb-4'">Faturamento</p>
             <PnMeter :value="progressPercent" :show-marker="props.variant !== 'header'" style="height: 8px" />
             <p class="mt-1.5 truncate text-[11px] font-light" style="color: var(--text-secondary)">
                 {{ totalLabel }}<span v-if="nextLabel"> → {{ nextLabel }}</span>

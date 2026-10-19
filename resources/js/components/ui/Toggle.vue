@@ -1,4 +1,5 @@
 <script setup>
+/** Toggle do Paynext DS: trilho em pílula, lime com brilho quando ligado, botão com mola. */
 const props = defineProps({
     modelValue: { type: Boolean, default: false },
     label: { type: String, default: '' },
@@ -19,25 +20,13 @@ function toggle() {
         <button
             type="button"
             role="switch"
+            class="pn-toggle pn-keep-shape"
             :disabled="disabled"
-            :aria-checked="modelValue"
+            :aria-checked="modelValue ? 'true' : 'false'"
             :aria-label="label || (modelValue ? 'Ativo' : 'Inativo')"
-            :class="[
-                'relative inline-flex h-6 w-11 shrink-0 rounded-full border-2 border-transparent transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)] focus:ring-offset-2 dark:focus:ring-offset-zinc-900',
-                modelValue
-                    ? 'bg-[var(--color-primary)]'
-                    : 'bg-zinc-200 dark:bg-zinc-600',
-            ]"
             @click="toggle"
-        >
-            <span
-                :class="[
-                    'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition',
-                    modelValue ? 'translate-x-5' : 'translate-x-0.5',
-                ]"
-            />
-        </button>
-        <label v-if="label" class="text-sm font-medium text-zinc-700 dark:text-zinc-300" @click="toggle">
+        />
+        <label v-if="label" class="cursor-pointer text-sm font-normal" style="color: var(--text-primary)" @click="toggle">
             {{ label }}
         </label>
     </div>

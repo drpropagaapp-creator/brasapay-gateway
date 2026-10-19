@@ -64,8 +64,9 @@ const periodDisplayLabel = computed(() => {
             </div>
         </div>
 
+        <div class="flex min-w-0 flex-1 lg:hidden">
         <SelectRoot :model-value="period" @update:model-value="emit('update:period', $event)">
-            <SelectTrigger type="button" :aria-label="periodLabel" class="pn-chip pn-keep-shape min-w-0 flex-1 justify-between lg:hidden">
+            <SelectTrigger type="button" :aria-label="periodLabel" class="pn-chip pn-keep-shape min-w-0 flex-1 justify-between">
                 <span class="flex min-w-0 items-center gap-2">
                     <Calendar class="h-4 w-4 shrink-0" />
                     <span class="truncate">{{ periodDisplayLabel }}</span>
@@ -88,6 +89,7 @@ const periodDisplayLabel = computed(() => {
                 </SelectContent>
             </SelectPortal>
         </SelectRoot>
+        </div>
 
         <div class="flex items-center gap-3">
             <span class="hidden text-[13px] font-light lg:inline" style="color: var(--text-secondary)">{{ periodDisplayLabel }}</span>

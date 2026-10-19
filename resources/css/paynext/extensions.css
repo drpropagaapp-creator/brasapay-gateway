@@ -82,3 +82,89 @@ html:not(.dark) .pn-dot {
     text-align: center;
     box-shadow: 0 0 12px rgba(225, 251, 77, 0.55);
 }
+
+/* Entrada só com opacidade, para wrappers que podem conter modais position:fixed */
+.pn-anim-soft {
+    animation: pn-fade-in var(--dur-slow) var(--ease-out) both;
+}
+
+/* Botão grande e botão-link (variantes do ui/Button sem equivalente no DS) */
+.pn-btn--lg {
+    height: 52px;
+    padding: 0 var(--space-3xl);
+    font-size: 15px;
+}
+.pn-btn--link {
+    height: auto;
+    padding: 0;
+    border-radius: 0;
+    background: transparent;
+    color: var(--text-brand);
+}
+.pn-btn--link:hover:not(:disabled) {
+    text-decoration: underline;
+    text-underline-offset: 4px;
+}
+
+/* Faixa de aviso (PnBanner): vidro com ícone circular no tom do status */
+.pn-banner {
+    display: flex;
+    align-items: center;
+    gap: var(--space-lg);
+    padding: 14px 16px 14px 14px;
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--glass-border);
+    background: var(--glass-bg);
+    box-shadow: var(--shadow-sm);
+    animation: pn-fade-up var(--dur-slow) var(--ease-out) both;
+}
+html.dark .pn-banner {
+    border-color: var(--border-default);
+}
+.pn-banner__icon {
+    width: 40px;
+    height: 40px;
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+}
+.pn-banner--info .pn-banner__icon {
+    background: var(--status-info-bg);
+    color: var(--status-info-fg);
+}
+.pn-banner--warning .pn-banner__icon {
+    background: var(--status-warning-bg);
+    color: var(--status-warning-fg);
+}
+.pn-banner--error .pn-banner__icon {
+    background: var(--status-error-bg);
+    color: var(--status-error-fg);
+}
+.pn-banner--brand .pn-banner__icon {
+    background: var(--lime-300);
+    color: var(--ink-900);
+    box-shadow: 0 0 22px rgba(225, 251, 77, 0.45);
+}
+.pn-banner--error {
+    border-color: rgba(255, 107, 107, 0.35);
+}
+.pn-banner__title {
+    font: 400 14px/20px var(--font-body);
+    color: var(--text-primary);
+}
+.pn-banner__text {
+    margin-top: 2px;
+    font: 300 13px/19px var(--font-body);
+    color: var(--text-secondary);
+}
+@media (max-width: 639px) {
+    .pn-banner {
+        flex-wrap: wrap;
+    }
+    .pn-banner__actions {
+        width: 100%;
+        padding-left: 56px;
+    }
+}

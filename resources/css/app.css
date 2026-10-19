@@ -21,6 +21,15 @@
     --font-sans: 'Lexend', ui-sans-serif, system-ui, sans-serif;
     --font-display: 'Lexend', ui-sans-serif, system-ui, sans-serif;
 
+    /* Pesos — o DS vai de Light (300, corpo) a Medium (500, títulos); nada acima disso */
+    --font-weight-light: 300;
+    --font-weight-normal: 400;
+    --font-weight-medium: 500;
+    --font-weight-semibold: 500;
+    --font-weight-bold: 500;
+    --font-weight-extrabold: 600;
+    --font-weight-black: 600;
+
     /* Neutros → Ink */
     --color-zinc-50: #f4f6f7;
     --color-zinc-100: #e8ebec;

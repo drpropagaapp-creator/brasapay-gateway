@@ -7,7 +7,7 @@ const { closeMobileSidebar, isMobileOpen } = useSidebar();
 <template>
     <div
         v-if="isMobileOpen"
-        class="fixed inset-0 z-[99998] touch-manipulation bg-zinc-900/50 lg:hidden"
+        class="fixed inset-0 z-[44] touch-manipulation bg-zinc-900/50 lg:hidden"
         aria-hidden="true"
         role="presentation"
         @click="closeMobileSidebar"

@@ -49,7 +49,7 @@ function onItemMouseLeave() {
 <template>
     <aside
         :class="[
-            'pn-app-sidebar pn-glass pn-glass--strong fixed z-[99999] flex flex-col gap-1 transition-[width,transform] duration-300 ease-[cubic-bezier(.16,1,.3,1)]',
+            'pn-app-sidebar pn-glass pn-glass--strong fixed z-[45] flex flex-col gap-1 transition-[width,transform] duration-300 ease-[cubic-bezier(.16,1,.3,1)]',
             'inset-y-0 left-0 rounded-none rounded-r-[28px] lg:inset-y-4 lg:left-4 lg:rounded-[36px]',
             {
                 'w-[280px] translate-x-0': isMobileOpen,

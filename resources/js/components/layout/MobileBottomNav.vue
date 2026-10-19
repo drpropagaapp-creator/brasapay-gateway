@@ -84,7 +84,7 @@ onUnmounted(() => {
 <template>
     <nav
         v-if="isStandalone"
-        class="fixed bottom-4 left-4 right-4 z-[99998] mx-auto grid max-w-md grid-cols-5 items-end gap-0 rounded-2xl border border-zinc-200 bg-white px-1 pb-2 pt-3 shadow-lg dark:border-zinc-800 dark:bg-zinc-900 lg:hidden transition-transform duration-300 ease-out"
+        class="fixed bottom-4 left-4 right-4 z-[40] mx-auto grid max-w-md grid-cols-5 items-end gap-0 rounded-2xl border border-zinc-200 bg-white px-1 pb-2 pt-3 shadow-lg dark:border-zinc-800 dark:bg-zinc-900 lg:hidden transition-transform duration-300 ease-out"
         :class="isMobile && isMobileOpen ? 'pointer-events-none' : ''"
         aria-label="Navegação principal"
         role="navigation"

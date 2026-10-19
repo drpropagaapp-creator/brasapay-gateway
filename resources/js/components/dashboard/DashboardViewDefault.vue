@@ -248,6 +248,7 @@ const areaOptions = computed(() => ({
 
 <style scoped>
 .pn-hero-number {
+    margin-top: 6px;
     font: 400 44px/52px var(--font-display);
     letter-spacing: -0.03em;
     color: var(--text-primary);
@@ -267,7 +268,7 @@ const areaOptions = computed(() => ({
 }
 .pn-hero-number sup {
     font-size: 0.42em;
-    vertical-align: top;
+    vertical-align: 0.55em;
     margin-right: 6px;
     color: var(--text-secondary);
 }

@@ -27,7 +27,7 @@ const quickLinks = [
 
 <template>
     <header
-        class="relative z-[99998] flex w-full shrink-0 flex-col gap-4 px-1 pb-2 pt-2 lg:pb-4 lg:pt-1"
+        class="relative z-[40] flex w-full shrink-0 flex-col gap-4 px-1 pb-2 pt-2 lg:pb-4 lg:pt-1"
         :class="isMobile && isMobileOpen ? 'pointer-events-none' : ''"
     >
         <div class="pn-topbar">

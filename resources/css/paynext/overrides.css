@@ -91,14 +91,18 @@ html.dark .min-h-screen.dark\:bg-zinc-900 {
 }
 
 /* ── Superfícies: vidro ───────────────────────────────────────────────── */
+/*
+ * Cartões genéricos das telas recebem o vidro SEM backdrop-filter: um ancestral com
+ * filtro vira o bloco de contenção de filhos position:fixed, e as telas renderizam
+ * modais dentro dos cartões. O desfoque fica nos componentes Paynext que não contêm
+ * modais (sidebar, popovers, KPIs, painéis do dashboard).
+ */
 /* Claro: cartões brancos viram vidro branco sobre o céu */
 html:not(.dark) .bg-white:is(.rounded-lg, .rounded-xl, .rounded-2xl, .rounded-3xl),
 html:not(.dark) .bg-white\/80,
 html:not(.dark) .bg-white\/90,
 html:not(.dark) .bg-white\/95 {
     background-color: var(--glass-bg-strong);
-    -webkit-backdrop-filter: var(--glass-blur);
-    backdrop-filter: var(--glass-blur);
 }
 html:not(.dark) :is(.bg-white, .bg-zinc-50):is(.rounded-xl, .rounded-2xl, .rounded-3xl):is(.border, .shadow, .shadow-sm) {
     border-color: var(--glass-border);
@@ -118,22 +122,35 @@ html.dark :is(.dark\:bg-zinc-800\/50, .dark\:bg-zinc-800\/40, .dark\:bg-zinc-800
     background-color: var(--bg-subtle);
 }
 html.dark :is(.dark\:bg-zinc-900, .dark\:bg-zinc-900\/80, .dark\:bg-zinc-900\/90, .dark\:bg-zinc-950):is(.rounded-lg, .rounded-xl, .rounded-2xl, .rounded-3xl) {
-    -webkit-backdrop-filter: var(--glass-blur);
-    backdrop-filter: var(--glass-blur);
     box-shadow: var(--shadow-sm);
 }
-/* Popovers, menus e modais sobrepostos: vidro forte */
+/* Popovers e menus sobrepostos: vidro forte (são folhas, o desfoque é seguro) */
 html.dark :is(.absolute, .fixed):is(.dark\:bg-zinc-900, .dark\:bg-zinc-800, .dark\:bg-zinc-950) {
-    background-color: rgba(18, 21, 22, 0.86);
+    background-color: rgba(18, 21, 22, 0.88);
     -webkit-backdrop-filter: var(--glass-blur);
     backdrop-filter: var(--glass-blur);
     box-shadow: var(--shadow-lg);
 }
 html:not(.dark) :is(.absolute, .fixed).bg-white {
-    background-color: rgba(255, 255, 255, 0.92);
+    background-color: rgba(255, 255, 255, 0.94);
     -webkit-backdrop-filter: var(--glass-blur);
     backdrop-filter: var(--glass-blur);
     box-shadow: var(--shadow-lg);
+}
+/* Painel de modal (dentro do overlay fixo): vidro forte quase opaco, como os modais do DS */
+html.dark .fixed.inset-0 :is(.dark\:bg-zinc-900, .dark\:bg-zinc-950, .dark\:bg-zinc-800):is(.rounded-lg, .rounded-xl, .rounded-2xl, .rounded-3xl, .shadow-xl, .shadow-2xl) {
+    background-color: rgba(18, 21, 22, 0.95);
+    border-color: var(--border-strong);
+    box-shadow: var(--shadow-lg);
+}
+html:not(.dark) .fixed.inset-0 .bg-white:is(.rounded-lg, .rounded-xl, .rounded-2xl, .rounded-3xl, .shadow-xl, .shadow-2xl) {
+    background-color: rgba(255, 255, 255, 0.97);
+    box-shadow: var(--shadow-lg);
+}
+/* .pn-glass usado como wrapper de conteúdo de página: sem desfoque (pode conter modais) */
+.pn-glass.pn-glass--flat {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
 }
 
 /* Hairlines: bordas viram linhas finas do vidro */
@@ -356,8 +373,9 @@ span.rounded-full:is(.px-2, .px-2\.5, .px-3):is(.text-xs, .text-\[11px\], .text-
 }
 
 /* ── Movimento: entrada das páginas ───────────────────────────────────── */
+/* Só opacidade: transform/filter num ancestral prenderiam modais position:fixed abertos no carregamento */
 main > *:not(.pn-no-anim) {
-    animation: pn-fade-up var(--dur-slow) var(--ease-out) both;
+    animation: pn-fade-in var(--dur-slow) var(--ease-out) both;
 }
 main > *:nth-child(2) {
     animation-delay: 70ms;

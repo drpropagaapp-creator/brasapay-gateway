@@ -8,15 +8,15 @@ const CLASSES = {
     btnSecondary: 'pn-btn pn-btn--secondary pn-btn--sm pn-keep-shape',
     iconBtn:
         'rounded-full text-[var(--text-secondary)] transition hover:bg-[var(--lime-300)] hover:text-[var(--ink-900)] hover:shadow-[0_0_20px_rgba(225,251,77,.4)]',
-    tablePanel: 'pn-glass overflow-hidden',
+    tablePanel: 'pn-glass pn-glass--flat overflow-hidden',
     statCard: 'pn-glass pn-glass--lift p-5',
     statCardLabel: 'flex items-center gap-2 text-[13.5px] font-light text-[var(--text-secondary)]',
     statCardValue: 'mt-3 font-[family-name:var(--font-display)] text-[28px] leading-[34px] font-normal tracking-[-0.025em] text-[var(--text-primary)]',
     pageClass: 'space-y-6',
     stackClass: 'space-y-4',
-    filterPanelClass: 'pn-glass p-5',
-    innerPanelClass: 'pn-glass p-6',
-    mobileCardClass: 'pn-glass pn-glass--lift',
+    filterPanelClass: 'pn-glass pn-glass--flat p-5',
+    innerPanelClass: 'pn-glass pn-glass--flat p-6',
+    mobileCardClass: 'pn-glass pn-glass--flat pn-glass--lift',
     subnavClass: 'pn-tabs',
 };
 
