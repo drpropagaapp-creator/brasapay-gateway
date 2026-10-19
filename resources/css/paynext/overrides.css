@@ -475,3 +475,38 @@ html :is(button, a).border-b-2.border-\[var\(--color-primary\)\] svg {
 html:not(.dark) [style*='color: rgb(225, 251, 77)']:not([style*='background-color: rgb(225, 251, 77)']) {
     color: var(--text-brand) !important;
 }
+
+/* ── Selos/textos de status sem variante escura → tons de status do DS ── */
+html.dark :is(.bg-red-50, .bg-red-100, .bg-rose-50, .bg-rose-100):not([class*='dark:bg-']) {
+    background-color: var(--status-error-bg);
+}
+html.dark :is(.bg-emerald-50, .bg-emerald-100, .bg-green-50, .bg-green-100, .bg-teal-50, .bg-teal-100):not([class*='dark:bg-']) {
+    background-color: var(--status-success-bg);
+}
+html.dark :is(.bg-amber-50, .bg-amber-100, .bg-yellow-50, .bg-yellow-100, .bg-orange-50, .bg-orange-100):not([class*='dark:bg-']) {
+    background-color: var(--status-warning-bg);
+}
+html.dark :is(.bg-sky-50, .bg-sky-100, .bg-blue-50, .bg-blue-100, .bg-cyan-50, .bg-cyan-100):not([class*='dark:bg-']) {
+    background-color: var(--status-info-bg);
+}
+html.dark :is(.bg-violet-50, .bg-violet-100, .bg-indigo-50, .bg-indigo-100, .bg-purple-50, .bg-purple-100):not([class*='dark:bg-']) {
+    background-color: rgba(184, 166, 255, 0.14);
+}
+html.dark :is(.text-red-600, .text-red-700, .text-red-800, .text-red-900, .text-rose-700):not([class*='dark:text-']) {
+    color: var(--status-error-fg);
+}
+html.dark :is(.text-emerald-600, .text-emerald-700, .text-emerald-800, .text-emerald-900, .text-green-700, .text-green-800):not([class*='dark:text-']) {
+    color: var(--status-success-fg);
+}
+html.dark :is(.text-amber-600, .text-amber-700, .text-amber-800, .text-amber-900, .text-yellow-800, .text-orange-700):not([class*='dark:text-']) {
+    color: var(--status-warning-fg);
+}
+html.dark :is(.text-sky-700, .text-sky-800, .text-blue-700, .text-blue-800, .text-cyan-800):not([class*='dark:text-']) {
+    color: var(--status-info-fg);
+}
+html.dark :is(.text-violet-700, .text-violet-800, .text-violet-950, .text-indigo-700, .text-indigo-800):not([class*='dark:text-']) {
+    color: var(--chart-3);
+}
+html.dark :is(.border-red-200, .border-emerald-200, .border-amber-200, .border-sky-200, .border-green-200, .border-blue-200):not([class*='dark:border-']) {
+    border-color: var(--border-default);
+}

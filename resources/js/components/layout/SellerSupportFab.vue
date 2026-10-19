@@ -186,7 +186,7 @@ function onImageError() {
     transform: translate(-50%, -50%);
 }
 
-:global(.dark) .seller-support-fab__online {
+:global(.dark .seller-support-fab__online) {
     box-shadow: 0 0 0 1.5px rgb(24 24 27);
 }
 </style>

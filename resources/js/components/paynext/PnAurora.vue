@@ -22,7 +22,7 @@
     pointer-events: none;
     opacity: 0.55;
 }
-:global(html:not(.dark)) .pn-aurora-orbs {
+:global(html:not(.dark) .pn-aurora-orbs) {
     opacity: 0.45;
 }
 </style>

@@ -225,7 +225,7 @@ const heroParts = computed(() => {
 .pn-auth__hero-accent {
     color: var(--lime-300);
 }
-:global(html:not(.dark)) .pn-auth__hero-accent {
+:global(html:not(.dark) .pn-auth__hero-accent) {
     color: var(--ink-900);
     background: linear-gradient(transparent 62%, var(--lime-300) 62%);
 }
