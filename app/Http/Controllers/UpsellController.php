@@ -17,6 +17,7 @@ use App\Services\AccessEmailService;
 use App\Services\MinimumChargeService;
 use App\Services\PaymentService;
 use App\Services\UtmifyService;
+use App\Support\CheckoutOrderOwnership;
 use App\Support\SafeUrl;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -174,9 +175,11 @@ class UpsellController extends Controller
                 $orderStatus = (string) $order->status;
                 $purchaseConfirmed = $order->status === 'completed';
                 $tenantId = $order->tenant_id;
-                $customerEmail = $order->email;
-                $customerPhone = $order->phone;
-                $customerName = $order->user?->name;
+                if (CheckoutOrderOwnership::owns($request, $order)) {
+                    $customerEmail = $order->email;
+                    $customerPhone = $order->phone;
+                    $customerName = $order->user?->name;
+                }
                 $checkoutSlug = $order->getCheckoutSlug();
                 $productName = (string) ($order->product?->name ?? '');
                 $metaContents = app(\App\Services\Meta\MetaEventContextResolver::class)->contentsForOrder($order);

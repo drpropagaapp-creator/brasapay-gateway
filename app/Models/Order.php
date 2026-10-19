@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Gateways\GatewayRegistry;
 use App\Services\PlatformPaymentMethods;
+use App\Support\CheckoutOrderOwnership;
 use App\Support\PlatformGa4Settings;
 use App\Support\SaleOrigin;
 use Illuminate\Database\Eloquent\Model;
@@ -47,6 +48,10 @@ class Order extends Model
                 $order->public_reference = static::newUniquePublicReference();
             }
             PlatformGa4Settings::stampClientId($order);
+        });
+
+        static::created(function (Order $order) {
+            CheckoutOrderOwnership::remember($order);
         });
 
         static::saving(function (Order $order) {
