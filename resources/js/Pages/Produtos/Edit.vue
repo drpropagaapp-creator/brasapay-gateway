@@ -112,6 +112,7 @@ const props = defineProps({
 });
 
 const page = usePage();
+const visibleProductTypes = computed(() => (props.productTypes || []).filter((type) => type.available));
 const coproductionReadonly = computed(() => !!props.coproduction_readonly);
 const visibleTabs = computed(() => {
     if (!coproductionReadonly.value) {
@@ -2020,26 +2021,23 @@ function submit() {
                     <div class="p-6">
                         <div class="grid gap-3 grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
                             <button
-                                v-for="t in productTypes"
+                                v-for="t in visibleProductTypes"
                                 :key="t.value"
                                 type="button"
-                                :disabled="!t.available"
                                 :class="[
                                     'flex items-start gap-3 rounded-xl border-2 p-4 text-left transition',
                                     form.type === t.value
                                         ? 'border-[var(--color-primary)] bg-[var(--color-primary)]/10 dark:bg-[var(--color-primary)]/20'
                                         : 'border-zinc-200 bg-zinc-50 hover:border-zinc-300 hover:bg-zinc-100 dark:border-zinc-600 dark:bg-zinc-800 dark:hover:border-zinc-500 dark:hover:bg-zinc-700',
-                                    !t.available && 'cursor-not-allowed opacity-60',
                                 ]"
-                                @click="t.available && (form.type = t.value)"
+                                @click="form.type = t.value"
                             >
                                 <component :is="typeIcons[t.value] || Package" class="mt-0.5 h-5 w-5 shrink-0 text-zinc-500 dark:text-zinc-400" />
                                 <div class="min-w-0 flex-1">
                                     <span class="font-medium text-zinc-900 dark:text-white">{{ t.label }}</span>
-                                    <span v-if="!t.available" class="ml-1 text-xs text-zinc-500">(em breve)</span>
                                 </div>
                                 <button
-                                    v-if="t.available && t.value === 'link' && form.type === t.value"
+                                    v-if="t.value === 'link' && form.type === t.value"
                                     type="button"
                                     class="shrink-0 rounded-lg p-1.5 text-zinc-500 transition hover:bg-zinc-200 hover:text-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-600 dark:hover:text-white"
                                     title="Configurar link do entregável"
@@ -2049,7 +2047,7 @@ function submit() {
                                     <Settings class="h-4 w-4" aria-hidden="true" />
                                 </button>
                                 <button
-                                    v-if="t.available && t.value === 'area_membros' && form.type === t.value"
+                                    v-if="t.value === 'area_membros' && form.type === t.value"
                                     type="button"
                                     class="shrink-0 rounded-lg p-1.5 text-zinc-500 transition hover:bg-zinc-200 hover:text-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-600 dark:hover:text-white"
                                     title="Abrir Member Builder"
