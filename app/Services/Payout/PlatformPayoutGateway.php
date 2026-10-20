@@ -10,26 +10,26 @@ use App\Services\CajuPay\CajuPayAccountResolver;
 /**
  * Provedor de payout da plataforma (saque automático PIX).
  *
- * Gateways com API de cashout: CajuPay, Woovi, BSPay, Versell, Xflow, Okto e OnlyUp (plugin).
+ * Gateways com API de cashout: CajuPay, Woovi, Versell, Xflow, Okto, XPag e OnlyUp (plugin).
  * Preferência configurável em {@see Setting} `platform_payout_gateway`
- * (`auto`, `cajupay`, `woovi`, `bspay`, `versell`, `xflow`, `okto`, `onlyup`).
- * Em `auto`, a ordem fixa é CajuPay → Woovi → BSPay → Versell → Xflow → Okto → OnlyUp — o primeiro globalmente conectado vence.
- * Spacepag permanece no código de payout legado, mas está fora da UI e da ordem automática.
+ * (`auto`, `cajupay`, `woovi`, `versell`, `xflow`, `okto`, `xpag`, `onlyup`).
+ * Em `auto`, a ordem fixa é CajuPay → Woovi → Versell → Xflow → Okto → XPag → OnlyUp — o primeiro globalmente conectado vence.
+ * Spacepag e BSPay permanecem no código de payout legado, mas estão fora da UI e da ordem automática.
  */
 class PlatformPayoutGateway
 {
     /** @var list<string> */
-    public const PAYOUT_ORDER = ['cajupay', /* 'spacepag', */ 'woovi', 'bspay', 'versell', 'xflow', 'okto', 'onlyup'];
+    public const PAYOUT_ORDER = ['cajupay', /* 'spacepag', */ 'woovi', /* 'bspay', */ 'versell', 'xflow', 'okto', 'xpag', 'onlyup'];
 
     /**
      * Preferência salva no painel: automático ou forçar um dos gateways.
      *
-     * @return 'auto'|'cajupay'|'woovi'|'bspay'|'versell'|'xflow'|'okto'|'onlyup'
+     * @return 'auto'|'cajupay'|'woovi'|'versell'|'xflow'|'okto'|'xpag'|'onlyup'
      */
     public static function preference(): string
     {
         $v = Setting::get('platform_payout_gateway', null, null);
-        if (in_array($v, ['cajupay', /* 'spacepag', */ 'woovi', 'bspay', 'versell', 'xflow', 'okto', 'onlyup'], true)) {
+        if (in_array($v, ['cajupay', /* 'spacepag', */ 'woovi', /* 'bspay', */ 'versell', 'xflow', 'okto', 'xpag', 'onlyup'], true)) {
             return $v;
         }
 

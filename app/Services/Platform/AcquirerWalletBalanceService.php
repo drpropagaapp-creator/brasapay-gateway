@@ -10,6 +10,7 @@ use App\Gateways\Stripe\StripeDriver;
 use App\Gateways\Woovi\WooviDriver;
 use App\Gateways\Xflow\XflowDriver;
 use App\Gateways\Okto\OktoDriver;
+use App\Gateways\Xpag\XpagDriver;
 use App\Gateways\Versell\VersellCredentials;
 use App\Models\CajuPayAccount;
 use App\Models\GatewayCredential;
@@ -28,7 +29,7 @@ class AcquirerWalletBalanceService
     private const CACHE_TTL_SECONDS = 45;
 
     /** @var list<string> */
-    private const BALANCE_SLUGS = ['cajupay', 'bspay', 'efi', 'woovi', 'mercadopago', 'stripe', 'versell', 'xflow', 'okto'];
+    private const BALANCE_SLUGS = ['cajupay', 'efi', 'woovi', 'mercadopago', 'stripe', 'versell', 'xflow', 'okto', 'xpag'];
 
     /**
      * @return list<array{
@@ -274,6 +275,8 @@ class AcquirerWalletBalanceService
             'xflow' => trim((string) ($credentials['public_key'] ?? '')) !== ''
                 && trim((string) ($credentials['secret_key'] ?? '')) !== '',
             'okto' => trim((string) ($credentials['access_token'] ?? '')) !== '',
+            'xpag' => trim((string) ($credentials['client_id'] ?? '')) !== ''
+                && trim((string) ($credentials['client_secret'] ?? '')) !== '',
             default => true,
         };
     }
@@ -302,6 +305,7 @@ class AcquirerWalletBalanceService
             'versell' => $this->fetchVersell($credentials),
             'xflow' => $this->fetchXflow($credentials),
             'okto' => $this->fetchOkto($credentials),
+            'xpag' => $this->fetchXpag($credentials),
             default => throw new \RuntimeException('Adquirente sem consulta de saldo.'),
         };
     }
@@ -420,6 +424,16 @@ class AcquirerWalletBalanceService
         $payload = app(OktoDriver::class)->fetchAccountBalance($credentials);
 
         return $this->parseOktoAvailable($payload);
+    }
+
+    /**
+     * @param  array<string, mixed>  $credentials
+     */
+    private function fetchXpag(array $credentials): float
+    {
+        $payload = app(XpagDriver::class)->fetchAccountBalance($credentials);
+
+        return $this->parseXpagAvailable($payload);
     }
 
     /**
@@ -730,6 +744,22 @@ class AcquirerWalletBalanceService
         }
 
         return round((float) $available, 2);
+    }
+
+    /**
+     * GET /balance: balances.BRL.available em reais.
+     *
+     * @param  array<string, mixed>  $body
+     */
+    public function parseXpagAvailable(array $body): float
+    {
+        $balances = is_array($body['balances'] ?? null) ? $body['balances'] : $body;
+        $available = $this->numericFromCurrencyMap($balances, 'BRL');
+        if ($available === null) {
+            throw new \RuntimeException('XPag: saldo BRL disponível não encontrado na resposta.');
+        }
+
+        return $available;
     }
 
     /**

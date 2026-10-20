@@ -171,25 +171,7 @@ class PlatformPayoutGatewayTest extends TestCase
         Setting::set('platform_payout_gateway', null, null);
     }
 
-    public function test_bspay_wins_when_only_bspay_connected(): void
-    {
-        $cred = GatewayCredential::query()->firstOrNew([
-            'tenant_id' => null,
-            'gateway_slug' => 'bspay',
-        ]);
-        $cred->is_connected = true;
-        $cred->setEncryptedCredentials([
-            'client_id' => 'id',
-            'client_secret' => 'secret',
-        ]);
-        $cred->save();
-
-        $this->assertSame('bspay', PlatformPayoutGateway::activeSlug());
-
-        GatewayCredential::query()->where('gateway_slug', 'bspay')->delete();
-    }
-
-    public function test_preference_bspay_overrides_order_when_others_connected(): void
+    public function test_preference_bspay_is_ignored_and_falls_back_to_auto(): void
     {
         Setting::set('platform_payout_gateway', 'bspay', null);
 
@@ -213,8 +195,9 @@ class PlatformPayoutGatewayTest extends TestCase
             $cred->save();
         }
 
-        $this->assertSame('bspay', PlatformPayoutGateway::activeSlug());
-        $this->assertSame('bspay', PlatformPayoutGateway::preference());
+        $this->assertSame('cajupay', PlatformPayoutGateway::activeSlug());
+        $this->assertSame('auto', PlatformPayoutGateway::preference());
+        $this->assertFalse(PlatformPayoutGateway::isConnected('bspay'));
 
         GatewayCredential::query()->whereIn('gateway_slug', ['cajupay', 'bspay'])->delete();
         Setting::set('platform_payout_gateway', null, null);
@@ -306,5 +289,25 @@ class PlatformPayoutGatewayTest extends TestCase
         $this->assertNotSame('', trim((string) $names['okto']));
 
         GatewayCredential::query()->whereIn('gateway_slug', ['woovi', 'okto'])->delete();
+    }
+
+    public function test_xpag_wins_when_only_xpag_connected(): void
+    {
+        $cred = GatewayCredential::query()->firstOrNew([
+            'tenant_id' => null,
+            'gateway_slug' => 'xpag',
+        ]);
+        $cred->is_connected = true;
+        $cred->setEncryptedCredentials([
+            'client_id' => 'xpagsandbox_00000000',
+            'client_secret' => '202620262026202620262026',
+        ]);
+        $cred->save();
+
+        $this->assertSame('xpag', PlatformPayoutGateway::activeSlug());
+        $this->assertTrue(PlatformPayoutGateway::isConnected('xpag'));
+        $this->assertContains('xpag', PlatformPayoutGateway::PAYOUT_ORDER);
+
+        GatewayCredential::query()->where('gateway_slug', 'xpag')->delete();
     }
 }

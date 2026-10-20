@@ -2,6 +2,7 @@
 
 namespace Tests\Unit;
 
+use App\Gateways\GatewayRegistry;
 use App\Models\Order;
 use App\Services\PaymentService;
 use App\Support\SaleOrigin;
@@ -26,7 +27,9 @@ class BspayApiPixExclusionTest extends TestCase
         $this->assertFalse($service->isPixAcquirerAllowedForOrder('bspay', $pixGoWithCheckoutOrigin));
         $this->assertTrue($service->isPixAcquirerAllowedForOrder('cajupay', $apiOrder));
         $this->assertTrue($service->isPixAcquirerAllowedForOrder('woovi', $apiOrder));
+        $this->assertTrue($service->isPixAcquirerAllowedForOrder('xpag', $apiOrder));
         $this->assertTrue($service->isPixAcquirerAllowedForOrder('cajupay', $pixGoOrder));
         $this->assertTrue($service->isPixAcquirerAllowedForOrder('bspay', $checkoutOrder));
+        $this->assertFalse(GatewayRegistry::isAllowedAcquirer('bspay'));
     }
 }
