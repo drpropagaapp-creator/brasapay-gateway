@@ -33,6 +33,13 @@ class XpagDriverTest extends TestCase
         $this->assertContains('pix', $def['methods'] ?? []);
         $this->assertNotContains('card', $def['methods'] ?? []);
         $this->assertSame('images/gateways/xpag_logo.svg', $def['image'] ?? null);
+        $this->assertSame(
+            'https://xpag.global/register/824f1071bc09ba535229c952d3c09a2323c1bf63ae5c6457ae7d3497ca866fbc',
+            $def['signup_url'] ?? null
+        );
+        $this->assertSame('Lana Tavares', $def['support_contacts'][0]['name'] ?? null);
+        $this->assertSame('Gerente', $def['support_contacts'][0]['role'] ?? null);
+        $this->assertSame('554788129220', $def['support_contacts'][0]['whatsapp'] ?? null);
         $this->assertInstanceOf(XpagDriver::class, GatewayRegistry::driver('xpag'));
         $this->assertContains('xpag', config('gateways.default_order.pix'));
         $this->assertNotContains('xpag', config('gateways.api_pix_excluded_slugs'));
