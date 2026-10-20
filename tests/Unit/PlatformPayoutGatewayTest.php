@@ -279,4 +279,32 @@ class PlatformPayoutGatewayTest extends TestCase
 
         GatewayCredential::query()->where('gateway_slug', 'okto')->delete();
     }
+
+    public function test_connected_options_lists_every_cashout_gateway_that_is_ready(): void
+    {
+        foreach (['woovi', 'okto'] as $slug) {
+            $cred = GatewayCredential::query()->firstOrNew([
+                'tenant_id' => null,
+                'gateway_slug' => $slug,
+            ]);
+            $cred->is_connected = true;
+            $cred->setEncryptedCredentials($slug === 'woovi'
+                ? ['app_id' => 'app', 'from_pix_key' => 'pix@test.com']
+                : ['access_token' => 'okto-token', 'sandbox' => true]);
+            $cred->save();
+        }
+
+        $slugs = PlatformPayoutGateway::connectedSlugs();
+        $this->assertContains('woovi', $slugs);
+        $this->assertContains('okto', $slugs);
+        $this->assertTrue(PlatformPayoutGateway::isConnected('okto'));
+        $this->assertFalse(PlatformPayoutGateway::isConnected('bspay'));
+
+        $names = array_column(PlatformPayoutGateway::connectedOptions(), 'name', 'slug');
+        $this->assertArrayHasKey('okto', $names);
+        $this->assertArrayHasKey('woovi', $names);
+        $this->assertNotSame('', trim((string) $names['okto']));
+
+        GatewayCredential::query()->whereIn('gateway_slug', ['woovi', 'okto'])->delete();
+    }
 }
