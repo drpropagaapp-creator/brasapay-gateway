@@ -16,6 +16,9 @@ const props = defineProps({
     application: { type: Object, required: true },
     keys: { type: Array, default: () => [] },
     webhook: { type: Object, default: () => ({}) },
+    webhooks: { type: Array, default: () => [] },
+    webhook_max: { type: Number, default: 3 },
+    products: { type: Array, default: () => [] },
     webhook_event_catalog: { type: Object, default: () => ({}) },
     available_scopes: { type: Array, default: () => [] },
     scope_catalog: { type: Array, default: () => [] },
@@ -54,6 +57,25 @@ function setTab(id) {
 const keySidebarOpen = ref(false);
 const editingKey = ref(null);
 const webhookSidebarOpen = ref(false);
+const editingWebhook = ref({});
+
+const webhooksList = computed(() => {
+    if (Array.isArray(props.webhooks) && props.webhooks.length) {
+        return props.webhooks;
+    }
+    return props.webhook?.configured ? [props.webhook] : [];
+});
+const canAddWebhook = computed(() => webhooksList.value.length < (props.webhook_max || 3));
+
+function openCreateWebhook() {
+    editingWebhook.value = { configured: false, product_ids: [], products: [] };
+    webhookSidebarOpen.value = true;
+}
+
+function openEditWebhook(webhook) {
+    editingWebhook.value = webhook;
+    webhookSidebarOpen.value = true;
+}
 
 const showKeyModal = ref(!!props.api_key_reveal);
 const revealedPublicKey = ref(props.api_key_reveal?.public_key ?? '');
@@ -383,10 +405,10 @@ function onWebhookSecretRotated(secret) {
         <div v-show="activeTab === 'webhooks'" class="space-y-4">
             <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                 <p class="text-sm text-zinc-600 dark:text-zinc-400">
-                    Receba POST HTTPS assinados (HMAC) quando pagamentos e saques mudarem de estado.
+                    Até {{ webhook_max }} endpoints HTTPS assinados (HMAC). Use um por produto ou integração.
                 </p>
                 <div class="flex flex-wrap gap-2">
-                    <Button type="button" variant="outline" size="sm" @click="router.reload({ only: ['webhook', 'recent_deliveries'] })">
+                    <Button type="button" variant="outline" size="sm" @click="router.reload({ only: ['webhooks', 'webhook', 'recent_deliveries'] })">
                         <RefreshCw class="mr-2 h-4 w-4" />
                         Atualizar
                     </Button>
@@ -394,30 +416,40 @@ function onWebhookSecretRotated(secret) {
                         <FileText class="mr-2 h-4 w-4" />
                         Como integrar
                     </Button>
-                    <Button v-if="!webhook.configured" type="button" class="inline-flex items-center gap-2" @click="webhookSidebarOpen = true">
+                    <Button
+                        v-if="canAddWebhook"
+                        type="button"
+                        class="inline-flex items-center gap-2"
+                        @click="openCreateWebhook"
+                    >
                         <Plus class="h-4 w-4" />
                         Adicionar endpoint
                     </Button>
                 </div>
             </div>
 
+            <p v-if="!canAddWebhook && webhooksList.length" class="text-xs text-zinc-500 dark:text-zinc-400">
+                Limite de {{ webhook_max }} webhooks atingido.
+            </p>
+
             <ApiWebhookCard
-                v-if="webhook.configured"
+                v-for="item in webhooksList"
+                :key="item.id || item.url"
                 :application-id="application.id"
-                :webhook="webhook"
+                :webhook="item"
                 :event-catalog="webhook_event_catalog"
-                :recent-deliveries="recent_deliveries"
-                @edit="webhookSidebarOpen = true"
+                :recent-deliveries="item.id ? [] : recent_deliveries"
+                @edit="openEditWebhook(item)"
                 @rotated-secret="onWebhookSecretRotated"
             />
 
             <div
-                v-else
+                v-if="!webhooksList.length"
                 class="flex flex-col items-center justify-center rounded-xl border border-dashed border-zinc-300 px-6 py-16 text-center dark:border-zinc-600"
             >
                 <Webhook class="h-10 w-10 text-zinc-400" />
                 <p class="mt-3 text-sm text-zinc-600 dark:text-zinc-400">Nenhum endpoint configurado.</p>
-                <Button type="button" class="mt-4 inline-flex items-center gap-2" @click="webhookSidebarOpen = true">
+                <Button type="button" class="mt-4 inline-flex items-center gap-2" @click="openCreateWebhook">
                     <Plus class="h-4 w-4" />
                     Adicionar endpoint
                 </Button>
@@ -437,9 +469,10 @@ function onWebhookSecretRotated(secret) {
         <ApiWebhookSidebar
             :open="webhookSidebarOpen"
             :application-id="application.id"
-            :webhook="webhook"
+            :webhook="editingWebhook"
             :event-catalog="webhook_event_catalog"
             :webhook-secret-mask="webhook_secret_mask"
+            :products="products"
             @close="webhookSidebarOpen = false"
             @saved="webhookSidebarOpen = false"
         />

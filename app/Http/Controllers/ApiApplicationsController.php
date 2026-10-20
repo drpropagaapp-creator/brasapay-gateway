@@ -3,8 +3,10 @@
 namespace App\Http\Controllers;
 
 use App\Models\ApiApplication;
+use App\Models\ApiApplicationWebhook;
 use App\Models\ApiKey;
 use App\Models\ApiWebhookDelivery;
+use App\Models\Product;
 use App\Services\Api\ApiWebhookConfigService;
 use App\Services\Api\ApiWebhookDeliveryService;
 use App\Services\SellerActivityLogService;
@@ -313,6 +315,8 @@ class ApiApplicationsController extends Controller
 
         $allEvents = ApiWebhookEvents::all();
         $validated = $request->validate([
+            'webhook_id' => ['nullable', 'integer'],
+            'name' => ['nullable', 'string', 'max:120'],
             'webhook_url' => ['nullable', 'string', 'url', 'max:512'],
             'webhook_secret' => ['nullable', 'string', 'max:64'],
             'webhook_events' => ['nullable', 'array'],
@@ -320,6 +324,8 @@ class ApiApplicationsController extends Controller
             'webhook_enabled' => ['sometimes', 'boolean'],
             'is_active' => ['sometimes', 'boolean'],
             'clear_webhook' => ['sometimes', 'boolean'],
+            'product_ids' => ['nullable', 'array'],
+            'product_ids.*' => ['exists:products,id'],
         ]);
 
         if (! empty($validated['clear_webhook'])) {
@@ -335,21 +341,33 @@ class ApiApplicationsController extends Controller
             $webhookSecret = '';
         }
 
+        $endpoint = $this->resolveEndpoint($apiApplication, isset($validated['webhook_id']) ? (int) $validated['webhook_id'] : null);
+        $productIds = $this->ensureProductIdsBelongToTenant($apiApplication->tenant_id, $validated['product_ids'] ?? []);
+
         $events = array_key_exists('webhook_events', $validated)
             ? $this->webhookConfigService->normalizePanelEvents($validated['webhook_events'] ?? null)
             : ApiWebhookConfigService::EVENTS_UNCHANGED;
-        $url = $validated['webhook_url'] ?? $apiApplication->webhook_url;
-        $hadSecret = ($apiApplication->webhook_secret ?? '') !== '';
+        $url = $validated['webhook_url'] ?? $endpoint?->url ?? $apiApplication->webhook_url;
+        $hadSecret = ($endpoint?->secret ?? $apiApplication->webhook_secret ?? '') !== '';
 
-        $result = $this->webhookConfigService->updateFromPanel(
-            $apiApplication,
-            is_string($url) ? $url : null,
-            $events,
-            strlen($webhookSecret) > 0 ? $webhookSecret : null,
-            $hadSecret,
-            array_key_exists('webhook_enabled', $validated) ? (bool) $validated['webhook_enabled'] : null,
-            array_key_exists('is_active', $validated) ? (bool) $validated['is_active'] : null,
-        );
+        try {
+            $result = $this->webhookConfigService->updateFromPanel(
+                $apiApplication,
+                is_string($url) ? $url : null,
+                $events,
+                strlen($webhookSecret) > 0 ? $webhookSecret : null,
+                $hadSecret,
+                array_key_exists('webhook_enabled', $validated) ? (bool) $validated['webhook_enabled'] : null,
+                array_key_exists('is_active', $validated) ? (bool) $validated['is_active'] : null,
+                $endpoint,
+                $validated['name'] ?? $endpoint?->name,
+                $productIds,
+                array_key_exists('product_ids', $validated),
+            );
+        } catch (\InvalidArgumentException $e) {
+            return redirect()->route('api-applications.index', ['tab' => 'webhooks'])
+                ->with('error', $e->getMessage());
+        }
 
         $redirect = redirect()->route('api-applications.index', ['tab' => 'webhooks'])
             ->with('success', 'Webhook atualizado.');
@@ -366,12 +384,80 @@ class ApiApplicationsController extends Controller
         return $redirect;
     }
 
-    public function rotateWebhookSecret(ApiApplication $apiApplication): JsonResponse
+    public function storeWebhook(Request $request, ApiApplication $apiApplication): RedirectResponse
     {
         $this->authorizeTenant($apiApplication);
 
+        $allEvents = ApiWebhookEvents::all();
+        $validated = $request->validate([
+            'name' => ['nullable', 'string', 'max:120'],
+            'webhook_url' => ['required', 'string', 'url', 'max:512'],
+            'webhook_secret' => ['nullable', 'string', 'max:64'],
+            'webhook_events' => ['nullable', 'array'],
+            'webhook_events.*' => ['string', Rule::in($allEvents)],
+            'webhook_enabled' => ['sometimes', 'boolean'],
+            'product_ids' => ['nullable', 'array'],
+            'product_ids.*' => ['exists:products,id'],
+        ]);
+
+        $productIds = $this->ensureProductIdsBelongToTenant($apiApplication->tenant_id, $validated['product_ids'] ?? []);
+
+        $webhookSecret = $validated['webhook_secret'] ?? '';
+        if ($webhookSecret === self::WEBHOOK_SECRET_MASK) {
+            $webhookSecret = '';
+        }
+
         try {
-            $secret = $this->webhookConfigService->rotateSecret($apiApplication);
+            $result = $this->webhookConfigService->createEndpoint($apiApplication, [
+                'name' => $validated['name'] ?? null,
+                'url' => $validated['webhook_url'],
+                'secret' => strlen($webhookSecret) > 0 ? $webhookSecret : null,
+                'events' => $this->webhookConfigService->normalizePanelEvents($validated['webhook_events'] ?? null),
+                'is_active' => (bool) ($validated['webhook_enabled'] ?? true),
+                'product_ids' => $productIds,
+            ]);
+        } catch (\InvalidArgumentException $e) {
+            return redirect()->route('api-applications.index', ['tab' => 'webhooks'])
+                ->with('error', $e->getMessage());
+        }
+
+        $this->logActivity(SellerActivityLogService::API_WEBHOOK_UPDATED, $apiApplication, [
+            'webhook_url' => $validated['webhook_url'],
+            'created' => true,
+        ]);
+
+        $redirect = redirect()->route('api-applications.index', ['tab' => 'webhooks'])
+            ->with('success', 'Webhook adicionado.');
+        if ($result->revealedSecret !== null) {
+            $redirect->with('webhook_secret_reveal', $result->revealedSecret);
+        }
+
+        return $redirect;
+    }
+
+    public function destroyWebhook(ApiApplication $apiApplication, ApiApplicationWebhook $apiApplicationWebhook): RedirectResponse
+    {
+        $this->authorizeTenant($apiApplication);
+        $this->assertWebhookBelongsToApplication($apiApplication, $apiApplicationWebhook);
+
+        $this->webhookConfigService->deleteEndpoint($apiApplicationWebhook);
+        $this->logActivity(SellerActivityLogService::API_WEBHOOK_CLEARED, $apiApplication, [
+            'webhook_id' => $apiApplicationWebhook->id,
+        ]);
+
+        return redirect()->route('api-applications.index', ['tab' => 'webhooks'])
+            ->with('success', 'Webhook removido.');
+    }
+
+    public function rotateWebhookSecret(ApiApplication $apiApplication, ?ApiApplicationWebhook $apiApplicationWebhook = null): JsonResponse
+    {
+        $this->authorizeTenant($apiApplication);
+        if ($apiApplicationWebhook !== null) {
+            $this->assertWebhookBelongsToApplication($apiApplication, $apiApplicationWebhook);
+        }
+
+        try {
+            $secret = $this->webhookConfigService->rotateSecret($apiApplication, $apiApplicationWebhook);
         } catch (\InvalidArgumentException $e) {
             return response()->json(['message' => $e->getMessage()], 422);
         }
@@ -391,6 +477,11 @@ class ApiApplicationsController extends Controller
         $query = ApiWebhookDelivery::query()
             ->where('api_application_id', $apiApplication->id)
             ->orderByDesc('created_at');
+
+        $endpointId = (int) $request->query('webhook_id', 0);
+        if ($endpointId > 0) {
+            $query->where('api_application_webhook_id', $endpointId);
+        }
 
         $total = (clone $query)->count();
         $items = $query
@@ -426,7 +517,9 @@ class ApiApplicationsController extends Controller
             abort(404);
         }
 
-        if (! is_string($apiApplication->webhook_url) || $apiApplication->webhook_url === '') {
+        $hasUrl = (is_string($apiApplication->webhook_url) && $apiApplication->webhook_url !== '')
+            || (is_string($delivery->url) && $delivery->url !== '');
+        if (! $hasUrl) {
             return response()->json(['message' => 'Configure uma URL de webhook antes de reenviar.'], 422);
         }
 
@@ -517,9 +610,25 @@ class ApiApplicationsController extends Controller
             ])
             ->all();
 
-        $hasWebhook = is_string($app->webhook_url) && $app->webhook_url !== '';
+        $endpoints = ApiApplicationWebhook::query()
+            ->where('api_application_id', $app->id)
+            ->with('products:id,name')
+            ->orderBy('id')
+            ->get();
+
+        $webhooks = $endpoints->map(fn (ApiApplicationWebhook $endpoint) => $this->webhookConfigService->toPanelArray($endpoint))->values()->all();
+
+        $hasWebhook = $webhooks !== [] || (is_string($app->webhook_url) && $app->webhook_url !== '');
         $webhookEvents = $app->webhook_events;
         $allWebhookEvents = ApiWebhookEvents::isAllSubscription(is_array($webhookEvents) ? $webhookEvents : null);
+        $primary = $webhooks[0] ?? null;
+
+        $products = Product::forTenant($app->tenant_id)
+            ->orderBy('name')
+            ->get(['id', 'name'])
+            ->map(fn (Product $p) => ['id' => $p->id, 'name' => $p->name])
+            ->values()
+            ->all();
 
         return [
             'application' => [
@@ -531,7 +640,7 @@ class ApiApplicationsController extends Controller
                 'can_reveal_secret' => self::apiApplicationCanRevealSecret($app),
             ],
             'keys' => $keys,
-            'webhook' => [
+            'webhook' => $primary ?? [
                 'configured' => $hasWebhook,
                 'url' => $app->webhook_url,
                 'has_secret' => ($app->webhook_secret ?? '') !== '',
@@ -541,7 +650,12 @@ class ApiApplicationsController extends Controller
                 'is_active' => Schema::hasColumn($app->getTable(), 'webhook_enabled')
                     ? (bool) ($app->webhook_enabled ?? true)
                     : (bool) $app->is_active,
+                'product_ids' => [],
+                'products' => [],
             ],
+            'webhooks' => $webhooks,
+            'webhook_max' => ApiApplicationWebhook::MAX_PER_APPLICATION,
+            'products' => $products,
             'webhook_event_catalog' => ApiWebhookEvents::catalog(),
             'available_scopes' => ApiScopes::all(),
             'scope_catalog' => ApiScopes::catalogList(),
@@ -578,6 +692,48 @@ class ApiApplicationsController extends Controller
         if ($apiApplication->tenant_id !== $tenantId) {
             abort(404);
         }
+    }
+
+    private function assertWebhookBelongsToApplication(ApiApplication $apiApplication, ApiApplicationWebhook $webhook): void
+    {
+        if ((int) $webhook->api_application_id !== (int) $apiApplication->id) {
+            abort(404);
+        }
+    }
+
+    private function resolveEndpoint(ApiApplication $apiApplication, ?int $webhookId): ?ApiApplicationWebhook
+    {
+        if ($webhookId === null || $webhookId < 1) {
+            return $this->webhookConfigService->primaryEndpoint($apiApplication);
+        }
+
+        $endpoint = ApiApplicationWebhook::query()
+            ->where('api_application_id', $apiApplication->id)
+            ->whereKey($webhookId)
+            ->first();
+        if ($endpoint === null) {
+            abort(404);
+        }
+
+        return $endpoint;
+    }
+
+    /**
+     * @param  array<int, mixed>  $productIds
+     * @return list<string>
+     */
+    private function ensureProductIdsBelongToTenant(?int $tenantId, array $productIds): array
+    {
+        $productIds = array_values(array_unique(array_map(fn ($id) => (string) $id, $productIds)));
+        if ($productIds === []) {
+            return [];
+        }
+        $count = Product::forTenant($tenantId)->whereIn('id', $productIds)->count();
+        if ($count !== count($productIds)) {
+            abort(422, 'Um ou mais produtos não pertencem ao seu tenant.');
+        }
+
+        return $productIds;
     }
 
     private function assertApiKeyBelongsToApplication(ApiApplication $apiApplication, ApiKey $apiKey): void

@@ -163,6 +163,47 @@ class OktoPayoutAndWebhookTest extends TestCase
         $this->assertSame('completed', $order->fresh()->status);
     }
 
+    public function test_webhook_invoice_paid_finds_order_by_okto_external_id_before_gateway_is_set(): void
+    {
+        Http::fake([
+            'demo-pix.oktopay.eu/transactions/status' => Http::response([
+                'id' => 'okto-dep-race',
+                'status' => 'paid',
+                'type' => 'deposit',
+            ], 200),
+        ]);
+
+        $this->seedOktoCredential();
+
+        $user = User::factory()->create(['tenant_id' => 1]);
+        $product = $this->createTestProduct(['tenant_id' => 1]);
+
+        $order = Order::create([
+            'tenant_id' => 1,
+            'user_id' => $user->id,
+            'product_id' => $product->id,
+            'status' => 'pending',
+            'amount' => 13,
+            'email' => 'buyer@test.com',
+            'gateway' => null,
+            'gateway_id' => null,
+            'payment_method' => 'pix',
+            'metadata' => ['okto_external_id' => '516042b1-a804-49f9-a252-1222c8273b46'],
+        ]);
+
+        $response = $this->postOktoWebhook([
+            'Invoice' => [
+                'id' => 'okto-dep-race',
+                'externalId' => '516042b1-a804-49f9-a252-1222c8273b46',
+                'status' => 'paid',
+                'amount' => 1300,
+            ],
+        ]);
+
+        $response->assertOk()->assertJson(['received' => true]);
+        $this->assertSame('completed', $order->fresh()->status);
+    }
+
     public function test_webhook_transfer_success_marks_withdrawal_paid(): void
     {
         if (! Schema::hasTable('withdrawals')) {

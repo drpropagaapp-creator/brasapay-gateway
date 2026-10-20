@@ -16,6 +16,7 @@ use App\Support\GatewayPluginRequirement;
 use App\Support\GatewayWebhookUrl;
 use App\Support\SaleOrigin;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 
 class PaymentService
 {
@@ -63,11 +64,21 @@ class PaymentService
                 if ($partnerUrl !== '') {
                     $pixOptions['partner_checkout_url'] = $partnerUrl;
                 }
+                $pixExternalId = (string) $order->id;
+                if ($gatewaySlug === 'okto') {
+                    $pixExternalId = trim((string) ($meta['okto_external_id'] ?? ''));
+                    if ($pixExternalId === '' || ! Str::isUuid($pixExternalId)) {
+                        $pixExternalId = (string) Str::uuid();
+                    }
+                    $meta['okto_external_id'] = $pixExternalId;
+                    $pixOptions['okto_external_id'] = $pixExternalId;
+                    $order->update(['metadata' => $meta]);
+                }
                 $result = $driver->createPixPayment(
                     $credentials,
                     (float) $order->amount,
                     $consumer,
-                    (string) $order->id,
+                    $pixExternalId,
                     $postbackUrl,
                     $pixOptions
                 );

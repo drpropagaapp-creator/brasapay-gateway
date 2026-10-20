@@ -454,7 +454,7 @@ return [
             'driver' => \App\Gateways\Okto\OktoDriver::class,
             'credential_keys' => [
                 ['key' => 'access_token', 'label' => 'Access token (Bearer)', 'type' => 'password'],
-                ['key' => 'rsa_public_key', 'label' => 'Chave pública RSA (PEM) para X-Payload-Signature', 'type' => 'textarea'],
+                ['key' => 'rsa_public_key', 'label' => 'Chave pública RSA (cole o .pub como texto PEM — só valida o webhook, não gera PIX)', 'type' => 'textarea'],
                 ['key' => 'notification_token', 'label' => 'Token do webhook (Gaming-Operator-Token — opcional, default = access token)', 'type' => 'password', 'optional' => true],
                 ['key' => 'sandbox', 'label' => 'Usar staging (demo-pix.oktopay.eu)', 'type' => 'boolean'],
                 ['key' => 'okto_payout_min_brl', 'label' => 'Mínimo líquido de payout (R$)', 'type' => 'text', 'optional' => true],

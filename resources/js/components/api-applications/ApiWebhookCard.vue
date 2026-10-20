@@ -14,6 +14,13 @@ const props = defineProps({
     recentDeliveries: { type: Array, default: () => [] },
 });
 
+const productLabel = computed(() => {
+    const products = props.webhook.products;
+    if (!Array.isArray(products) || products.length === 0) return 'Todos os produtos';
+    if (products.length <= 2) return products.map((p) => p.name).join(', ');
+    return `${products.length} produtos`;
+});
+
 const emit = defineEmits(['edit', 'rotated-secret']);
 
 const copyDone = ref(false);
@@ -55,12 +62,17 @@ async function copyUrl() {
 
 function togglePause() {
     router.patch(`/aplicacoes-api/${props.applicationId}/webhook`, {
+        webhook_id: props.webhook.id,
         webhook_enabled: !props.webhook.is_active,
     }, { preserveScroll: true });
 }
 
 function removeWebhook() {
     if (!confirm('Remover este endpoint? As entregas deixarão de ser enviadas.')) return;
+    if (props.webhook.id) {
+        router.delete(`/aplicacoes-api/${props.applicationId}/webhooks/${props.webhook.id}`, { preserveScroll: true });
+        return;
+    }
     router.patch(`/aplicacoes-api/${props.applicationId}/webhook`, {
         clear_webhook: true,
     }, { preserveScroll: true });
@@ -70,8 +82,11 @@ async function rotateSecret() {
     if (!confirm('Rotacionar o signing secret? Atualize seu servidor imediatamente.')) return;
     rotating.value = true;
     try {
+        const rotateUrl = props.webhook.id
+            ? `/aplicacoes-api/${props.applicationId}/webhooks/${props.webhook.id}/rotate-secret`
+            : `/aplicacoes-api/${props.applicationId}/webhook/rotate-secret`;
         const { data } = await axios.post(
-            `/aplicacoes-api/${props.applicationId}/webhook/rotate-secret`,
+            rotateUrl,
             {},
             { headers: { 'X-CSRF-TOKEN': getCsrfToken() } },
         );
@@ -92,7 +107,7 @@ async function fetchDeliveries(page = 1) {
     loadingMore.value = true;
     try {
         const { data } = await axios.get(`/aplicacoes-api/${props.applicationId}/webhook/deliveries`, {
-            params: { page, per_page: 15 },
+            params: { page, per_page: 15, webhook_id: props.webhook.id || undefined },
         });
         if (page === 1) {
             deliveries.value = data.deliveries || [];
@@ -148,6 +163,10 @@ function statusClass(status) {
             <div class="min-w-0 flex-1 space-y-3">
                 <div class="flex flex-wrap items-center gap-2">
                     <span
+                        v-if="webhook.name"
+                        class="text-sm font-medium text-zinc-900 dark:text-white"
+                    >{{ webhook.name }}</span>
+                    <span
                         class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium"
                         :class="webhook.is_active
                             ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300'
@@ -165,9 +184,14 @@ function statusClass(status) {
                     </button>
                 </div>
 
-                <span class="inline-flex rounded-full bg-zinc-200/80 px-2.5 py-1 text-xs text-zinc-700 dark:bg-zinc-700 dark:text-zinc-300">
-                    {{ eventLabel }}
-                </span>
+                <div class="flex flex-wrap gap-2">
+                    <span class="inline-flex rounded-full bg-zinc-200/80 px-2.5 py-1 text-xs text-zinc-700 dark:bg-zinc-700 dark:text-zinc-300">
+                        {{ eventLabel }}
+                    </span>
+                    <span class="inline-flex rounded-full bg-zinc-200/80 px-2.5 py-1 text-xs text-zinc-700 dark:bg-zinc-700 dark:text-zinc-300">
+                        {{ productLabel }}
+                    </span>
+                </div>
 
                 <p class="text-xs text-zinc-500 dark:text-zinc-400">
                     Signing secret: <span class="font-mono">{{ maskedSecret }}</span>

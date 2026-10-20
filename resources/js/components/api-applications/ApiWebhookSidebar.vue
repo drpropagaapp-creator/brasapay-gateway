@@ -3,6 +3,7 @@ import { ref, watch, computed } from 'vue';
 import { useForm } from '@inertiajs/vue3';
 import Button from '@/components/ui/Button.vue';
 import Toggle from '@/components/ui/Toggle.vue';
+import Checkbox from '@/components/ui/Checkbox.vue';
 import { X } from 'lucide-vue-next';
 
 const props = defineProps({
@@ -11,6 +12,7 @@ const props = defineProps({
     webhook: { type: Object, default: () => ({}) },
     eventCatalog: { type: Object, default: () => ({}) },
     webhookSecretMask: { type: String, default: '' },
+    products: { type: Array, default: () => [] },
 });
 
 const emit = defineEmits(['close', 'saved']);
@@ -25,12 +27,16 @@ const allEventKeys = computed(() => {
     return keys;
 });
 
+const isEditing = computed(() => Boolean(props.webhook?.id));
+
 const form = useForm({
+    webhook_id: null,
+    name: '',
     webhook_url: '',
     webhook_secret: '',
-    webhook_events: [] ,
+    webhook_events: [],
     webhook_enabled: true,
-    clear_webhook: false,
+    product_ids: [],
 });
 
 const allEventsSelected = ref(true);
@@ -40,10 +46,12 @@ watch(
     () => {
         if (!props.open) return;
         const w = props.webhook || {};
+        form.webhook_id = w.id ?? null;
+        form.name = w.name ?? '';
         form.webhook_url = w.url ?? '';
         form.webhook_secret = w.has_secret ? props.webhookSecretMask : '';
         form.webhook_enabled = w.is_active !== false;
-        form.clear_webhook = false;
+        form.product_ids = [...(w.product_ids || [])];
         const allSelected = w.events_mode === 'all'
             || !Array.isArray(w.events)
             || w.events.length === 0
@@ -78,21 +86,44 @@ function toggleEvent(event, checked) {
     }
 }
 
+function isProductSelected(productId) {
+    return form.product_ids.includes(productId);
+}
+
+function toggleProduct(productId) {
+    const idx = form.product_ids.indexOf(productId);
+    if (idx >= 0) {
+        form.product_ids.splice(idx, 1);
+    } else {
+        form.product_ids.push(productId);
+    }
+}
+
 function close() {
     emit('close');
 }
 
 function submit() {
     const payload = {
+        name: form.name,
         webhook_url: form.webhook_url,
         webhook_enabled: form.webhook_enabled,
         webhook_events: allEventsSelected.value ? [] : form.webhook_events,
+        product_ids: form.product_ids,
     };
+    if (form.webhook_id) {
+        payload.webhook_id = form.webhook_id;
+    }
     if (form.webhook_secret && form.webhook_secret !== props.webhookSecretMask) {
         payload.webhook_secret = form.webhook_secret;
     }
 
-    form.transform(() => payload).patch(`/aplicacoes-api/${props.applicationId}/webhook`, {
+    const url = isEditing.value
+        ? `/aplicacoes-api/${props.applicationId}/webhook`
+        : `/aplicacoes-api/${props.applicationId}/webhooks`;
+    const method = isEditing.value ? 'patch' : 'post';
+
+    form.transform(() => payload)[method](url, {
         preserveScroll: true,
         onSuccess: () => {
             emit('saved');
@@ -109,7 +140,7 @@ function submit() {
             <aside class="relative flex h-full w-full max-w-lg flex-col rounded-l-2xl bg-white shadow-2xl dark:bg-zinc-900">
                 <div class="flex items-center justify-between border-b border-zinc-200 px-5 py-4 dark:border-zinc-700">
                     <h2 class="text-lg font-semibold text-zinc-900 dark:text-white">
-                        {{ webhook?.configured ? 'Editar endpoint' : 'Adicionar endpoint' }}
+                        {{ isEditing ? 'Editar endpoint' : 'Adicionar endpoint' }}
                     </h2>
                     <button type="button" class="rounded-lg p-2 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800" aria-label="Fechar" @click="close">
                         <X class="h-5 w-5" />
@@ -118,6 +149,16 @@ function submit() {
 
                 <form class="flex flex-1 flex-col overflow-y-auto p-5" @submit.prevent="submit">
                     <div class="space-y-5">
+                        <div>
+                            <label class="block text-sm font-medium text-zinc-700 dark:text-zinc-300">Nome (opcional)</label>
+                            <input
+                                v-model="form.name"
+                                type="text"
+                                class="mt-1 block w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-600 dark:bg-zinc-800"
+                                placeholder="Ex.: Checkout produto A"
+                            />
+                        </div>
+
                         <div>
                             <label class="block text-sm font-medium text-zinc-700 dark:text-zinc-300">URL do endpoint (HTTPS)</label>
                             <input
@@ -148,6 +189,32 @@ function submit() {
                                 :placeholder="webhook?.has_secret ? 'Deixe em branco para manter' : 'Gerado automaticamente se vazio'"
                             />
                             <p class="mt-1 text-xs text-zinc-500">Usado no header X-Webhook-Signature (HMAC-SHA256).</p>
+                        </div>
+
+                        <div>
+                            <p class="text-sm font-medium text-zinc-700 dark:text-zinc-300">Produtos</p>
+                            <p class="mt-1 text-xs text-zinc-500">
+                                Selecione os produtos deste endpoint. Vazio = todos. Saques só vão para endpoints sem filtro.
+                            </p>
+                            <div
+                                v-if="products.length"
+                                class="mt-2 max-h-48 space-y-1 overflow-y-auto rounded-lg border border-zinc-200 bg-white p-3 dark:border-zinc-600 dark:bg-zinc-800"
+                            >
+                                <label
+                                    v-for="p in products"
+                                    :key="p.id"
+                                    class="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-zinc-50 dark:hover:bg-zinc-700/50"
+                                >
+                                    <Checkbox
+                                        :model-value="isProductSelected(p.id)"
+                                        @update:model-value="toggleProduct(p.id)"
+                                    />
+                                    <span class="text-sm text-zinc-900 dark:text-white">{{ p.name }}</span>
+                                </label>
+                            </div>
+                            <p v-else class="mt-2 rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs text-zinc-500 dark:border-zinc-700 dark:bg-zinc-800">
+                                Nenhum produto cadastrado.
+                            </p>
                         </div>
 
                         <div>

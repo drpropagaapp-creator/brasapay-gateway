@@ -21,6 +21,7 @@ class ApiWebhookDelivery extends Model
         'id',
         'tenant_id',
         'api_application_id',
+        'api_application_webhook_id',
         'api_key_id',
         'event',
         'event_id',

@@ -52,14 +52,20 @@ class SendApiApplicationWebhookListener
             return;
         }
 
-        $this->webhookDelivery->dispatch($app, 'pix.generated', [
-            'order_id' => $order->id,
-            'transaction_id' => $event->pixData['transaction_id'] ?? $order->gateway_id,
-            'qrcode' => $event->pixData['qrcode'] ?? null,
-            'copy_paste' => $event->pixData['copy_paste'] ?? null,
-            'status' => $order->status,
-            'amount' => (float) $order->amount,
-        ]);
+        $this->webhookDelivery->dispatch(
+            $app,
+            'pix.generated',
+            [
+                'order_id' => $order->id,
+                'transaction_id' => $event->pixData['transaction_id'] ?? $order->gateway_id,
+                'qrcode' => $event->pixData['qrcode'] ?? null,
+                'copy_paste' => $event->pixData['copy_paste'] ?? null,
+                'status' => $order->status,
+                'amount' => (float) $order->amount,
+            ],
+            null,
+            $order->product_id,
+        );
     }
 
     public function subscribe($events): array
@@ -88,12 +94,12 @@ class SendApiApplicationWebhookListener
         $payload = ApiWebhookPayloadBuilder::orderPayload($order, $eventName);
 
         if ($allowSyncFallback && $this->shouldDispatchSyncForCompleted()) {
-            $this->webhookDelivery->dispatchSync($app, $eventName, $payload);
+            $this->webhookDelivery->dispatchSync($app, $eventName, $payload, null, $order->product_id);
 
             return;
         }
 
-        $this->webhookDelivery->dispatch($app, $eventName, $payload);
+        $this->webhookDelivery->dispatch($app, $eventName, $payload, null, $order->product_id);
     }
 
     private function shouldDispatchSyncForCompleted(): bool

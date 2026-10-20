@@ -3,12 +3,14 @@
 namespace Tests\Feature;
 
 use App\Events\OrderCompleted;
+use App\Events\OrderRefunded;
 use App\Events\PixGenerated;
 use App\Jobs\UtmifySendOrderJob;
 use App\Models\Order;
 use App\Models\Product;
 use App\Models\UtmifyIntegration;
 use App\Models\User;
+use App\Support\IntegrationJobDispatch;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
 use Tests\TestCase;
@@ -263,5 +265,78 @@ class UtmifySaleDispatchTest extends TestCase
         $order->refresh();
         $this->assertNotEmpty($order->metadata['utmify_failed_at'] ?? null);
         $this->assertStringContainsString('401', $order->metadata['utmify_last_error'] ?? '');
+    }
+
+    public function test_order_refunded_sends_original_approved_date(): void
+    {
+        Http::fake([
+            'api.utmify.com.br/*' => Http::response(['ok' => true], 200),
+        ]);
+
+        User::factory()->create(['role' => User::ROLE_INFOPRODUTOR, 'tenant_id' => 1]);
+        $product = $this->createTestProduct(['tenant_id' => 1]);
+
+        UtmifyIntegration::create([
+            'tenant_id' => 1,
+            'name' => 'UTMfy refund',
+            'api_key' => 'refund-api-key',
+            'is_active' => true,
+        ]);
+
+        $order = Order::create([
+            'tenant_id' => 1,
+            'product_id' => $product->id,
+            'status' => 'refunded',
+            'amount' => 75,
+            'email' => 'refund@example.com',
+            'metadata' => [
+                'utmify_approved_at' => '2024-07-15 13:30:14',
+            ],
+        ]);
+
+        event(new OrderRefunded($order));
+
+        Http::assertSent(function ($request) use ($order) {
+            $body = $request->data();
+
+            return $request->url() === 'https://api.utmify.com.br/api-credentials/orders'
+                && ($body['status'] ?? '') === 'refunded'
+                && ($body['orderId'] ?? '') === (string) $order->id
+                && ($body['approvedDate'] ?? null) === '2024-07-15 13:30:14'
+                && ! empty($body['refundedAt']);
+        });
+    }
+
+    public function test_queue_worker_does_not_defer_utmify_job_after_response(): void
+    {
+        $this->assertTrue(app()->runningInConsole());
+        $this->assertFalse(IntegrationJobDispatch::shouldDeferAfterResponse());
+
+        config(['queue.default' => 'redis']);
+        Queue::fake();
+
+        User::factory()->create(['role' => User::ROLE_INFOPRODUTOR, 'tenant_id' => 1]);
+        $product = $this->createTestProduct(['tenant_id' => 1]);
+
+        UtmifyIntegration::create([
+            'tenant_id' => 1,
+            'name' => 'UTMfy immediate',
+            'api_key' => 'immediate-key',
+            'is_active' => true,
+        ]);
+
+        $order = Order::create([
+            'tenant_id' => 1,
+            'product_id' => $product->id,
+            'status' => 'completed',
+            'amount' => 15,
+            'email' => 'immediate@example.com',
+        ]);
+
+        event(new OrderCompleted($order));
+
+        Queue::assertPushed(UtmifySendOrderJob::class, function (UtmifySendOrderJob $job) use ($order) {
+            return $job->orderId === $order->id && $job->utmifyStatus === 'paid';
+        });
     }
 }
