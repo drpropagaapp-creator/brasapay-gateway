@@ -24,6 +24,12 @@ function money(v) {
     return Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 }
 
+/** Escapa texto vindo de geolocalização (cidade/região) antes de entrar no HTML do popup. */
+function escapeHtml(v) {
+    const map = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+    return String(v ?? '').replace(/[&<>"']/g, (c) => map[c]);
+}
+
 function radiusFor(p) {
     const v = valueOf(p);
     if (v <= 0) return 6;
@@ -55,9 +61,9 @@ function renderPoints() {
         });
         circle.bindPopup(`
             <div style="min-width:160px;font-size:12px;line-height:1.4">
-                <span style="font-weight:500">${p.label || 'Local'}</span><br/>
-                Eventos: ${p.events || 0}<br/>
-                Conversões: ${p.conversions || 0}<br/>
+                <span style="font-weight:500">${escapeHtml(p.label || 'Local')}</span><br/>
+                Eventos: ${Number(p.events) || 0}<br/>
+                Conversões: ${Number(p.conversions) || 0}<br/>
                 Receita: ${money(p.revenue)}
             </div>
         `);
