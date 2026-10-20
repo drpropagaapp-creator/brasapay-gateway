@@ -412,7 +412,7 @@ class OktoPayoutAndWebhookTest extends TestCase
     {
         Setting::set('platform_payout_gateway', 'okto', null);
         GatewayCredential::query()->whereIn('gateway_slug', [
-            'cajupay', 'spacepag', 'woovi', 'bspay', 'versell', 'xflow', 'onlyup',
+            'cajupay', 'spacepag', 'woovi', 'bspay', 'versell', 'xflow', 'xpag', 'onlyup',
         ])->delete();
 
         $cred = GatewayCredential::query()->firstOrNew([

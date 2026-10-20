@@ -2,11 +2,15 @@
 
 namespace Tests\Feature;
 
+use App\Http\Middleware\EnsureInstalled;
+use App\Http\Middleware\EnsureStackerLicense;
 use App\Jobs\ReconcileBspayWithdrawalJob;
 use App\Models\GatewayCredential;
 use App\Models\User;
 use App\Models\Withdrawal;
+use App\Services\MerchantWithdrawalService;
 use App\Services\WithdrawalAutoPayoutService;
+use Illuminate\Foundation\Http\Middleware\ValidateCsrfToken;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Schema;
@@ -17,6 +21,11 @@ class BspayPayoutFlowTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+        $this->withoutMiddleware([
+            EnsureInstalled::class,
+            EnsureStackerLicense::class,
+            ValidateCsrfToken::class,
+        ]);
         Queue::fake();
     }
 
@@ -70,7 +79,9 @@ class BspayPayoutFlowTest extends TestCase
             'currency' => 'BRL',
         ]);
 
-        $auto = app(WithdrawalAutoPayoutService::class)->attemptAutoPayout($w->fresh());
+        $locked = MerchantWithdrawalService::beginPayoutApproval((int) $w->id);
+        $this->assertNotNull($locked);
+        $auto = app(WithdrawalAutoPayoutService::class)->attemptBspay($locked);
 
         $this->assertTrue($auto['ok'] ?? false);
         $this->assertTrue($auto['pending'] ?? false);
@@ -78,7 +89,7 @@ class BspayPayoutFlowTest extends TestCase
         $fresh = $w->fresh();
         $this->assertSame('bspay', $fresh->payout_provider);
         $this->assertSame('bspay-cashout-9', $fresh->payout_external_id);
-        $this->assertSame('pending', $fresh->status);
+        $this->assertSame('processing', $fresh->status);
 
         Queue::assertPushed(ReconcileBspayWithdrawalJob::class);
 
@@ -136,7 +147,9 @@ class BspayPayoutFlowTest extends TestCase
             'currency' => 'BRL',
         ]);
 
-        $auto = app(WithdrawalAutoPayoutService::class)->attemptAutoPayout($w->fresh());
+        $locked = MerchantWithdrawalService::beginPayoutApproval((int) $w->id);
+        $this->assertNotNull($locked);
+        $auto = app(WithdrawalAutoPayoutService::class)->attemptBspay($locked);
 
         $this->assertTrue($auto['ok'] ?? false);
 

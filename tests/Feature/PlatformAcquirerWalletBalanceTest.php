@@ -67,7 +67,7 @@ class PlatformAcquirerWalletBalanceTest extends TestCase
 
         $rows = app(AcquirerWalletBalanceService::class)->list();
         $this->assertSame(
-            ['cajupay', 'bspay', 'efi', 'woovi', 'mercadopago', 'stripe', 'versell', 'xflow', 'okto'],
+            ['cajupay', 'efi', 'woovi', 'mercadopago', 'stripe', 'versell', 'xflow', 'okto', 'xpag'],
             collect($rows)->pluck('slug')->all()
         );
         $this->assertTrue(collect($rows)->every(fn (array $row) => $row['status'] === 'inactive'));
@@ -76,10 +76,6 @@ class PlatformAcquirerWalletBalanceTest extends TestCase
     public function test_dashboard_lists_connected_wallet_balances_and_isolates_failures(): void
     {
         $this->seedCajuPayAccount('Conta principal', 'pk_ok', 'sk_ok');
-        $this->seedCredential('bspay', [
-            'client_id' => 'bspay-id',
-            'client_secret' => 'bspay-secret',
-        ]);
         $this->seedCredential('mercadopago', [
             'public_key' => 'TEST-public',
             'access_token' => 'TEST-access-token',
@@ -108,33 +104,6 @@ class PlatformAcquirerWalletBalanceTest extends TestCase
 
         Http::fake([
             'api.cajupay.com.br/api/wallet/balance*' => Http::response(['available_cents' => 25990], 200),
-            'api.bspay.co/v2/oauth/token' => Http::response(['access_token' => 'bspay-token', 'expires_in' => 3600], 200),
-            'api.bspay.co/v2/account/balance' => Http::response([
-                'success' => true,
-                'data' => [
-                    'balances' => [
-                        [
-                            'type' => 'fiat',
-                            'currency' => 'BRL',
-                            'available' => '1234.56',
-                            'blocked' => '10.00',
-                            'pending' => '0.00',
-                            'balance_hold' => '0.00',
-                            'total' => '1244.56',
-                        ],
-                        [
-                            'type' => 'crypto',
-                            'currency' => 'USDT',
-                            'available' => '101639.40402605',
-                            'blocked' => '0.00000000',
-                            'pending' => '0.00000000',
-                            'total' => '101639.40402605',
-                        ],
-                    ],
-                    'wallet_total_usd' => '106172.09817828',
-                    'wallet_total_brl' => '547701.08443680',
-                ],
-            ], 200),
             'api.mercadopago.com/users/me' => Http::response(['id' => 99, 'email' => 'mp@test.com'], 200),
             'api.mercadopago.com/users/99/mercadopago_account/balance' => Http::response([
                 'available_balance' => 1200.5,
@@ -159,8 +128,7 @@ class PlatformAcquirerWalletBalanceTest extends TestCase
         $this->assertSame('ok', $bySlug['cajupay']['status']);
         $this->assertSame(259.9, $bySlug['cajupay']['available']);
         $this->assertSame('Conta principal', $bySlug['cajupay']['conta']);
-        $this->assertSame('ok', $bySlug['bspay']['status']);
-        $this->assertSame(1234.56, $bySlug['bspay']['available']);
+        $this->assertArrayNotHasKey('bspay', $bySlug);
         $this->assertSame('ok', $bySlug['mercadopago']['status']);
         $this->assertSame(1200.5, $bySlug['mercadopago']['available']);
         $this->assertSame('ok', $bySlug['stripe']['status']);
@@ -202,9 +170,8 @@ class PlatformAcquirerWalletBalanceTest extends TestCase
     public function test_disabled_or_disconnected_credentials_are_marked_inactive(): void
     {
         $this->seedCajuPayAccount('Desligada', 'pk', 'sk', enabled: false);
-        $this->seedCredential('bspay', [
-            'client_id' => 'bspay-id',
-            'client_secret' => 'bspay-secret',
+        $this->seedCredential('woovi', [
+            'app_id' => 'woovi-app-id',
         ], enabled: false);
         $this->seedCredential('stripe', [
             'secret_key' => 'sk_test_fake',
@@ -216,7 +183,7 @@ class PlatformAcquirerWalletBalanceTest extends TestCase
         $bySlug = collect($rows)->keyBy('slug');
 
         $this->assertSame('inactive', $bySlug['cajupay']['status']);
-        $this->assertSame('inactive', $bySlug['bspay']['status']);
+        $this->assertSame('inactive', $bySlug['woovi']['status']);
         $this->assertSame('inactive', $bySlug['stripe']['status']);
         Http::assertNothingSent();
     }
@@ -224,16 +191,16 @@ class PlatformAcquirerWalletBalanceTest extends TestCase
     public function test_one_provider_failure_does_not_drop_the_others(): void
     {
         $this->seedCajuPayAccount('Principal', 'pk', 'sk');
-        $this->seedCredential('bspay', [
-            'client_id' => 'bspay-id',
-            'client_secret' => 'bspay-secret',
+        $this->seedCredential('woovi', [
+            'app_id' => 'woovi-app-id',
         ]);
 
         Http::fake([
             'api.cajupay.com.br/api/wallet/balance*' => Http::response(['error' => 'boom'], 500),
-            'api.bspay.co/v2/oauth/token' => Http::response(['access_token' => 'tok', 'expires_in' => 3600], 200),
-            'api.bspay.co/v2/account/balance' => Http::response([
-                'data' => ['available' => 10.0],
+            'api.woovi.com/api/v1/account*' => Http::response([
+                'account' => [
+                    'balance' => ['available' => 1000],
+                ],
             ], 200),
         ]);
 
@@ -241,8 +208,8 @@ class PlatformAcquirerWalletBalanceTest extends TestCase
 
         $this->assertSame('error', $bySlug['cajupay']['status']);
         $this->assertNull($bySlug['cajupay']['available']);
-        $this->assertSame('ok', $bySlug['bspay']['status']);
-        $this->assertSame(10.0, $bySlug['bspay']['available']);
+        $this->assertSame('ok', $bySlug['woovi']['status']);
+        $this->assertSame(10.0, $bySlug['woovi']['available']);
         $this->assertSame('inactive', $bySlug['stripe']['status']);
     }
 

@@ -157,6 +157,9 @@ class GatewaysController extends Controller
         } elseif ($slug === 'okto') {
             $webhookUrl = GatewayWebhookUrl::forGateway('okto');
             $webhookHelp = 'PIX Classic Non Betting. O arquivo .pub é só a chave pública RSA: abra como texto e cole no campo (não precisa upload). Ela não entra na geração do PIX — só valida X-Payload-Signature do webhook. “Testar conexão” consulta o saldo e tenta registrar depositUrl/withdrawUrl via PUT /operator (HTTPS público em GETFY_WEBHOOK_PUBLIC_URL). Staging: demo-pix.oktopay.eu e CPF de persona (ex. 604.184.437-34).';
+        } elseif ($slug === 'xpag') {
+            $webhookUrl = GatewayWebhookUrl::forGateway('xpag');
+            $webhookHelp = 'Não existe cadastro de webhook no painel XPag. A URL abaixo vai no corpo de cada POST /cashin e /cashout (campo webhook_url). Precisa ser HTTPS público (GETFY_WEBHOOK_PUBLIC_URL). Primeira fase: PIX BRL dinâmico (QR com amount) e saque por chave PIX. “Testar conexão” consulta GET /balance. Saque pela API só sai de IPv4 cadastrado na chave.';
         }
 
         $fileFieldsConfigured = [];
@@ -764,6 +767,9 @@ class GatewaysController extends Controller
             }
             if (! $ok && $slug === 'okto') {
                 $failMessage = 'Falha na autenticação Okto. Confira o access token e se “Staging” está marcado só com credenciais de demo-pix.oktopay.eu.';
+            }
+            if (! $ok && $slug === 'xpag') {
+                $failMessage = 'Falha na autenticação XPag. Confira Client ID e Client Secret (headers X-Client-Id / X-Client-Secret). “Testar conexão” consulta GET /balance.';
             }
 
             return response()->json([
