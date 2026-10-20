@@ -467,7 +467,7 @@ return [
         'xpag' => [
             'slug' => 'xpag',
             'name' => 'XPag',
-            'image' => 'images/gateways/xpag.svg',
+            'image' => 'images/gateways/xpag_logo.svg',
             'methods' => ['pix'],
             'scope' => 'national',
             'country' => 'br',

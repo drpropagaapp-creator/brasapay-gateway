@@ -32,7 +32,7 @@ class XpagDriverTest extends TestCase
         $this->assertNotNull($def);
         $this->assertContains('pix', $def['methods'] ?? []);
         $this->assertNotContains('card', $def['methods'] ?? []);
-        $this->assertSame('images/gateways/xpag.svg', $def['image'] ?? null);
+        $this->assertSame('images/gateways/xpag_logo.svg', $def['image'] ?? null);
         $this->assertInstanceOf(XpagDriver::class, GatewayRegistry::driver('xpag'));
         $this->assertContains('xpag', config('gateways.default_order.pix'));
         $this->assertNotContains('xpag', config('gateways.api_pix_excluded_slugs'));
