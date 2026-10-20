@@ -37,6 +37,10 @@ const props = defineProps({
         type: Array,
         default: () => [],
     },
+    cashout_acquirers: {
+        type: Array,
+        default: () => [],
+    },
 });
 
 const withdrawalFilterChips = [
@@ -60,6 +64,7 @@ const stepUpManual = ref(false);
 const stepUpRequirePin = ref(false);
 const stepUpHasExternalPayout = ref(false);
 const stepUpAskAcquirer = ref(false);
+const stepUpSendPayout = ref(false);
 
 function selectWithdrawalFilter(withdrawalStatus) {
     router.get(
@@ -101,7 +106,8 @@ function openApproveStepUp(id, manual = false, askAcquirer = false) {
     stepUpManual.value = manual;
     stepUpAction.value = 'approve';
     stepUpRequirePin.value = Boolean(props.require_manual_approval_pin) && Boolean(props.has_manual_approval_pin);
-    stepUpAskAcquirer.value = Boolean(manual) && Boolean(askAcquirer);
+    stepUpSendPayout.value = !manual && Boolean(askAcquirer);
+    stepUpAskAcquirer.value = Boolean(askAcquirer);
     stepUpOpen.value = true;
 }
 
@@ -112,6 +118,7 @@ function openRejectStepUp(id, hasExternalPayout = false) {
     stepUpRequirePin.value = false;
     stepUpHasExternalPayout.value = hasExternalPayout;
     stepUpAskAcquirer.value = false;
+    stepUpSendPayout.value = false;
     stepUpOpen.value = true;
 }
 
@@ -124,7 +131,16 @@ const totpEnabled = computed(() => Boolean(page.props.auth?.user?.totp_enabled))
 const payoutBarrierMissing = computed(
     () => !totpEnabled.value && !Boolean(props.has_manual_approval_pin)
 );
-const acquirerOptions = computed(() => {
+const cashoutAcquirerOptions = computed(() => {
+    const fromProps = Array.isArray(props.cashout_acquirers) ? props.cashout_acquirers : [];
+    if (fromProps.length) {
+        return fromProps;
+    }
+    const fromPage = page.props.cashout_acquirers;
+    return Array.isArray(fromPage) ? fromPage : [];
+});
+
+const manualAcquirerOptions = computed(() => {
     const fromProps = Array.isArray(props.manual_payout_acquirers) ? props.manual_payout_acquirers : [];
     if (fromProps.length) {
         return fromProps;
@@ -132,6 +148,10 @@ const acquirerOptions = computed(() => {
     const fromPage = page.props.manual_payout_acquirers;
     return Array.isArray(fromPage) ? fromPage : [];
 });
+
+const acquirerOptions = computed(() =>
+    stepUpSendPayout.value ? cashoutAcquirerOptions.value : manualAcquirerOptions.value
+);
 
 const stepUpDescription = computed(() => {
     if (stepUpAction.value === 'reject' && stepUpHasExternalPayout.value) {
@@ -156,6 +176,11 @@ const stepUpDescription = computed(() => {
         return totpEnabled.value
             ? 'Confirme com 2FA que o PIX já foi enviado fora do sistema.'
             : 'Informe o PIN de operação e confirme que o PIX já foi enviado fora do sistema.';
+    }
+    if (stepUpSendPayout.value) {
+        return totpEnabled.value
+            ? 'Escolha a adquirente que vai enviar o PIX e confirme com 2FA.'
+            : 'Escolha a adquirente que vai enviar o PIX e confirme com o PIN de operação.';
     }
     if (stepUpRequirePin.value) {
         return 'Informe o PIN de operação cadastrado em Financeiro > Saques.';
@@ -461,8 +486,8 @@ const paginationLinks = computed(() => props.withdrawals?.links ?? []);
                                         >
                                             Reprocessar
                                         </Button>
-                                        <Button type="button" size="sm" @click="openApproveStepUp(w.id, false)">
-                                            Pago (CajuPay)
+                                        <Button type="button" size="sm" @click="openApproveStepUp(w.id, false, true)">
+                                            Enviar pagamento
                                         </Button>
                                         <Button type="button" size="sm" variant="secondary" @click="openApproveStepUp(w.id, true, true)">
                                             Pago manual
@@ -494,7 +519,7 @@ const paginationLinks = computed(() => props.withdrawals?.links ?? []);
                                 class="border-t border-red-100 bg-red-50/80 dark:border-red-900/40 dark:bg-red-950/20"
                             >
                                 <td colspan="9" class="px-3 py-2 text-xs text-red-900 dark:text-red-200">
-                                    <span class="font-medium">Última tentativa (CajuPay):</span>
+                                    <span class="font-medium">Última tentativa{{ w.payout_provider ? ` (${w.payout_provider})` : '' }}:</span>
                                     {{ w.payout_last_error }}
                                     <span v-if="w.payout_last_attempt_at" class="ml-2 text-red-700/80 dark:text-red-300/80">
                                         ({{ new Date(w.payout_last_attempt_at).toLocaleString('pt-BR') }})
@@ -565,9 +590,14 @@ const paginationLinks = computed(() => props.withdrawals?.links ?? []);
             :require-external-confirm="stepUpManual"
             :require-acquirer="Boolean(stepUpAskAcquirer)"
             :acquirers="acquirerOptions"
-            :title="stepUpAction === 'reject' ? 'Cancelar saque' : stepUpManual ? 'Aprovar manualmente' : 'Aprovar saque'"
+            :acquirer-label="stepUpSendPayout ? 'Quem envia o PIX?' : 'De onde saiu o PIX?'"
+            :acquirer-help="stepUpSendPayout
+                ? 'Preencha o 2FA ou o PIN e clique na adquirente. O saque sai da conta da plataforma nessa adquirente.'
+                : 'Escolha a adquirente para o comprovante. Se o PIX saiu de uma conta fora do sistema, use pagamento por conta externa.'"
+            :acquirer-layout="stepUpSendPayout ? 'list' : 'select'"
+            :title="stepUpAction === 'reject' ? 'Cancelar saque' : stepUpManual ? 'Aprovar manualmente' : stepUpSendPayout ? 'Enviar pagamento' : 'Aprovar saque'"
             :description="stepUpDescription"
-            :confirm-label="stepUpAction === 'reject' ? 'Cancelar e estornar' : 'Aprovar'"
+            :confirm-label="stepUpAction === 'reject' ? 'Cancelar e estornar' : stepUpSendPayout ? 'Enviar pagamento' : 'Aprovar'"
             :confirm-disabled="stepUpAction === 'approve' && payoutBarrierMissing"
             @close="closeStepUp"
             @confirm="onStepUpConfirm"

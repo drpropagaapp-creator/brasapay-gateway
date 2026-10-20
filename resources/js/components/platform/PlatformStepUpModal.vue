@@ -12,6 +12,9 @@ const props = defineProps({
     requireExternalConfirm: { type: Boolean, default: false },
     requireAcquirer: { type: Boolean, default: false },
     acquirers: { type: Array, default: () => [] },
+    acquirerLabel: { type: String, default: 'De onde saiu o PIX?' },
+    acquirerHelp: { type: String, default: 'Escolha a adquirente para o comprovante. Se o PIX saiu de uma conta fora do sistema, use pagamento por conta externa.' },
+    acquirerLayout: { type: String, default: 'select' },
     confirmLabel: { type: String, default: 'Confirmar' },
     loading: { type: Boolean, default: false },
     confirmDisabled: { type: Boolean, default: false },
@@ -63,6 +66,23 @@ function submit() {
         payout_acquirer: selectedAcquirer.value,
     });
 }
+
+function chooseAcquirer(slug) {
+    selectedAcquirer.value = String(slug ?? '');
+    if (props.acquirerLayout !== 'list') {
+        return;
+    }
+    if (props.requireTotp && !totpCode.value.trim()) {
+        return;
+    }
+    if (props.requirePin && !manualPin.value.trim()) {
+        return;
+    }
+    if (props.requireExternalConfirm && !externalConfirm.value) {
+        return;
+    }
+    submit();
+}
 </script>
 
 <template>
@@ -87,12 +107,12 @@ function submit() {
             </p>
 
             <div class="mt-4 space-y-3">
-                <div v-if="requireAcquirer">
-                    <label class="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300" for="payout-acquirer-select">
-                        De onde saiu o PIX?
-                    </label>
-                    <p class="mb-2 text-xs text-zinc-500 dark:text-zinc-400">
-                        Escolha a adquirente para o comprovante. Se o PIX saiu de uma conta fora do sistema, use pagamento por conta externa.
+                <div v-if="requireAcquirer && acquirerLayout !== 'list'">
+                    <p class="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                        {{ acquirerLabel }}
+                    </p>
+                    <p v-if="acquirerHelp" class="mb-2 text-xs text-zinc-500 dark:text-zinc-400">
+                        {{ acquirerHelp }}
                     </p>
                     <select
                         id="payout-acquirer-select"
@@ -154,6 +174,34 @@ function submit() {
                     />
                     <span>Confirmo que o PIX já foi enviado fora do sistema (aprovação manual).</span>
                 </label>
+
+                <div v-if="requireAcquirer && acquirerLayout === 'list'">
+                    <p class="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                        {{ acquirerLabel }}
+                    </p>
+                    <p v-if="acquirerHelp" class="mb-2 text-xs text-zinc-500 dark:text-zinc-400">
+                        {{ acquirerHelp }}
+                    </p>
+                    <div class="space-y-2">
+                        <button
+                            v-for="acquirer in acquirers"
+                            :key="acquirer.slug"
+                            type="button"
+                            :class="[
+                                'flex w-full items-center justify-between rounded-lg border px-3 py-2 text-left text-sm font-medium transition',
+                                selectedAcquirer === acquirer.slug
+                                    ? 'border-[var(--color-primary)] bg-[var(--color-primary)]/10 text-zinc-900 dark:text-white'
+                                    : 'border-zinc-300 bg-white text-zinc-800 hover:bg-zinc-50 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100 dark:hover:bg-zinc-700',
+                            ]"
+                            @click="chooseAcquirer(acquirer.slug)"
+                        >
+                            {{ acquirer.name }}
+                        </button>
+                    </div>
+                    <p v-if="!acquirers.length" class="mt-1 text-xs text-red-600 dark:text-red-400">
+                        Nenhuma adquirente de saque conectada. Conecte um cash-out em Integrações → Gateways.
+                    </p>
+                </div>
             </div>
 
             <div class="mt-5 flex justify-end gap-2">

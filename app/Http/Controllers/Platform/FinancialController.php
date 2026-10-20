@@ -496,6 +496,12 @@ class FinancialController extends Controller
                 ->with('error', 'Este saque já foi enviado ao gateway. Use Reprocessar para nova tentativa ou Cancelar e estornar.');
         }
 
+        $requestedPayoutSlug = trim((string) ($validated['payout_acquirer'] ?? ''));
+        if (! $manual && $requestedPayoutSlug !== '' && ! PlatformPayoutGateway::isConnected($requestedPayoutSlug)) {
+            return redirect()->route('plataforma.saques.index')
+                ->with('error', 'Selecione uma adquirente de saque conectada.');
+        }
+
         $locked = MerchantWithdrawalService::beginPayoutApproval((int) $withdrawal->id);
         if ($locked === null) {
             return redirect()->route('plataforma.saques.index')
@@ -538,7 +544,7 @@ class FinancialController extends Controller
                     : 'Saque marcado como pago (aprovado manualmente, sem API).');
         }
 
-        $slug = PlatformPayoutGateway::activeSlug();
+        $slug = $requestedPayoutSlug !== '' ? $requestedPayoutSlug : PlatformPayoutGateway::activeSlug();
         if ($slug === null) {
             MerchantWithdrawalService::releasePayoutApproval($withdrawal);
 
@@ -900,7 +906,7 @@ class FinancialController extends Controller
 
         if (trim((string) ($withdrawal->payout_external_id ?? '')) === '') {
             return redirect()->route('plataforma.saques.index')
-                ->with('error', 'Saque sem ID externo na CajuPay. Use Pago (CajuPay) ou Reprocessar.');
+                ->with('error', 'Saque sem ID externo na CajuPay. Use Enviar pagamento ou Reprocessar.');
         }
 
         $outcome = app(CajuPayWithdrawalReconcileService::class)->reconcile($withdrawal->fresh());

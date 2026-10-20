@@ -276,6 +276,113 @@ class OktoPayoutAndWebhookTest extends TestCase
         $this->assertStringContainsString('PIX: falhou', (string) $response->json('message'));
     }
 
+    public function test_admin_approve_sends_payout_to_selected_cashout_acquirer(): void
+    {
+        if (! Schema::hasTable('withdrawals')) {
+            $this->markTestSkipped('withdrawals table');
+        }
+
+        $this->seedOktoCredential();
+        Setting::set('platform_payout_gateway', 'cajupay', null);
+        $cajuAccount = null;
+        if (Schema::hasTable('cajupay_accounts')) {
+            $cajuAccount = \App\Models\CajuPayAccount::query()->create([
+                'name' => 'Conta payout override',
+                'is_default' => true,
+                'is_connected' => true,
+                'is_enabled' => true,
+            ]);
+            $this->assertSame('cajupay', \App\Services\Payout\PlatformPayoutGateway::activeSlug());
+        }
+        \App\Services\Withdrawal\WithdrawalPolicyService::setManualApprovalPin('9999');
+
+        Queue::fake();
+        Http::fake([
+            'https://demo-pix.oktopay.eu/transactions/withdraw' => Http::response([
+                'id' => 'okto-wd-chosen',
+                'status' => 'created',
+            ], 200),
+        ]);
+
+        $w = $this->makeWithdrawal(80, 0, 80, [
+            'payout_pix_key' => '11119854997',
+            'payout_pix_key_type' => 'cpf',
+        ]);
+
+        $admin = User::factory()->create([
+            'role' => User::ROLE_PLATFORM_ADMIN,
+            'tenant_id' => null,
+        ]);
+
+        $response = $this->actingAs($admin)->post(route('plataforma.financeiro.saques.approve', $w), [
+            'payout_manual' => false,
+            'manual_approval_pin' => '9999',
+            'payout_acquirer' => 'okto',
+        ]);
+
+        $response->assertRedirect(route('plataforma.saques.index'));
+        $response->assertSessionHas('success');
+
+        $fresh = $w->fresh();
+        $this->assertSame('okto', $fresh->payout_provider);
+        $this->assertSame('okto-wd-chosen', $fresh->payout_external_id);
+        $this->assertSame('pending', $fresh->status);
+        Queue::assertPushed(ReconcileOktoWithdrawalJob::class);
+        $cajuAccount?->delete();
+    }
+
+    public function test_admin_approve_rejects_disconnected_cashout_acquirer(): void
+    {
+        if (! Schema::hasTable('withdrawals')) {
+            $this->markTestSkipped('withdrawals table');
+        }
+
+        $this->seedOktoCredential();
+        \App\Services\Withdrawal\WithdrawalPolicyService::setManualApprovalPin('9999');
+
+        $w = $this->makeWithdrawal(40, 0, 40, [
+            'payout_pix_key' => '11119854997',
+            'payout_pix_key_type' => 'cpf',
+        ]);
+
+        $admin = User::factory()->create([
+            'role' => User::ROLE_PLATFORM_ADMIN,
+            'tenant_id' => null,
+        ]);
+
+        $response = $this->actingAs($admin)->post(route('plataforma.financeiro.saques.approve', $w), [
+            'payout_manual' => false,
+            'manual_approval_pin' => '9999',
+            'payout_acquirer' => 'woovi',
+        ]);
+
+        $response->assertRedirect(route('plataforma.saques.index'));
+        $response->assertSessionHas('error', 'Selecione uma adquirente de saque conectada.');
+        $this->assertSame('pending', $w->fresh()->status);
+        $this->assertNull($w->fresh()->payout_provider);
+    }
+
+    public function test_withdrawals_index_lists_connected_cashout_acquirers(): void
+    {
+        $this->seedOktoCredential();
+
+        $admin = User::factory()->create([
+            'role' => User::ROLE_PLATFORM_ADMIN,
+            'tenant_id' => null,
+        ]);
+
+        $this->actingAs($admin)
+            ->get(route('plataforma.saques.index'))
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->component('Platform/Withdrawals/Index')
+                ->has('cashout_acquirers')
+                ->where('cashout_acquirers', fn ($list) => collect($list)->contains(
+                    fn ($acquirer) => ($acquirer['slug'] ?? null) === 'okto'
+                ))
+            );
+    }
+
     public function test_webhook_rejects_invalid_signature(): void
     {
         $this->seedOktoCredential();

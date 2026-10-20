@@ -2,6 +2,7 @@
 
 namespace App\Services\Payout;
 
+use App\Gateways\GatewayRegistry;
 use App\Models\GatewayCredential;
 use App\Models\Setting;
 use App\Services\CajuPay\CajuPayAccountResolver;
@@ -37,6 +38,69 @@ class PlatformPayoutGateway
 
     public static function activeSlug(): ?string
     {
+        $connected = self::connectedMap();
+        if ($connected === []) {
+            return null;
+        }
+
+        $pref = self::preference();
+
+        if ($pref !== 'auto' && isset($connected[$pref])) {
+            return $pref;
+        }
+
+        foreach (self::PAYOUT_ORDER as $slug) {
+            if (isset($connected[$slug])) {
+                return $slug;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * @return list<string>
+     */
+    public static function connectedSlugs(): array
+    {
+        return array_keys(self::connectedMap());
+    }
+
+    public static function isConnected(string $slug): bool
+    {
+        return isset(self::connectedMap()[$slug]);
+    }
+
+    /**
+     * Adquirentes com cash-out conectado na plataforma (para o admin escolher quem paga o saque).
+     *
+     * @return list<array{slug: string, name: string}>
+     */
+    public static function connectedOptions(): array
+    {
+        $options = [];
+        foreach (self::connectedSlugs() as $slug) {
+            $def = GatewayRegistry::get($slug);
+            $name = is_string($def['name'] ?? null) ? trim((string) $def['name']) : '';
+            $options[] = [
+                'slug' => $slug,
+                'name' => $name !== '' ? $name : $slug,
+            ];
+        }
+
+        return $options;
+    }
+
+    public static function isEnabled(): bool
+    {
+        return self::activeSlug() !== null;
+    }
+
+    /**
+     * @return array<string, true>
+     */
+    private static function connectedMap(): array
+    {
         $connected = [];
         foreach (self::PAYOUT_ORDER as $slug) {
             if ($slug === 'cajupay') {
@@ -58,27 +122,6 @@ class PlatformPayoutGateway
             $connected[$slug] = true;
         }
 
-        if ($connected === []) {
-            return null;
-        }
-
-        $pref = self::preference();
-
-        if ($pref !== 'auto' && isset($connected[$pref])) {
-            return $pref;
-        }
-
-        foreach (self::PAYOUT_ORDER as $slug) {
-            if (isset($connected[$slug])) {
-                return $slug;
-            }
-        }
-
-        return null;
-    }
-
-    public static function isEnabled(): bool
-    {
-        return self::activeSlug() !== null;
+        return $connected;
     }
 }
