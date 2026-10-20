@@ -473,7 +473,14 @@ return [
             'country' => 'br',
             'country_name' => 'Brasil',
             'country_flag' => 'brasil.png',
-            'signup_url' => 'https://xpag.global',
+            'signup_url' => 'https://xpag.global/register/824f1071bc09ba535229c952d3c09a2323c1bf63ae5c6457ae7d3497ca866fbc',
+            'support_contacts' => [
+                [
+                    'name' => 'Lana Tavares',
+                    'role' => 'Gerente',
+                    'whatsapp' => '554788129220',
+                ],
+            ],
             'driver' => \App\Gateways\Xpag\XpagDriver::class,
             'credential_keys' => [
                 ['key' => 'client_id', 'label' => 'Client ID', 'type' => 'text'],
