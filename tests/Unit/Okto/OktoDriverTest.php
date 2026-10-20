@@ -54,6 +54,50 @@ class OktoDriverTest extends TestCase
         );
     }
 
+    public function test_register_webhooks_gets_operator_then_puts_merged_urls(): void
+    {
+        Http::fake([
+            'demo-pix.oktopay.eu/operator' => Http::sequence()
+                ->push([
+                    'name' => 'Stacker',
+                    'depositUrl' => 'https://old.example/deposit',
+                    'withdrawUrl' => 'https://old.example/withdraw',
+                    'notificationToken' => 'bos-secret',
+                    'biometricDepositUrl' => 'https://old.example/bio',
+                    'accessToken' => 'okto-token-test',
+                ], 200)
+                ->push([
+                    'name' => 'Stacker',
+                    'depositUrl' => 'https://pay.exemplo.com/webhooks/gateways/okto',
+                    'withdrawUrl' => 'https://pay.exemplo.com/webhooks/gateways/okto',
+                    'notificationToken' => 'bos-secret',
+                    'biometricDepositUrl' => 'https://old.example/bio',
+                ], 200),
+        ]);
+
+        (new OktoDriver)->registerWebhookUrls(
+            $this->credentials(),
+            'https://pay.exemplo.com/webhooks/gateways/okto'
+        );
+
+        Http::assertSent(function ($request) {
+            return $request->url() === 'https://demo-pix.oktopay.eu/operator'
+                && $request->method() === 'GET';
+        });
+        Http::assertSent(function ($request) {
+            if ($request->url() !== 'https://demo-pix.oktopay.eu/operator' || $request->method() !== 'PUT') {
+                return false;
+            }
+            $body = $request->data();
+
+            return ($body['depositUrl'] ?? null) === 'https://pay.exemplo.com/webhooks/gateways/okto'
+                && ($body['withdrawUrl'] ?? null) === 'https://pay.exemplo.com/webhooks/gateways/okto'
+                && ($body['notificationToken'] ?? null) === 'bos-secret'
+                && ($body['biometricDepositUrl'] ?? null) === 'https://old.example/bio'
+                && ! array_key_exists('accessToken', $body);
+        });
+    }
+
     public function test_test_connection_uses_balance_endpoint(): void
     {
         Http::fake([

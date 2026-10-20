@@ -427,7 +427,7 @@ class OktoDriver implements GatewayDriver
     }
 
     /**
-     * PUT /operator — cadastra URL única para cash-in e cash-out.
+     * PUT /operator substitui a config inteira. GET primeiro e reenvia o que já existe.
      *
      * @param  array<string, mixed>  $credentials
      */
@@ -438,19 +438,77 @@ class OktoDriver implements GatewayDriver
             throw new RuntimeException('Okto: URL de webhook precisa ser HTTPS pública.');
         }
 
-        $body = [
-            'depositUrl' => $url,
-            'withdrawUrl' => $url,
-        ];
-        $token = trim((string) ($notificationToken ?? $credentials['notification_token'] ?? $this->accessToken($credentials)));
-        if ($token !== '') {
-            $body['notificationToken'] = $token;
-        }
+        $existing = $this->fetchOperatorConfig($credentials);
+        $body = $this->operatorWebhookPutBody($existing, $url, $notificationToken, $credentials);
 
         $response = $this->http($credentials)->put($this->url($credentials, '/operator'), $body);
         if (! $response->successful()) {
             throw new RuntimeException($this->errorMessage($response, 'Falha ao registrar webhook na Okto.'));
         }
+    }
+
+    /**
+     * @param  array<string, mixed>  $credentials
+     * @return array<string, mixed>
+     */
+    public function fetchOperatorConfig(array $credentials): array
+    {
+        try {
+            $response = $this->http($credentials)->get($this->url($credentials, '/operator'));
+        } catch (\Throwable) {
+            return [];
+        }
+
+        if (! $response->successful()) {
+            return [];
+        }
+
+        $json = $response->json();
+
+        return is_array($json) ? $json : [];
+    }
+
+    /**
+     * @param  array<string, mixed>  $existing
+     * @param  array<string, mixed>  $credentials
+     * @return array<string, mixed>
+     */
+    public function operatorWebhookPutBody(array $existing, string $url, ?string $notificationToken, array $credentials): array
+    {
+        $preserve = [
+            'automaticDepositUrl',
+            'biometricDepositUrl',
+            'consentUrl',
+            'faceMatchUrl',
+            'kycUrl',
+            'payAndPlayV2DepositUrl',
+            'pixDirectPaymentUrl',
+            'directDepositUrl',
+        ];
+
+        $body = [];
+        foreach ($preserve as $key) {
+            $value = trim((string) ($existing[$key] ?? ''));
+            if ($value !== '') {
+                $body[$key] = $value;
+            }
+        }
+
+        $body['depositUrl'] = $url;
+        $body['withdrawUrl'] = $url;
+
+        $token = trim((string) ($notificationToken ?? ''));
+        if ($token === '') {
+            $token = trim((string) ($credentials['notification_token'] ?? ''));
+        }
+        if ($token === '') {
+            $token = trim((string) ($existing['notificationToken'] ?? ''));
+        }
+        if ($token !== '') {
+            $body['notificationToken'] = $token;
+        }
+
+        return $body;
     }
 
     public static function verifyPayloadSignature(string $rawBody, string $signatureB64, string $publicKeyPem): bool
