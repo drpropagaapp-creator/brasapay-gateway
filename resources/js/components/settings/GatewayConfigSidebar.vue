@@ -38,6 +38,7 @@ const saving = ref(false);
 const testing = ref(false);
 const testMessage = ref(null);
 const testSuccess = ref(null);
+const lastPixError = ref(null);
 const credentialValues = ref({});
 const certificateFile = ref(null);
 /** Arquivos extras (ex.: OnlyUp mTLS) por campo `credential_keys.key` */
@@ -88,6 +89,7 @@ watch(
         if (open && slug) {
             loading.value = true;
             testMessage.value = null;
+            lastPixError.value = null;
             webhookCopied.value = false;
             credentialValues.value = {};
             try {
@@ -95,6 +97,7 @@ watch(
                     params: { t: Date.now() },
                 });
                 gateway.value = data;
+                lastPixError.value = data.last_pix_error || null;
                 const keys = data.credential_keys || [];
                 const saved = data.credential_values || {};
                 const initial = {};
@@ -270,8 +273,25 @@ async function testConnection() {
             payload,
             { headers: { 'X-XSRF-TOKEN': getCsrfToken(), Accept: 'application/json' } }
         );
-        testSuccess.value = data.success;
-        testMessage.value = data.message || (data.success ? 'Conexão OK.' : 'Falha.');
+        if (data.pix_probe) {
+            const pixOk = Boolean(data.pix_probe.pix_ok);
+            testSuccess.value = pixOk;
+            testMessage.value = [
+                data.pix_probe.balance_ok ? 'Saldo: OK' : 'Saldo: falhou',
+                pixOk
+                    ? `PIX: gerado. ${data.pix_probe.message || ''}`.trim()
+                    : `PIX: falhou. ${data.pix_probe.message || data.last_pix_error || 'sem detalhe da Okto'}`.trim(),
+            ].join('\n');
+            lastPixError.value = pixOk ? null : (data.pix_probe.message || data.last_pix_error || null);
+        } else {
+            testSuccess.value = data.success;
+            testMessage.value = data.message || (data.success ? 'Conexão OK.' : 'Falha.');
+            if (data.last_pix_error) {
+                lastPixError.value = data.last_pix_error;
+            } else if (data.success) {
+                lastPixError.value = null;
+            }
+        }
     } catch (err) {
         testSuccess.value = false;
         testMessage.value =
@@ -353,8 +373,14 @@ async function persistCredentials(totpCode = '') {
     }
 
     certificateFile.value = null;
-    testSuccess.value = true;
-    testMessage.value = data?.message || 'Credenciais salvas.';
+    if (data?.pix_probe) {
+        testSuccess.value = Boolean(data.pix_probe.pix_ok);
+        testMessage.value = data.message || (data.pix_probe.pix_ok ? 'PIX gerado.' : 'PIX falhou.');
+        lastPixError.value = data.pix_probe.pix_ok ? null : (data.pix_probe.message || data.last_pix_error || null);
+    } else {
+        testSuccess.value = true;
+        testMessage.value = data?.message || 'Credenciais salvas.';
+    }
     emit('saved');
     setTimeout(() => {
         emit('close');
@@ -735,9 +761,15 @@ const canTestConnection = computed(() => {
                     </div>
 
                     <p
+                        v-if="lastPixError && lastPixError !== testMessage"
+                        class="mt-4 rounded-lg bg-red-100 px-3 py-2 text-sm text-red-800 dark:bg-red-900/30 dark:text-red-300"
+                    >
+                        Último erro PIX: {{ lastPixError }}
+                    </p>
+                    <p
                         v-if="testMessage"
                         :class="[
-                            'mt-4 rounded-lg px-3 py-2 text-sm',
+                            'mt-4 whitespace-pre-line rounded-lg px-3 py-2 text-sm',
                             testSuccess
                                 ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300'
                                 : 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300',
