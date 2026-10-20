@@ -139,7 +139,7 @@ class UtmifyService
         $orderId = $this->resolveExternalOrderId($order);
         $paymentMethod = $this->mapPaymentMethod($order);
         $createdAt = $order->created_at->utc()->format('Y-m-d H:i:s');
-        $approvedDate = $options['approved_at'] ?? ($utmifyStatus === 'paid' ? $order->updated_at->utc()->format('Y-m-d H:i:s') : null);
+        $approvedDate = $this->resolveApprovedDate($order, $utmifyStatus, $options);
         $refundedAt = $options['refunded_at'] ?? null;
 
         $customer = $this->buildCustomer($order, $session);
@@ -276,6 +276,37 @@ class UtmifyService
         }
 
         return $response;
+    }
+
+    /**
+     * approvedDate em UTC. refunded/chargedback precisa da data original do paid.
+     *
+     * @param  array{approved_at?: string|null}  $options
+     */
+    public function resolveApprovedDate(Order $order, string $utmifyStatus, array $options = []): ?string
+    {
+        $fromOptions = $options['approved_at'] ?? null;
+        if (is_string($fromOptions) && trim($fromOptions) !== '') {
+            return trim($fromOptions);
+        }
+
+        if ($utmifyStatus === 'paid') {
+            return $order->updated_at?->utc()->format('Y-m-d H:i:s');
+        }
+
+        if (in_array($utmifyStatus, ['refunded', 'chargedback'], true)) {
+            $meta = is_array($order->metadata) ? $order->metadata : [];
+            $stored = isset($meta['utmify_approved_at']) && is_string($meta['utmify_approved_at'])
+                ? trim($meta['utmify_approved_at'])
+                : '';
+            if ($stored !== '') {
+                return $stored;
+            }
+
+            return $order->created_at?->utc()->format('Y-m-d H:i:s');
+        }
+
+        return null;
     }
 
     /**

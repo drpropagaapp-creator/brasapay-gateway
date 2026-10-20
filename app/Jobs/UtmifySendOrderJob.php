@@ -55,6 +55,13 @@ class UtmifySendOrderJob implements ShouldQueue
 
         $tenantId = $integration->tenant_id !== null ? (int) $integration->tenant_id : null;
         if (! SellerIntegrationVisibility::effectiveForTenant(SellerIntegrationVisibility::UTMIFY, $tenantId)) {
+            Log::warning('UtmifySendOrderJob skipped (integration visibility disabled)', [
+                'order_id' => $this->orderId,
+                'utmify_integration_id' => $this->utmifyIntegrationId,
+                'tenant_id' => $tenantId,
+                'status' => $this->utmifyStatus,
+            ]);
+
             return;
         }
 
@@ -66,7 +73,7 @@ class UtmifySendOrderJob implements ShouldQueue
         }
 
         if ($this->shouldSkipSend($order)) {
-            Log::debug('UtmifySendOrderJob skipped', [
+            Log::warning('UtmifySendOrderJob skipped', [
                 'order_id' => $this->orderId,
                 'utmify_integration_id' => $this->utmifyIntegrationId,
                 'status' => $this->utmifyStatus,
@@ -138,8 +145,7 @@ class UtmifySendOrderJob implements ShouldQueue
             return;
         }
 
-        $meta = is_array($order->metadata) ? $order->metadata : [];
-        if ($this->utmifyStatus === 'paid' && ! empty($meta['utmify_paid_sent_at'])) {
+        if ($this->dispatchAlreadySent()) {
             return;
         }
 
@@ -154,6 +160,7 @@ class UtmifySendOrderJob implements ShouldQueue
                     : null,
             ]);
 
+        $meta = is_array($order->metadata) ? $order->metadata : [];
         $meta['utmify_failed_at'] = now()->toIso8601String();
         if ($exception !== null) {
             $meta['utmify_last_error'] = mb_substr($exception->getMessage(), 0, 500);
@@ -180,6 +187,9 @@ class UtmifySendOrderJob implements ShouldQueue
 
         if ($this->utmifyStatus === 'paid') {
             $meta['utmify_paid_sent_at'] = $now;
+            if (is_string($this->approvedAt) && trim($this->approvedAt) !== '') {
+                $meta['utmify_approved_at'] = trim($this->approvedAt);
+            }
             unset($meta['utmify_last_error'], $meta['utmify_failed_at']);
         } elseif ($this->utmifyStatus === 'waiting_payment') {
             $meta['utmify_waiting_sent_at'] = $now;
@@ -190,25 +200,17 @@ class UtmifySendOrderJob implements ShouldQueue
 
     private function shouldSkipSend(Order $order): bool
     {
-        $meta = is_array($order->metadata) ? $order->metadata : [];
-        $paidAlreadySent = ! empty($meta['utmify_paid_sent_at']);
-        $waitingAlreadySent = ! empty($meta['utmify_waiting_sent_at']);
-
         if ($this->dispatchAlreadySent()) {
             return true;
         }
 
-        if ($this->utmifyStatus === 'paid' && $paidAlreadySent) {
-            return true;
-        }
-
         if ($this->utmifyStatus === 'waiting_payment') {
-            if ($order->status === 'completed' || $paidAlreadySent || $waitingAlreadySent) {
+            if ($order->status === 'completed' || $this->dispatchAlreadySentForStatus('paid')) {
                 return true;
             }
         }
 
-        if (in_array($this->utmifyStatus, ['refused', 'refunded'], true) && $order->status === 'pending') {
+        if (in_array($this->utmifyStatus, ['refused', 'refunded', 'chargedback'], true) && $order->status === 'pending') {
             return true;
         }
 
@@ -217,10 +219,15 @@ class UtmifySendOrderJob implements ShouldQueue
 
     private function dispatchAlreadySent(): bool
     {
+        return $this->dispatchAlreadySentForStatus($this->utmifyStatus);
+    }
+
+    private function dispatchAlreadySentForStatus(string $utmifyStatus): bool
+    {
         return UtmifyOrderDispatch::query()
             ->where('order_id', $this->orderId)
             ->where('utmify_integration_id', $this->utmifyIntegrationId)
-            ->where('utmify_status', $this->utmifyStatus)
+            ->where('utmify_status', $utmifyStatus)
             ->where('dispatch_status', UtmifyOrderDispatch::DISPATCH_SENT)
             ->exists();
     }

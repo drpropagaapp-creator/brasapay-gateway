@@ -192,6 +192,11 @@ class ApiApplication extends Model
         return $this->hasMany(ApiKey::class, 'api_application_id');
     }
 
+    public function webhooks(): HasMany
+    {
+        return $this->hasMany(ApiApplicationWebhook::class, 'api_application_id')->orderBy('id');
+    }
+
     public function isLegacyApplication(): bool
     {
         return (bool) ($this->is_legacy ?? true);

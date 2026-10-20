@@ -8,6 +8,7 @@ use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 use RuntimeException;
 
 class OktoDriver implements GatewayDriver
@@ -57,11 +58,7 @@ class OktoDriver implements GatewayDriver
             throw new RuntimeException('Okto: CPF do pagador é obrigatório.');
         }
 
-        $name = trim((string) ($consumer['name'] ?? ''));
-        if ($name === '') {
-            $name = 'Cliente';
-        }
-
+        $name = $this->payerFullName((string) ($consumer['name'] ?? ''));
         $amountCents = max(1, (int) round($amount * 100));
         $expiration = (int) ($options['expiration'] ?? 3600);
         if ($expiration < 60) {
@@ -71,33 +68,51 @@ class OktoDriver implements GatewayDriver
             $expiration = 10800;
         }
 
+        $oktoExternalId = $this->normalizeExternalId($externalId, $options['okto_external_id'] ?? null);
         $body = [
             'name' => mb_substr($name, 0, 140),
-            'taxId' => $document,
+            'taxId' => $this->formatCpf($document),
             'amount' => $amountCents,
             'expiration' => $expiration,
-            'externalId' => mb_substr(trim($externalId), 0, 80),
+            'externalId' => $oktoExternalId,
         ];
 
         $response = $this->http($credentials)->post($this->url($credentials, '/transactions/deposit'), $body);
         if (! $response->successful()) {
-            throw new RuntimeException('Okto: '.$this->errorMessage($response, 'Erro ao gerar cobrança PIX.'));
+            $message = $this->errorMessage($response, 'Erro ao gerar cobrança PIX.');
+            Log::warning('OktoDriver createPixPayment rejected', [
+                'order_id' => $externalId,
+                'http' => $response->status(),
+                'message' => $message,
+                'body' => mb_substr($response->body(), 0, 500),
+            ]);
+
+            throw new RuntimeException('Okto: '.$message);
         }
 
-        $payload = $response->json();
-        $payload = is_array($payload) ? $payload : [];
+        $payload = $this->unwrapPayload($response->json());
+        if ($this->payloadHasHardFailure($payload)) {
+            throw new RuntimeException('Okto: '.$this->errorMessageFromArray($payload, 'Cobrança PIX recusada.'));
+        }
+
         $transactionId = trim((string) ($payload['id'] ?? ''));
         if ($transactionId === '') {
             throw new RuntimeException('Okto: resposta sem id da cobrança.');
         }
 
-        $brcode = trim((string) ($payload['brcode'] ?? ''));
+        $brcode = $this->extractBrcode($payload);
+        if ($brcode === '') {
+            $brcode = $this->fetchBrcodePayload($credentials, $transactionId);
+        }
 
         return [
             'transaction_id' => $transactionId,
             'qrcode' => null,
             'copy_paste' => $brcode !== '' ? $brcode : null,
             'raw' => $payload,
+            'metadata' => [
+                'okto_external_id' => $oktoExternalId,
+            ],
         ];
     }
 
@@ -459,16 +474,26 @@ class OktoDriver implements GatewayDriver
     private function errorMessage(Response $response, string $fallback): string
     {
         $json = $response->json();
-        if (! is_array($json)) {
-            return $fallback;
-        }
 
-        $list = $json['errorList'] ?? null;
-        if (is_array($list) && isset($list[0]) && is_array($list[0])) {
-            $msg = trim((string) ($list[0]['detailedMessage'] ?? $list[0]['message'] ?? ''));
-            if ($msg !== '') {
-                return $msg;
+        return $this->errorMessageFromArray(is_array($json) ? $json : [], $fallback);
+    }
+
+    /**
+     * @param  array<string, mixed>  $json
+     */
+    private function errorMessageFromArray(array $json, string $fallback): string
+    {
+        foreach ($this->errorObjects($json) as $item) {
+            $code = $item['code'] ?? null;
+            $msg = trim((string) ($item['detailedMessage'] ?? $item['message'] ?? ''));
+            if ($msg === '') {
+                continue;
             }
+            if (is_numeric($code)) {
+                return ((int) $code).' '.$msg;
+            }
+
+            return $msg;
         }
 
         foreach (['message', 'error', 'detailedMessage'] as $key) {
@@ -479,6 +504,153 @@ class OktoDriver implements GatewayDriver
         }
 
         return $fallback;
+    }
+
+    /**
+     * @param  array<string, mixed>  $json
+     * @return list<array<string, mixed>>
+     */
+    private function errorObjects(array $json): array
+    {
+        $buckets = [];
+        $list = $json['errorList'] ?? null;
+        if (is_array($list)) {
+            $buckets[] = $list;
+            if (isset($list['errors']) && is_array($list['errors'])) {
+                $buckets[] = $list['errors'];
+            }
+        }
+        if (isset($json['errors']) && is_array($json['errors'])) {
+            $buckets[] = $json['errors'];
+        }
+
+        $out = [];
+        foreach ($buckets as $bucket) {
+            foreach ($bucket as $item) {
+                if (is_array($item)) {
+                    $out[] = $item;
+                }
+            }
+        }
+
+        return $out;
+    }
+
+    /**
+     * @param  mixed  $json
+     * @return array<string, mixed>
+     */
+    private function unwrapPayload(mixed $json): array
+    {
+        if (! is_array($json)) {
+            return [];
+        }
+        $data = $json['data'] ?? null;
+        if (! isset($json['id']) && is_array($data) && isset($data['id'])) {
+            return $data;
+        }
+
+        return $json;
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    private function payloadHasHardFailure(array $payload): bool
+    {
+        $status = strtolower(trim((string) ($payload['status'] ?? '')));
+
+        return in_array($status, ['failed', 'expired', 'reversed'], true);
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    private function extractBrcode(array $payload): string
+    {
+        foreach (['brcode', 'brCode', 'qrCode', 'qrcode', 'pixCopiaECola', 'emv', 'copyPaste'] as $key) {
+            $value = trim((string) ($payload[$key] ?? ''));
+            if ($value !== '' && (str_starts_with($value, '00020') || strlen($value) > 40)) {
+                return $value;
+            }
+        }
+
+        return '';
+    }
+
+    /**
+     * @param  array<string, mixed>  $credentials
+     */
+    private function fetchBrcodePayload(array $credentials, string $depositId): string
+    {
+        try {
+            $response = $this->http($credentials)
+                ->get($this->url($credentials, '/transactions/qrcode/'.rawurlencode($depositId)), [
+                    'format' => 'payload',
+                ]);
+        } catch (\Throwable) {
+            return '';
+        }
+
+        if (! $response->successful()) {
+            return '';
+        }
+
+        $json = $response->json();
+        if (is_array($json)) {
+            return $this->extractBrcode($json);
+        }
+
+        $body = trim($response->body());
+        $body = trim($body, "\" \n\r\t");
+
+        return (str_starts_with($body, '00020') || strlen($body) > 40) ? $body : '';
+    }
+
+    private function payerFullName(string $name): string
+    {
+        $name = trim(preg_replace('/\s+/', ' ', $name) ?? '');
+        if ($name === '') {
+            return 'Cliente Checkout';
+        }
+        if (count(preg_split('/\s+/', $name) ?: []) < 2) {
+            return mb_substr($name.' Checkout', 0, 140);
+        }
+
+        return $name;
+    }
+
+    private function formatCpf(string $digits): string
+    {
+        if (strlen($digits) !== 11) {
+            return $digits;
+        }
+
+        return substr($digits, 0, 3).'.'.substr($digits, 3, 3).'.'.substr($digits, 6, 3).'-'.substr($digits, 9, 2);
+    }
+
+    private function normalizeExternalId(string $externalId, mixed $preferred = null): string
+    {
+        $preferred = is_string($preferred) ? trim($preferred) : '';
+        if ($this->isValidExternalId($preferred)) {
+            return mb_substr($preferred, 0, 80);
+        }
+
+        $externalId = trim($externalId);
+        if ($this->isValidExternalId($externalId)) {
+            return mb_substr($externalId, 0, 80);
+        }
+
+        return (string) Str::uuid();
+    }
+
+    private function isValidExternalId(string $id): bool
+    {
+        if ($id === '' || ctype_digit($id) || strlen($id) < 8) {
+            return false;
+        }
+
+        return (bool) preg_match('/^[A-Za-z0-9._-]+$/', $id);
     }
 
     private function mapDepositStatus(mixed $status): ?string

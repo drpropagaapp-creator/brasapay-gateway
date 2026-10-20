@@ -23,4 +23,14 @@ final class IntegrationJobDispatch
 
         return false;
     }
+
+    /**
+     * afterResponse() só é seguro em request HTTP (FPM/Octane termina o request).
+     * Em worker/console o processo não chama terminate entre jobs — o dispatch
+     * ficaria na memória até recycle (ou se perderia no crash).
+     */
+    public static function shouldDeferAfterResponse(): bool
+    {
+        return ! app()->runningInConsole();
+    }
 }

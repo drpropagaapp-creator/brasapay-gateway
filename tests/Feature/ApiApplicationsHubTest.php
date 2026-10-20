@@ -6,6 +6,7 @@ use App\Http\Middleware\EnsureInstalled;
 use App\Http\Middleware\EnsureSellerPanel;
 use App\Jobs\DeliverApiWebhookJob;
 use App\Models\ApiApplication;
+use App\Models\ApiApplicationWebhook;
 use App\Models\ApiKey;
 use App\Models\ApiWebhookDelivery;
 use App\Models\User;
@@ -76,6 +77,8 @@ class ApiApplicationsHubTest extends TestCase
             ->has('application')
             ->has('keys', 1)
             ->has('webhook')
+            ->has('webhooks')
+            ->where('webhook_max', 3)
             ->has('webhook_event_catalog')
             ->has('available_scopes')
             ->has('scope_catalog')
@@ -182,6 +185,8 @@ class ApiApplicationsHubTest extends TestCase
         $app->refresh();
         $this->assertSame('https://partner.example/webhook', $app->webhook_url);
         $this->assertSame(['order.completed', 'pix.generated'], $app->webhook_events);
+        $this->assertSame(1, $app->webhooks()->count());
+        $this->assertSame('https://partner.example/webhook', $app->webhooks()->first()->url);
     }
 
     public function test_rotate_webhook_secret_returns_new_secret(): void
@@ -284,5 +289,83 @@ class ApiApplicationsHubTest extends TestCase
             ->assertNotFound();
 
         Queue::assertNothingPushed();
+    }
+
+    public function test_seller_can_create_up_to_three_webhooks(): void
+    {
+        $seller = $this->seller();
+        $app = $this->application($seller);
+
+        for ($i = 1; $i <= 3; $i++) {
+            $this->actingAs($seller)
+                ->post("/aplicacoes-api/{$app->id}/webhooks", [
+                    'name' => "Loja {$i}",
+                    'webhook_url' => "https://example.com/hook-{$i}",
+                    'webhook_enabled' => true,
+                ])
+                ->assertRedirect(route('api-applications.index', ['tab' => 'webhooks']));
+        }
+
+        $this->assertSame(3, $app->webhooks()->count());
+
+        $this->actingAs($seller)
+            ->post("/aplicacoes-api/{$app->id}/webhooks", [
+                'name' => 'Loja 4',
+                'webhook_url' => 'https://example.com/hook-4',
+            ])
+            ->assertRedirect(route('api-applications.index', ['tab' => 'webhooks']))
+            ->assertSessionHas('error');
+
+        $this->assertSame(3, $app->webhooks()->count());
+    }
+
+    public function test_webhook_product_filter_skips_unrelated_product(): void
+    {
+        $seller = $this->seller();
+        $app = $this->application($seller);
+        $productA = $this->createTestProduct(['tenant_id' => $seller->tenant_id, 'name' => 'Produto A']);
+        $productB = $this->createTestProduct(['tenant_id' => $seller->tenant_id, 'name' => 'Produto B']);
+
+        $this->actingAs($seller)
+            ->post("/aplicacoes-api/{$app->id}/webhooks", [
+                'webhook_url' => 'https://example.com/produto-a',
+                'product_ids' => [$productA->id],
+            ])
+            ->assertSessionHasNoErrors()
+            ->assertRedirect();
+
+        $endpoint = $app->webhooks()->first();
+        $this->assertNotNull($endpoint);
+        $this->assertTrue($endpoint->appliesToProduct($productA->id));
+        $this->assertFalse($endpoint->appliesToProduct($productB->id));
+
+        $service = app(ApiWebhookDeliveryService::class);
+        $matched = $service->dispatch($app->fresh(), 'order.completed', ['order_id' => 1], null, $productA->id);
+        $skipped = $service->dispatch($app->fresh(), 'order.completed', ['order_id' => 2], null, $productB->id);
+        $withdrawalSkipped = $service->dispatch($app->fresh(), 'withdrawal.completed', ['withdrawal_id' => 1], null, null);
+
+        $this->assertNotNull($matched);
+        $this->assertNull($skipped);
+        $this->assertNull($withdrawalSkipped);
+    }
+
+    public function test_unfiltered_webhook_receives_all_products_and_withdrawals(): void
+    {
+        $seller = $this->seller();
+        $app = $this->application($seller);
+        $product = $this->createTestProduct(['tenant_id' => $seller->tenant_id]);
+
+        ApiApplicationWebhook::create([
+            'api_application_id' => $app->id,
+            'name' => 'Geral',
+            'url' => 'https://example.com/geral',
+            'secret' => 'secret-geral',
+            'events' => null,
+            'is_active' => true,
+        ]);
+
+        $service = app(ApiWebhookDeliveryService::class);
+        $this->assertNotNull($service->dispatch($app, 'order.completed', ['order_id' => 1], null, $product->id));
+        $this->assertNotNull($service->dispatch($app, 'withdrawal.completed', ['withdrawal_id' => 1]));
     }
 }

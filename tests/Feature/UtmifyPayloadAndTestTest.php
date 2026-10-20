@@ -369,4 +369,29 @@ class UtmifyPayloadAndTestTest extends TestCase
                 && str_contains($raw, '"sck":null');
         });
     }
+
+    public function test_refunded_payload_keeps_original_approved_date(): void
+    {
+        $order = new Order([
+            'tenant_id' => 1,
+            'product_id' => 'prod-1',
+            'status' => 'refunded',
+            'amount' => 75,
+            'email' => 'buyer@example.com',
+            'metadata' => [
+                'utmify_approved_at' => '2024-07-15 13:30:14',
+            ],
+        ]);
+        $order->id = 880;
+        $order->created_at = now()->subDays(3);
+        $order->updated_at = now();
+
+        $payload = (new UtmifyService)->buildPayload($order, 'refunded', [
+            'refunded_at' => '2024-07-19 01:44:39',
+        ]);
+
+        $this->assertSame('refunded', $payload['status']);
+        $this->assertSame('2024-07-15 13:30:14', $payload['approvedDate']);
+        $this->assertSame('2024-07-19 01:44:39', $payload['refundedAt']);
+    }
 }

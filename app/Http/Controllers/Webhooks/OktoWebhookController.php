@@ -60,6 +60,12 @@ class OktoWebhookController extends Controller
 
         if ($status === 'paid') {
             $id = $transactionId !== '' ? $transactionId : (string) $order->gateway_id;
+            if ($id !== '' && ((string) $order->gateway !== 'okto' || (string) $order->gateway_id !== $id)) {
+                $order->update([
+                    'gateway' => 'okto',
+                    'gateway_id' => $id,
+                ]);
+            }
             PaymentWebhookDispatcher::dispatch('okto', $id, 'order.paid', 'paid', $payload);
 
             return response()->json(['received' => true]);
@@ -119,10 +125,21 @@ class OktoWebhookController extends Controller
             }
         }
 
+        if ($externalId !== '') {
+            $byMeta = Order::query()
+                ->where('metadata->okto_external_id', $externalId)
+                ->first();
+            if ($byMeta !== null) {
+                return $byMeta;
+            }
+        }
+
         if ($externalId !== '' && ctype_digit($externalId)) {
             return Order::query()
-                ->where('gateway', 'okto')
                 ->where('id', (int) $externalId)
+                ->where(function ($query) {
+                    $query->where('gateway', 'okto')->orWhereNull('gateway');
+                })
                 ->first();
         }
 

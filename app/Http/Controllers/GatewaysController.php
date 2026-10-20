@@ -155,7 +155,7 @@ class GatewaysController extends Controller
             $webhookHelp = 'Cadastre esta URL HTTPS no painel Xflow (Integrações → Webhooks) ou use “Testar conexão” / salvar credenciais para registro automático. Eventos PIX: transaction.paid, transaction.refunded. Saque: withdrawal.processing/completed/failed. MED: dispute.opened/accepted/rejected (mesma URL ou …/xflow/disputes). O secret HMAC é devolvido uma única vez. Precisa ser HTTPS público. Chaves pk_test_ são sandbox (QR não pagável; saque via API não funciona em teste). Defesa de MED é no painel da Xflow > Disputas.';
         } elseif ($slug === 'okto') {
             $webhookUrl = GatewayWebhookUrl::forGateway('okto');
-            $webhookHelp = 'PIX Classic Non Betting. “Testar conexão” tenta registrar depositUrl e withdrawUrl nesta URL via PUT /operator. Precisa ser HTTPS público (GETFY_WEBHOOK_PUBLIC_URL). A Okto assina o body com SHA256withRSA no header X-Payload-Signature — cole a chave pública PEM. Header opcional Gaming-Operator-Token. Staging: demo-pix.oktopay.eu.';
+            $webhookHelp = 'PIX Classic Non Betting. O arquivo .pub é só a chave pública RSA: abra como texto e cole no campo (não precisa upload). Ela não entra na geração do PIX — só valida X-Payload-Signature do webhook. “Testar conexão” consulta o saldo e tenta registrar depositUrl/withdrawUrl via PUT /operator (HTTPS público em GETFY_WEBHOOK_PUBLIC_URL). Staging: demo-pix.oktopay.eu e CPF de persona (ex. 604.184.437-34).';
         }
 
         $fileFieldsConfigured = [];
@@ -257,8 +257,9 @@ class GatewaysController extends Controller
                 $rules[$key] = ['nullable', 'boolean'];
                 continue;
             }
-            // Tokens (ex.: Mercado Pago Access Token) podem ultrapassar 500 caracteres
-            $rules[$key] = ['nullable', 'string', 'max:2000'];
+            // PEM/.pub e tokens longos: textarea precisa de teto maior que 2000
+            $max = $type === 'textarea' ? 16000 : 2000;
+            $rules[$key] = ['nullable', 'string', 'max:'.$max];
         }
 
         $validated = $request->validate($rules);
@@ -575,9 +576,10 @@ class GatewaysController extends Controller
                 $rules[$key] = ['nullable', 'boolean'];
                 continue;
             }
+            $max = $type === 'textarea' ? 16000 : 2000;
             $rules[$key] = $optional
-                ? ['nullable', 'string', 'max:2000']
-                : ['required', 'string', 'max:2000'];
+                ? ['nullable', 'string', 'max:'.$max]
+                : ['required', 'string', 'max:'.$max];
         }
         $validated = $request->validate($rules);
 
