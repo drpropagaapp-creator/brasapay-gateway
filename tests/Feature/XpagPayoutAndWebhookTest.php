@@ -121,6 +121,17 @@ class XpagPayoutAndWebhookTest extends TestCase
             $this->markTestSkipped('withdrawals table');
         }
 
+        // O webhook (não autenticado) não marca pago direto: dispara a
+        // reconciliação, que confirma o status na API antes de marcar.
+        Http::fake([
+            'api.xpag.global/consult-cashout*' => Http::response([
+                'ok' => true,
+                'type' => 'cashout',
+                'status' => 'completed',
+                'transaction_id' => 'E-xpag-paid',
+            ], 200),
+        ]);
+
         $this->seedXpagCredential();
         $w = $this->makeWithdrawal(50, 0, 50, [
             'payout_pix_key' => 'destino@pix.com',
@@ -145,6 +156,47 @@ class XpagPayoutAndWebhookTest extends TestCase
 
         $response->assertOk()->assertJson(['received' => true]);
         $this->assertSame('paid', $w->fresh()->status);
+    }
+
+    public function test_webhook_cashout_forged_completed_does_not_mark_paid_when_api_says_pending(): void
+    {
+        if (! Schema::hasTable('withdrawals')) {
+            $this->markTestSkipped('withdrawals table');
+        }
+
+        Http::fake([
+            'api.xpag.global/consult-cashout*' => Http::response([
+                'ok' => true,
+                'type' => 'cashout',
+                'status' => 'processing',
+                'transaction_id' => 'E-xpag-forged',
+            ], 200),
+        ]);
+
+        $this->seedXpagCredential();
+        $w = $this->makeWithdrawal(50, 0, 50, [
+            'payout_pix_key' => 'destino@pix.com',
+            'payout_pix_key_type' => 'email',
+        ]);
+        $w->update([
+            'status' => 'pending',
+            'payout_provider' => 'xpag',
+            'payout_external_id' => 'E-xpag-forged',
+        ]);
+
+        $response = $this->postJson('/webhooks/gateways/xpag', [
+            'type' => 'cashout',
+            'status' => 'completed',
+            'amount' => 50,
+            'currency' => 'BRL',
+            'e2e' => 'E-xpag-forged',
+            'external_id' => (string) $w->id,
+            'method' => 'PIX',
+            'provider' => 'XPag',
+        ]);
+
+        $response->assertOk()->assertJson(['received' => true]);
+        $this->assertSame('pending', $w->fresh()->status);
     }
 
     public function test_connection_probe_uses_balance(): void

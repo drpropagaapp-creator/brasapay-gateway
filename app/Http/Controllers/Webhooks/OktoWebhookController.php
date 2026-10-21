@@ -101,13 +101,11 @@ class OktoWebhookController extends Controller
             return response()->json(['received' => true]);
         }
 
-        if ($status === 'success' && in_array($withdrawal->status, ['pending', 'processing'], true)) {
-            MerchantWithdrawalService::markPaid($withdrawal->fresh());
-        } elseif ($status === 'failed' && in_array($withdrawal->status, ['pending', 'processing'], true)) {
-            MerchantWithdrawalService::markFailed(
-                $withdrawal->fresh(),
-                'Payout Okto falhou (webhook failed).'
-            );
+        // Webhook sem assinatura: nunca confia no status do payload para
+        // marcar pago/falho. O evento só antecipa a reconciliação via API.
+        if (in_array($status, ['success', 'failed'], true)
+            && in_array($withdrawal->status, ['pending', 'processing'], true)) {
+            \App\Jobs\ReconcileOktoWithdrawalJob::dispatch($withdrawal->id);
         }
 
         return response()->json(['received' => true]);

@@ -5,7 +5,6 @@ namespace App\Http\Controllers\Webhooks;
 use App\Http\Controllers\Controller;
 use App\Models\Order;
 use App\Models\Withdrawal;
-use App\Services\MerchantWithdrawalService;
 use App\Support\PaymentWebhookDispatcher;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -81,12 +80,23 @@ class XpagWebhookController extends Controller
         }
 
         if (in_array($status, ['confirmed', 'paid'], true)) {
-            $id = $transactionId !== '' ? $transactionId : (string) $order->gateway_id;
-            if ($id !== '' && ((string) $order->gateway !== 'xpag' || (string) $order->gateway_id !== $id)) {
-                $order->update([
-                    'gateway' => 'xpag',
-                    'gateway_id' => $id,
-                ]);
+            // Webhook sem assinatura: não religa pedido nem sobrescreve o
+            // gateway_id com dado do payload. Se o pedido ainda não tem a
+            // transação persistida (corrida criação × webhook), o vínculo é
+            // confirmado na API da XPag (consulta por external_id = id do
+            // pedido) e usa o transaction_id devolvido pela API.
+            $id = trim((string) $order->gateway_id);
+            if ($id === '' || (string) $order->gateway !== 'xpag') {
+                $id = $this->verifiedTransactionIdForOrder($order);
+                if ($id === null) {
+                    Log::warning('XpagWebhook: transação do pedido não confirmada na API; evento ignorado', [
+                        'order_id' => $order->id,
+                        'payload_transaction_id' => $transactionId,
+                    ]);
+
+                    return response()->json(['received' => true, 'ignored' => true]);
+                }
+                $order->update(['gateway' => 'xpag', 'gateway_id' => $id]);
             }
             PaymentWebhookDispatcher::dispatch('xpag', $id, 'order.paid', 'paid', $payload);
 
@@ -115,12 +125,13 @@ class XpagWebhookController extends Controller
             return response()->json(['received' => true]);
         }
 
-        if (in_array($status, ['completed', 'paid', 'success'], true)
+        // Webhook sem assinatura: nunca confia no status do payload para
+        // marcar pago/falho (um "failed" forjado devolveria saldo com o PIX
+        // já enviado). O evento só antecipa a reconciliação, que consulta a
+        // API da XPag e decide pelo status real.
+        if (in_array($status, ['completed', 'paid', 'success', 'failed'], true)
             && in_array($withdrawal->status, ['pending', 'processing'], true)) {
-            MerchantWithdrawalService::markPaid($withdrawal->fresh());
-        } elseif ($status === 'failed' && in_array($withdrawal->status, ['pending', 'processing'], true)) {
-            $reason = trim((string) ($payload['fail_reason'] ?? 'Payout XPag falhou (webhook failed).'));
-            MerchantWithdrawalService::markFailed($withdrawal->fresh(), $reason);
+            \App\Jobs\ReconcileXpagWithdrawalJob::dispatch($withdrawal->id);
         }
 
         return response()->json(['received' => true]);
@@ -148,6 +159,8 @@ class XpagWebhookController extends Controller
         }
 
         if ($externalId !== '' && ctype_digit($externalId)) {
+            // gateway nulo cobre a corrida criação × webhook; o vínculo desses
+            // pedidos só acontece após confirmação na API (handleCashin).
             return Order::query()
                 ->where('id', (int) $externalId)
                 ->where(function ($query) {
@@ -157,6 +170,49 @@ class XpagWebhookController extends Controller
         }
 
         return null;
+    }
+
+    /**
+     * Confirma na API da XPag qual transação pertence ao pedido (consulta por
+     * external_id = id do pedido) e devolve o transaction_id REAL informado
+     * pela API — nunca o do payload do webhook, que não é autenticado.
+     */
+    private function verifiedTransactionIdForOrder(Order $order): ?string
+    {
+        $credentials = \App\Support\GatewayPaymentCredentials::resolve($order->tenant_id, 'xpag', $order);
+        if ($credentials === null) {
+            return null;
+        }
+
+        $meta = is_array($order->metadata) ? $order->metadata : [];
+        $identifier = trim((string) ($meta['xpag_external_id'] ?? ''));
+        if ($identifier === '') {
+            $identifier = (string) $order->id;
+        }
+
+        try {
+            $row = (new \App\Gateways\Xpag\XpagDriver)->consultTransaction($credentials, $identifier);
+        } catch (\Throwable $e) {
+            Log::warning('XpagWebhook: falha ao consultar transação do pedido na API', [
+                'order_id' => $order->id,
+                'message' => $e->getMessage(),
+            ]);
+
+            return null;
+        }
+
+        if (! is_array($row)) {
+            return null;
+        }
+
+        $apiExternalId = trim((string) ($row['external_id'] ?? ''));
+        if ($apiExternalId !== '' && $apiExternalId !== $identifier) {
+            return null;
+        }
+
+        $id = trim((string) ($row['transaction_id'] ?? $row['request_number'] ?? $row['id'] ?? ''));
+
+        return $id !== '' ? $id : null;
     }
 
     private function findWithdrawal(string $transactionId, string $externalId): ?Withdrawal
