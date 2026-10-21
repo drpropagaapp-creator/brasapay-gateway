@@ -24,7 +24,7 @@ import { isValidCpf } from '@/utils/brazilianDocuments.js';
 import { navigateAfterCheckout } from '@/lib/checkoutRedirect.js';
 import { trackCheckoutAddPaymentInfo, trackCheckoutPurchase } from '@/composables/useCheckoutPurchaseTracking.js';
 import { applyMetaAdvancedMatching } from '@/composables/useMetaCheckoutTracking.js';
-import { splitCustomerName } from '@/lib/metaTracking/browserPixel.js';
+import { splitCustomerName, normalizeMetaPhone } from '@/lib/metaTracking/browserPixel.js';
 import { getMetricsSessionKey } from '@/lib/metricsTracking.js';
 import CheckoutLegalFooter from './CheckoutLegalFooter.vue';
 import { usePlatformBranding } from '@/composables/usePlatformBranding';
@@ -485,7 +485,7 @@ const paypalButtonsReady = computed(() => {
     if (!email.includes('@')) return false;
     if (showName.value && !(form.name || '').trim()) return false;
     if (showCpf.value && (form.cpf || '').replace(/\D/g, '').length < 11) return false;
-    if (showPhone.value && phoneDigits.value.replace(/\D/g, '').length < 8) return false;
+    if (showPhone.value && !isCheckoutPhoneComplete()) return false;
     if (props.requiresShipping) {
         const cep = (form.address_zipcode || '').replace(/\D/g, '');
         if (cep.length < 8) return false;
@@ -771,8 +771,16 @@ let trackTimeout = null;
 let contactSyncTimeout = null;
 const trackStepSent = ref({ form_started: false, form_filled: false });
 
+function currentCheckoutPhone() {
+    return showPhone.value ? `${form.country_code || ''}${phoneDigits.value || ''}` : '';
+}
+
+function isCheckoutPhoneComplete() {
+    return Boolean(normalizeMetaPhone(currentCheckoutPhone()));
+}
+
 function currentMetaCustomer() {
-    const phone = showPhone.value ? `${form.country_code || ''}${phoneDigits.value || ''}` : '';
+    const phone = currentCheckoutPhone();
     return {
         email: form.email || '',
         phone,
@@ -1485,7 +1493,7 @@ function validateCajuPayCustomerFields() {
             errors.cpf = 'CPF inválido.';
         }
     }
-    if (showPhone.value && (phoneDigits.value || '').length < 8) {
+    if (showPhone.value && !isCheckoutPhoneComplete()) {
         errors.phone = 'Telefone inválido.';
     }
     if (Object.keys(errors).length > 0) {
