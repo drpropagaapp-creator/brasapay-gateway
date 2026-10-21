@@ -136,7 +136,7 @@ prompt_stacker_agent_if_needed
 if [ "$STACKER_MANAGED" = "1" ]; then
   $SUDO bash docker/ensure-stacker-agent.sh || true
   echo ""
-  echo "=== Reiniciando stack Docker (sem rebuild do app — updates de código via agente Stacker) ==="
+  echo "=== Rebuild da imagem app (base PHP com --pull) + reinício da stack ==="
   $SUDO chmod +x docker/detect-compose-files.sh 2>/dev/null || true
   COMPOSE_FILES="$($SUDO sh docker/detect-compose-files.sh)"
   COMPOSE_EXEC_ARGS=""
@@ -157,7 +157,10 @@ if [ "$STACKER_MANAGED" = "1" ]; then
   # Hardens LOG_* + limpa logs gigantes antes do recreate (evita herdar single/debug).
   run_host_log_harden_only
   $SUDO env -u GETFY_DB_CONNECTION -u GETFY_DB_HOST -u GETFY_DB_PORT -u GETFY_DB_DATABASE -u GETFY_DB_USERNAME -u GETFY_DB_PASSWORD \
-    GETFY_COMPOSE_FILES="$COMPOSE_FILES" GETFY_SKIP_DOCKER_BUILD=1 GETFY_APP_ENV=production GETFY_APP_DEBUG=false sh docker/up.sh
+    GETFY_COMPOSE_FILES="$COMPOSE_FILES" GETFY_APP_ENV=production GETFY_APP_DEBUG=false \
+    GETFY_PHP_BASE_IMAGE="${GETFY_PHP_BASE_IMAGE:-php:8.3.36-cli-alpine}" \
+    GETFY_DOCKER_NO_CACHE="${GETFY_DOCKER_NO_CACHE:-0}" \
+    sh docker/up.sh
   if [ -f "$INSTALL_DIR/agent/Dockerfile" ]; then
     echo ""
     echo "=== Rebuild do stacker-agent (se houver mudanças no agente) ==="

@@ -357,7 +357,14 @@ unset DB_USERNAME DB_PASSWORD DB_HOST DB_PORT DB_DATABASE DB_CONNECTION 2>/dev/n
 
 echo "=== Rebuild imagem app ==="
 echo "Build context: $COMPOSE_WORK_DIR"
-docker build -t getfy_app:latest -f "$COMPOSE_WORK_DIR/Dockerfile" "$COMPOSE_WORK_DIR"
+PHP_BASE_IMAGE="${GETFY_PHP_BASE_IMAGE:-php:8.3.36-cli-alpine}"
+BUILD_OPTS="--pull --build-arg PHP_BASE_IMAGE=${PHP_BASE_IMAGE}"
+if [ "${GETFY_DOCKER_NO_CACHE:-0}" = "1" ]; then
+  BUILD_OPTS="$BUILD_OPTS --no-cache"
+fi
+echo "docker build $BUILD_OPTS -t getfy_app:latest"
+# shellcheck disable=SC2086
+docker build $BUILD_OPTS -t getfy_app:latest -f "$COMPOSE_WORK_DIR/Dockerfile" "$COMPOSE_WORK_DIR"
 
 ensure_php_uploads_ini
 
