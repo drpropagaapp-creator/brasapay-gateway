@@ -18,7 +18,7 @@ class BspayDriverTest extends TestCase
 
     public function test_bspay_is_registered_as_pix_acquirer(): void
     {
-        $this->assertTrue(GatewayRegistry::isAllowedAcquirer('bspay'));
+        $this->assertFalse(GatewayRegistry::isAllowedAcquirer('bspay'));
         $def = GatewayRegistry::get('bspay');
         $this->assertNotNull($def);
         $this->assertContains('pix', $def['methods'] ?? []);
@@ -27,7 +27,7 @@ class BspayDriverTest extends TestCase
         $this->assertContains('client_secret', $keys);
         $this->assertNotContains('webhook_secret', $keys);
         $this->assertInstanceOf(BspayDriver::class, GatewayRegistry::driver('bspay'));
-        $this->assertContains('bspay', config('gateways.default_order.pix'));
+        $this->assertNotContains('bspay', config('gateways.default_order.pix'));
         $this->assertSame('Brasil, México', $def['country_name'] ?? null);
         $this->assertSame(
             [

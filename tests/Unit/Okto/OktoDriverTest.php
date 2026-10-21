@@ -54,6 +54,50 @@ class OktoDriverTest extends TestCase
         );
     }
 
+    public function test_register_webhooks_gets_operator_then_puts_merged_urls(): void
+    {
+        Http::fake([
+            'demo-pix.oktopay.eu/operator' => Http::sequence()
+                ->push([
+                    'name' => 'Stacker',
+                    'depositUrl' => 'https://old.example/deposit',
+                    'withdrawUrl' => 'https://old.example/withdraw',
+                    'notificationToken' => 'bos-secret',
+                    'biometricDepositUrl' => 'https://old.example/bio',
+                    'accessToken' => 'okto-token-test',
+                ], 200)
+                ->push([
+                    'name' => 'Stacker',
+                    'depositUrl' => 'https://pay.exemplo.com/webhooks/gateways/okto',
+                    'withdrawUrl' => 'https://pay.exemplo.com/webhooks/gateways/okto',
+                    'notificationToken' => 'bos-secret',
+                    'biometricDepositUrl' => 'https://old.example/bio',
+                ], 200),
+        ]);
+
+        (new OktoDriver)->registerWebhookUrls(
+            $this->credentials(),
+            'https://pay.exemplo.com/webhooks/gateways/okto'
+        );
+
+        Http::assertSent(function ($request) {
+            return $request->url() === 'https://demo-pix.oktopay.eu/operator'
+                && $request->method() === 'GET';
+        });
+        Http::assertSent(function ($request) {
+            if ($request->url() !== 'https://demo-pix.oktopay.eu/operator' || $request->method() !== 'PUT') {
+                return false;
+            }
+            $body = $request->data();
+
+            return ($body['depositUrl'] ?? null) === 'https://pay.exemplo.com/webhooks/gateways/okto'
+                && ($body['withdrawUrl'] ?? null) === 'https://pay.exemplo.com/webhooks/gateways/okto'
+                && ($body['notificationToken'] ?? null) === 'bos-secret'
+                && ($body['biometricDepositUrl'] ?? null) === 'https://old.example/bio'
+                && ! array_key_exists('accessToken', $body);
+        });
+    }
+
     public function test_test_connection_uses_balance_endpoint(): void
     {
         Http::fake([
@@ -89,12 +133,13 @@ class OktoDriverTest extends TestCase
             $this->credentials(),
             19.90,
             ['name' => 'Cliente Exemplo', 'document' => '123.456.789-09', 'email' => 'c@ex.com'],
-            '42',
+            '516042b1-a804-49f9-a252-1222c8273b46',
             'https://pay.exemplo.com/webhooks/gateways/okto'
         );
 
         $this->assertSame('019e3cd1-a244-77ce-9389-a562d3df6fb0', $result['transaction_id']);
         $this->assertSame('00020101br.gov.bcb.pix...', $result['copy_paste']);
+        $this->assertSame('516042b1-a804-49f9-a252-1222c8273b46', $result['metadata']['okto_external_id'] ?? null);
 
         Http::assertSent(function ($request) {
             if (! str_contains($request->url(), '/transactions/deposit') || $request->method() !== 'POST') {
@@ -103,9 +148,86 @@ class OktoDriverTest extends TestCase
             $body = $request->data();
 
             return ($body['amount'] ?? null) === 1990
-                && ($body['externalId'] ?? null) === '42'
-                && ($body['taxId'] ?? null) === '12345678909';
+                && ($body['externalId'] ?? null) === '516042b1-a804-49f9-a252-1222c8273b46'
+                && ($body['taxId'] ?? null) === '123.456.789-09'
+                && ($body['name'] ?? null) === 'Cliente Exemplo';
         });
+    }
+
+    public function test_create_pix_upgrades_numeric_external_id_and_fetches_brcode(): void
+    {
+        Http::fake([
+            'demo-pix.oktopay.eu/transactions/deposit' => Http::response([
+                'id' => 'dep-99',
+                'status' => 'created',
+            ], 200),
+            'demo-pix.oktopay.eu/transactions/qrcode/dep-99*' => Http::response('00020101021226890014br.gov.bcb.pix', 200),
+        ]);
+
+        $result = (new OktoDriver)->createPixPayment(
+            $this->credentials(),
+            12,
+            ['name' => 'Marion', 'document' => '60418443734'],
+            '42',
+            'https://pay.exemplo.com/webhooks/gateways/okto'
+        );
+
+        $this->assertSame('dep-99', $result['transaction_id']);
+        $this->assertSame('00020101021226890014br.gov.bcb.pix', $result['copy_paste']);
+        $this->assertTrue(\Illuminate\Support\Str::isUuid((string) ($result['metadata']['okto_external_id'] ?? '')));
+
+        Http::assertSent(function ($request) {
+            if (! str_contains($request->url(), '/transactions/deposit') || $request->method() !== 'POST') {
+                return false;
+            }
+            $body = $request->data();
+
+            return ($body['taxId'] ?? null) === '604.184.437-34'
+                && ($body['name'] ?? null) === 'Marion Checkout'
+                && ! ctype_digit((string) ($body['externalId'] ?? ''));
+        });
+    }
+
+    public function test_create_pix_surfaces_okto_error_code(): void
+    {
+        Http::fake([
+            'demo-pix.oktopay.eu/transactions/deposit' => Http::response([
+                'errors' => [
+                    ['code' => 2010, 'message' => 'Invalid external id.', 'detailedMessage' => 'externalId must be unique and url-safe'],
+                ],
+            ], 400),
+        ]);
+
+        try {
+            (new OktoDriver)->createPixPayment(
+                $this->credentials(),
+                10,
+                ['name' => 'Marion Schuppe', 'document' => '604.184.437-34'],
+                '42',
+                'https://pay.exemplo.com/webhooks/gateways/okto'
+            );
+            $this->fail('Expected RuntimeException');
+        } catch (\RuntimeException $e) {
+            $this->assertStringContainsString('2010', $e->getMessage());
+            $this->assertStringContainsString('url-safe', $e->getMessage());
+        }
+    }
+
+    public function test_diagnose_pix_deposit_returns_api_error(): void
+    {
+        Http::fake([
+            'demo-pix.oktopay.eu/transactions/deposit' => Http::response([
+                'errorList' => [
+                    ['code' => 2001, 'message' => 'The tax id is invalid.', 'detailedMessage' => 'taxId rejected'],
+                ],
+            ], 400),
+        ]);
+
+        $result = (new OktoDriver)->diagnosePixDeposit($this->credentials());
+
+        $this->assertFalse($result['ok']);
+        $this->assertStringContainsString('2001', $result['message']);
+        $this->assertStringContainsString('demo-pix.oktopay.eu', $result['message']);
     }
 
     public function test_create_pix_rejects_cnpj_payer(): void

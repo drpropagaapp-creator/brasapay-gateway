@@ -65,7 +65,8 @@ class UtmifyEventSubscriber
     public function handleOrderRefunded(OrderRefunded $event): void
     {
         $refundedAt = $event->order->updated_at->utc()->format('Y-m-d H:i:s');
-        $this->dispatchForOrder($event->order, 'refunded', null, $refundedAt);
+        $approvedAt = $this->resolveApprovedAtForRefund($event->order);
+        $this->dispatchForOrder($event->order, 'refunded', $approvedAt, $refundedAt);
     }
 
     public function handleOrderRejected(OrderRejected $event): void
@@ -103,7 +104,7 @@ class UtmifyEventSubscriber
             ->get();
 
         if ($integrations->isEmpty()) {
-            Log::info('UtmifyEventSubscriber: no active integration for tenant', [
+            Log::warning('UtmifyEventSubscriber: no active integration for tenant', [
                 'tenant_id' => $tenantId,
                 'order_id' => $order->id,
                 'status' => $utmifyStatus,
@@ -117,14 +118,14 @@ class UtmifyEventSubscriber
 
         foreach ($integrations as $integration) {
             if (! $integration->api_key) {
-                Log::debug('UtmifyEventSubscriber: integration skipped (no api key)', [
+                Log::warning('UtmifyEventSubscriber: integration skipped (no api key)', [
                     'utmify_integration_id' => $integration->id,
                     'order_id' => $order->id,
                 ]);
                 continue;
             }
             if (! $integration->appliesToOrder($order)) {
-                Log::debug('UtmifyEventSubscriber: integration skipped (product filter)', [
+                Log::warning('UtmifyEventSubscriber: integration skipped (product filter)', [
                     'utmify_integration_id' => $integration->id,
                     'order_id' => $order->id,
                     'product_id' => $order->product_id,
@@ -155,7 +156,7 @@ class UtmifyEventSubscriber
         }
 
         if ($dispatched === 0) {
-            Log::info('UtmifyEventSubscriber: no integration matched order', [
+            Log::warning('UtmifyEventSubscriber: no integration matched order', [
                 'tenant_id' => $tenantId,
                 'order_id' => $order->id,
                 'status' => $utmifyStatus,
@@ -202,10 +203,24 @@ class UtmifyEventSubscriber
             $refundedAt
         )->onQueue($queue);
 
-        // Igual Meta: em request HTTP adia para afterResponse. Em testes o terminate não roda.
-        if (! app()->runningUnitTests()) {
+        // HTTP: adia para afterResponse. Worker/console: dispatch imediato no Redis
+        // (afterResponse só roda no terminate do processo — workers não terminam entre jobs).
+        if (IntegrationJobDispatch::shouldDeferAfterResponse()) {
             $pending->afterResponse();
         }
+    }
+
+    private function resolveApprovedAtForRefund(Order $order): ?string
+    {
+        $meta = is_array($order->metadata) ? $order->metadata : [];
+        $stored = isset($meta['utmify_approved_at']) && is_string($meta['utmify_approved_at'])
+            ? trim($meta['utmify_approved_at'])
+            : '';
+        if ($stored !== '') {
+            return $stored;
+        }
+
+        return $order->created_at?->utc()->format('Y-m-d H:i:s');
     }
 
     private function queueSize(string $queue): ?int

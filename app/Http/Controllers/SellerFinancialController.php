@@ -160,7 +160,7 @@ class SellerFinancialController extends Controller
         $payoutPixSetup = match ($payoutGateway) {
             'cajupay', 'versell' => 'label_and_key',
             'spacepag' => 'key_and_receiver',
-            'woovi', 'bspay', 'assetpay', 'onlyup', 'xflow', 'okto' => 'pix_key_only',
+            'woovi', 'bspay', 'assetpay', 'onlyup', 'xflow', 'okto', 'xpag' => 'pix_key_only',
             default => null,
         };
         $cajuPixOwnerDocumentHint = '';
@@ -361,7 +361,7 @@ class SellerFinancialController extends Controller
             return redirect()->route('financeiro.seller.index')->with('success', 'Dados para recebimento de saques salvos.');
         }
 
-        if (in_array($slug, ['woovi', 'bspay', 'assetpay', 'onlyup', 'xflow', 'okto'], true)) {
+        if (in_array($slug, ['woovi', 'bspay', 'assetpay', 'onlyup', 'xflow', 'okto', 'xpag'], true)) {
             $validated = $request->validate([
                 'pix_key' => ['required', 'string', 'max:120'],
                 'pix_key_type' => ['required', 'string', 'in:cpf,cnpj,email,phone,evp'],
@@ -453,7 +453,7 @@ class SellerFinancialController extends Controller
                 ]);
             }
         }
-        if (in_array($slug, ['woovi', 'bspay', 'assetpay', 'onlyup', 'xflow', 'okto'], true)) {
+        if (in_array($slug, ['woovi', 'bspay', 'assetpay', 'onlyup', 'xflow', 'okto', 'xpag'], true)) {
             $settings = is_array($user->payout_settings) ? $user->payout_settings : [];
             if (PayoutUserSettings::pixKey($settings) === '' || PayoutUserSettings::pixKeyType($settings) === '') {
                 throw ValidationException::withMessages([

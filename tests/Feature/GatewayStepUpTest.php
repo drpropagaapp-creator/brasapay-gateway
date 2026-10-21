@@ -63,6 +63,39 @@ class GatewayStepUpTest extends TestCase
             ->assertJsonPath('slug', 'stripe');
     }
 
+    public function test_asaas_gateway_show_includes_webhook_url(): void
+    {
+        config([
+            'getfy.webhook_public_url' => 'https://pay.exemplo.com',
+            'app.url' => 'http://localhost',
+        ]);
+
+        $admin = $this->platformAdmin();
+
+        $this->actingAs($admin)
+            ->getJson('/plataforma/financeiro/gateways/asaas')
+            ->assertOk()
+            ->assertJsonPath('webhook_url', 'https://pay.exemplo.com/webhooks/gateways/asaas')
+            ->assertJsonPath('slug', 'asaas');
+    }
+
+    public function test_efi_gateway_show_includes_webhook_urls(): void
+    {
+        config([
+            'getfy.webhook_public_url' => 'https://pay.exemplo.com',
+            'app.url' => 'http://localhost',
+        ]);
+
+        $admin = $this->platformAdmin();
+
+        $this->actingAs($admin)
+            ->getJson('/plataforma/financeiro/gateways/efi')
+            ->assertOk()
+            ->assertJsonPath('webhook_urls.0.url', 'https://pay.exemplo.com/webhooks/gateways/efi/pix')
+            ->assertJsonPath('webhook_urls.1.url', 'https://pay.exemplo.com/webhooks/gateways/efi/pix-recorrente')
+            ->assertJsonPath('webhook_urls.2.url', 'https://pay.exemplo.com/webhooks/gateways/efi/notification');
+    }
+
     public function test_gateway_update_without_totp_when_not_enabled(): void
     {
         $admin = $this->platformAdmin();

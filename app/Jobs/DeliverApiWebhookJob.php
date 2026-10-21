@@ -34,7 +34,7 @@ class DeliverApiWebhookJob implements ShouldQueue
         }
 
         $app = \App\Models\ApiApplication::query()->find($delivery->api_application_id);
-        if (! $app || ! $app->webhook_url || ! $app->is_active) {
+        if (! $app || ! $app->is_active || ! is_string($delivery->url) || $delivery->url === '') {
             $delivery->update(['status' => ApiWebhookDelivery::STATUS_FAILED]);
 
             return;
@@ -55,8 +55,9 @@ class DeliverApiWebhookJob implements ShouldQueue
         $body = json_encode($payload, JSON_UNESCAPED_UNICODE);
         $headers = ['Content-Type' => 'application/json'];
 
-        if ($app->webhook_secret) {
-            $headers['X-Webhook-Signature'] = hash_hmac('sha256', $body, $app->webhook_secret);
+        $secret = $deliveryService->resolveSigningSecret($delivery, $app);
+        if ($secret) {
+            $headers['X-Webhook-Signature'] = hash_hmac('sha256', $body, $secret);
             $headers['X-Webhook-Id'] = $delivery->event_id;
             $headers['X-Webhook-Timestamp'] = (string) now()->timestamp;
         }

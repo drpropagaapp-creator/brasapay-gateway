@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Http\Controllers\Concerns\RequiresPlatformStepUp;
 use App\Gateways\CajuPay\CajuPayDriver;
 use App\Gateways\GatewayRegistry;
+use App\Gateways\Okto\OktoDriver;
 use App\Gateways\Versell\VersellCredentials;
 use App\Gateways\Versell\VersellDriver;
 use App\Models\GatewayCredential;
@@ -103,6 +104,7 @@ class GatewaysController extends Controller
         }
 
         $webhookUrl = null;
+        $webhookUrls = null;
         $webhookHelp = null;
         if ($slug === 'pushinpay') {
             $webhookUrl = GatewayWebhookUrl::forGateway('pushinpay');
@@ -111,6 +113,14 @@ class GatewaysController extends Controller
             $webhookHelp = 'Cadastre esta URL HTTPS no painel Woovi (API/Plugins → Webhooks), evento OPENPIX:CHARGE_COMPLETED. No cadastro do webhook, preencha o campo authorization com um token secreto e cole o mesmo valor em Webhook Secret abaixo. Sem esse secret, as notificações de pagamento são rejeitadas.';
         } elseif ($slug === 'onlyup') {
             $webhookUrl = GatewayWebhookUrl::forGateway('onlyup');
+        } elseif ($slug === 'efi') {
+            $webhookUrls = [
+                ['label' => 'PIX', 'url' => GatewayWebhookUrl::forGateway('efi.pix')],
+                ['label' => 'PIX automático', 'url' => GatewayWebhookUrl::forGateway('efi.pix_auto')],
+                ['label' => 'Cartão e boleto', 'url' => GatewayWebhookUrl::forGateway('efi.notification')],
+            ];
+            $webhookUrl = $webhookUrls[0]['url'];
+            $webhookHelp = 'Cadastre cada URL HTTPS no painel Efí. PIX: webhook da chave PIX. PIX automático: webhook de recorrência. Cartão e boleto: URL de notificação da cobrança. Se usar HMAC, cole o mesmo valor no campo de assinatura do webhook.';
         } elseif ($slug === 'cajupay') {
             $webhookUrl = GatewayWebhookUrl::forGateway('cajupay');
             $webhookHelp = 'Cadastre esta URL HTTPS no painel CajuPay (Webhooks) ou use “Testar conexão” para registro automático. Eventos: payment.paid, payment.failed, payment.refunded, checkout.payment.paid/failed/refunded/disputed, card.payment.*. Cole o signing secret (cwhsec_…) no campo abaixo.';
@@ -141,6 +151,9 @@ class GatewaysController extends Controller
         } elseif ($slug === 'stripe') {
             $webhookUrl = GatewayWebhookUrl::forGateway('stripe');
             $webhookHelp = 'Cadastre esta URL HTTPS no Stripe Dashboard (Developers → Webhooks), no mesmo modo da Secret Key (teste ou live). Evento: payment_intent.succeeded. Depois cole o signing secret (whsec_…) no campo Webhook Secret abaixo.';
+        } elseif ($slug === 'asaas') {
+            $webhookUrl = GatewayWebhookUrl::forGateway('asaas');
+            $webhookHelp = 'Cadastre esta URL HTTPS no painel Asaas (Integrações → Webhooks), método POST. Eventos: PAYMENT_RECEIVED, PAYMENT_CONFIRMED, PAYMENT_REFUNDED, PAYMENT_DELETED e PAYMENT_CHARGEBACK_REQUESTED. No cadastro do webhook, defina um token de autenticação e cole o mesmo valor no campo Token de autenticação do webhook abaixo. A Asaas envia esse token no header asaas-access-token.';
         } elseif ($slug === 'paypal') {
             $webhookUrl = GatewayWebhookUrl::forGateway('paypal');
             $webhookHelp = 'Cadastre esta URL HTTPS no PayPal Developer Dashboard (Webhooks) do mesmo app REST. Eventos: PAYMENT.CAPTURE.COMPLETED, PAYMENT.CAPTURE.DENIED, PAYMENT.CAPTURE.REFUNDED. Depois cole o Webhook ID no campo abaixo. Não altera PIX/cartão das outras adquirentes.';
@@ -149,7 +162,10 @@ class GatewaysController extends Controller
             $webhookHelp = 'Cadastre esta URL HTTPS no painel Xflow (Integrações → Webhooks) ou use “Testar conexão” / salvar credenciais para registro automático. Eventos PIX: transaction.paid, transaction.refunded. Saque: withdrawal.processing/completed/failed. MED: dispute.opened/accepted/rejected (mesma URL ou …/xflow/disputes). O secret HMAC é devolvido uma única vez. Precisa ser HTTPS público. Chaves pk_test_ são sandbox (QR não pagável; saque via API não funciona em teste). Defesa de MED é no painel da Xflow > Disputas.';
         } elseif ($slug === 'okto') {
             $webhookUrl = GatewayWebhookUrl::forGateway('okto');
-            $webhookHelp = 'PIX Classic Non Betting. “Testar conexão” tenta registrar depositUrl e withdrawUrl nesta URL via PUT /operator. Precisa ser HTTPS público (GETFY_WEBHOOK_PUBLIC_URL). A Okto assina o body com SHA256withRSA no header X-Payload-Signature — cole a chave pública PEM. Header opcional Gaming-Operator-Token. Staging: demo-pix.oktopay.eu.';
+            $webhookHelp = 'PIX Classic Non Betting. O arquivo .pub é só a chave pública RSA: abra como texto e cole no campo (não precisa upload). Ela não entra na geração do PIX — só valida X-Payload-Signature do webhook. “Testar conexão” consulta o saldo e tenta registrar depositUrl/withdrawUrl via PUT /operator (HTTPS público em GETFY_WEBHOOK_PUBLIC_URL). Staging: demo-pix.oktopay.eu e CPF de persona (ex. 604.184.437-34).';
+        } elseif ($slug === 'xpag') {
+            $webhookUrl = GatewayWebhookUrl::forGateway('xpag');
+            $webhookHelp = 'Não existe cadastro de webhook no painel XPag. A URL abaixo vai no corpo de cada POST /cashin e /cashout (campo webhook_url). Precisa ser HTTPS público (GETFY_WEBHOOK_PUBLIC_URL). Primeira fase: PIX BRL dinâmico (QR com amount) e saque por chave PIX. “Testar conexão” consulta GET /balance. Saque pela API só sai de IPv4 cadastrado na chave.';
         }
 
         $fileFieldsConfigured = [];
@@ -205,6 +221,7 @@ class GatewaysController extends Controller
             'certificate_configured' => $certificateConfigured,
             'certificate_filename' => $certificateFilename && is_string($certificateFilename) ? $certificateFilename : null,
             'webhook_url' => $webhookUrl,
+            'webhook_urls' => $webhookUrls,
             'webhook_help' => $webhookHelp,
             'uses_oauth' => $usesOauth,
             'oauth_client_configured' => $oauthClientConfigured,
@@ -214,6 +231,12 @@ class GatewaysController extends Controller
             'oauth_connected' => $oauthConnected,
             'file_fields_configured' => $fileFieldsConfigured,
             'secrets_configured' => $versellSecretsConfigured,
+            'last_pix_error' => $slug === 'okto'
+                ? (trim((string) ($decrypted['last_pix_error'] ?? '')) ?: null)
+                : null,
+            'last_pix_error_at' => $slug === 'okto'
+                ? (trim((string) ($decrypted['last_pix_error_at'] ?? '')) ?: null)
+                : null,
         ];
 
         return response()->json($payload)->header('Cache-Control', 'no-store, no-cache, must-revalidate');
@@ -250,8 +273,9 @@ class GatewaysController extends Controller
                 $rules[$key] = ['nullable', 'boolean'];
                 continue;
             }
-            // Tokens (ex.: Mercado Pago Access Token) podem ultrapassar 500 caracteres
-            $rules[$key] = ['nullable', 'string', 'max:2000'];
+            // PEM/.pub e tokens longos: textarea precisa de teto maior que 2000
+            $max = $type === 'textarea' ? 16000 : 2000;
+            $rules[$key] = ['nullable', 'string', 'max:'.$max];
         }
 
         $validated = $request->validate($rules);
@@ -295,7 +319,7 @@ class GatewaysController extends Controller
             $credentials[$key] = is_string($v) ? trim($v) : '';
         }
 
-        foreach (['checkout_webhook_signing_secret', 'webhook_signing_secret', 'webhook_endpoint_id', 'webhook_secret', 'payout_webhook_secret', 'payout_webhook_endpoint_id', 'dispute_webhook_secret', 'dispute_webhook_endpoint_id'] as $preserveKey) {
+        foreach (['checkout_webhook_signing_secret', 'webhook_signing_secret', 'webhook_endpoint_id', 'webhook_secret', 'payout_webhook_secret', 'payout_webhook_endpoint_id', 'dispute_webhook_secret', 'dispute_webhook_endpoint_id', 'last_pix_error', 'last_pix_error_at'] as $preserveKey) {
             if (
                 (! isset($credentials[$preserveKey]) || $credentials[$preserveKey] === '' || $credentials[$preserveKey] === null)
                 && ! empty($existingCredentials[$preserveKey])
@@ -399,6 +423,7 @@ class GatewaysController extends Controller
         $webhookWarning = null;
         $connectionMessage = null;
         $diagnosis = null;
+        $pixProbe = null;
         if ($driver && !empty($credentials)) {
             try {
                 if ($slug === 'versell' && $driver instanceof VersellDriver) {
@@ -433,6 +458,7 @@ class GatewaysController extends Controller
                 if (! empty($boot['warning'])) {
                     $webhookWarning = $boot['warning'];
                 }
+                $pixProbe = $this->probeOktoPix($credentials, $driver);
             }
         }
 
@@ -454,6 +480,11 @@ class GatewaysController extends Controller
         } elseif ($isConnected && ! $connectionMessage) {
             $message = 'Credenciais salvas e conexão verificada.';
         }
+        if (is_array($pixProbe)) {
+            $message = ($pixProbe['pix_ok'] ?? false)
+                ? 'Credenciais salvas. Saldo OK. PIX de teste gerado.'
+                : 'Credenciais salvas. Saldo OK, mas o depósito PIX falhou: '.($pixProbe['message'] ?? 'erro desconhecido');
+        }
 
         return response()->json([
             'success' => true,
@@ -461,6 +492,10 @@ class GatewaysController extends Controller
             'is_enabled' => $credential->is_enabled ?? true,
             'message' => $message,
             'webhook_warning' => $webhookWarning,
+            'pix_probe' => $pixProbe,
+            'last_pix_error' => is_array($pixProbe) && ! ($pixProbe['pix_ok'] ?? false)
+                ? ($pixProbe['message'] ?? null)
+                : null,
             'diagnosis' => $diagnosis !== null ? [
                 'cash_in' => $diagnosis['cash_in'],
                 'cash_out' => $diagnosis['cash_out'],
@@ -568,9 +603,10 @@ class GatewaysController extends Controller
                 $rules[$key] = ['nullable', 'boolean'];
                 continue;
             }
+            $max = $type === 'textarea' ? 16000 : 2000;
             $rules[$key] = $optional
-                ? ['nullable', 'string', 'max:2000']
-                : ['required', 'string', 'max:2000'];
+                ? ['nullable', 'string', 'max:'.$max]
+                : ['required', 'string', 'max:'.$max];
         }
         $validated = $request->validate($rules);
 
@@ -646,7 +682,7 @@ class GatewaysController extends Controller
             return response()->json(['success' => false, 'message' => 'Driver do gateway não disponível.'], 422);
         }
 
-        foreach (['checkout_webhook_signing_secret', 'webhook_signing_secret', 'webhook_endpoint_id', 'webhook_secret', 'payout_webhook_secret', 'payout_webhook_endpoint_id', 'dispute_webhook_secret', 'dispute_webhook_endpoint_id'] as $preserveKey) {
+        foreach (['checkout_webhook_signing_secret', 'webhook_signing_secret', 'webhook_endpoint_id', 'webhook_secret', 'payout_webhook_secret', 'payout_webhook_endpoint_id', 'dispute_webhook_secret', 'dispute_webhook_endpoint_id', 'last_pix_error', 'last_pix_error_at'] as $preserveKey) {
             if (
                 (! isset($credentials[$preserveKey]) || $credentials[$preserveKey] === '' || $credentials[$preserveKey] === null)
                 && ! empty($existingCredentials[$preserveKey])
@@ -709,11 +745,24 @@ class GatewaysController extends Controller
                 if (! empty($boot['warning'])) {
                     $webhookWarning = $boot['warning'];
                 }
+                $pixProbe = $this->probeOktoPix($credentials, $driver);
                 if ($credential) {
                     $credential->setEncryptedCredentials($credentials);
                     $credential->is_connected = true;
                     $credential->save();
                 }
+
+                $pixOk = (bool) ($pixProbe['pix_ok'] ?? false);
+
+                return response()->json([
+                    'success' => $pixOk,
+                    'message' => $pixOk
+                        ? "Saldo: OK\nPIX: gerado. ".$pixProbe['message']
+                        : "Saldo: OK\nPIX: falhou. ".($pixProbe['message'] ?? 'erro desconhecido'),
+                    'webhook_warning' => $webhookWarning,
+                    'pix_probe' => $pixProbe,
+                    'last_pix_error' => $pixOk ? null : ($pixProbe['message'] ?? null),
+                ]);
             }
             $failMessage = 'Falha na autenticação. Verifique as credenciais.';
             if (! $ok && $slug === 'woovi') {
@@ -724,6 +773,9 @@ class GatewaysController extends Controller
             }
             if (! $ok && $slug === 'okto') {
                 $failMessage = 'Falha na autenticação Okto. Confira o access token e se “Staging” está marcado só com credenciais de demo-pix.oktopay.eu.';
+            }
+            if (! $ok && $slug === 'xpag') {
+                $failMessage = 'Falha na autenticação XPag. Confira Client ID e Client Secret (headers X-Client-Id / X-Client-Secret). “Testar conexão” consulta GET /balance.';
             }
 
             return response()->json([
@@ -737,6 +789,31 @@ class GatewaysController extends Controller
                 'message' => $e->getMessage() ?: 'Erro ao testar conexão.',
             ], 422);
         }
+    }
+
+    /**
+     * @param  array<string, mixed>  $credentials
+     * @return array{balance_ok: bool, pix_ok: bool, message: string, transaction_id?: string|null}
+     */
+    private function probeOktoPix(array &$credentials, mixed $driver): array
+    {
+        $okto = $driver instanceof OktoDriver ? $driver : app(OktoDriver::class);
+        $probe = $okto->diagnosePixDeposit($credentials);
+        $ok = (bool) ($probe['ok'] ?? false);
+        $message = trim((string) ($probe['message'] ?? ''));
+        if ($ok) {
+            unset($credentials['last_pix_error'], $credentials['last_pix_error_at']);
+        } else {
+            $credentials['last_pix_error'] = mb_substr($message !== '' ? $message : 'Falha no depósito PIX.', 0, 500);
+            $credentials['last_pix_error_at'] = now()->toIso8601String();
+        }
+
+        return [
+            'balance_ok' => true,
+            'pix_ok' => $ok,
+            'message' => $message,
+            'transaction_id' => $probe['transaction_id'] ?? null,
+        ];
     }
 
     /**

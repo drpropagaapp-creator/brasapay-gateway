@@ -484,7 +484,7 @@ class Order extends Model
         if ($method === 'open_finance') {
             return 'pix';
         }
-        if (in_array($method, ['spacepag', 'woovi', 'pushinpay', 'cajupay', 'efi', 'linaopenx', 'xflow', 'okto'], true)) {
+        if (in_array($method, ['spacepag', 'woovi', 'pushinpay', 'cajupay', 'efi', 'linaopenx', 'xflow', 'okto', 'xpag'], true)) {
             $method = 'pix';
         }
         if (in_array($method, ['pix', 'card', 'boleto', 'paypal'], true)) {
@@ -498,7 +498,7 @@ class Order extends Model
         if ($gateway === 'paypal' || $gateway === 'stripe') {
             return 'card';
         }
-        if ($gateway === 'linaopenx' || str_contains($gateway, 'pix') || in_array($gateway, ['spacepag', 'woovi', 'pushinpay', 'cajupay', 'efi', 'xflow', 'okto'], true)) {
+        if ($gateway === 'linaopenx' || str_contains($gateway, 'pix') || in_array($gateway, ['spacepag', 'woovi', 'pushinpay', 'cajupay', 'efi', 'xflow', 'okto', 'xpag'], true)) {
             return 'pix';
         }
         if ($gateway === 'card' || str_contains($gateway, 'cartao') || str_contains($gateway, 'cartão') || str_contains($gateway, 'credito')) {

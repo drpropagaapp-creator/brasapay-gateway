@@ -490,7 +490,7 @@ return [
             'driver' => \App\Gateways\Okto\OktoDriver::class,
             'credential_keys' => [
                 ['key' => 'access_token', 'label' => 'Access token (Bearer)', 'type' => 'password'],
-                ['key' => 'rsa_public_key', 'label' => 'Chave pública RSA (PEM) para X-Payload-Signature', 'type' => 'textarea'],
+                ['key' => 'rsa_public_key', 'label' => 'Chave pública RSA (cole o .pub como texto PEM — só valida o webhook, não gera PIX)', 'type' => 'textarea'],
                 ['key' => 'notification_token', 'label' => 'Token do webhook (Gaming-Operator-Token — opcional, default = access token)', 'type' => 'password', 'optional' => true],
                 ['key' => 'sandbox', 'label' => 'Usar staging (demo-pix.oktopay.eu)', 'type' => 'boolean'],
                 ['key' => 'okto_payout_min_brl', 'label' => 'Mínimo líquido de payout (R$)', 'type' => 'text', 'optional' => true],
@@ -498,6 +498,34 @@ return [
                 ['key' => 'okto_admin_fee_pix_percent', 'label' => 'Taxa PIX paga à Okto (% entrada)', 'type' => 'text', 'optional' => true],
                 ['key' => 'okto_admin_fee_payout_brl', 'label' => 'Taxa de saque paga à Okto (R$ fixo)', 'type' => 'text', 'optional' => true],
                 ['key' => 'okto_admin_fee_payout_percent', 'label' => 'Taxa de saque paga à Okto (% saída)', 'type' => 'text', 'optional' => true],
+            ],
+        ],
+        'xpag' => [
+            'slug' => 'xpag',
+            'name' => 'XPag',
+            'image' => 'images/gateways/xpag_logo.svg',
+            'methods' => ['pix'],
+            'scope' => 'national',
+            'country' => 'br',
+            'country_name' => 'Brasil',
+            'country_flag' => 'brasil.png',
+            'signup_url' => 'https://xpag.global/register/824f1071bc09ba535229c952d3c09a2323c1bf63ae5c6457ae7d3497ca866fbc',
+            'support_contacts' => [
+                [
+                    'name' => 'Lana Tavares',
+                    'role' => 'Gerente',
+                    'whatsapp' => '554788129220',
+                ],
+            ],
+            'driver' => \App\Gateways\Xpag\XpagDriver::class,
+            'credential_keys' => [
+                ['key' => 'client_id', 'label' => 'Client ID', 'type' => 'text'],
+                ['key' => 'client_secret', 'label' => 'Client Secret', 'type' => 'password'],
+                ['key' => 'xpag_payout_min_brl', 'label' => 'Mínimo líquido de payout (R$)', 'type' => 'text', 'optional' => true],
+                ['key' => 'xpag_admin_fee_pix_brl', 'label' => 'Taxa PIX paga à XPag (R$ fixo)', 'type' => 'text', 'optional' => true],
+                ['key' => 'xpag_admin_fee_pix_percent', 'label' => 'Taxa PIX paga à XPag (% entrada)', 'type' => 'text', 'optional' => true],
+                ['key' => 'xpag_admin_fee_payout_brl', 'label' => 'Taxa de saque paga à XPag (R$ fixo)', 'type' => 'text', 'optional' => true],
+                ['key' => 'xpag_admin_fee_payout_percent', 'label' => 'Taxa de saque paga à XPag (% saída)', 'type' => 'text', 'optional' => true],
             ],
         ],
     ],
@@ -524,7 +552,7 @@ return [
         'efi',
         // 'spacepag', // oculto da UI (Financeiro → Adquirentes) e da ordem de cobrança
         'woovi',
-        'bspay',
+        // 'bspay', // oculto da UI (Financeiro → Adquirentes) e da ordem de cobrança
         'assetpay', // Cash In PIX + Cash Out + MED (infrações)
         'reven', // Cash In PIX (sem cash out na API)
         'onlyup',
@@ -538,6 +566,7 @@ return [
         'cielo',
         'xflow',
         'okto',
+        'xpag',
     ],
 
     /*
@@ -546,7 +575,7 @@ return [
     |--------------------------------------------------------------------------
     */
     'default_order' => [
-        'pix' => ['cajupay', /* 'spacepag', */ 'woovi', 'bspay', 'onlyup', 'efi', 'mercadopago', 'pagarme', 'pushinpay', 'asaas', 'versell', 'cielo', 'xflow', 'okto', 'stripe'],
+        'pix' => ['cajupay', /* 'spacepag', */ 'woovi', /* 'bspay', */ 'onlyup', 'efi', 'mercadopago', 'pagarme', 'pushinpay', 'asaas', 'versell', 'cielo', 'xflow', 'okto', 'xpag', 'stripe'],
         'card' => ['cajupay', 'efi', 'stripe', 'mercadopago', 'pagarme', 'asaas', 'cielo'],
         'boleto' => ['efi', 'mercadopago', 'pagarme', 'asaas'],
         'pix_auto' => ['efi', 'pushinpay', 'versell'],

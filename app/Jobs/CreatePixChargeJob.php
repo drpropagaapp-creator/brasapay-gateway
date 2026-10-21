@@ -62,7 +62,7 @@ class CreatePixChargeJob implements ShouldQueue
                     'copy_paste' => $result['copy_paste'] ?? null,
                     'status' => 'pending',
                     'amount' => (float) $order->amount,
-                ]);
+                ], null, $order->product_id);
             }
         } catch (\Throwable $e) {
             Log::warning('CreatePixChargeJob failed', [

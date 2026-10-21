@@ -19,6 +19,7 @@ final class GatewayWebhookUrl
         return match ($gatewaySlug) {
             'efi' => '/webhooks/gateways/efi/pix',
             'efi.pix' => '/webhooks/gateways/efi/pix',
+            'efi.pix_auto' => '/webhooks/gateways/efi/pix-recorrente',
             'efi.notification' => '/webhooks/gateways/efi/notification',
             'spacepag' => '/webhooks/gateways/spacepag',
             'cajupay' => '/webhooks/gateways/cajupay',
@@ -32,6 +33,7 @@ final class GatewayWebhookUrl
             'xflow.payout' => '/webhooks/gateways/xflow/payout',
             'xflow.disputes' => '/webhooks/gateways/xflow/disputes',
             'okto' => '/webhooks/gateways/okto',
+            'xpag' => '/webhooks/gateways/xpag',
             'onlyup' => '/webhooks/gateways/onlyup',
             'bspay' => '/webhooks/gateways/bspay',
             'assetpay' => '/webhooks/gateways/assetpay',

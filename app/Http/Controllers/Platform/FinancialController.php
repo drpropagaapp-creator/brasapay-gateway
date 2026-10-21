@@ -12,6 +12,7 @@ use App\Jobs\ReconcileSpacepagWithdrawalJob;
 use App\Jobs\ReconcileWooviWithdrawalJob;
 use App\Jobs\ReconcileXflowWithdrawalJob;
 use App\Jobs\ReconcileOktoWithdrawalJob;
+use App\Jobs\ReconcileXpagWithdrawalJob;
 use Plugins\OnlyUp\OnlyUpPayoutService;
 use Plugins\OnlyUp\ReconcileOnlyUpWithdrawalJob;
 use App\Http\Controllers\Platform\CajuPayAccountsController;
@@ -26,6 +27,7 @@ use App\Services\Spacepag\SpacepagPayoutService;
 use App\Services\Woovi\WooviPayoutService;
 use App\Services\Xflow\XflowPayoutService;
 use App\Services\Okto\OktoPayoutService;
+use App\Services\Xpag\XpagPayoutService;
 use App\Services\EffectiveMerchantFees;
 use App\Support\CardInstallmentEconomics;
 use App\Support\PercentDecimal;
@@ -251,12 +253,12 @@ class FinancialController extends Controller
     }
 
     /**
-     * Preferência de saque automático (CajuPay, Woovi, BSPay, OnlyUp ou automático).
+     * Preferência de saque automático (CajuPay, Woovi, OnlyUp ou automático).
      */
     public function updatePayoutGatewayPreference(Request $request): JsonResponse
     {
         $validated = $request->validate([
-            'preference' => ['required', 'string', 'in:auto,cajupay,woovi,bspay,assetpay,versell,xflow,okto,onlyup'],
+            'preference' => ['required', 'string', 'in:auto,cajupay,woovi,assetpay,versell,xflow,okto,xpag,onlyup'],
         ]);
 
         $pref = $validated['preference'];
@@ -496,6 +498,12 @@ class FinancialController extends Controller
                 ->with('error', 'Este saque já foi enviado ao gateway. Use Reprocessar para nova tentativa ou Cancelar e estornar.');
         }
 
+        $requestedPayoutSlug = trim((string) ($validated['payout_acquirer'] ?? ''));
+        if (! $manual && $requestedPayoutSlug !== '' && ! PlatformPayoutGateway::isConnected($requestedPayoutSlug)) {
+            return redirect()->route('plataforma.saques.index')
+                ->with('error', 'Selecione uma adquirente de saque conectada.');
+        }
+
         $locked = MerchantWithdrawalService::beginPayoutApproval((int) $withdrawal->id);
         if ($locked === null) {
             return redirect()->route('plataforma.saques.index')
@@ -538,7 +546,7 @@ class FinancialController extends Controller
                     : 'Saque marcado como pago (aprovado manualmente, sem API).');
         }
 
-        $slug = PlatformPayoutGateway::activeSlug();
+        $slug = $requestedPayoutSlug !== '' ? $requestedPayoutSlug : PlatformPayoutGateway::activeSlug();
         if ($slug === null) {
             MerchantWithdrawalService::releasePayoutApproval($withdrawal);
 
@@ -828,6 +836,55 @@ class FinancialController extends Controller
                 ->with('success', 'Saque enviado à Okto. Será marcado como pago após confirmação do PIX (webhook).');
         }
 
+        if ($slug === 'xpag') {
+            $pixKey = PayoutUserSettings::pixKey($settings);
+            if ($pixKey === '') {
+                MerchantWithdrawalService::releasePayoutApproval($withdrawal);
+
+                return redirect()->route('plataforma.saques.index')
+                    ->with('error', 'O infoprodutor precisa cadastrar uma chave PIX para saque em Financeiro (painel do vendedor).');
+            }
+
+            $payout = new XpagPayoutService;
+            $result = $payout->sendWithdrawalToPix($withdrawal->fresh(), $owner);
+
+            if (! ($result['ok'] ?? false)) {
+                $prev = is_array($withdrawal->payout_meta) ? $withdrawal->payout_meta : [];
+                $withdrawal->update([
+                    'payout_provider' => 'xpag',
+                    'payout_meta' => $prev + [
+                        'last_error' => $result['error'] ?? 'Erro desconhecido',
+                        'last_attempt_at' => now()->toIso8601String(),
+                    ],
+                ]);
+                MerchantWithdrawalService::releasePayoutApproval($withdrawal->fresh());
+                $this->notifyWithdrawalPayoutError($withdrawal, 'XPag: '.($result['error'] ?? 'Falha ao enviar o saque.'));
+
+                return redirect()->route('plataforma.saques.index')
+                    ->with('error', 'XPag: '.($result['error'] ?? 'Falha ao enviar o saque.'));
+            }
+
+            $withdrawal->update([
+                'payout_manual' => false,
+                'payout_provider' => 'xpag',
+                'payout_external_id' => $result['transaction_id'] ?? null,
+                'payout_meta' => array_filter([
+                    'api_status' => 'pending',
+                    'requested_at' => now()->toIso8601String(),
+                ]),
+            ]);
+
+            ReconcileXpagWithdrawalJob::dispatch($withdrawal->fresh()->id)
+                ->delay(now()->addSeconds(90));
+
+            MerchantWithdrawalService::releasePayoutApproval($withdrawal->fresh());
+
+            PlatformAuditService::log('platform.withdrawal.approved', ['withdrawal_id' => $withdrawal->id, 'xpag' => true, 'pending' => true], $request);
+
+            return redirect()->route('plataforma.saques.index')
+                ->with('success', 'Saque enviado à XPag. Será marcado como pago após confirmação do PIX (webhook).');
+        }
+
         if ($slug === 'assetpay') {
             $pixKey = PayoutUserSettings::pixKey($settings);
             if ($pixKey === '') {
@@ -949,7 +1006,7 @@ class FinancialController extends Controller
 
         if (trim((string) ($withdrawal->payout_external_id ?? '')) === '') {
             return redirect()->route('plataforma.saques.index')
-                ->with('error', 'Saque sem ID externo na CajuPay. Use Pago (CajuPay) ou Reprocessar.');
+                ->with('error', 'Saque sem ID externo na CajuPay. Use Enviar pagamento ou Reprocessar.');
         }
 
         $outcome = app(CajuPayWithdrawalReconcileService::class)->reconcile($withdrawal->fresh());

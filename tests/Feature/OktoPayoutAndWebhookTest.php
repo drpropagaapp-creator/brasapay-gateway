@@ -163,6 +163,47 @@ class OktoPayoutAndWebhookTest extends TestCase
         $this->assertSame('completed', $order->fresh()->status);
     }
 
+    public function test_webhook_invoice_paid_finds_order_by_okto_external_id_before_gateway_is_set(): void
+    {
+        Http::fake([
+            'demo-pix.oktopay.eu/transactions/status' => Http::response([
+                'id' => 'okto-dep-race',
+                'status' => 'paid',
+                'type' => 'deposit',
+            ], 200),
+        ]);
+
+        $this->seedOktoCredential();
+
+        $user = User::factory()->create(['tenant_id' => 1]);
+        $product = $this->createTestProduct(['tenant_id' => 1]);
+
+        $order = Order::create([
+            'tenant_id' => 1,
+            'user_id' => $user->id,
+            'product_id' => $product->id,
+            'status' => 'pending',
+            'amount' => 13,
+            'email' => 'buyer@test.com',
+            'gateway' => null,
+            'gateway_id' => null,
+            'payment_method' => 'pix',
+            'metadata' => ['okto_external_id' => '516042b1-a804-49f9-a252-1222c8273b46'],
+        ]);
+
+        $response = $this->postOktoWebhook([
+            'Invoice' => [
+                'id' => 'okto-dep-race',
+                'externalId' => '516042b1-a804-49f9-a252-1222c8273b46',
+                'status' => 'paid',
+                'amount' => 1300,
+            ],
+        ]);
+
+        $response->assertOk()->assertJson(['received' => true]);
+        $this->assertSame('completed', $order->fresh()->status);
+    }
+
     public function test_webhook_transfer_success_marks_withdrawal_paid(): void
     {
         if (! Schema::hasTable('withdrawals')) {
@@ -200,6 +241,148 @@ class OktoPayoutAndWebhookTest extends TestCase
         $this->assertSame('paid', $w->fresh()->status);
     }
 
+    public function test_connection_probe_returns_pix_failure_not_generic_success(): void
+    {
+        $this->seedOktoCredential();
+
+        Http::fake([
+            'demo-pix.oktopay.eu/operator/v2/balance' => Http::response([
+                'availableBalance' => 10,
+            ], 200),
+            'demo-pix.oktopay.eu/operator' => Http::response(['name' => 'op'], 200),
+            'demo-pix.oktopay.eu/transactions/deposit' => Http::response([
+                'errorList' => [
+                    ['code' => 2001, 'message' => 'The tax id is invalid.', 'detailedMessage' => 'taxId rejected'],
+                ],
+            ], 400),
+        ]);
+
+        $admin = User::factory()->create([
+            'role' => User::ROLE_PLATFORM_ADMIN,
+            'tenant_id' => null,
+        ]);
+
+        $response = $this->actingAs($admin)->postJson('/plataforma/financeiro/gateways/okto/test', [
+            'access_token' => 'okto-token-test',
+            'rsa_public_key' => $this->rsa['public'],
+            'sandbox' => true,
+        ]);
+
+        $response->assertOk()
+            ->assertJsonPath('success', false)
+            ->assertJsonPath('pix_probe.balance_ok', true)
+            ->assertJsonPath('pix_probe.pix_ok', false);
+        $this->assertStringContainsString('2001', (string) $response->json('message'));
+        $this->assertStringContainsString('PIX: falhou', (string) $response->json('message'));
+    }
+
+    public function test_admin_approve_sends_payout_to_selected_cashout_acquirer(): void
+    {
+        if (! Schema::hasTable('withdrawals')) {
+            $this->markTestSkipped('withdrawals table');
+        }
+
+        $this->seedOktoCredential();
+        Setting::set('platform_payout_gateway', 'cajupay', null);
+        $cajuAccount = null;
+        if (Schema::hasTable('cajupay_accounts')) {
+            $cajuAccount = \App\Models\CajuPayAccount::query()->create([
+                'name' => 'Conta payout override',
+                'is_default' => true,
+                'is_connected' => true,
+                'is_enabled' => true,
+            ]);
+            $this->assertSame('cajupay', \App\Services\Payout\PlatformPayoutGateway::activeSlug());
+        }
+        \App\Services\Withdrawal\WithdrawalPolicyService::setManualApprovalPin('9999');
+
+        Queue::fake();
+        Http::fake([
+            'https://demo-pix.oktopay.eu/transactions/withdraw' => Http::response([
+                'id' => 'okto-wd-chosen',
+                'status' => 'created',
+            ], 200),
+        ]);
+
+        $w = $this->makeWithdrawal(80, 0, 80, [
+            'payout_pix_key' => '11119854997',
+            'payout_pix_key_type' => 'cpf',
+        ]);
+
+        $admin = User::factory()->create([
+            'role' => User::ROLE_PLATFORM_ADMIN,
+            'tenant_id' => null,
+        ]);
+
+        $response = $this->actingAs($admin)->post(route('plataforma.financeiro.saques.approve', $w), [
+            'payout_manual' => false,
+            'manual_approval_pin' => '9999',
+            'payout_acquirer' => 'okto',
+        ]);
+
+        $response->assertRedirect(route('plataforma.saques.index'));
+        $response->assertSessionHas('success');
+
+        $fresh = $w->fresh();
+        $this->assertSame('okto', $fresh->payout_provider);
+        $this->assertSame('okto-wd-chosen', $fresh->payout_external_id);
+        $this->assertSame('pending', $fresh->status);
+        Queue::assertPushed(ReconcileOktoWithdrawalJob::class);
+        $cajuAccount?->delete();
+    }
+
+    public function test_admin_approve_rejects_disconnected_cashout_acquirer(): void
+    {
+        if (! Schema::hasTable('withdrawals')) {
+            $this->markTestSkipped('withdrawals table');
+        }
+
+        $this->seedOktoCredential();
+        \App\Services\Withdrawal\WithdrawalPolicyService::setManualApprovalPin('9999');
+
+        $w = $this->makeWithdrawal(40, 0, 40, [
+            'payout_pix_key' => '11119854997',
+            'payout_pix_key_type' => 'cpf',
+        ]);
+
+        $admin = User::factory()->create([
+            'role' => User::ROLE_PLATFORM_ADMIN,
+            'tenant_id' => null,
+        ]);
+
+        $response = $this->actingAs($admin)->post(route('plataforma.financeiro.saques.approve', $w), [
+            'payout_manual' => false,
+            'manual_approval_pin' => '9999',
+            'payout_acquirer' => 'woovi',
+        ]);
+
+        $response->assertRedirect(route('plataforma.saques.index'));
+        $response->assertSessionHas('error', 'Selecione uma adquirente de saque conectada.');
+        $this->assertSame('pending', $w->fresh()->status);
+        $this->assertNull($w->fresh()->payout_provider);
+    }
+
+    public function test_withdrawals_index_lists_connected_cashout_acquirers(): void
+    {
+        $this->seedOktoCredential();
+
+        $admin = User::factory()->create([
+            'role' => User::ROLE_PLATFORM_ADMIN,
+            'tenant_id' => null,
+        ]);
+
+        $this->actingAs($admin)
+            ->get(route('plataforma.saques.index'))
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->component('Platform/Withdrawals/Index')
+                ->has('cashout_acquirers')
+                ->where('cashout_acquirers', fn ($list) => collect($list)->contains(
+                    fn ($acquirer) => ($acquirer['slug'] ?? null) === 'okto'
+                ))
+            );
+    }
+
     public function test_webhook_rejects_invalid_signature(): void
     {
         $this->seedOktoCredential();
@@ -229,7 +412,7 @@ class OktoPayoutAndWebhookTest extends TestCase
     {
         Setting::set('platform_payout_gateway', 'okto', null);
         GatewayCredential::query()->whereIn('gateway_slug', [
-            'cajupay', 'spacepag', 'woovi', 'bspay', 'versell', 'xflow', 'onlyup',
+            'cajupay', 'spacepag', 'woovi', 'bspay', 'versell', 'xflow', 'xpag', 'onlyup',
         ])->delete();
 
         $cred = GatewayCredential::query()->firstOrNew([

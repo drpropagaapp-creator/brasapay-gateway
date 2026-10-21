@@ -140,6 +140,31 @@ class ProcessPaymentWebhook implements ShouldQueue
             return $order;
         }
 
+        if ($this->gatewaySlug === 'xpag') {
+            $xpagExternalId = trim((string) ($this->payload['external_id'] ?? ''));
+            if ($xpagExternalId !== '') {
+                $order = Order::query()
+                    ->where('metadata->xpag_external_id', $xpagExternalId)
+                    ->first();
+                if ($order !== null) {
+                    return $order;
+                }
+            }
+        }
+
+        if ($this->gatewaySlug === 'okto') {
+            $invoice = is_array($this->payload['Invoice'] ?? null) ? $this->payload['Invoice'] : [];
+            $oktoExternalId = trim((string) ($invoice['externalId'] ?? ''));
+            if ($oktoExternalId !== '') {
+                $order = Order::query()
+                    ->where('metadata->okto_external_id', $oktoExternalId)
+                    ->first();
+                if ($order !== null) {
+                    return $order;
+                }
+            }
+        }
+
         if ($this->gatewaySlug === 'linaopenx') {
             $order = Order::query()
                 ->where('gateway', 'linaopenx')

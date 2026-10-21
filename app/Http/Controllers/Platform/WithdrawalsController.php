@@ -64,6 +64,7 @@ class WithdrawalsController extends Controller
                 'origin' => $origin,
             ],
             'payout_gateway_active' => PlatformPayoutGateway::activeSlug() ?? '',
+            'cashout_acquirers' => PlatformPayoutGateway::connectedOptions(),
             'require_manual_approval_pin' => $request->user() !== null
                 && WithdrawalPolicyService::requiresOperationPinFor($request->user()),
             'has_manual_approval_pin' => WithdrawalPolicyService::hasManualApprovalPin(),

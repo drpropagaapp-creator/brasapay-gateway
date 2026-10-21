@@ -194,6 +194,7 @@ Route::middleware(['throttle:60,1', \App\Http\Middleware\LogInboundGatewayWebhoo
     Route::post('/webhooks/gateways/assetpay', [\App\Http\Controllers\Webhooks\AssetPayWebhookController::class, 'handle'])->name('webhooks.assetpay');
     Route::post('/webhooks/gateways/reven', [\App\Http\Controllers\Webhooks\RevenWebhookController::class, 'handle'])->name('webhooks.reven');
     Route::post('/webhooks/gateways/okto', [\App\Http\Controllers\Webhooks\OktoWebhookController::class, 'handle'])->name('webhooks.okto');
+    Route::post('/webhooks/gateways/xpag', [\App\Http\Controllers\Webhooks\XpagWebhookController::class, 'handle'])->name('webhooks.xpag');
     Route::post('/webhooks/gateways/stripe', [\App\Http\Controllers\Webhooks\StripeWebhookController::class, 'handle'])->name('webhooks.stripe');
     Route::post('/webhooks/gateways/paypal', [\App\Http\Controllers\Webhooks\PayPalWebhookController::class, 'handle'])->name('webhooks.paypal');
     Route::post('/webhooks/gateways/efi/pix', [\App\Http\Controllers\Webhooks\EfiWebhookController::class, 'pix'])->name('webhooks.efi.pix');
@@ -1133,7 +1134,10 @@ Route::middleware(['auth', 'admin.tenant', 'seller.panel', 'stacker.license', 'r
             ->name('api-applications.keys.reveal-secret');
         Route::delete('/aplicacoes-api/{apiApplication}/keys/{apiKey}', [\App\Http\Controllers\ApiApplicationsController::class, 'destroyApiKey'])->name('api-applications.keys.destroy');
         Route::patch('/aplicacoes-api/{apiApplication}/webhook', [\App\Http\Controllers\ApiApplicationsController::class, 'updateWebhook'])->name('api-applications.webhook.update');
+        Route::post('/aplicacoes-api/{apiApplication}/webhooks', [\App\Http\Controllers\ApiApplicationsController::class, 'storeWebhook'])->name('api-applications.webhooks.store');
+        Route::delete('/aplicacoes-api/{apiApplication}/webhooks/{apiApplicationWebhook}', [\App\Http\Controllers\ApiApplicationsController::class, 'destroyWebhook'])->name('api-applications.webhooks.destroy');
         Route::post('/aplicacoes-api/{apiApplication}/webhook/rotate-secret', [\App\Http\Controllers\ApiApplicationsController::class, 'rotateWebhookSecret'])->name('api-applications.webhook.rotate-secret');
+        Route::post('/aplicacoes-api/{apiApplication}/webhooks/{apiApplicationWebhook}/rotate-secret', [\App\Http\Controllers\ApiApplicationsController::class, 'rotateWebhookSecret'])->name('api-applications.webhooks.rotate-secret');
         Route::get('/aplicacoes-api/{apiApplication}/webhook/deliveries', [\App\Http\Controllers\ApiApplicationsController::class, 'webhookDeliveries'])->name('api-applications.webhook.deliveries');
         Route::post('/aplicacoes-api/{apiApplication}/webhook/deliveries/{delivery}/retry', [\App\Http\Controllers\ApiApplicationsController::class, 'retryWebhookDelivery'])
             ->middleware('throttle:30,1')
