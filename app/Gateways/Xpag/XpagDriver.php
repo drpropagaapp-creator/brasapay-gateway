@@ -258,6 +258,40 @@ class XpagDriver implements GatewayDriver
      * @param  array<string, mixed>  $credentials
      * @return array<string, mixed>|null
      */
+    /**
+     * Consulta estrita por external_id (sem fallback para transaction_id),
+     * para vincular pedido a transação a partir de evento não autenticado.
+     *
+     * @param  array<string, mixed>  $credentials
+     * @return array<string, mixed>|null
+     */
+    public function consultTransactionByExternalId(array $credentials, string $externalId): ?array
+    {
+        $externalId = trim($externalId);
+        if ($externalId === '') {
+            return null;
+        }
+
+        try {
+            $response = $this->http($credentials)->get($this->url('/consult-transaction'), [
+                'external_id' => $externalId,
+            ]);
+        } catch (\Throwable) {
+            return null;
+        }
+
+        if (! $response->successful()) {
+            return null;
+        }
+
+        $json = $this->jsonArray($response);
+        if (($json['ok'] ?? true) === false) {
+            return null;
+        }
+
+        return $json;
+    }
+
     public function consultTransaction(array $credentials, string $identifier): ?array
     {
         $identifier = trim($identifier);

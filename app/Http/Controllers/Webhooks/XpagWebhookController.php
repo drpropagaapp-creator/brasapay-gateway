@@ -190,8 +190,10 @@ class XpagWebhookController extends Controller
             $identifier = (string) $order->id;
         }
 
+        // Consulta ESTRITA por external_id (sem fallback por transaction_id,
+        // que poderia casar outra transação com id numérico coincidente).
         try {
-            $row = (new \App\Gateways\Xpag\XpagDriver)->consultTransaction($credentials, $identifier);
+            $row = (new \App\Gateways\Xpag\XpagDriver)->consultTransactionByExternalId($credentials, $identifier);
         } catch (\Throwable $e) {
             Log::warning('XpagWebhook: falha ao consultar transação do pedido na API', [
                 'order_id' => $order->id,
@@ -207,6 +209,22 @@ class XpagWebhookController extends Controller
 
         $apiExternalId = trim((string) ($row['external_id'] ?? ''));
         if ($apiExternalId !== '' && $apiExternalId !== $identifier) {
+            return null;
+        }
+
+        $apiType = strtolower(trim((string) ($row['type'] ?? '')));
+        if ($apiType !== '' && $apiType !== 'cashin') {
+            return null;
+        }
+
+        $apiAmount = $row['amount'] ?? null;
+        if (is_numeric($apiAmount) && abs((float) $apiAmount - (float) $order->amount) > 0.01) {
+            Log::warning('XpagWebhook: valor da transação na API difere do pedido; vínculo recusado', [
+                'order_id' => $order->id,
+                'order_amount' => (float) $order->amount,
+                'api_amount' => (float) $apiAmount,
+            ]);
+
             return null;
         }
 
