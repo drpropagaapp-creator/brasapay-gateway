@@ -1,0 +1,18 @@
+{
+  "services": {
+    "app": {
+      "environment": {
+        "DB_USERNAME": "getfy_prod",
+        "DB_PASSWORD": "Correct$$Pass!",
+        "DB_DATABASE": "getfy"
+      }
+    },
+    "queue": {
+      "environment": {
+        "DB_USERNAME": "getfy_prod",
+        "DB_PASSWORD": "Other$$Pass!",
+        "DB_DATABASE": "getfy"
+      }
+    }
+  }
+}

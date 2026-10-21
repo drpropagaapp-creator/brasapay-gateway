@@ -61,7 +61,29 @@ file_put_contents($envFile, $env);
 fi
 
 # Se houver cache de config, pode "prender" env antigo. Limpa de forma segura (sem falhar o boot).
-rm -f bootstrap/cache/config.php 2>/dev/null || true
+rm -f bootstrap/cache/config.php bootstrap/cache/routes.php bootstrap/cache/routes-v7.php bootstrap/cache/events.php 2>/dev/null || true
+
+# Espelha DB_* do processo (Compose) no .env local — workers não rodam o setup completo.
+# Só grava se getenv não for vazio: nunca inventa user/senha "getfy".
+php -r '
+$envFile = ".env";
+if (!is_file($envFile)) { exit(0); }
+$content = str_replace("\r\n", "\n", (string) file_get_contents($envFile));
+foreach (["DB_CONNECTION","DB_HOST","DB_PORT","DB_DATABASE","DB_USERNAME","DB_PASSWORD"] as $key) {
+  $value = getenv($key);
+  if (!is_string($value) || $value === "") { continue; }
+  $needsQuotes = (bool) preg_match("/\\s|#|\"|\\x27|`/", $value);
+  $escaped = $needsQuotes ? ("\"" . str_replace("\"", "\\\"", $value) . "\"") : $value;
+  $line = $key . "=" . $escaped;
+  $pattern = "/^\\s*" . preg_quote($key, "/") . "\\s*=.*$/m";
+  if (preg_match($pattern, $content)) {
+    $content = (string) preg_replace($pattern, $line, $content);
+  } else {
+    $content = rtrim($content, "\r\n") . "\n" . $line . "\n";
+  }
+}
+file_put_contents($envFile, $content);
+'
 
 # vendor/ pode estar ausente no volume nomeado de dev (getfy_dev_vendor) ou em workers
 # que sobem em paralelo com o app. Lock em .docker (bind mount compartilhado).
@@ -190,8 +212,14 @@ $vars = [
     "DB_HOST" => getenv("DB_HOST") ?: "postgres",
     "DB_PORT" => getenv("DB_PORT") ?: "5432",
     "DB_DATABASE" => getenv("DB_DATABASE") ?: "getfy",
-    "DB_USERNAME" => getenv("DB_USERNAME") ?: "getfy",
-    "DB_PASSWORD" => getenv("DB_PASSWORD") ?: "getfy",
+    "DB_USERNAME" => (static function () {
+        $v = getenv("DB_USERNAME");
+        return (is_string($v) && $v !== "") ? $v : null;
+    })(),
+    "DB_PASSWORD" => (static function () {
+        $v = getenv("DB_PASSWORD");
+        return (is_string($v) && $v !== "") ? $v : null;
+    })(),
     "CACHE_STORE" => getenv("CACHE_STORE") ?: "redis",
     "QUEUE_CONNECTION" => getenv("QUEUE_CONNECTION") ?: "redis",
     "SESSION_DRIVER" => getenv("SESSION_DRIVER") ?: "file",
@@ -271,12 +299,20 @@ fi
 
 DB_OK=0
 for i in $(seq 1 60); do
-  if [ "$DB_CONNECTION" = "pgsql" ]; then
-    DSN="pgsql:host=${DB_HOST};port=${DB_PORT};dbname=${DB_DATABASE}"
-  else
-    DSN="mysql:host=${DB_HOST};port=${DB_PORT};dbname=${DB_DATABASE}"
-  fi
-  if php -r "try { new PDO('${DSN}', '${DB_USERNAME}', '${DB_PASSWORD}', [PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION]); } catch (Throwable \$e) { exit(1); }" >/dev/null 2>&1; then
+  if php -r '
+$c = getenv("DB_CONNECTION") ?: "pgsql";
+$h = getenv("DB_HOST") ?: ($c === "pgsql" ? "postgres" : "mysql");
+$p = getenv("DB_PORT") ?: ($c === "pgsql" ? "5432" : "3306");
+$d = getenv("DB_DATABASE") ?: "getfy";
+$u = getenv("DB_USERNAME");
+$w = getenv("DB_PASSWORD");
+if (!is_string($u) || $u === "" || !is_string($w)) { exit(1); }
+$dsn = ($c === "pgsql")
+  ? "pgsql:host={$h};port={$p};dbname={$d}"
+  : "mysql:host={$h};port={$p};dbname={$d}";
+try { new PDO($dsn, $u, $w, [PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION]); }
+catch (Throwable $e) { exit(1); }
+' >/dev/null 2>&1; then
     DB_OK=1
     break
   fi
@@ -303,7 +339,11 @@ fi
 
 if [ "${GETFY_RUN_SETUP:-true}" = "true" ]; then
   php artisan package:discover --ansi
-  php artisan migrate --force
+  if [ "${GETFY_SKIP_MIGRATE:-0}" = "1" ]; then
+    echo "GETFY_SKIP_MIGRATE=1 — pulando migrate --force (atualização só de runtime/PHP)."
+  else
+    php artisan migrate --force
+  fi
   if ! php -r '
 require "vendor/autoload.php";
 $valid = false;

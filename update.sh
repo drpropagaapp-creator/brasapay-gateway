@@ -74,6 +74,115 @@ if [ ! -d "$INSTALL_DIR" ]; then
   exit 1
 fi
 
+# Backup local ANTES de qualquer reset --hard. O git-sync no disco pode ser o
+# antigo (sem preservação). Não imprime valores. Não ignora falhas.
+GETFY_STACK_ENV_PRESERVE_DIR=""
+GETFY_STACK_ENV_RESTORED=0
+preserve_helper_path() {
+  if [ -n "${BASH_SOURCE[0]:-}" ] && [ -f "$(dirname "${BASH_SOURCE[0]}")/docker/preserve-local-stack-env.sh" ]; then
+    printf '%s\n' "$(dirname "${BASH_SOURCE[0]}")/docker/preserve-local-stack-env.sh"
+    return 0
+  fi
+  return 1
+}
+
+backup_local_stack_env() {
+  GETFY_STACK_ENV_PRESERVE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/getfy-stack-env.XXXXXX")" || return 1
+  chmod 700 "$GETFY_STACK_ENV_PRESERVE_DIR" || return 1
+  mkdir -p "$GETFY_STACK_ENV_PRESERVE_DIR/.docker" || return 1
+  local helper=""
+  helper="$(preserve_helper_path || true)"
+  if [ -n "$helper" ]; then
+    if ! $SUDO sh "$helper" backup "$INSTALL_DIR" "$GETFY_STACK_ENV_PRESERVE_DIR"; then
+      echo "[update] ERRO: backup de stack.env falhou." >&2
+      return 1
+    fi
+    return 0
+  fi
+  if [ -f "$INSTALL_DIR/.docker/stack.env" ]; then
+    if ! $SUDO cp -p "$INSTALL_DIR/.docker/stack.env" "$GETFY_STACK_ENV_PRESERVE_DIR/.docker/stack.env"; then
+      echo "[update] ERRO: backup de stack.env falhou." >&2
+      return 1
+    fi
+  fi
+  if [ -d "$INSTALL_DIR/.docker" ]; then
+    local f
+    for f in "$INSTALL_DIR"/.docker/*.override.yml "$INSTALL_DIR"/.docker/*.override.json \
+             "$INSTALL_DIR"/.docker/php836* "$INSTALL_DIR"/.docker/stack.compose.env \
+             "$INSTALL_DIR"/.docker/compose-profile; do
+      [ -f "$f" ] || continue
+      if ! $SUDO cp -p "$f" "$GETFY_STACK_ENV_PRESERVE_DIR/.docker/$(basename "$f")"; then
+        echo "[update] ERRO: backup de $(basename "$f") falhou." >&2
+        return 1
+      fi
+    done
+  fi
+  if [ -f "$INSTALL_DIR/.docker/stack.env" ] && [ ! -f "$GETFY_STACK_ENV_PRESERVE_DIR/.docker/stack.env" ]; then
+    echo "[update] ERRO: backup de stack.env falhou." >&2
+    return 1
+  fi
+  echo "[update] backup local de stack.env/overrides antes do Git sync."
+}
+
+restore_local_stack_env() {
+  local dir="${GETFY_STACK_ENV_PRESERVE_DIR:-}"
+  [ -n "$dir" ] && [ -d "$dir" ] || return 0
+  local helper=""
+  helper="$(preserve_helper_path || true)"
+  if [ -z "$helper" ] && [ -f "$INSTALL_DIR/docker/preserve-local-stack-env.sh" ]; then
+    helper="$INSTALL_DIR/docker/preserve-local-stack-env.sh"
+  fi
+  if [ -n "$helper" ]; then
+    if ! $SUDO sh "$helper" restore "$INSTALL_DIR" "$dir"; then
+      return 1
+    fi
+  else
+    [ -d "$dir/.docker" ] || return 0
+    if ! $SUDO mkdir -p "$INSTALL_DIR/.docker"; then
+      echo "[update] ERRO: restauração falhou (mkdir)." >&2
+      return 1
+    fi
+    local f
+    for f in "$dir"/.docker/*; do
+      [ -f "$f" ] || continue
+      case "$f" in *.mode) continue ;; esac
+      if ! $SUDO cp -p "$f" "$INSTALL_DIR/.docker/$(basename "$f")"; then
+        echo "[update] ERRO: restauração falhou em $(basename "$f") (valores não exibidos)." >&2
+        return 1
+      fi
+      if [ ! -f "$INSTALL_DIR/.docker/$(basename "$f")" ] || ! cmp -s "$f" "$INSTALL_DIR/.docker/$(basename "$f")"; then
+        echo "[update] ERRO: restauração não conferiu $(basename "$f") (valores não exibidos)." >&2
+        return 1
+      fi
+    done
+  fi
+  $SUDO rm -rf "$dir"
+  GETFY_STACK_ENV_PRESERVE_DIR=""
+  GETFY_STACK_ENV_RESTORED=1
+  echo "[update] stack.env/overrides restaurados após Git sync (valores não exibidos)."
+}
+
+report_restore_kept() {
+  echo "[update] ERRO: restauração falhou. Backup protegido em: ${GETFY_STACK_ENV_PRESERVE_DIR}" >&2
+  echo "[update] Não apaguei o backup. Não imprimo valores." >&2
+}
+
+preserve_on_exit() {
+  local rc=$?
+  trap - EXIT INT TERM
+  if [ "$GETFY_STACK_ENV_RESTORED" = "1" ]; then
+    exit "$rc"
+  fi
+  if restore_local_stack_env; then
+    exit "$rc"
+  fi
+  report_restore_kept
+  if [ "$rc" -ne 0 ]; then
+    exit "$rc"
+  fi
+  exit 1
+}
+
 ENV_FILE="$INSTALL_DIR/.env"
 
 read_nonempty_stacker_token() {
@@ -111,33 +220,99 @@ fi
 
 export GETFY_REPO_URL="$REPO_URL"
 SYNC_SCRIPT="$INSTALL_DIR/docker/git-sync-for-deploy.sh"
-if [ -f "$SYNC_SCRIPT" ]; then
-  $SUDO chmod +x "$SYNC_SCRIPT" 2>/dev/null || true
-  $SUDO env GETFY_REPO_URL="$REPO_URL" sh "$SYNC_SCRIPT" "$INSTALL_DIR" "$BRANCH" "$SUDO"
+helper_wrap="$(preserve_helper_path || true)"
+sync_rc=0
+
+if [ -n "$helper_wrap" ]; then
+  GETFY_STACK_ENV_PRESERVE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/getfy-stack-env.XXXXXX")"
+  chmod 700 "$GETFY_STACK_ENV_PRESERVE_DIR"
+  set +e
+  if [ -f "$SYNC_SCRIPT" ]; then
+    $SUDO env GETFY_PRESERVE_FAIL_BACKUP="${GETFY_PRESERVE_FAIL_BACKUP:-0}" \
+      GETFY_PRESERVE_FAIL_RESTORE="${GETFY_PRESERVE_FAIL_RESTORE:-0}" \
+      sh "$helper_wrap" wrap "$INSTALL_DIR" "$GETFY_STACK_ENV_PRESERVE_DIR" -- \
+      env GETFY_STACK_ENV_PRESERVE_OWNED=1 GETFY_REPO_URL="$REPO_URL" \
+        sh "$SYNC_SCRIPT" "$INSTALL_DIR" "$BRANCH" "$SUDO"
+    sync_rc=$?
+  else
+    echo "Aviso: git-sync-for-deploy.sh ainda não existe no disco — sync Git mínimo (bootstrap)." >&2
+    $SUDO env GETFY_PRESERVE_FAIL_BACKUP="${GETFY_PRESERVE_FAIL_BACKUP:-0}" \
+      GETFY_PRESERVE_FAIL_RESTORE="${GETFY_PRESERVE_FAIL_RESTORE:-0}" \
+      sh "$helper_wrap" wrap "$INSTALL_DIR" "$GETFY_STACK_ENV_PRESERVE_DIR" -- \
+      sh -c '
+        set -e
+        INSTALL_DIR="$1"
+        REPO_URL="$2"
+        BRANCH="$3"
+        GIT="git -c safe.directory=$INSTALL_DIR -C $INSTALL_DIR"
+        $GIT remote set-url origin "$REPO_URL" >/dev/null 2>&1 || true
+        $GIT merge --abort >/dev/null 2>&1 || true
+        $GIT rebase --abort >/dev/null 2>&1 || true
+        rm -rf "$INSTALL_DIR/public/build"
+        $GIT fetch --all --prune
+        $GIT reset --hard "origin/$BRANCH"
+      ' sh "$INSTALL_DIR" "$REPO_URL" "$BRANCH"
+    sync_rc=$?
+  fi
+  set -e
+  if [ "$sync_rc" -ne 0 ]; then
+    exit "$sync_rc"
+  fi
 else
-  echo "Aviso: git-sync-for-deploy.sh ainda não existe no disco — sync Git mínimo (bootstrap)." >&2
-  GIT_BASE=(git -c safe.directory="$INSTALL_DIR" -C "$INSTALL_DIR")
-  $SUDO "${GIT_BASE[@]}" remote set-url origin "$REPO_URL" >/dev/null 2>&1 || true
-  $SUDO "${GIT_BASE[@]}" merge --abort >/dev/null 2>&1 || true
-  $SUDO "${GIT_BASE[@]}" rebase --abort >/dev/null 2>&1 || true
-  $SUDO rm -rf "$INSTALL_DIR/public/build"
-  $SUDO "${GIT_BASE[@]}" reset --hard HEAD >/dev/null 2>&1 || true
-  $SUDO "${GIT_BASE[@]}" fetch --all --prune
-  $SUDO "${GIT_BASE[@]}" reset --hard "origin/$BRANCH"
+  if ! backup_local_stack_env; then
+    echo "[update] ERRO: backup de stack.env falhou — Git sync abortado." >&2
+    echo "[update] Diretório de backup (protegido): ${GETFY_STACK_ENV_PRESERVE_DIR}" >&2
+    exit 1
+  fi
+  trap preserve_on_exit EXIT INT TERM
+  set +e
+  if [ -f "$SYNC_SCRIPT" ]; then
+    $SUDO chmod +x "$SYNC_SCRIPT" 2>/dev/null || true
+    $SUDO env GETFY_REPO_URL="$REPO_URL" GETFY_STACK_ENV_PRESERVE_OWNED=1 \
+      GETFY_STACK_ENV_PRESERVE_DIR="$GETFY_STACK_ENV_PRESERVE_DIR" \
+      sh "$SYNC_SCRIPT" "$INSTALL_DIR" "$BRANCH" "$SUDO"
+    sync_rc=$?
+  else
+    echo "Aviso: git-sync-for-deploy.sh ainda não existe no disco — sync Git mínimo (bootstrap)." >&2
+    GIT_BASE=(git -c safe.directory="$INSTALL_DIR" -C "$INSTALL_DIR")
+    $SUDO "${GIT_BASE[@]}" remote set-url origin "$REPO_URL" >/dev/null 2>&1 || true
+    $SUDO "${GIT_BASE[@]}" merge --abort >/dev/null 2>&1 || true
+    $SUDO "${GIT_BASE[@]}" rebase --abort >/dev/null 2>&1 || true
+    $SUDO rm -rf "$INSTALL_DIR/public/build"
+    $SUDO "${GIT_BASE[@]}" reset --hard HEAD >/dev/null 2>&1 || true
+    $SUDO "${GIT_BASE[@]}" fetch --all --prune
+    $SUDO "${GIT_BASE[@]}" reset --hard "origin/$BRANCH"
+    sync_rc=$?
+  fi
+  set -e
+  trap - EXIT INT TERM
+  if ! restore_local_stack_env; then
+    report_restore_kept
+    if [ "$sync_rc" -ne 0 ]; then
+      exit "$sync_rc"
+    fi
+    exit 1
+  fi
+  if [ "$sync_rc" -ne 0 ]; then
+    exit "$sync_rc"
+  fi
+fi
 fi
 
 cd "$INSTALL_DIR"
-fi
 
-cd "$INSTALL_DIR"
+# shellcheck disable=SC1091
+. docker/unset-db-shell-env.sh
+DB_U_FLAGS="$(db_env_u_flags)"
+unset_db_shell_env
 
 prompt_stacker_agent_if_needed
 
 if [ "$STACKER_MANAGED" = "1" ]; then
   $SUDO bash docker/ensure-stacker-agent.sh || true
   echo ""
-  echo "=== Rebuild da imagem app (base PHP com --pull) + reinício da stack ==="
-  $SUDO chmod +x docker/detect-compose-files.sh 2>/dev/null || true
+  echo "=== PHP/runtime via imagem em execução (não rebuild do código do host) ==="
+  $SUDO chmod +x docker/detect-compose-files.sh docker/apply-official-php-base.sh docker/ensure-db-credentials.sh docker/write-compose-env.sh 2>/dev/null || true
   COMPOSE_FILES="$($SUDO sh docker/detect-compose-files.sh)"
   COMPOSE_EXEC_ARGS=""
   for f in $COMPOSE_FILES; do
@@ -146,30 +321,34 @@ if [ "$STACKER_MANAGED" = "1" ]; then
     fi
   done
   STACK_ENV="$INSTALL_DIR/.docker/stack.env"
-  $SUDO chmod +x docker/ensure-db-credentials.sh docker/up.sh 2>/dev/null || true
-  # Export GETFY_DB_* da shell sobrescreve --env-file e pode reintroduzir user fantasma.
-  unset GETFY_DB_CONNECTION GETFY_DB_HOST GETFY_DB_PORT GETFY_DB_DATABASE GETFY_DB_USERNAME GETFY_DB_PASSWORD 2>/dev/null || true
-  if ! $SUDO sh docker/ensure-db-credentials.sh; then
+  unset_db_shell_env
+  if ! $SUDO env $DB_U_FLAGS sh docker/ensure-db-credentials.sh; then
     echo "ERRO: credenciais PostgreSQL inválidas — update abortado (não vou recriar o app com user fantasma)." >&2
     echo "Recupere com: cd \"$INSTALL_DIR\" && sh docker/recover-stack.sh" >&2
     exit 1
   fi
-  # Hardens LOG_* + limpa logs gigantes antes do recreate (evita herdar single/debug).
   run_host_log_harden_only
-  $SUDO env -u GETFY_DB_CONNECTION -u GETFY_DB_HOST -u GETFY_DB_PORT -u GETFY_DB_DATABASE -u GETFY_DB_USERNAME -u GETFY_DB_PASSWORD \
+  $SUDO env $DB_U_FLAGS \
     GETFY_COMPOSE_FILES="$COMPOSE_FILES" GETFY_APP_ENV=production GETFY_APP_DEBUG=false \
     GETFY_PHP_BASE_IMAGE="${GETFY_PHP_BASE_IMAGE:-php:8.3.36-cli-alpine}" \
+    GETFY_PHP_FROM_RUNNING="${GETFY_PHP_FROM_RUNNING:-1}" \
+    GETFY_SKIP_MIGRATE=1 \
+    GETFY_SKIP_DOCKER_PRUNE=1 \
     GETFY_DOCKER_NO_CACHE="${GETFY_DOCKER_NO_CACHE:-0}" \
-    sh docker/up.sh
+    sh docker/apply-official-php-base.sh
+  COMPOSE_ENV_FILE="$STACK_ENV"
+  if [ -f docker/write-compose-env.sh ]; then
+    COMPOSE_ENV_FILE="$($SUDO sh docker/write-compose-env.sh)"
+  fi
   if [ -f "$INSTALL_DIR/agent/Dockerfile" ]; then
     echo ""
     echo "=== Rebuild do stacker-agent (se houver mudanças no agente) ==="
-    $SUDO docker compose $COMPOSE_EXEC_ARGS --env-file "$STACK_ENV" build stacker-agent
-    $SUDO docker compose $COMPOSE_EXEC_ARGS --env-file "$STACK_ENV" up -d stacker-agent
+    $SUDO docker compose $COMPOSE_EXEC_ARGS --env-file "$COMPOSE_ENV_FILE" build stacker-agent
+    $SUDO docker compose $COMPOSE_EXEC_ARGS --env-file "$COMPOSE_ENV_FILE" up -d stacker-agent
   fi
   echo ""
   echo "=== Caches Laravel (optimize:clear) ==="
-  $SUDO docker compose $COMPOSE_EXEC_ARGS --env-file "$STACK_ENV" exec -T app php artisan optimize:clear || true
+  $SUDO docker compose $COMPOSE_EXEC_ARGS --env-file "$COMPOSE_ENV_FILE" exec -T app php artisan optimize:clear || true
   echo ""
   echo "=== Health check pós-atualização ==="
   $SUDO chmod +x docker/post-update-healthcheck.sh 2>/dev/null || true
@@ -178,7 +357,7 @@ if [ "$STACKER_MANAGED" = "1" ]; then
     exit 1
   fi
   run_storage_logs_cleanup
-  run_docker_prune
+  GETFY_SKIP_DOCKER_PRUNE=1 run_docker_prune
   echo ""
   echo "Atualização local concluída. Releases remotas: portal Stacker ou admin."
   echo "Para atualizar scripts/PHP via Git: GETFY_LEGACY_GIT_UPDATE=1 bash update.sh"
@@ -213,18 +392,22 @@ echo "=== Reiniciando stack Docker ==="
 $SUDO chmod +x docker/detect-compose-files.sh docker/ensure-db-credentials.sh docker/up.sh 2>/dev/null || true
 COMPOSE_FILES="$($SUDO sh docker/detect-compose-files.sh)"
 echo "Compose: $COMPOSE_FILES"
-# Export GETFY_DB_* da shell sobrescreve --env-file e pode reintroduzir user fantasma.
-unset GETFY_DB_CONNECTION GETFY_DB_HOST GETFY_DB_PORT GETFY_DB_DATABASE GETFY_DB_USERNAME GETFY_DB_PASSWORD 2>/dev/null || true
-# Garante DB antes do up (e no próprio up.sh de novo). Falha = aborta o update.
-if ! $SUDO sh docker/ensure-db-credentials.sh; then
+# Credenciais da shell venceriam o --env-file (interpolação de $ / user fantasma).
+DB_U_FLAGS="$(db_env_u_flags)"
+unset_db_shell_env
+# Garante DB antes do up (TCP + stack.compose.env com cifrões escapados).
+if ! $SUDO env $DB_U_FLAGS sh docker/ensure-db-credentials.sh; then
   echo "ERRO: credenciais PostgreSQL inválidas — update abortado (não vou recriar o app com user fantasma)." >&2
   echo "Recupere com: cd \"$INSTALL_DIR\" && sh docker/recover-stack.sh" >&2
   exit 1
 fi
 # Hardens LOG_* + limpa logs gigantes antes do recreate (evita herdar single/debug).
 run_host_log_harden_only
-$SUDO env -u GETFY_DB_CONNECTION -u GETFY_DB_HOST -u GETFY_DB_PORT -u GETFY_DB_DATABASE -u GETFY_DB_USERNAME -u GETFY_DB_PASSWORD \
-  GETFY_COMPOSE_FILES="$COMPOSE_FILES" GETFY_APP_ENV=production GETFY_APP_DEBUG=false sh docker/up.sh
+$SUDO chmod +x docker/write-compose-env.sh 2>/dev/null || true
+$SUDO env $DB_U_FLAGS \
+  GETFY_COMPOSE_FILES="$COMPOSE_FILES" GETFY_APP_ENV=production GETFY_APP_DEBUG=false \
+  GETFY_PHP_BASE_IMAGE="${GETFY_PHP_BASE_IMAGE:-php:8.3.36-cli-alpine}" \
+  sh docker/up.sh
 
 echo ""
 echo "=== Push PWA (VAPID) + caches Laravel ==="
@@ -237,7 +420,10 @@ done
 ENV_FILE="$INSTALL_DIR/.env"
 STACK_ENV_FILE="$INSTALL_DIR/.docker/stack.env"
 COMPOSE_ENV_ARGS=""
-if [ -f "$STACK_ENV_FILE" ]; then
+if [ -f docker/write-compose-env.sh ] && [ -f "$STACK_ENV_FILE" ]; then
+  COMPOSE_ENV_FILE="$($SUDO sh docker/write-compose-env.sh)"
+  COMPOSE_ENV_ARGS="--env-file $COMPOSE_ENV_FILE"
+elif [ -f "$STACK_ENV_FILE" ]; then
   COMPOSE_ENV_ARGS="--env-file $STACK_ENV_FILE"
 elif [ -f "$ENV_FILE" ]; then
   COMPOSE_ENV_ARGS="--env-file $ENV_FILE"

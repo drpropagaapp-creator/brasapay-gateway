@@ -4,6 +4,10 @@ set -e
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT_DIR"
 
+# shellcheck disable=SC1091
+. docker/unset-db-shell-env.sh
+unset_db_shell_env
+
 mkdir -p .docker
 
 ENV_FILE=".docker/stack.env"
@@ -113,7 +117,7 @@ fi
 # Alinha/recupera DB: NUNCA gera user aleatório se o volume Postgres já existe.
 # (Bug antigo: stack.env sem U/P → gerava getfy_xxx → 521 no update).
 # Exports na shell root sobrescrevem --env-file e reintroduzem user fantasma.
-unset GETFY_DB_CONNECTION GETFY_DB_HOST GETFY_DB_PORT GETFY_DB_DATABASE GETFY_DB_USERNAME GETFY_DB_PASSWORD 2>/dev/null || true
+unset_db_shell_env
 if [ -f docker/ensure-db-credentials.sh ]; then
   chmod +x docker/ensure-db-credentials.sh 2>/dev/null || true
   sh docker/ensure-db-credentials.sh
@@ -235,6 +239,11 @@ IFS="$OLD_IFS"
 GETFY_PHP_BASE_IMAGE="${GETFY_PHP_BASE_IMAGE:-php:8.3.36-cli-alpine}"
 export GETFY_PHP_BASE_IMAGE
 
+COMPOSE_ENV_FILE="$ENV_FILE"
+if [ -f docker/write-compose-env.sh ]; then
+  COMPOSE_ENV_FILE="$(sh docker/write-compose-env.sh)"
+fi
+
 UP_ARGS="-d --remove-orphans"
 if [ "${GETFY_SKIP_DOCKER_BUILD:-0}" != "1" ]; then
   BUILD_OPTS="--pull"
@@ -243,12 +252,12 @@ if [ "${GETFY_SKIP_DOCKER_BUILD:-0}" != "1" ]; then
   fi
   echo "docker compose build $BUILD_OPTS (PHP_BASE_IMAGE=$GETFY_PHP_BASE_IMAGE)..."
   # shellcheck disable=SC2086
-  docker compose $COMPOSE_ARGS --env-file "$ENV_FILE" build $BUILD_OPTS
+  docker compose $COMPOSE_ARGS --env-file "$COMPOSE_ENV_FILE" build $BUILD_OPTS
 fi
 
 echo "docker compose up (volumes Postgres/Redis preservados)..."
 # Nunca deixe GETFY_DB_* da shell sobrescrever o --env-file (causa role fantasma / 522).
-unset GETFY_DB_CONNECTION GETFY_DB_HOST GETFY_DB_PORT GETFY_DB_DATABASE GETFY_DB_USERNAME GETFY_DB_PASSWORD 2>/dev/null || true
+unset_db_shell_env
 
 read_stack_kv() {
   key="$1"
@@ -283,7 +292,7 @@ DB_SNAP_USER="$(read_stack_kv GETFY_DB_USERNAME)"
 DB_SNAP_PASS="$(read_stack_kv GETFY_DB_PASSWORD)"
 
 # shellcheck disable=SC2086
-if ! docker compose $COMPOSE_ARGS --env-file "$ENV_FILE" up $UP_ARGS; then
+if ! docker compose $COMPOSE_ARGS --env-file "$COMPOSE_ENV_FILE" up $UP_ARGS; then
   echo "ERRO: docker compose up falhou." >&2
   rollback_stopped_orphans
   rm -f "$ORPHAN_STOPPED_FILE"
@@ -315,25 +324,28 @@ if [ -f docker/ensure-db-credentials.sh ]; then
   fi
 
   # Mesmo com stack.env estável: Compose pode ter interpolado .env fantasma.
-  APP_DB_USER="$(docker compose $COMPOSE_ARGS --env-file "$ENV_FILE" exec -T app printenv DB_USERNAME 2>/dev/null | tr -d '\r\n' || true)"
+  APP_DB_USER="$(docker compose $COMPOSE_ARGS --env-file "$COMPOSE_ENV_FILE" exec -T app printenv DB_USERNAME 2>/dev/null | tr -d '\r\n' || true)"
   if [ -n "$APP_DB_USER" ] && [ -n "$DB_NOW_USER" ] && [ "$APP_DB_USER" != "$DB_NOW_USER" ]; then
     NEED_RECREATE=1
     echo "Container app tem DB_USERNAME=$APP_DB_USER (stack.env=$DB_NOW_USER) — divergência."
   fi
 
   if [ "$NEED_RECREATE" -eq 1 ]; then
-    echo "Recriando app/workers/postgres com credenciais corrigidas..."
+    echo "Recriando serviços PHP com credenciais corrigidas (postgres intocado)..."
+    if [ -f docker/write-compose-env.sh ]; then
+      COMPOSE_ENV_FILE="$(sh docker/write-compose-env.sh)"
+    fi
     RECREATE_LIST=""
-    for svc in app postgres queue scheduler worker worker-payments worker-webhooks-out worker-webhooks-in worker-payouts worker-meta-tracking worker-utmify-tracking worker-integrax-sms worker-uazapi; do
+    for svc in app queue scheduler worker worker-payments worker-webhooks-out worker-webhooks-in worker-payouts worker-meta-tracking worker-utmify-tracking worker-integrax-sms worker-uazapi; do
       # shellcheck disable=SC2086
-      if docker compose $COMPOSE_ARGS --env-file "$ENV_FILE" config --services 2>/dev/null | grep -qx "$svc"; then
+      if docker compose $COMPOSE_ARGS --env-file "$COMPOSE_ENV_FILE" config --services 2>/dev/null | grep -qx "$svc"; then
         RECREATE_LIST="$RECREATE_LIST $svc"
       fi
     done
     if [ -n "$(echo "$RECREATE_LIST" | tr -d ' ')" ]; then
-      unset GETFY_DB_CONNECTION GETFY_DB_HOST GETFY_DB_PORT GETFY_DB_DATABASE GETFY_DB_USERNAME GETFY_DB_PASSWORD 2>/dev/null || true
+      unset_db_shell_env
       # shellcheck disable=SC2086
-      docker compose $COMPOSE_ARGS --env-file "$ENV_FILE" up -d --force-recreate --no-deps $RECREATE_LIST
+      docker compose $COMPOSE_ARGS --env-file "$COMPOSE_ENV_FILE" up -d --force-recreate --no-deps $RECREATE_LIST
       echo "Serviços recriados:$RECREATE_LIST"
     fi
   fi
