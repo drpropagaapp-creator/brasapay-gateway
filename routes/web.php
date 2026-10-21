@@ -130,7 +130,7 @@ Route::get('/', function (\Illuminate\Http\Request $request) {
         return redirect(auth()->user()->defaultAuthenticatedHomeUrl());
     }
 
-    return redirect()->to('/login', 302);
+    return \Inertia\Inertia::render('Landing');
 });
 
 // Diagnóstico de deploy/storage (sem auth — não expõe credenciais)
