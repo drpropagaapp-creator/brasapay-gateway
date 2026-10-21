@@ -23,8 +23,8 @@ fi
 if [ "${GETFY_STACK_ENV_PRESERVE_OWNED:-0}" != "1" ]; then
   PRESERVE_DIR="${GETFY_STACK_ENV_PRESERVE_DIR:-}"
   if [ -z "$PRESERVE_DIR" ]; then
-    PRESERVE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/getfy-stack-env.XXXXXX")"
-    chmod 700 "$PRESERVE_DIR"
+    PRESERVE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/getfy-stack-env.XXXXXX")" || exit 1
+    chmod 700 "$PRESERVE_DIR" || exit 1
   fi
   if [ -n "$PRESERVE_SH" ]; then
     # Reentra neste script com OWNED=1 dentro do wrap (trap + restore).
@@ -33,7 +33,7 @@ if [ "${GETFY_STACK_ENV_PRESERVE_OWNED:-0}" != "1" ]; then
       env GETFY_STACK_ENV_PRESERVE_OWNED=1 GETFY_REPO_URL="$GETFY_REPO_URL" \
         sh "$0" "$INSTALL_DIR" "$BRANCH" "$SUDO"
   fi
-  mkdir -p "$PRESERVE_DIR/.docker"
+  mkdir -p "$PRESERVE_DIR/.docker" || exit 1
   if [ -f "$INSTALL_DIR/.docker/stack.env" ]; then
     # shellcheck disable=SC2086
     if ! $SUDO cp -p "$INSTALL_DIR/.docker/stack.env" "$PRESERVE_DIR/.docker/stack.env"; then
@@ -54,7 +54,10 @@ if [ "${GETFY_STACK_ENV_PRESERVE_OWNED:-0}" != "1" ]; then
     fi
     if [ -f "$PRESERVE_DIR/.docker/stack.env" ]; then
       # shellcheck disable=SC2086
-      $SUDO mkdir -p "$INSTALL_DIR/.docker"
+      if ! $SUDO mkdir -p "$INSTALL_DIR/.docker"; then
+        echo "[git-sync] ERRO: restauração falhou. Backup protegido em: $PRESERVE_DIR" >&2
+        return 1
+      fi
       # shellcheck disable=SC2086
       if ! $SUDO cp -p "$PRESERVE_DIR/.docker/stack.env" "$INSTALL_DIR/.docker/stack.env"; then
         echo "[git-sync] ERRO: restauração falhou. Backup protegido em: $PRESERVE_DIR" >&2

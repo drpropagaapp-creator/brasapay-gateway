@@ -87,9 +87,9 @@ preserve_helper_path() {
 }
 
 backup_local_stack_env() {
-  GETFY_STACK_ENV_PRESERVE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/getfy-stack-env.XXXXXX")"
-  chmod 700 "$GETFY_STACK_ENV_PRESERVE_DIR"
-  mkdir -p "$GETFY_STACK_ENV_PRESERVE_DIR/.docker"
+  GETFY_STACK_ENV_PRESERVE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/getfy-stack-env.XXXXXX")" || return 1
+  chmod 700 "$GETFY_STACK_ENV_PRESERVE_DIR" || return 1
+  mkdir -p "$GETFY_STACK_ENV_PRESERVE_DIR/.docker" || return 1
   local helper=""
   helper="$(preserve_helper_path || true)"
   if [ -n "$helper" ]; then
@@ -111,7 +111,10 @@ backup_local_stack_env() {
              "$INSTALL_DIR"/.docker/php836* "$INSTALL_DIR"/.docker/stack.compose.env \
              "$INSTALL_DIR"/.docker/compose-profile; do
       [ -f "$f" ] || continue
-      $SUDO cp -p "$f" "$GETFY_STACK_ENV_PRESERVE_DIR/.docker/$(basename "$f")"
+      if ! $SUDO cp -p "$f" "$GETFY_STACK_ENV_PRESERVE_DIR/.docker/$(basename "$f")"; then
+        echo "[update] ERRO: backup de $(basename "$f") falhou." >&2
+        return 1
+      fi
     done
   fi
   if [ -f "$INSTALL_DIR/.docker/stack.env" ] && [ ! -f "$GETFY_STACK_ENV_PRESERVE_DIR/.docker/stack.env" ]; then
@@ -135,7 +138,10 @@ restore_local_stack_env() {
     fi
   else
     [ -d "$dir/.docker" ] || return 0
-    $SUDO mkdir -p "$INSTALL_DIR/.docker"
+    if ! $SUDO mkdir -p "$INSTALL_DIR/.docker"; then
+      echo "[update] ERRO: restauração falhou (mkdir)." >&2
+      return 1
+    fi
     local f
     for f in "$dir"/.docker/*; do
       [ -f "$f" ] || continue

@@ -141,6 +141,14 @@ assert_eq "0: update-caddy.sh não ignora falha de backup" "$ignore_bak_c" "0"
 assert_eq "0: update-caddy.sh não ignora falha de restore" "$ignore_rst_c" "0"
 grep -q 'stack.env.example' "$ROOT_DIR/.gitignore" && ex=1 || ex=0
 assert_true "0: gitignore permite stack.env.example" "$ex"
+grep -q 'copy_preserved .*|| return 1' "$ROOT_DIR/docker/preserve-local-stack-env.sh" && cp_prop=1 || cp_prop=0
+grep -q 'restore_one .*|| return 1' "$ROOT_DIR/docker/preserve-local-stack-env.sh" && rst_prop=1 || rst_prop=0
+assert_true "0: backup propaga falha de copy_preserved" "$cp_prop"
+assert_true "0: restore propaga falha de restore_one" "$rst_prop"
+grep -q 'if ! $SUDO cp -p "$f"' "$ROOT_DIR/update.sh" && fb_u=1 || fb_u=0
+grep -q 'if ! $SUDO cp -p "$f"' "$ROOT_DIR/update-caddy.sh" && fb_c=1 || fb_c=0
+assert_true "0: fallback de update.sh não ignora cp no loop" "$fb_u"
+assert_true "0: fallback de update-caddy.sh não ignora cp no loop" "$fb_c"
 
 echo ""
 echo "=== 1) git-sync antigo sozinho perde o stack.env local (o bug) ==="
@@ -368,6 +376,200 @@ if stderr_leaks_secrets "$TEST_ROOT/wrap6.err"; then
   FAIL=$((FAIL + 1))
 else
   echo "  PASS: 6: stderr não revela valores"
+  PASS=$((PASS + 1))
+fi
+
+write_fake_bin() {
+  name="$1"
+  body="$2"
+  dir="$3"
+  mkdir -p "$dir"
+  printf '%s\n' "$body" > "$dir/$name"
+  chmod +x "$dir/$name"
+}
+
+assert_no_restore_success_msg() {
+  label="$1"
+  errf="$2"
+  if grep -F 'restaurados (valores não exibidos)' "$errf" >/dev/null 2>&1; then
+    echo "  FAIL: $label (mensagem de sucesso de restore presente)" >&2
+    FAIL=$((FAIL + 1))
+  else
+    echo "  PASS: $label"
+    PASS=$((PASS + 1))
+  fi
+}
+
+echo ""
+echo "=== 7) wrap: cp real falha só na restauração de stack.env ==="
+INSTALL7="$TEST_ROOT/install7"
+write_local_live_stack_env "$INSTALL7"
+cp "$INSTALL7/.docker/stack.env" "$TEST_ROOT/stack7.before"
+WRAP7="$TEST_ROOT/wrap7"
+mkdir -p "$WRAP7"
+marker7="$TEST_ROOT/sync7-ran"
+FAKE7="$TEST_ROOT/fakebin7"
+REAL_CP="$(command -v cp)"
+write_fake_bin cp "$(cat <<'EOF'
+#!/bin/sh
+real="${GETFY_TEST_REAL_CP:?}"
+fail_to="${GETFY_TEST_FAIL_CP_TO:-}"
+dest=""
+for a in "$@"; do
+  dest="$a"
+done
+if [ -n "$fail_to" ] && [ "$dest" = "$fail_to" ]; then
+  echo "[fake-cp] recusando restauração (valores não exibidos)" >&2
+  exit 1
+fi
+exec "$real" "$@"
+EOF
+)" "$FAKE7"
+rc7=0
+PATH="$FAKE7:$PATH" GETFY_TEST_REAL_CP="$REAL_CP" \
+  GETFY_TEST_FAIL_CP_TO="$INSTALL7/.docker/stack.env" \
+  sh "$ROOT_DIR/docker/preserve-local-stack-env.sh" wrap "$INSTALL7" "$WRAP7" -- \
+  sh -c 'printf "WIPED_BY_SYNC\n" > "$1/.docker/stack.env"; echo ran > "$2"' \
+  sh "$INSTALL7" "$marker7" \
+  >"$TEST_ROOT/wrap7.out" 2>"$TEST_ROOT/wrap7.err" || rc7=$?
+if [ "$rc7" -ne 0 ]; then
+  failcp=1
+else
+  failcp=0
+fi
+assert_true "7: wrap sai com erro quando cp da restauração falha" "$failcp"
+[ -f "$marker7" ] && ran7=1 || ran7=0
+assert_true "7: o comando de sync chegou a executar" "$ran7"
+[ -d "$WRAP7" ] && keep7=1 || keep7=0
+assert_true "7: backup permanece após cp da restauração falhar" "$keep7"
+secret_same "7: backup original de stack.env intacto" \
+  "$(file_hash "$WRAP7/.docker/stack.env")" "$(file_hash "$TEST_ROOT/stack7.before")"
+grep -q "$WRAP7" "$TEST_ROOT/wrap7.err" && path7=1 || path7=0
+assert_true "7: stderr informa o caminho do backup" "$path7"
+assert_no_restore_success_msg "7: sem mensagem de restore concluído" "$TEST_ROOT/wrap7.err"
+if stderr_leaks_secrets "$TEST_ROOT/wrap7.err"; then
+  echo "  FAIL: 7: stderr vazou valor de senha/token" >&2
+  FAIL=$((FAIL + 1))
+else
+  echo "  PASS: 7: stderr não revela valores"
+  PASS=$((PASS + 1))
+fi
+
+echo ""
+echo "=== 8) wrap: cmp real falha na conferência da restauração ==="
+INSTALL8="$TEST_ROOT/install8"
+write_local_live_stack_env "$INSTALL8"
+cp "$INSTALL8/.docker/stack.env" "$TEST_ROOT/stack8.before"
+WRAP8="$TEST_ROOT/wrap8"
+mkdir -p "$WRAP8"
+marker8="$TEST_ROOT/sync8-ran"
+FAKE8="$TEST_ROOT/fakebin8"
+REAL_CMP="$(command -v cmp)"
+write_fake_bin cmp "$(cat <<'EOF'
+#!/bin/sh
+real="${GETFY_TEST_REAL_CMP:?}"
+fail_file="${GETFY_TEST_FAIL_CMP_FILE:-}"
+if [ -n "$fail_file" ]; then
+  for a in "$@"; do
+    case "$a" in
+      -*) continue ;;
+    esac
+    if [ "$a" = "$fail_file" ]; then
+      echo "[fake-cmp] conferência recusada (valores não exibidos)" >&2
+      exit 1
+    fi
+  done
+fi
+exec "$real" "$@"
+EOF
+)" "$FAKE8"
+rc8=0
+PATH="$FAKE8:$PATH" GETFY_TEST_REAL_CMP="$REAL_CMP" \
+  GETFY_TEST_FAIL_CMP_FILE="$INSTALL8/.docker/stack.env" \
+  sh "$ROOT_DIR/docker/preserve-local-stack-env.sh" wrap "$INSTALL8" "$WRAP8" -- \
+  sh -c 'printf "WIPED_BY_SYNC\n" > "$1/.docker/stack.env"; echo ran > "$2"' \
+  sh "$INSTALL8" "$marker8" \
+  >"$TEST_ROOT/wrap8.out" 2>"$TEST_ROOT/wrap8.err" || rc8=$?
+if [ "$rc8" -ne 0 ]; then
+  failcmp=1
+else
+  failcmp=0
+fi
+assert_true "8: wrap sai com erro quando cmp da restauração falha" "$failcmp"
+[ -f "$marker8" ] && ran8=1 || ran8=0
+assert_true "8: o comando de sync chegou a executar" "$ran8"
+[ -d "$WRAP8" ] && keep8=1 || keep8=0
+assert_true "8: backup permanece após cmp da restauração falhar" "$keep8"
+secret_same "8: backup original de stack.env intacto" \
+  "$(file_hash "$WRAP8/.docker/stack.env")" "$(file_hash "$TEST_ROOT/stack8.before")"
+grep -q "$WRAP8" "$TEST_ROOT/wrap8.err" && path8=1 || path8=0
+assert_true "8: stderr informa o caminho do backup" "$path8"
+assert_no_restore_success_msg "8: sem mensagem de restore concluído" "$TEST_ROOT/wrap8.err"
+if stderr_leaks_secrets "$TEST_ROOT/wrap8.err"; then
+  echo "  FAIL: 8: stderr vazou valor de senha/token" >&2
+  FAIL=$((FAIL + 1))
+else
+  echo "  PASS: 8: stderr não revela valores"
+  PASS=$((PASS + 1))
+fi
+
+echo ""
+echo "=== 9) wrap: cp real falha no backup — sync não executa ==="
+INSTALL9="$TEST_ROOT/install9"
+write_local_live_stack_env "$INSTALL9"
+hash9="$(file_hash "$INSTALL9/.docker/stack.env")"
+WRAP9="$TEST_ROOT/wrap9"
+mkdir -p "$WRAP9"
+marker9="$TEST_ROOT/sync9-must-not-run"
+FAKE9="$TEST_ROOT/fakebin9"
+write_fake_bin cp "$(cat <<'EOF'
+#!/bin/sh
+real="${GETFY_TEST_REAL_CP:?}"
+fail_to="${GETFY_TEST_FAIL_CP_TO:-}"
+dest=""
+for a in "$@"; do
+  dest="$a"
+done
+if [ -n "$fail_to" ] && [ "$dest" = "$fail_to" ]; then
+  echo "[fake-cp] recusando backup (valores não exibidos)" >&2
+  exit 1
+fi
+exec "$real" "$@"
+EOF
+)" "$FAKE9"
+rc9=0
+PATH="$FAKE9:$PATH" GETFY_TEST_REAL_CP="$REAL_CP" \
+  GETFY_TEST_FAIL_CP_TO="$WRAP9/.docker/stack.env" \
+  sh "$ROOT_DIR/docker/preserve-local-stack-env.sh" wrap "$INSTALL9" "$WRAP9" -- \
+  sh -c 'echo ran > "$1"; printf "WIPED\n" > "$2/.docker/stack.env"' \
+  sh "$marker9" "$INSTALL9" \
+  >"$TEST_ROOT/wrap9.out" 2>"$TEST_ROOT/wrap9.err" || rc9=$?
+if [ "$rc9" -ne 0 ]; then
+  failbak9=1
+else
+  failbak9=0
+fi
+assert_true "9: wrap aborta quando cp do backup falha" "$failbak9"
+[ ! -f "$marker9" ] && no_run9=1 || no_run9=0
+assert_true "9: sync não rodou após falha real de cp no backup" "$no_run9"
+secret_same "9: stack.env intacto (sync não rodou)" \
+  "$(file_hash "$INSTALL9/.docker/stack.env")" "$hash9"
+[ -d "$WRAP9" ] && keep9=1 || keep9=0
+assert_true "9: diretório de backup permanece protegido" "$keep9"
+grep -q 'backup falhou' "$TEST_ROOT/wrap9.err" && msg9=1 || msg9=0
+assert_true "9: stderr diz que o backup falhou" "$msg9"
+if grep -F 'backup local (.docker/stack.env e overrides) concluído' "$TEST_ROOT/wrap9.err" >/dev/null 2>&1; then
+  echo "  FAIL: 9: mensagem de sucesso de backup presente" >&2
+  FAIL=$((FAIL + 1))
+else
+  echo "  PASS: 9: sem mensagem de backup concluído"
+  PASS=$((PASS + 1))
+fi
+if stderr_leaks_secrets "$TEST_ROOT/wrap9.err"; then
+  echo "  FAIL: 9: stderr vazou valor de senha/token" >&2
+  FAIL=$((FAIL + 1))
+else
+  echo "  PASS: 9: stderr não revela valores"
   PASS=$((PASS + 1))
 fi
 

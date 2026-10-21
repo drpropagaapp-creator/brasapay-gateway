@@ -1,6 +1,7 @@
 #!/usr/bin/env sh
 # Backup/restore de stack.env e overrides locais em volta de git reset/checkout.
 # Não imprime valores. Preserva modo (chmod). Não ignora falhas.
+# Não depende de set -e: restore_all/backup_all correm em if/condicional.
 #
 # Uso:
 #   sh docker/preserve-local-stack-env.sh backup  <INSTALL_DIR> [DEST_DIR]
@@ -40,11 +41,14 @@ copy_preserved() {
   src="$1"
   dest="$2"
   [ -f "$src" ] || return 0
-  mkdir -p "$(dirname "$dest")"
-  cp -p "$src" "$dest"
+  mkdir -p "$(dirname "$dest")" || return 1
+  if ! cp -p "$src" "$dest"; then
+    echo "[preserve] ERRO: backup não copiou $(basename "$src")." >&2
+    return 1
+  fi
   orig_mode="$(file_mode "$src")"
-  chmod "$orig_mode" "$dest" 2>/dev/null || chmod 600 "$dest"
-  printf '%s\n' "$orig_mode" > "$dest.mode"
+  chmod "$orig_mode" "$dest" 2>/dev/null || chmod 600 "$dest" || return 1
+  printf '%s\n' "$orig_mode" > "$dest.mode" || return 1
   if [ ! -f "$dest" ]; then
     echo "[preserve] ERRO: backup não gravou $(basename "$src")." >&2
     return 1
@@ -55,12 +59,15 @@ restore_one() {
   src="$1"
   dest="$2"
   [ -f "$src" ] || return 0
-  mkdir -p "$(dirname "$dest")"
-  cp -p "$src" "$dest"
+  mkdir -p "$(dirname "$dest")" || return 1
+  if ! cp -p "$src" "$dest"; then
+    echo "[preserve] ERRO: restauração falhou em $(basename "$src") (valores não exibidos)." >&2
+    return 1
+  fi
   if [ -f "$src.mode" ]; then
-    chmod "$(tr -d ' \t\r\n' < "$src.mode")" "$dest" 2>/dev/null || chmod 600 "$dest"
+    chmod "$(tr -d ' \t\r\n' < "$src.mode")" "$dest" 2>/dev/null || chmod 600 "$dest" || return 1
   else
-    chmod "$(file_mode "$src")" "$dest" 2>/dev/null || chmod 600 "$dest"
+    chmod "$(file_mode "$src")" "$dest" 2>/dev/null || chmod 600 "$dest" || return 1
   fi
   if ! cmp -s "$src" "$dest"; then
     echo "[preserve] ERRO: restauração não conferiu $(basename "$src") (valores não exibidos)." >&2
@@ -73,27 +80,27 @@ backup_all() {
     echo "[preserve] ERRO: backup forçado a falhar (teste)." >&2
     return 1
   fi
-  mkdir -p "$BACKUP_DOCKER"
-  chmod 700 "$DEST_DIR"
-  chmod 700 "$BACKUP_DOCKER"
+  mkdir -p "$BACKUP_DOCKER" || return 1
+  chmod 700 "$DEST_DIR" || return 1
+  chmod 700 "$BACKUP_DOCKER" || return 1
   if [ ! -d "$DOCKER_DIR" ]; then
     return 0
   fi
   if [ -f "$DOCKER_DIR/stack.env" ]; then
-    copy_preserved "$DOCKER_DIR/stack.env" "$BACKUP_DOCKER/stack.env"
+    copy_preserved "$DOCKER_DIR/stack.env" "$BACKUP_DOCKER/stack.env" || return 1
   fi
   if [ -f "$DOCKER_DIR/stack.compose.env" ]; then
-    copy_preserved "$DOCKER_DIR/stack.compose.env" "$BACKUP_DOCKER/stack.compose.env"
+    copy_preserved "$DOCKER_DIR/stack.compose.env" "$BACKUP_DOCKER/stack.compose.env" || return 1
   fi
   if [ -f "$DOCKER_DIR/compose-profile" ]; then
-    copy_preserved "$DOCKER_DIR/compose-profile" "$BACKUP_DOCKER/compose-profile"
+    copy_preserved "$DOCKER_DIR/compose-profile" "$BACKUP_DOCKER/compose-profile" || return 1
   fi
   for f in "$DOCKER_DIR"/*.override.yml "$DOCKER_DIR"/*.override.json "$DOCKER_DIR"/php836*; do
     [ -f "$f" ] || continue
     case "$(basename "$f")" in
       *.mode) continue ;;
     esac
-    copy_preserved "$f" "$BACKUP_DOCKER/$(basename "$f")"
+    copy_preserved "$f" "$BACKUP_DOCKER/$(basename "$f")" || return 1
   done
   if [ -f "$DOCKER_DIR/stack.env" ] && [ ! -f "$BACKUP_DOCKER/stack.env" ]; then
     echo "[preserve] ERRO: backup de stack.env falhou." >&2
@@ -111,13 +118,13 @@ restore_all() {
     echo "[preserve] nenhum backup para restaurar." >&2
     return 0
   fi
-  mkdir -p "$DOCKER_DIR"
+  mkdir -p "$DOCKER_DIR" || return 1
   for f in "$BACKUP_DOCKER"/*; do
     [ -f "$f" ] || continue
     case "$f" in
       *.mode) continue ;;
     esac
-    restore_one "$f" "$DOCKER_DIR/$(basename "$f")"
+    restore_one "$f" "$DOCKER_DIR/$(basename "$f")" || return 1
   done
   echo "[preserve] stack.env/overrides restaurados (valores não exibidos)." >&2
 }
