@@ -42,11 +42,10 @@ function buildTimeline(scrubbed) {
     gsap.set(q('.ph-notif'), { yPercent: -160, opacity: 0, scale: 0.92 });
     gsap.set(q('.ph-balance'), { yPercent: 140, opacity: 0 });
     gsap.set(q('.ph-glow'), { opacity: 0.25, scale: 0.9 });
-    gsap.set(q('.ph-line'), { yPercent: 40, opacity: 0 });
+    gsap.set(q('.ph-line').slice(1), { yPercent: 40, opacity: 0 });
     gsap.set(q('.ph-chip'), { scale: 0, opacity: 0 });
 
     tl.to(q('.ph-device'), { rotateY: 0, rotateX: 0, y: 0, scale: 1, duration: 1.2, ease: 'power2.out' })
-        .to(q('.ph-line')[0], { yPercent: 0, opacity: 1, duration: 0.5, ease: 'power3.out' }, 0.15)
 
         // Notificação 1 cai.
         .to(q('.ph-notif')[0], { yPercent: 0, opacity: 1, scale: 1, duration: 0.6, ease: 'back.out(1.6)' }, 1.15)

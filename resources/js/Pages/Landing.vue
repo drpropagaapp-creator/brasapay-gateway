@@ -193,7 +193,7 @@ onMounted(() => {
         // Cartões flutuantes em profundidades diferentes.
         q('.hero-float').forEach((el, i) => {
             gsap.to(el, {
-                yPercent: i % 2 ? -90 : -160,
+                yPercent: i % 2 ? -35 : -55,
                 ease: 'none',
                 scrollTrigger: { trigger: q('.hero-stage')[0], start: 'top 80%', end: 'bottom top', scrub: true },
             });
@@ -910,8 +910,7 @@ onBeforeUnmount(() => {
 }
 .hero-h1 {
     margin: 0 auto 1.4rem;
-    max-width: 15ch;
-    font-size: clamp(2.5rem, 6.4vw, 5rem);
+    font-size: clamp(2.3rem, 6.2vw, 5rem);
     font-weight: 600;
     line-height: 1.04;
     letter-spacing: -0.035em;
@@ -1004,8 +1003,9 @@ onBeforeUnmount(() => {
 .hero-float span { display: grid; line-height: 1.3; }
 .hero-float strong { font-size: 0.86rem; font-weight: 600; }
 .hero-float em { font-style: normal; font-size: 0.76rem; color: #7fe0b0; }
-.hero-float-a { left: -2.5%; top: 26%; }
-.hero-float-b { right: -2.5%; top: 64%; }
+/* Pendurados nas bordas do painel, sem cobrir o conteúdo dele. */
+.hero-float-a { left: 3%; top: -34px; }
+.hero-float-b { right: 4%; bottom: calc(clamp(3rem, 8vh, 5rem) - 30px); }
 .hero-float-ic {
     width: 34px;
     height: 34px;

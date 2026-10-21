@@ -44,10 +44,9 @@ function buildTimeline(scrubbed) {
     gsap.set(q('.ck-qr'), { scale: 0.6, opacity: 0, yPercent: 12 });
     gsap.set(q('.ck-paid'), { scale: 0.5, opacity: 0 });
     gsap.set(q('.ck-spark'), { scale: 0, opacity: 0 });
-    gsap.set(q('.ck-line'), { yPercent: 40, opacity: 0 });
+    gsap.set(q('.ck-line').slice(1), { yPercent: 40, opacity: 0 });
 
     tl.to(q('.ck-browser'), { rotateX: 0, y: 0, scale: 1, opacity: 1, duration: 1.1, ease: 'power2.out' })
-        .to(q('.ck-line')[0], { yPercent: 0, opacity: 1, duration: 0.5, ease: 'power3.out' }, 0.2)
 
         // A página rola como se alguém navegasse.
         .to(q('.ck-page'), { yPercent: -58, duration: 2.6, ease: 'none' }, 1.0)
