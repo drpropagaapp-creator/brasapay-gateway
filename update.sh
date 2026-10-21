@@ -131,13 +131,18 @@ fi
 
 cd "$INSTALL_DIR"
 
+# shellcheck disable=SC1091
+. docker/unset-db-shell-env.sh
+DB_U_FLAGS="$(db_env_u_flags)"
+unset_db_shell_env
+
 prompt_stacker_agent_if_needed
 
 if [ "$STACKER_MANAGED" = "1" ]; then
   $SUDO bash docker/ensure-stacker-agent.sh || true
   echo ""
-  echo "=== Rebuild da imagem app (base PHP com --pull) + reinício da stack ==="
-  $SUDO chmod +x docker/detect-compose-files.sh 2>/dev/null || true
+  echo "=== PHP/runtime via imagem em execução (não rebuild do código do host) ==="
+  $SUDO chmod +x docker/detect-compose-files.sh docker/apply-official-php-base.sh docker/ensure-db-credentials.sh docker/write-compose-env.sh 2>/dev/null || true
   COMPOSE_FILES="$($SUDO sh docker/detect-compose-files.sh)"
   COMPOSE_EXEC_ARGS=""
   for f in $COMPOSE_FILES; do
@@ -146,30 +151,34 @@ if [ "$STACKER_MANAGED" = "1" ]; then
     fi
   done
   STACK_ENV="$INSTALL_DIR/.docker/stack.env"
-  $SUDO chmod +x docker/ensure-db-credentials.sh docker/up.sh 2>/dev/null || true
-  # Export GETFY_DB_* da shell sobrescreve --env-file e pode reintroduzir user fantasma.
-  unset GETFY_DB_CONNECTION GETFY_DB_HOST GETFY_DB_PORT GETFY_DB_DATABASE GETFY_DB_USERNAME GETFY_DB_PASSWORD 2>/dev/null || true
-  if ! $SUDO sh docker/ensure-db-credentials.sh; then
+  unset_db_shell_env
+  if ! $SUDO env $DB_U_FLAGS sh docker/ensure-db-credentials.sh; then
     echo "ERRO: credenciais PostgreSQL inválidas — update abortado (não vou recriar o app com user fantasma)." >&2
     echo "Recupere com: cd \"$INSTALL_DIR\" && sh docker/recover-stack.sh" >&2
     exit 1
   fi
-  # Hardens LOG_* + limpa logs gigantes antes do recreate (evita herdar single/debug).
   run_host_log_harden_only
-  $SUDO env -u GETFY_DB_CONNECTION -u GETFY_DB_HOST -u GETFY_DB_PORT -u GETFY_DB_DATABASE -u GETFY_DB_USERNAME -u GETFY_DB_PASSWORD \
+  $SUDO env $DB_U_FLAGS \
     GETFY_COMPOSE_FILES="$COMPOSE_FILES" GETFY_APP_ENV=production GETFY_APP_DEBUG=false \
     GETFY_PHP_BASE_IMAGE="${GETFY_PHP_BASE_IMAGE:-php:8.3.36-cli-alpine}" \
+    GETFY_PHP_FROM_RUNNING="${GETFY_PHP_FROM_RUNNING:-1}" \
+    GETFY_SKIP_MIGRATE=1 \
+    GETFY_SKIP_DOCKER_PRUNE=1 \
     GETFY_DOCKER_NO_CACHE="${GETFY_DOCKER_NO_CACHE:-0}" \
-    sh docker/up.sh
+    sh docker/apply-official-php-base.sh
+  COMPOSE_ENV_FILE="$STACK_ENV"
+  if [ -f docker/write-compose-env.sh ]; then
+    COMPOSE_ENV_FILE="$($SUDO sh docker/write-compose-env.sh)"
+  fi
   if [ -f "$INSTALL_DIR/agent/Dockerfile" ]; then
     echo ""
     echo "=== Rebuild do stacker-agent (se houver mudanças no agente) ==="
-    $SUDO docker compose $COMPOSE_EXEC_ARGS --env-file "$STACK_ENV" build stacker-agent
-    $SUDO docker compose $COMPOSE_EXEC_ARGS --env-file "$STACK_ENV" up -d stacker-agent
+    $SUDO docker compose $COMPOSE_EXEC_ARGS --env-file "$COMPOSE_ENV_FILE" build stacker-agent
+    $SUDO docker compose $COMPOSE_EXEC_ARGS --env-file "$COMPOSE_ENV_FILE" up -d stacker-agent
   fi
   echo ""
   echo "=== Caches Laravel (optimize:clear) ==="
-  $SUDO docker compose $COMPOSE_EXEC_ARGS --env-file "$STACK_ENV" exec -T app php artisan optimize:clear || true
+  $SUDO docker compose $COMPOSE_EXEC_ARGS --env-file "$COMPOSE_ENV_FILE" exec -T app php artisan optimize:clear || true
   echo ""
   echo "=== Health check pós-atualização ==="
   $SUDO chmod +x docker/post-update-healthcheck.sh 2>/dev/null || true
@@ -178,7 +187,7 @@ if [ "$STACKER_MANAGED" = "1" ]; then
     exit 1
   fi
   run_storage_logs_cleanup
-  run_docker_prune
+  GETFY_SKIP_DOCKER_PRUNE=1 run_docker_prune
   echo ""
   echo "Atualização local concluída. Releases remotas: portal Stacker ou admin."
   echo "Para atualizar scripts/PHP via Git: GETFY_LEGACY_GIT_UPDATE=1 bash update.sh"
@@ -213,18 +222,22 @@ echo "=== Reiniciando stack Docker ==="
 $SUDO chmod +x docker/detect-compose-files.sh docker/ensure-db-credentials.sh docker/up.sh 2>/dev/null || true
 COMPOSE_FILES="$($SUDO sh docker/detect-compose-files.sh)"
 echo "Compose: $COMPOSE_FILES"
-# Export GETFY_DB_* da shell sobrescreve --env-file e pode reintroduzir user fantasma.
-unset GETFY_DB_CONNECTION GETFY_DB_HOST GETFY_DB_PORT GETFY_DB_DATABASE GETFY_DB_USERNAME GETFY_DB_PASSWORD 2>/dev/null || true
-# Garante DB antes do up (e no próprio up.sh de novo). Falha = aborta o update.
-if ! $SUDO sh docker/ensure-db-credentials.sh; then
+# Credenciais da shell venceriam o --env-file (interpolação de $ / user fantasma).
+DB_U_FLAGS="$(db_env_u_flags)"
+unset_db_shell_env
+# Garante DB antes do up (TCP + stack.compose.env com cifrões escapados).
+if ! $SUDO env $DB_U_FLAGS sh docker/ensure-db-credentials.sh; then
   echo "ERRO: credenciais PostgreSQL inválidas — update abortado (não vou recriar o app com user fantasma)." >&2
   echo "Recupere com: cd \"$INSTALL_DIR\" && sh docker/recover-stack.sh" >&2
   exit 1
 fi
 # Hardens LOG_* + limpa logs gigantes antes do recreate (evita herdar single/debug).
 run_host_log_harden_only
-$SUDO env -u GETFY_DB_CONNECTION -u GETFY_DB_HOST -u GETFY_DB_PORT -u GETFY_DB_DATABASE -u GETFY_DB_USERNAME -u GETFY_DB_PASSWORD \
-  GETFY_COMPOSE_FILES="$COMPOSE_FILES" GETFY_APP_ENV=production GETFY_APP_DEBUG=false sh docker/up.sh
+$SUDO chmod +x docker/write-compose-env.sh 2>/dev/null || true
+$SUDO env $DB_U_FLAGS \
+  GETFY_COMPOSE_FILES="$COMPOSE_FILES" GETFY_APP_ENV=production GETFY_APP_DEBUG=false \
+  GETFY_PHP_BASE_IMAGE="${GETFY_PHP_BASE_IMAGE:-php:8.3.36-cli-alpine}" \
+  sh docker/up.sh
 
 echo ""
 echo "=== Push PWA (VAPID) + caches Laravel ==="
@@ -237,7 +250,10 @@ done
 ENV_FILE="$INSTALL_DIR/.env"
 STACK_ENV_FILE="$INSTALL_DIR/.docker/stack.env"
 COMPOSE_ENV_ARGS=""
-if [ -f "$STACK_ENV_FILE" ]; then
+if [ -f docker/write-compose-env.sh ] && [ -f "$STACK_ENV_FILE" ]; then
+  COMPOSE_ENV_FILE="$($SUDO sh docker/write-compose-env.sh)"
+  COMPOSE_ENV_ARGS="--env-file $COMPOSE_ENV_FILE"
+elif [ -f "$STACK_ENV_FILE" ]; then
   COMPOSE_ENV_ARGS="--env-file $STACK_ENV_FILE"
 elif [ -f "$ENV_FILE" ]; then
   COMPOSE_ENV_ARGS="--env-file $ENV_FILE"

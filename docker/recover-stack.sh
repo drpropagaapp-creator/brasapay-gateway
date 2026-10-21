@@ -36,19 +36,31 @@ if [ -d /gateway/docker ] && [ "$ROOT_DIR" != "/gateway" ]; then
 fi
 echo ""
 
-# Exports antigos na shell root sobrescrevem o --env-file e quebram o Postgres.
-unset GETFY_DB_CONNECTION GETFY_DB_HOST GETFY_DB_PORT GETFY_DB_DATABASE GETFY_DB_USERNAME GETFY_DB_PASSWORD 2>/dev/null || true
-set -a
+# Nunca faça `source` em stack.env: cifrões na senha são expandidos pela shell
+# e o valor truncado vence o --env-file.
 # shellcheck disable=SC1091
-. "$ENV_FILE"
-set +a
+. docker/unset-db-shell-env.sh
+unset_db_shell_env
+
+read_kv() {
+  file="$1"
+  key="$2"
+  grep -E "^[[:space:]]*${key}[[:space:]]*=" "$file" 2>/dev/null | tail -1 | cut -d= -f2- | tr -d '\r' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//;s/^"//;s/"$//;s/^'"'"'//;s/'"'"'$//' || true
+}
+
+GETFY_DB_USERNAME="$(read_kv "$ENV_FILE" GETFY_DB_USERNAME)"
+GETFY_DB_DATABASE="$(read_kv "$ENV_FILE" GETFY_DB_DATABASE)"
+GETFY_DB_PASSWORD="$(read_kv "$ENV_FILE" GETFY_DB_PASSWORD)"
+GETFY_COMPOSE_PROJECT_NAME="$(read_kv "$ENV_FILE" GETFY_COMPOSE_PROJECT_NAME)"
 
 COMPOSE_FILE="$(sh docker/detect-compose-files.sh 2>/dev/null || echo 'docker-compose.yml')"
 PROJECT="${GETFY_COMPOSE_PROJECT_NAME:-getfy}"
-ENV_ARGS="--env-file $ENV_FILE"
-if [ -f .env ]; then
-  ENV_ARGS="$ENV_ARGS --env-file .env"
+if [ -f docker/write-compose-env.sh ]; then
+  COMPOSE_ENV_FILE="$(sh docker/write-compose-env.sh)"
+else
+  COMPOSE_ENV_FILE="$ENV_FILE"
 fi
+ENV_ARGS="--env-file $COMPOSE_ENV_FILE"
 # Uso sem array (dash em Ubuntu)
 dc() {
   # shellcheck disable=SC2086
@@ -86,8 +98,11 @@ for c in getfy-postgres-1 getfy_postgres_1; do
 done
 if [ -n "$PG_CONTAINER" ]; then
   if [ -n "${GETFY_DB_USERNAME:-}" ] && [ -n "${GETFY_DB_PASSWORD:-}" ] \
-    && docker exec "$PG_CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" -c 'SELECT 1' >/dev/null 2>&1; then
-    echo "OK: psql -U $DB_USER -d $DB_NAME"
+    && pg_host="$(docker exec "$PG_CONTAINER" hostname -i 2>/dev/null | awk '{print $1}')" \
+    && [ -n "$pg_host" ] && [ "$pg_host" != "127.0.0.1" ] \
+    && docker exec -e PGPASSWORD="$GETFY_DB_PASSWORD" "$PG_CONTAINER" \
+         psql -h "$pg_host" -U "$DB_USER" -d "$DB_NAME" -w -c 'SELECT 1' >/dev/null 2>&1; then
+    echo "OK: psql TCP/scram -h <ip-container> -U $DB_USER -d $DB_NAME"
   else
     echo "FALHOU: $ENV_FILE incompleto ou não coincide com o volume Postgres." >&2
     echo "Nota: com POSTGRES_USER custom, o role 'postgres' não existe (imagem oficial)."
@@ -170,11 +185,12 @@ grep -q '^GETFY_DB_PASSWORD=' .docker/stack.env \
 grep -q '^GETFY_DB_DATABASE=' .docker/stack.env \
   || echo "GETFY_DB_DATABASE=getfy" >> .docker/stack.env
 
-# 4) Confirmar login:
-docker exec getfy-postgres-1 psql -U "$DB_USER" -d getfy -c 'SELECT 1'
+# 4) Confirmar login por TCP/scram (NÃO use psql sem -h: socket local é trust):
+PG_IP="$(docker exec getfy-postgres-1 hostname -i | awk '{print $1}')"
+docker exec -e PGPASSWORD="$DB_PASS" getfy-postgres-1 psql -h "$PG_IP" -U "$DB_USER" -d getfy -w -c 'SELECT 1'
 
 # 5) Subir app de novo:
-unset GETFY_DB_USERNAME GETFY_DB_PASSWORD GETFY_DB_HOST GETFY_DB_PORT GETFY_DB_DATABASE GETFY_DB_CONNECTION
+unset_db_shell_env
 COMPOSE="$(sh docker/detect-compose-files.sh)"
 docker compose -f "$COMPOSE" --env-file .docker/stack.env up -d --force-recreate app
 HINT
@@ -211,6 +227,23 @@ for i in $(seq 1 90); do
 done
 if [ "$APP_OK" -ne 1 ]; then
   echo "App não respondeu em /up — logs:" >&2
+  dc logs app --tail 40 2>/dev/null || true
+  exit 1
+fi
+
+echo "=== Consulta PostgreSQL via app (SELECT 1; /up não basta) ==="
+if dc exec -T app php -r '
+$h = getenv("DB_HOST"); $p = getenv("DB_PORT") ?: "5432";
+$d = getenv("DB_DATABASE"); $u = getenv("DB_USERNAME"); $w = getenv("DB_PASSWORD");
+if (!is_string($u) || $u === "" || !is_string($w) || $w === "") { exit(1); }
+try {
+  $pdo = new PDO("pgsql:host=".$h.";port=".$p.";dbname=".$d, $u, $w, [PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION]);
+  $pdo->query("SELECT 1");
+} catch (Throwable $e) { exit(1); }
+' >/dev/null 2>&1; then
+  echo "OK: app autenticou no PostgreSQL"
+else
+  echo "ERRO: app não autenticou no PostgreSQL após recreate. /up verde não garante o site." >&2
   dc logs app --tail 40 2>/dev/null || true
   exit 1
 fi

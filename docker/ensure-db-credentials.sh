@@ -4,15 +4,21 @@
 # POLÍTICA:
 # - Instalação NOVA (sem cluster): gera GETFY_DB_USERNAME aleatório (getfy_xxxxxxxx) + senha.
 # - Cluster EXISTENTE: NUNCA gera user novo, NUNCA rotaciona senha, NUNCA assume role "getfy".
-# - Validade = autentica no Postgres (psql SELECT 1). Nome da role é irrelevante.
-# - Prioridade: stack.env → .env → volume getfy_*_env → abortar se nenhum autenticar.
-# - Após válido: sincroniza stack.env → .env → volume env.
+# - Validade = autentica no Postgres por TCP/scram no IP do container (não 127.0.0.1).
+#   Socket local e 127.0.0.1/32 usam trust e aceitam senha errada.
+# - Prioridade: stack.env → .env → volume getfy_*_env → POSTGRES_* do container → DB_* do app.
+# - Após válido: sincroniza só GETFY_DB_* em stack.env → .env → volume env + stack.compose.env.
+# - Nunca loga senha. Nunca altera roles para o teste passar.
 #
 # Uso: sh docker/ensure-db-credentials.sh
 set -eu
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT_DIR"
+
+# shellcheck disable=SC1091
+. docker/unset-db-shell-env.sh
+unset_db_shell_env
 
 ENV_FILE=".docker/stack.env"
 DOTENV_FILE=".env"
@@ -37,12 +43,13 @@ set_kv() {
   touch "$file" 2>/dev/null || true
   if grep -Eq "^[[:space:]]*${key}[[:space:]]*=" "$file" 2>/dev/null; then
     tmp="$(mktemp)"
-    awk -v k="$key" -v v="$val" '
+    GETFY_SET_KV_VAL="$val" awk -v k="$key" '
+      BEGIN { v = ENVIRON["GETFY_SET_KV_VAL"] }
       $0 ~ "^[[:space:]]*" k "[[:space:]]*=" { print k "=" v; next }
       { print }
     ' "$file" > "$tmp" && mv "$tmp" "$file"
   else
-    echo "${key}=${val}" >> "$file"
+    GETFY_SET_KV_VAL="$val" awk -v k="$key" 'BEGIN { print k "=" ENVIRON["GETFY_SET_KV_VAL"] }' >> "$file"
   fi
 }
 
@@ -73,6 +80,10 @@ env_volume() {
 }
 
 postgres_container() {
+  if [ -n "${GETFY_TEST_PG_CONTAINER:-}" ]; then
+    echo "$GETFY_TEST_PG_CONTAINER"
+    return 0
+  fi
   # Heurística de NOME DO CONTAINER (compose project), não da role SQL.
   project="$(read_kv "$ENV_FILE" GETFY_COMPOSE_PROJECT_NAME)"
   [ -n "$project" ] || project=getfy
@@ -91,6 +102,22 @@ postgres_container() {
   return 1
 }
 
+app_container() {
+  if [ -n "${GETFY_TEST_APP_CONTAINER:-}" ]; then
+    echo "$GETFY_TEST_APP_CONTAINER"
+    return 0
+  fi
+  project="$(read_kv "$ENV_FILE" GETFY_COMPOSE_PROJECT_NAME)"
+  [ -n "$project" ] || project=getfy
+  for c in "${project}-app-1" "${project}_app_1" getfy-app-1 getfy_app_1; do
+    if docker ps --format '{{.Names}}' 2>/dev/null | grep -qx "$c"; then
+      echo "$c"
+      return 0
+    fi
+  done
+  return 1
+}
+
 pg_data_exists() {
   vol="$(postgres_volume)"
   [ -n "$vol" ] || return 1
@@ -104,16 +131,34 @@ pg_running() {
   docker ps --format '{{.Names}}' 2>/dev/null | grep -qx "$c"
 }
 
-# ÚNICO critério de validade: autentica no cluster.
-# Uso: validate_candidate USER PASS → exit 0 se OK.
+# Host TCP que bate em "host all all all scram" — NÃO 127.0.0.1.
+# Na imagem oficial, 127.0.0.1/32 e socket local são trust (senha errada passa).
+pg_scram_host() {
+  c="$1"
+  ip="$(docker exec "$c" hostname -i 2>/dev/null | awk '{print $1}')"
+  if [ -n "$ip" ] && [ "$ip" != "127.0.0.1" ] && [ "$ip" != "::1" ]; then
+    printf '%s' "$ip"
+    return 0
+  fi
+  ip="$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}} {{end}}' "$c" 2>/dev/null | awk '{print $1}')"
+  if [ -n "$ip" ] && [ "$ip" != "127.0.0.1" ]; then
+    printf '%s' "$ip"
+    return 0
+  fi
+  return 1
+}
+
+# ÚNICO critério de validade: autentica no cluster por TCP/scram (IP do container).
+# Uso: validate_candidate USER PASS → exit 0 se OK. Não altera roles.
 validate_candidate() {
   user="$1"
   pass="$2"
   [ -n "$user" ] && [ -n "$pass" ] || return 1
   pg_running || return 1
   c="$(postgres_container)"
+  host="$(pg_scram_host "$c")" || return 1
   docker exec -e PGPASSWORD="$pass" "$c" \
-    psql -U "$user" -d "$DB_NAME" -c 'SELECT 1' >/dev/null 2>&1
+    psql -h "$host" -U "$user" -d "$DB_NAME" -w -c 'SELECT 1' >/dev/null 2>&1
 }
 
 # Espelha credenciais JÁ VALIDADAS: stack.env → .env → volume env.
@@ -148,6 +193,10 @@ sync_validated_credentials() {
 
   DB_USER="$user"
   DB_PASS="$pass"
+
+  if [ -f docker/write-compose-env.sh ]; then
+    sh docker/write-compose-env.sh >/dev/null
+  fi
 }
 
 # Espelha U/P do stack.env para secundárias SEM testar (postgres ainda down).
@@ -171,6 +220,12 @@ mirror_stack_to_secondaries() {
   if [ -n "$env_vol" ] && command -v docker >/dev/null 2>&1; then
     docker run --rm -i -v "${env_vol}:/v" alpine sh -c 'cat > /v/stack.env && chmod 600 /v/stack.env' < "$ENV_FILE" >/dev/null 2>&1 || true
   fi
+}
+
+container_printenv() {
+  c="$1"
+  key="$2"
+  docker exec "$c" printenv "$key" 2>/dev/null | tr -d '\r' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' || true
 }
 
 extract_creds_from_text_to_files() {
@@ -249,7 +304,27 @@ if pg_data_exists && pg_running; then
     fi
   fi
 
-  # 4) Nenhum candidato — abortar. Sem gerar user, sem reset de senha, sem adivinhar role.
+  # 4) POSTGRES_USER/PASSWORD do container em execução (TCP). Não altera a role.
+  pg_c="$(postgres_container 2>/dev/null || true)"
+  if [ -n "$pg_c" ]; then
+    u="$(container_printenv "$pg_c" POSTGRES_USER)"
+    p="$(container_printenv "$pg_c" POSTGRES_PASSWORD)"
+    if accept_if_valid "container postgres POSTGRES_*" "$u" "$p"; then
+      exit 0
+    fi
+  fi
+
+  # 5) DB_* efetivos do app (override temporário pode estar correto; stack.env não).
+  app_c="$(app_container 2>/dev/null || true)"
+  if [ -n "$app_c" ]; then
+    u="$(container_printenv "$app_c" DB_USERNAME)"
+    p="$(container_printenv "$app_c" DB_PASSWORD)"
+    if accept_if_valid "container app DB_*" "$u" "$p"; then
+      exit 0
+    fi
+  fi
+
+  # 6) Nenhum candidato — abortar. Sem gerar user, sem reset de senha, sem adivinhar role.
   abort_no_credentials
 fi
 
@@ -304,6 +379,9 @@ if pg_data_exists; then
   set_kv "$ENV_FILE" GETFY_DB_USERNAME "$DB_USER"
   set_kv "$ENV_FILE" GETFY_DB_PASSWORD "$DB_PASS"
   mirror_stack_to_secondaries "$DB_USER" "$DB_PASS"
+  if [ -f docker/write-compose-env.sh ]; then
+    sh docker/write-compose-env.sh >/dev/null || true
+  fi
   echo "[DB] stack.env preenchido com candidato (user=$DB_USER). Validação obrigatória após postgres up."
   exit 0
 fi
@@ -321,4 +399,7 @@ fi
 
 # Sem cluster ainda: só grava/espelha; a imagem Postgres cria a role no 1º start.
 mirror_stack_to_secondaries "$DB_USER" "$DB_PASS"
+if [ -f docker/write-compose-env.sh ]; then
+  sh docker/write-compose-env.sh >/dev/null || true
+fi
 exit 0

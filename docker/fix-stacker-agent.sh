@@ -14,6 +14,10 @@ set -eu
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT_DIR"
 
+# shellcheck disable=SC1091
+. docker/unset-db-shell-env.sh
+unset_db_shell_env
+
 CHECK_ONLY=0
 REBUILD=0
 for arg in "$@"; do
@@ -90,11 +94,18 @@ mask_token() {
 dc() {
   # stack.env primeiro; .env depois só para STACKER_*.
   # GETFY_DB_* devem estar sincronizados (ensure-db-credentials / fix espelha stack→.env).
-  unset GETFY_DB_CONNECTION GETFY_DB_HOST GETFY_DB_PORT GETFY_DB_DATABASE GETFY_DB_USERNAME GETFY_DB_PASSWORD 2>/dev/null || true
+  unset_db_shell_env
+  _ce="$STACK_ENV"
+  if [ -f "$ROOT_DIR/docker/write-compose-env.sh" ]; then
+    _ce="$(cd "$ROOT_DIR" && sh docker/write-compose-env.sh)"
+    case "$_ce" in
+      /*) ;;
+      *) _ce="$ROOT_DIR/$_ce" ;;
+    esac
+  fi
   docker compose -p "$PROJECT" --project-directory "$HOST_DIR" \
     -f "$COMPOSE_FILE" \
-    --env-file "$STACK_ENV" \
-    --env-file "$ENV_FILE" \
+    --env-file "$_ce" \
     "$@"
 }
 

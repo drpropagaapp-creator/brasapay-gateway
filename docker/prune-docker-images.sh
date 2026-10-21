@@ -35,11 +35,26 @@ echo ""
 echo "Removendo cache de build com mais de 14 dias..."
 docker builder prune -f --filter until=336h 2>/dev/null || true
 
+# Nunca prune unused-all: apaga tags de rollback/candidata sem container.
 # No apply remoto o padrão é 1 (GETFY_DOCKER_PRUNE_UNUSED=1); no update.sh legado costuma ser 0.
 if [ "${GETFY_DOCKER_PRUNE_UNUSED:-0}" = "1" ]; then
   echo ""
-  echo "Removendo imagens não usadas por containers (GETFY_DOCKER_PRUNE_UNUSED=1)..."
-  docker image prune -af || true
+  echo "Removendo imagens não usadas (exceto rollback/candidata/latest)..."
+  docker images --format '{{.Repository}}:{{.Tag}}' | while IFS= read -r img; do
+    [ -n "$img" ] || continue
+    case "$img" in
+      *:'<none>'|'<none>:<none>') continue ;;
+      *:rollback*|*:*-rollback*|*-rollback-*) echo "  preservando $img"; continue ;;
+      getfy_app:rollback-app-pre-php836|getfy_app:rollback-queue-pre-php836) echo "  preservando $img"; continue ;;
+      *:candidate*|*:*-candidate*|*-candidate*) echo "  preservando $img"; continue ;;
+      getfy_app:latest|getfy_app:dev|stacker_agent:latest|stacker_agent:dev) echo "  preservando $img"; continue ;;
+    esac
+    if docker ps -a --format '{{.Image}}' | grep -Fxq "$img"; then
+      continue
+    fi
+    echo "  removendo $img"
+    docker image rm "$img" 2>/dev/null || true
+  done
 fi
 
 echo ""
