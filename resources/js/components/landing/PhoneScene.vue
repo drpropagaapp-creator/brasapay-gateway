@@ -138,7 +138,7 @@ onBeforeUnmount(() => {
                                 <span class="ph-notif-icon"><img src="/images/brasapay/simbolo.png" alt="" /></span>
                                 <span class="ph-notif-body">
                                     <strong>BrasaPay</strong>
-                                    <span>Venda aprovada — <b>R$ 497,00</b></span>
+                                    <span>Venda aprovada · <b>R$&nbsp;497,00</b></span>
                                 </span>
                                 <span class="ph-notif-time">agora</span>
                             </div>
@@ -147,7 +147,7 @@ onBeforeUnmount(() => {
                                 <span class="ph-notif-icon"><img src="/images/brasapay/simbolo.png" alt="" /></span>
                                 <span class="ph-notif-body">
                                     <strong>BrasaPay</strong>
-                                    <span>PIX recebido — <b>R$ 197,00</b></span>
+                                    <span>PIX recebido · <b>R$&nbsp;197,00</b></span>
                                 </span>
                                 <span class="ph-notif-time">agora</span>
                             </div>
@@ -325,6 +325,7 @@ onBeforeUnmount(() => {
     color: #eef6ef;
 }
 .ph-notif-body b {
+    white-space: nowrap;
     font-weight: 600;
     color: #79e0c8;
 }
