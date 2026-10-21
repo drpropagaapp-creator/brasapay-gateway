@@ -39,6 +39,7 @@ Docs Gateways
 /.docker/stack.env
 /.docker/stack.compose.env
 /.docker/running-php-image.yml
+/.docker/php-promote-runtime.yml
 /.docker/promote-backup/
 /.docker/*.override.yml
 /.docker/*.override.json

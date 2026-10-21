@@ -64,6 +64,10 @@ set_kv "$ENV_FILE" GETFY_DB_HOST postgres
 set_kv "$ENV_FILE" GETFY_DB_PORT 5432
 
 postgres_volume() {
+  # Testes isolados não podem ler/escrever volumes da instalação real.
+  if [ -n "${GETFY_TEST_SKIP_VOLUMES:-}" ]; then
+    return 1
+  fi
   if docker volume ls --format '{{.Name}}' 2>/dev/null | grep -qx 'getfy_postgres_data'; then
     echo getfy_postgres_data
     return 0
@@ -72,6 +76,9 @@ postgres_volume() {
 }
 
 env_volume() {
+  if [ -n "${GETFY_TEST_SKIP_VOLUMES:-}" ]; then
+    return 1
+  fi
   if docker volume ls --format '{{.Name}}' 2>/dev/null | grep -qx 'getfy_getfy_env'; then
     echo getfy_getfy_env
     return 0
@@ -119,6 +126,9 @@ app_container() {
 }
 
 pg_data_exists() {
+  if [ -n "${GETFY_TEST_PG_CONTAINER:-}" ]; then
+    return 0
+  fi
   vol="$(postgres_volume)"
   [ -n "$vol" ] || return 1
   docker run --rm -v "${vol}:/var/lib/postgresql/data" alpine \

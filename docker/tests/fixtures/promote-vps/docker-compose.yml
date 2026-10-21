@@ -1,0 +1,42 @@
+# Stack isolada no formato da VPS (app + queue + postgres). Sem Redis, sem portas no host.
+services:
+  app:
+    image: getfy_promote_test:old-entrypoint
+    environment:
+      DB_CONNECTION: pgsql
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_DATABASE: ${GETFY_DB_DATABASE:-getfy}
+      DB_USERNAME: ${GETFY_DB_USERNAME:-getfy}
+      DB_PASSWORD: ${GETFY_DB_PASSWORD:-getfy}
+      GETFY_RUN_SETUP: "true"
+      GETFY_SKIP_MIGRATE: ${GETFY_SKIP_MIGRATE:-0}
+    depends_on:
+      postgres:
+        condition: service_healthy
+  queue:
+    image: getfy_promote_test:old-entrypoint
+    environment:
+      DB_CONNECTION: pgsql
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_DATABASE: ${GETFY_DB_DATABASE:-getfy}
+      DB_USERNAME: ${GETFY_DB_USERNAME:-getfy}
+      DB_PASSWORD: ${GETFY_DB_PASSWORD:-getfy}
+      GETFY_RUN_SETUP: "false"
+      GETFY_SKIP_MIGRATE: ${GETFY_SKIP_MIGRATE:-0}
+    depends_on:
+      postgres:
+        condition: service_healthy
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: getfy
+      POSTGRES_USER: getfy_prod
+      # Cluster já nasce com a senha real (cifrão). stack.env truncado não altera o cluster.
+      POSTGRES_PASSWORD: "Correct$$Pass!"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U getfy_prod -d getfy"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
