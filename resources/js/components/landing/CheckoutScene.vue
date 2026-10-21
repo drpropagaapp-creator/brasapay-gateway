@@ -1,4 +1,5 @@
 <script setup>
+import { Link } from '@inertiajs/vue3';
 import { gsap } from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
 import { onBeforeUnmount, onMounted, ref } from 'vue';
@@ -102,16 +103,22 @@ onBeforeUnmount(() => mm?.revert());
     <section ref="scene" class="ck" aria-label="Demonstração do checkout com landing page">
         <div class="lp-wrap ck-grid">
             <div class="ck-copy">
-                <p class="lp-eyebrow">CHECKOUT · LANDING EMBUTIDA</p>
+                <p class="lp-eyebrow">CADA CLIQUE IMPORTA</p>
+                <h2 class="sr-only">A venda não termina no interesse. Ela acontece no pagamento.</h2>
                 <div class="ck-lines" aria-hidden="true">
-                    <h2 class="lp-h2 ck-line">O checkout é a sua<br /><span class="lp-grad">página de vendas.</span></h2>
-                    <h2 class="lp-h2 ck-line">Vídeo, provas e oferta<br />no mesmo lugar.</h2>
-                    <h2 class="lp-h2 ck-line">E o PIX aprova<br /><span class="lp-grad">em 1,9s.</span></h2>
+                    <p class="lp-h2 ck-line">A venda não termina<br />no interesse.</p>
+                    <p class="lp-h2 ck-line">Ela acontece<br /><span class="lp-grad">no pagamento.</span></p>
+                    <p class="lp-h2 ck-line">Simples. Intuitiva.<br /><span class="lp-grad">Confiável.</span></p>
                 </div>
                 <p class="lp-sub-sm">
-                    Monte a landing inteira dentro do checkout: VSL, benefícios, avaliações e HTML
-                    livre, na ordem que você quiser. O comprador nunca sai da página de pagamento.
+                    Você investe tempo, dinheiro e energia para conquistar cada cliente. Na hora de
+                    finalizar a compra, a experiência precisa ser simples, intuitiva e transmitir confiança.
                 </p>
+                <p class="lp-sub-sm">
+                    Porque um checkout não deve ser um obstáculo entre o interesse e a decisão de compra.
+                </p>
+                <p class="lp-strong">Uma experiência pensada para facilitar a jornada de quem compra e de quem vende.</p>
+                <Link href="/cadastro" class="lp-btn lp-btn-green">Quero começar a vender <span aria-hidden="true">→</span></Link>
             </div>
 
             <div class="ck-stage" aria-hidden="true">

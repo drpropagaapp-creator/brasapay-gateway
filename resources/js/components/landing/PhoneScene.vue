@@ -113,16 +113,19 @@ onBeforeUnmount(() => {
     <section ref="scene" class="ph" aria-label="Notificação de venda no celular">
         <div class="lp-wrap ph-grid">
             <div class="ph-copy">
-                <p class="lp-eyebrow">SEU BOLSO SABE PRIMEIRO</p>
+                <p class="lp-eyebrow">SEU NEGÓCIO NA PALMA DA MÃO</p>
+                <h2 class="sr-only">Suas vendas acontecem. Você acompanha tudo.</h2>
                 <div class="ph-lines" aria-hidden="true">
-                    <h2 class="lp-h2 ph-line">Você publica<br />a oferta.</h2>
-                    <h2 class="lp-h2 ph-line">O PIX cai<br /><span class="lp-grad">em segundos.</span></h2>
-                    <h2 class="lp-h2 ph-line">E o celular toca:<br /><span class="lp-grad">cha-ching.</span></h2>
+                    <p class="lp-h2 ph-line">Suas vendas<br />acontecem.</p>
+                    <p class="lp-h2 ph-line">Você acompanha<br /><span class="lp-grad">tudo.</span></p>
+                    <p class="lp-h2 ph-line">Mais clareza<br /><span class="lp-grad">para decidir.</span></p>
                 </div>
                 <p class="lp-sub-sm">
-                    Notificação push com som de venda realizada, direto no seu celular. Sem abrir
-                    painel, sem F5 — você ouve o caixa de onde estiver.
+                    Chega de perder tempo tentando entender seus próprios números. Tenha uma visão mais
+                    clara das suas operações, acompanhe o desempenho do seu negócio e tome decisões com
+                    mais segurança.
                 </p>
+                <p class="lp-strong">Mais clareza para decidir. Mais liberdade para crescer.</p>
             </div>
 
             <div class="ph-stage">
