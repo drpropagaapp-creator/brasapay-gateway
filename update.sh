@@ -75,23 +75,35 @@ if [ ! -d "$INSTALL_DIR" ]; then
 fi
 
 # Backup local ANTES de qualquer reset --hard. O git-sync no disco pode ser o
-# antigo (sem preservação). Não imprime valores.
+# antigo (sem preservação). Não imprime valores. Não ignora falhas.
 GETFY_STACK_ENV_PRESERVE_DIR=""
+GETFY_STACK_ENV_RESTORED=0
+preserve_helper_path() {
+  if [ -n "${BASH_SOURCE[0]:-}" ] && [ -f "$(dirname "${BASH_SOURCE[0]}")/docker/preserve-local-stack-env.sh" ]; then
+    printf '%s\n' "$(dirname "${BASH_SOURCE[0]}")/docker/preserve-local-stack-env.sh"
+    return 0
+  fi
+  return 1
+}
+
 backup_local_stack_env() {
   GETFY_STACK_ENV_PRESERVE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/getfy-stack-env.XXXXXX")"
   chmod 700 "$GETFY_STACK_ENV_PRESERVE_DIR"
   mkdir -p "$GETFY_STACK_ENV_PRESERVE_DIR/.docker"
   local helper=""
-  # Helper ao lado DESTE update.sh (curl -o /tmp/update.sh não tem; o do disco pode ser antigo).
-  if [ -n "${BASH_SOURCE[0]:-}" ] && [ -f "$(dirname "${BASH_SOURCE[0]}")/docker/preserve-local-stack-env.sh" ]; then
-    helper="$(dirname "${BASH_SOURCE[0]}")/docker/preserve-local-stack-env.sh"
-  fi
+  helper="$(preserve_helper_path || true)"
   if [ -n "$helper" ]; then
-    $SUDO sh "$helper" backup "$INSTALL_DIR" "$GETFY_STACK_ENV_PRESERVE_DIR" || true
+    if ! $SUDO sh "$helper" backup "$INSTALL_DIR" "$GETFY_STACK_ENV_PRESERVE_DIR"; then
+      echo "[update] ERRO: backup de stack.env falhou." >&2
+      return 1
+    fi
     return 0
   fi
   if [ -f "$INSTALL_DIR/.docker/stack.env" ]; then
-    $SUDO cp -p "$INSTALL_DIR/.docker/stack.env" "$GETFY_STACK_ENV_PRESERVE_DIR/.docker/stack.env"
+    if ! $SUDO cp -p "$INSTALL_DIR/.docker/stack.env" "$GETFY_STACK_ENV_PRESERVE_DIR/.docker/stack.env"; then
+      echo "[update] ERRO: backup de stack.env falhou." >&2
+      return 1
+    fi
   fi
   if [ -d "$INSTALL_DIR/.docker" ]; then
     local f
@@ -102,33 +114,67 @@ backup_local_stack_env() {
       $SUDO cp -p "$f" "$GETFY_STACK_ENV_PRESERVE_DIR/.docker/$(basename "$f")"
     done
   fi
+  if [ -f "$INSTALL_DIR/.docker/stack.env" ] && [ ! -f "$GETFY_STACK_ENV_PRESERVE_DIR/.docker/stack.env" ]; then
+    echo "[update] ERRO: backup de stack.env falhou." >&2
+    return 1
+  fi
   echo "[update] backup local de stack.env/overrides antes do Git sync."
 }
 
 restore_local_stack_env() {
   local dir="${GETFY_STACK_ENV_PRESERVE_DIR:-}"
-  [ -n "$dir" ] && [ -d "$dir/.docker" ] || return 0
+  [ -n "$dir" ] && [ -d "$dir" ] || return 0
   local helper=""
-  if [ -n "${BASH_SOURCE[0]:-}" ] && [ -f "$(dirname "${BASH_SOURCE[0]}")/docker/preserve-local-stack-env.sh" ]; then
-    helper="$(dirname "${BASH_SOURCE[0]}")/docker/preserve-local-stack-env.sh"
-  elif [ -f "$INSTALL_DIR/docker/preserve-local-stack-env.sh" ]; then
+  helper="$(preserve_helper_path || true)"
+  if [ -z "$helper" ] && [ -f "$INSTALL_DIR/docker/preserve-local-stack-env.sh" ]; then
     helper="$INSTALL_DIR/docker/preserve-local-stack-env.sh"
   fi
   if [ -n "$helper" ]; then
-    $SUDO sh "$helper" restore "$INSTALL_DIR" "$dir" || true
-    $SUDO rm -rf "$dir"
-    GETFY_STACK_ENV_PRESERVE_DIR=""
-    return 0
+    if ! $SUDO sh "$helper" restore "$INSTALL_DIR" "$dir"; then
+      return 1
+    fi
+  else
+    [ -d "$dir/.docker" ] || return 0
+    $SUDO mkdir -p "$INSTALL_DIR/.docker"
+    local f
+    for f in "$dir"/.docker/*; do
+      [ -f "$f" ] || continue
+      case "$f" in *.mode) continue ;; esac
+      if ! $SUDO cp -p "$f" "$INSTALL_DIR/.docker/$(basename "$f")"; then
+        echo "[update] ERRO: restauração falhou em $(basename "$f") (valores não exibidos)." >&2
+        return 1
+      fi
+      if [ ! -f "$INSTALL_DIR/.docker/$(basename "$f")" ] || ! cmp -s "$f" "$INSTALL_DIR/.docker/$(basename "$f")"; then
+        echo "[update] ERRO: restauração não conferiu $(basename "$f") (valores não exibidos)." >&2
+        return 1
+      fi
+    done
   fi
-  $SUDO mkdir -p "$INSTALL_DIR/.docker"
-  local f
-  for f in "$dir"/.docker/*; do
-    [ -f "$f" ] || continue
-    $SUDO cp -p "$f" "$INSTALL_DIR/.docker/$(basename "$f")"
-  done
   $SUDO rm -rf "$dir"
   GETFY_STACK_ENV_PRESERVE_DIR=""
+  GETFY_STACK_ENV_RESTORED=1
   echo "[update] stack.env/overrides restaurados após Git sync (valores não exibidos)."
+}
+
+report_restore_kept() {
+  echo "[update] ERRO: restauração falhou. Backup protegido em: ${GETFY_STACK_ENV_PRESERVE_DIR}" >&2
+  echo "[update] Não apaguei o backup. Não imprimo valores." >&2
+}
+
+preserve_on_exit() {
+  local rc=$?
+  trap - EXIT INT TERM
+  if [ "$GETFY_STACK_ENV_RESTORED" = "1" ]; then
+    exit "$rc"
+  fi
+  if restore_local_stack_env; then
+    exit "$rc"
+  fi
+  report_restore_kept
+  if [ "$rc" -ne 0 ]; then
+    exit "$rc"
+  fi
+  exit 1
 }
 
 ENV_FILE="$INSTALL_DIR/.env"
@@ -167,26 +213,84 @@ if [ ! -d "$INSTALL_DIR/.git" ]; then
 fi
 
 export GETFY_REPO_URL="$REPO_URL"
-backup_local_stack_env
 SYNC_SCRIPT="$INSTALL_DIR/docker/git-sync-for-deploy.sh"
-if [ -f "$SYNC_SCRIPT" ]; then
-  $SUDO chmod +x "$SYNC_SCRIPT" 2>/dev/null || true
-  $SUDO env GETFY_REPO_URL="$REPO_URL" GETFY_STACK_ENV_PRESERVE_DIR="$GETFY_STACK_ENV_PRESERVE_DIR" \
-    sh "$SYNC_SCRIPT" "$INSTALL_DIR" "$BRANCH" "$SUDO"
-else
-  echo "Aviso: git-sync-for-deploy.sh ainda não existe no disco — sync Git mínimo (bootstrap)." >&2
-  GIT_BASE=(git -c safe.directory="$INSTALL_DIR" -C "$INSTALL_DIR")
-  $SUDO "${GIT_BASE[@]}" remote set-url origin "$REPO_URL" >/dev/null 2>&1 || true
-  $SUDO "${GIT_BASE[@]}" merge --abort >/dev/null 2>&1 || true
-  $SUDO "${GIT_BASE[@]}" rebase --abort >/dev/null 2>&1 || true
-  $SUDO rm -rf "$INSTALL_DIR/public/build"
-  $SUDO "${GIT_BASE[@]}" reset --hard HEAD >/dev/null 2>&1 || true
-  $SUDO "${GIT_BASE[@]}" fetch --all --prune
-  $SUDO "${GIT_BASE[@]}" reset --hard "origin/$BRANCH"
-fi
-restore_local_stack_env
+helper_wrap="$(preserve_helper_path || true)"
+sync_rc=0
 
-cd "$INSTALL_DIR"
+if [ -n "$helper_wrap" ]; then
+  GETFY_STACK_ENV_PRESERVE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/getfy-stack-env.XXXXXX")"
+  chmod 700 "$GETFY_STACK_ENV_PRESERVE_DIR"
+  set +e
+  if [ -f "$SYNC_SCRIPT" ]; then
+    $SUDO env GETFY_PRESERVE_FAIL_BACKUP="${GETFY_PRESERVE_FAIL_BACKUP:-0}" \
+      GETFY_PRESERVE_FAIL_RESTORE="${GETFY_PRESERVE_FAIL_RESTORE:-0}" \
+      sh "$helper_wrap" wrap "$INSTALL_DIR" "$GETFY_STACK_ENV_PRESERVE_DIR" -- \
+      env GETFY_STACK_ENV_PRESERVE_OWNED=1 GETFY_REPO_URL="$REPO_URL" \
+        sh "$SYNC_SCRIPT" "$INSTALL_DIR" "$BRANCH" "$SUDO"
+    sync_rc=$?
+  else
+    echo "Aviso: git-sync-for-deploy.sh ainda não existe no disco — sync Git mínimo (bootstrap)." >&2
+    $SUDO env GETFY_PRESERVE_FAIL_BACKUP="${GETFY_PRESERVE_FAIL_BACKUP:-0}" \
+      GETFY_PRESERVE_FAIL_RESTORE="${GETFY_PRESERVE_FAIL_RESTORE:-0}" \
+      sh "$helper_wrap" wrap "$INSTALL_DIR" "$GETFY_STACK_ENV_PRESERVE_DIR" -- \
+      sh -c '
+        set -e
+        INSTALL_DIR="$1"
+        REPO_URL="$2"
+        BRANCH="$3"
+        GIT="git -c safe.directory=$INSTALL_DIR -C $INSTALL_DIR"
+        $GIT remote set-url origin "$REPO_URL" >/dev/null 2>&1 || true
+        $GIT merge --abort >/dev/null 2>&1 || true
+        $GIT rebase --abort >/dev/null 2>&1 || true
+        rm -rf "$INSTALL_DIR/public/build"
+        $GIT fetch --all --prune
+        $GIT reset --hard "origin/$BRANCH"
+      ' sh "$INSTALL_DIR" "$REPO_URL" "$BRANCH"
+    sync_rc=$?
+  fi
+  set -e
+  if [ "$sync_rc" -ne 0 ]; then
+    exit "$sync_rc"
+  fi
+else
+  if ! backup_local_stack_env; then
+    echo "[update] ERRO: backup de stack.env falhou — Git sync abortado." >&2
+    echo "[update] Diretório de backup (protegido): ${GETFY_STACK_ENV_PRESERVE_DIR}" >&2
+    exit 1
+  fi
+  trap preserve_on_exit EXIT INT TERM
+  set +e
+  if [ -f "$SYNC_SCRIPT" ]; then
+    $SUDO chmod +x "$SYNC_SCRIPT" 2>/dev/null || true
+    $SUDO env GETFY_REPO_URL="$REPO_URL" GETFY_STACK_ENV_PRESERVE_OWNED=1 \
+      GETFY_STACK_ENV_PRESERVE_DIR="$GETFY_STACK_ENV_PRESERVE_DIR" \
+      sh "$SYNC_SCRIPT" "$INSTALL_DIR" "$BRANCH" "$SUDO"
+    sync_rc=$?
+  else
+    echo "Aviso: git-sync-for-deploy.sh ainda não existe no disco — sync Git mínimo (bootstrap)." >&2
+    GIT_BASE=(git -c safe.directory="$INSTALL_DIR" -C "$INSTALL_DIR")
+    $SUDO "${GIT_BASE[@]}" remote set-url origin "$REPO_URL" >/dev/null 2>&1 || true
+    $SUDO "${GIT_BASE[@]}" merge --abort >/dev/null 2>&1 || true
+    $SUDO "${GIT_BASE[@]}" rebase --abort >/dev/null 2>&1 || true
+    $SUDO rm -rf "$INSTALL_DIR/public/build"
+    $SUDO "${GIT_BASE[@]}" reset --hard HEAD >/dev/null 2>&1 || true
+    $SUDO "${GIT_BASE[@]}" fetch --all --prune
+    $SUDO "${GIT_BASE[@]}" reset --hard "origin/$BRANCH"
+    sync_rc=$?
+  fi
+  set -e
+  trap - EXIT INT TERM
+  if ! restore_local_stack_env; then
+    report_restore_kept
+    if [ "$sync_rc" -ne 0 ]; then
+      exit "$sync_rc"
+    fi
+    exit 1
+  fi
+  if [ "$sync_rc" -ne 0 ]; then
+    exit "$sync_rc"
+  fi
+fi
 fi
 
 cd "$INSTALL_DIR"

@@ -108,26 +108,37 @@ EOF
 }
 
 echo ""
-echo "=== 0) update.sh preserva antes do Git sync antigo ==="
-grep -n 'backup_local_stack_env' "$ROOT_DIR/update.sh" >/dev/null && has_bak=1 || has_bak=0
-grep -n 'restore_local_stack_env' "$ROOT_DIR/update.sh" >/dev/null && has_rst=1 || has_rst=0
-bak_line="$(grep -n 'backup_local_stack_env' "$ROOT_DIR/update.sh" | grep -v '^.*()' | grep -v 'helper' | head -1 | cut -d: -f1)"
-sync_line="$(grep -n 'git-sync-for-deploy.sh' "$ROOT_DIR/update.sh" | head -1 | cut -d: -f1)"
-rst_line="$(grep -n 'restore_local_stack_env' "$ROOT_DIR/update.sh" | grep -v '()' | head -1 | cut -d: -f1)"
-assert_true "0: update.sh tem backup_local_stack_env" "$has_bak"
-assert_true "0: update.sh tem restore_local_stack_env" "$has_rst"
-if [ -n "$bak_line" ] && [ -n "$sync_line" ] && [ "$bak_line" -lt "$sync_line" ]; then
-  order1=1
-else
-  order1=0
-fi
-if [ -n "$rst_line" ] && [ -n "$sync_line" ] && [ "$rst_line" -gt "$sync_line" ]; then
-  order2=1
-else
-  order2=0
-fi
-assert_true "0: backup roda antes de git-sync-for-deploy.sh" "$order1"
-assert_true "0: restore roda depois de git-sync-for-deploy.sh" "$order2"
+echo "=== 0) update.sh / update-caddy.sh / git-sync: trap, wrap, sem ignorar falhas ==="
+grep -q 'trap preserve_on_exit EXIT INT TERM' "$ROOT_DIR/update.sh" && trap_u=1 || trap_u=0
+grep -q 'trap preserve_on_exit EXIT INT TERM' "$ROOT_DIR/update-caddy.sh" && trap_c=1 || trap_c=0
+grep -q 'helper_wrap" wrap' "$ROOT_DIR/update.sh" && wrap_u=1 || wrap_u=0
+grep -q 'helper_wrap" wrap' "$ROOT_DIR/update-caddy.sh" && wrap_c=1 || wrap_c=0
+grep -q 'PRESERVE_SH" wrap' "$ROOT_DIR/docker/git-sync-for-deploy.sh" && wrap_g=1 || wrap_g=0
+grep -q 'backup de stack.env falhou — Git sync abortado' "$ROOT_DIR/update.sh" && bak_abort_u=1 || bak_abort_u=0
+grep -q 'backup de stack.env falhou — Git sync abortado' "$ROOT_DIR/update-caddy.sh" && bak_abort_c=1 || bak_abort_c=0
+grep -q 'restauração falhou. Backup protegido em:' "$ROOT_DIR/update.sh" && rst_keep_u=1 || rst_keep_u=0
+grep -q 'restauração falhou. Backup protegido em:' "$ROOT_DIR/update-caddy.sh" && rst_keep_c=1 || rst_keep_c=0
+grep -q 'GETFY_STACK_ENV_PRESERVE_OWNED' "$ROOT_DIR/docker/git-sync-for-deploy.sh" && owned=1 || owned=0
+grep -q 'trap on_exit EXIT INT TERM' "$ROOT_DIR/docker/git-sync-for-deploy.sh" && trap_g=1 || trap_g=0
+grep -E 'backup_local_stack_env[[:space:]]*\|\|[[:space:]]*true' "$ROOT_DIR/update.sh" >/dev/null && ignore_bak_u=1 || ignore_bak_u=0
+grep -E 'restore_local_stack_env[[:space:]]*\|\|[[:space:]]*true' "$ROOT_DIR/update.sh" >/dev/null && ignore_rst_u=1 || ignore_rst_u=0
+grep -E 'backup_local_stack_env[[:space:]]*\|\|[[:space:]]*true' "$ROOT_DIR/update-caddy.sh" >/dev/null && ignore_bak_c=1 || ignore_bak_c=0
+grep -E 'restore_local_stack_env[[:space:]]*\|\|[[:space:]]*true' "$ROOT_DIR/update-caddy.sh" >/dev/null && ignore_rst_c=1 || ignore_rst_c=0
+assert_true "0: update.sh restaura em EXIT/INT/TERM" "$trap_u"
+assert_true "0: update-caddy.sh restaura em EXIT/INT/TERM" "$trap_c"
+assert_true "0: update.sh usa wrap do helper" "$wrap_u"
+assert_true "0: update-caddy.sh usa wrap do helper" "$wrap_c"
+assert_true "0: git-sync usa wrap do helper" "$wrap_g"
+assert_true "0: update.sh aborta se o backup falhar" "$bak_abort_u"
+assert_true "0: update-caddy.sh aborta se o backup falhar" "$bak_abort_c"
+assert_true "0: update.sh mantém backup se o restore falhar" "$rst_keep_u"
+assert_true "0: update-caddy.sh mantém backup se o restore falhar" "$rst_keep_c"
+assert_true "0: git-sync respeita OWNED (não apaga backup do pai)" "$owned"
+assert_true "0: git-sync restaura em EXIT/INT/TERM (fallback sem helper)" "$trap_g"
+assert_eq "0: update.sh não ignora falha de backup" "$ignore_bak_u" "0"
+assert_eq "0: update.sh não ignora falha de restore" "$ignore_rst_u" "0"
+assert_eq "0: update-caddy.sh não ignora falha de backup" "$ignore_bak_c" "0"
+assert_eq "0: update-caddy.sh não ignora falha de restore" "$ignore_rst_c" "0"
 grep -q 'stack.env.example' "$ROOT_DIR/.gitignore" && ex=1 || ex=0
 assert_true "0: gitignore permite stack.env.example" "$ex"
 
@@ -196,19 +207,16 @@ git -C "$ORIGIN" add docker/preserve-local-stack-env.sh docker/git-sync-for-depl
   .docker/stack.env.example .gitignore
 git -C "$ORIGIN" commit -q -m "new: stack.env fora do git + preserve"
 
-PRESERVE="$TEST_ROOT/preserve"
-# Simula o wrap do update.sh novo em volta do git-sync antigo no disco.
-sh "$ROOT_DIR/docker/preserve-local-stack-env.sh" backup "$INSTALL" "$PRESERVE"
+WRAP2="$TEST_ROOT/preserve-wrap"
+mkdir -p "$WRAP2"
 br="$(git -C "$INSTALL" rev-parse --abbrev-ref HEAD)"
-GETFY_REPO_URL="$ORIGIN" sh "$INSTALL/docker/git-sync-for-deploy.sh" "$INSTALL" "$br" ""
-# O reset --hard do script antigo apagou o stack.env (já não está no origin).
-if [ ! -f "$INSTALL/.docker/stack.env" ]; then
-  wiped=1
-else
-  wiped=0
-fi
-assert_true "2: git-sync antigo removeu stack.env do worktree (ficheiro saiu do Git)" "$wiped"
-sh "$ROOT_DIR/docker/preserve-local-stack-env.sh" restore "$INSTALL" "$PRESERVE"
+# Wrapper real (o mesmo que update.sh chama quando o helper existe).
+rc2=0
+sh "$ROOT_DIR/docker/preserve-local-stack-env.sh" wrap "$INSTALL" "$WRAP2" -- \
+  env GETFY_REPO_URL="$ORIGIN" GETFY_STACK_ENV_PRESERVE_OWNED=1 \
+    sh "$INSTALL/docker/git-sync-for-deploy.sh" "$INSTALL" "$br" "" \
+  >"$TEST_ROOT/wrap2.out" 2>"$TEST_ROOT/wrap2.err" || rc2=$?
+assert_eq "2: wrap do primeiro update concluiu (rc 0)" "$rc2" "0"
 
 [ -f "$INSTALL/.docker/stack.env" ] && back=1 || back=0
 assert_true "2: restore recolocou stack.env" "$back"
@@ -242,6 +250,126 @@ cp "$ROOT_DIR/docker/git-sync-for-deploy.sh" "$INSTALL2/docker/git-sync-for-depl
 GETFY_REPO_URL="$ORIGIN" sh "$INSTALL2/docker/git-sync-for-deploy.sh" "$INSTALL2" "$br" ""
 secret_same "3: stack.env sobrevive ao git-sync novo" \
   "$(file_hash "$INSTALL2/.docker/stack.env")" "$hash2"
+
+stderr_leaks_secrets() {
+  errf="$1"
+  if grep -F 'Sec$ret!Pass' "$errf" >/dev/null 2>&1; then
+    return 0
+  fi
+  if grep -F 'tok_live_keep_this_value' "$errf" >/dev/null 2>&1; then
+    return 0
+  fi
+  return 1
+}
+
+echo ""
+echo "=== 4) wrap: sync modifica a configuração e sai com erro ==="
+INSTALL4="$TEST_ROOT/install4"
+write_local_live_stack_env "$INSTALL4"
+hash4="$(file_hash "$INSTALL4/.docker/stack.env")"
+cp "$INSTALL4/.docker/stack.env" "$TEST_ROOT/stack4.before"
+WRAP4="$TEST_ROOT/wrap4"
+mkdir -p "$WRAP4"
+marker4="$TEST_ROOT/sync4-ran"
+rc4=0
+sh "$ROOT_DIR/docker/preserve-local-stack-env.sh" wrap "$INSTALL4" "$WRAP4" -- \
+  sh -c 'printf "WIPED_BY_FAILING_SYNC\n" > "$1/.docker/stack.env"; echo ran > "$2"; exit 7' \
+  sh "$INSTALL4" "$marker4" \
+  >"$TEST_ROOT/wrap4.out" 2>"$TEST_ROOT/wrap4.err" || rc4=$?
+assert_eq "4: rc original do sync (7) preservado" "$rc4" "7"
+[ -f "$marker4" ] && ran4=1 || ran4=0
+assert_true "4: o comando de sync chegou a executar" "$ran4"
+secret_same "4: stack.env restaurado após falha do sync" \
+  "$(file_hash "$INSTALL4/.docker/stack.env")" "$hash4"
+cmp -s "$TEST_ROOT/stack4.before" "$INSTALL4/.docker/stack.env" && exact4=1 || exact4=0
+assert_true "4: cmp confirma identidade após restore" "$exact4"
+[ ! -e "$WRAP4" ] && gone4=1 || gone4=0
+assert_true "4: backup apagado só após restore confirmado" "$gone4"
+if stderr_leaks_secrets "$TEST_ROOT/wrap4.err"; then
+  echo "  FAIL: 4: stderr vazou valor de senha/token" >&2
+  FAIL=$((FAIL + 1))
+else
+  echo "  PASS: 4: stderr não revela valores"
+  PASS=$((PASS + 1))
+fi
+
+echo ""
+echo "=== 5) wrap: falha no backup — sync não executa ==="
+INSTALL5="$TEST_ROOT/install5"
+write_local_live_stack_env "$INSTALL5"
+hash5="$(file_hash "$INSTALL5/.docker/stack.env")"
+WRAP5="$TEST_ROOT/wrap5"
+mkdir -p "$WRAP5"
+marker5="$TEST_ROOT/sync5-must-not-run"
+rc5=0
+GETFY_PRESERVE_FAIL_BACKUP=1 \
+  sh "$ROOT_DIR/docker/preserve-local-stack-env.sh" wrap "$INSTALL5" "$WRAP5" -- \
+  sh -c 'echo ran > "$1"; printf "WIPED\n" > "$2/.docker/stack.env"' \
+  sh "$marker5" "$INSTALL5" \
+  >"$TEST_ROOT/wrap5.out" 2>"$TEST_ROOT/wrap5.err" || rc5=$?
+if [ "$rc5" -ne 0 ]; then
+  failbak=1
+else
+  failbak=0
+fi
+assert_true "5: wrap aborta quando o backup falha" "$failbak"
+[ ! -f "$marker5" ] && no_run5=1 || no_run5=0
+assert_true "5: sync não rodou após falha do backup" "$no_run5"
+secret_same "5: stack.env intacto (sync não rodou)" \
+  "$(file_hash "$INSTALL5/.docker/stack.env")" "$hash5"
+[ -d "$WRAP5" ] && keep5=1 || keep5=0
+assert_true "5: diretório de backup permanece protegido" "$keep5"
+grep -q "$WRAP5" "$TEST_ROOT/wrap5.err" && path5=1 || path5=0
+assert_true "5: stderr informa o caminho do backup" "$path5"
+grep -q 'backup falhou' "$TEST_ROOT/wrap5.err" && msg5=1 || msg5=0
+assert_true "5: stderr diz que o backup falhou" "$msg5"
+if stderr_leaks_secrets "$TEST_ROOT/wrap5.err"; then
+  echo "  FAIL: 5: stderr vazou valor de senha/token" >&2
+  FAIL=$((FAIL + 1))
+else
+  echo "  PASS: 5: stderr não revela valores"
+  PASS=$((PASS + 1))
+fi
+
+echo ""
+echo "=== 6) wrap: falha na restauração — backup permanece ==="
+INSTALL6="$TEST_ROOT/install6"
+write_local_live_stack_env "$INSTALL6"
+cp "$INSTALL6/.docker/stack.env" "$TEST_ROOT/stack6.before"
+WRAP6="$TEST_ROOT/wrap6"
+mkdir -p "$WRAP6"
+marker6="$TEST_ROOT/sync6-ran"
+rc6=0
+GETFY_PRESERVE_FAIL_RESTORE=1 \
+  sh "$ROOT_DIR/docker/preserve-local-stack-env.sh" wrap "$INSTALL6" "$WRAP6" -- \
+  sh -c 'printf "WIPED_AFTER_SYNC\n" > "$1/.docker/stack.env"; echo ran > "$2"' \
+  sh "$INSTALL6" "$marker6" \
+  >"$TEST_ROOT/wrap6.out" 2>"$TEST_ROOT/wrap6.err" || rc6=$?
+if [ "$rc6" -ne 0 ]; then
+  failrst=1
+else
+  failrst=0
+fi
+assert_true "6: wrap retorna erro quando o restore falha" "$failrst"
+[ -f "$marker6" ] && ran6=1 || ran6=0
+assert_true "6: o comando de sync chegou a executar" "$ran6"
+[ -d "$WRAP6" ] && keep6=1 || keep6=0
+assert_true "6: backup NÃO foi apagado após restore falhar" "$keep6"
+[ -f "$WRAP6/.docker/stack.env" ] && bakfile6=1 || bakfile6=0
+assert_true "6: ficheiro de backup de stack.env permanece" "$bakfile6"
+secret_same "6: conteúdo do backup é o original" \
+  "$(file_hash "$WRAP6/.docker/stack.env")" "$(file_hash "$TEST_ROOT/stack6.before")"
+grep -q "$WRAP6" "$TEST_ROOT/wrap6.err" && path6=1 || path6=0
+assert_true "6: stderr informa o caminho do backup" "$path6"
+grep -q 'restauração falhou' "$TEST_ROOT/wrap6.err" && msg6=1 || msg6=0
+assert_true "6: stderr diz que a restauração falhou" "$msg6"
+if stderr_leaks_secrets "$TEST_ROOT/wrap6.err"; then
+  echo "  FAIL: 6: stderr vazou valor de senha/token" >&2
+  FAIL=$((FAIL + 1))
+else
+  echo "  PASS: 6: stderr não revela valores"
+  PASS=$((PASS + 1))
+fi
 
 echo ""
 echo "=== Resultado ==="
