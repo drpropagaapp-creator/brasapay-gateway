@@ -2,6 +2,9 @@
 # Sincroniza o repositório no servidor com origin/$BRANCH (deploy).
 # Uso: sh docker/git-sync-for-deploy.sh <INSTALL_DIR> <BRANCH> [sudo_cmd]
 #   sudo_cmd: vazio ou "sudo" (com espaço no fim se precisar: não — passar só "sudo")
+#
+# Preserva .docker/stack.env e overrides em volta de reset --hard (o update.sh
+# também faz backup: o script neste disco pode ser o antigo no 1º update).
 set -eu
 
 INSTALL_DIR="${1:?INSTALL_DIR}"
@@ -9,6 +12,43 @@ BRANCH="${2:?BRANCH}"
 SUDO="${3:-}"
 
 GIT_BASE="git -c safe.directory=$INSTALL_DIR -C $INSTALL_DIR"
+
+PRESERVE_DIR="${GETFY_STACK_ENV_PRESERVE_DIR:-}"
+PRESERVE_SH="$INSTALL_DIR/docker/preserve-local-stack-env.sh"
+if [ -z "$PRESERVE_DIR" ]; then
+  PRESERVE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/getfy-stack-env.XXXXXX")"
+  chmod 700 "$PRESERVE_DIR" 2>/dev/null || true
+fi
+
+preserve_backup() {
+  if [ -f "$PRESERVE_SH" ]; then
+    # shellcheck disable=SC2086
+    $SUDO sh "$PRESERVE_SH" backup "$INSTALL_DIR" "$PRESERVE_DIR" || true
+    return 0
+  fi
+  mkdir -p "$PRESERVE_DIR/.docker"
+  if [ -f "$INSTALL_DIR/.docker/stack.env" ]; then
+    # shellcheck disable=SC2086
+    $SUDO cp -p "$INSTALL_DIR/.docker/stack.env" "$PRESERVE_DIR/.docker/stack.env" || true
+  fi
+}
+
+preserve_restore() {
+  if [ -f "$PRESERVE_SH" ]; then
+    # shellcheck disable=SC2086
+    $SUDO sh "$PRESERVE_SH" restore "$INSTALL_DIR" "$PRESERVE_DIR" || true
+    return 0
+  fi
+  if [ -f "$PRESERVE_DIR/.docker/stack.env" ]; then
+    # shellcheck disable=SC2086
+    $SUDO mkdir -p "$INSTALL_DIR/.docker"
+    # shellcheck disable=SC2086
+    $SUDO cp -p "$PRESERVE_DIR/.docker/stack.env" "$INSTALL_DIR/.docker/stack.env" || true
+  fi
+}
+
+preserve_backup
+trap preserve_restore EXIT INT TERM
 
 # shellcheck disable=SC2086
 $SUDO $GIT_BASE remote set-url origin "${GETFY_REPO_URL:-https://github.com/stacker-builders/stacker-gateway.git}" >/dev/null 2>&1 || true
@@ -46,3 +86,6 @@ $SUDO $GIT_BASE reset --hard "origin/$BRANCH"
 # Garantir branch local alinhada (opcional, após hard reset)
 # shellcheck disable=SC2086
 $SUDO $GIT_BASE checkout -B "$BRANCH" "origin/$BRANCH" 2>/dev/null || true
+
+preserve_restore
+trap - EXIT INT TERM

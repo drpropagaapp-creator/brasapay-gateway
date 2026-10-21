@@ -40,11 +40,53 @@ if [ ! -d "$INSTALL_DIR/.git" ]; then
   exit 1
 fi
 
+GETFY_STACK_ENV_PRESERVE_DIR=""
+backup_local_stack_env() {
+  GETFY_STACK_ENV_PRESERVE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/getfy-stack-env.XXXXXX")"
+  chmod 700 "$GETFY_STACK_ENV_PRESERVE_DIR"
+  mkdir -p "$GETFY_STACK_ENV_PRESERVE_DIR/.docker"
+  if [ -n "${BASH_SOURCE[0]:-}" ] && [ -f "$(dirname "${BASH_SOURCE[0]}")/docker/preserve-local-stack-env.sh" ]; then
+    $SUDO sh "$(dirname "${BASH_SOURCE[0]}")/docker/preserve-local-stack-env.sh" \
+      backup "$INSTALL_DIR" "$GETFY_STACK_ENV_PRESERVE_DIR" || true
+    return 0
+  fi
+  if [ -f "$INSTALL_DIR/.docker/stack.env" ]; then
+    $SUDO cp -p "$INSTALL_DIR/.docker/stack.env" "$GETFY_STACK_ENV_PRESERVE_DIR/.docker/stack.env"
+  fi
+  local f
+  for f in "$INSTALL_DIR"/.docker/*.override.yml "$INSTALL_DIR"/.docker/*.override.json \
+           "$INSTALL_DIR"/.docker/php836* "$INSTALL_DIR"/.docker/stack.compose.env \
+           "$INSTALL_DIR"/.docker/compose-profile; do
+    [ -f "$f" ] || continue
+    $SUDO cp -p "$f" "$GETFY_STACK_ENV_PRESERVE_DIR/.docker/$(basename "$f")"
+  done
+  echo "[update] backup local de stack.env/overrides antes do Git sync."
+}
+restore_local_stack_env() {
+  local dir="${GETFY_STACK_ENV_PRESERVE_DIR:-}"
+  [ -n "$dir" ] && [ -d "$dir/.docker" ] || return 0
+  if [ -f "$INSTALL_DIR/docker/preserve-local-stack-env.sh" ]; then
+    $SUDO sh "$INSTALL_DIR/docker/preserve-local-stack-env.sh" restore "$INSTALL_DIR" "$dir" || true
+  else
+    $SUDO mkdir -p "$INSTALL_DIR/.docker"
+    local f
+    for f in "$dir"/.docker/*; do
+      [ -f "$f" ] || continue
+      $SUDO cp -p "$f" "$INSTALL_DIR/.docker/$(basename "$f")"
+    done
+  fi
+  $SUDO rm -rf "$dir"
+  GETFY_STACK_ENV_PRESERVE_DIR=""
+  echo "[update] stack.env/overrides restaurados após Git sync (valores não exibidos)."
+}
+
 export GETFY_REPO_URL="$REPO_URL"
+backup_local_stack_env
 SYNC_SCRIPT="$INSTALL_DIR/docker/git-sync-for-deploy.sh"
 if [ -f "$SYNC_SCRIPT" ]; then
   $SUDO chmod +x "$SYNC_SCRIPT" 2>/dev/null || true
-  $SUDO env GETFY_REPO_URL="$REPO_URL" sh "$SYNC_SCRIPT" "$INSTALL_DIR" "$BRANCH" "$SUDO"
+  $SUDO env GETFY_REPO_URL="$REPO_URL" GETFY_STACK_ENV_PRESERVE_DIR="$GETFY_STACK_ENV_PRESERVE_DIR" \
+    sh "$SYNC_SCRIPT" "$INSTALL_DIR" "$BRANCH" "$SUDO"
 else
   echo "Aviso: git-sync-for-deploy.sh ainda não existe no disco — sync Git mínimo (bootstrap)." >&2
   GIT_BASE=(git -c safe.directory="$INSTALL_DIR" -C "$INSTALL_DIR")
@@ -56,6 +98,7 @@ else
   $SUDO "${GIT_BASE[@]}" fetch --all --prune
   $SUDO "${GIT_BASE[@]}" reset --hard "origin/$BRANCH"
 fi
+restore_local_stack_env
 
 cd "$INSTALL_DIR"
 

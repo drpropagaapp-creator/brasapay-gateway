@@ -37,6 +37,8 @@ Docs Gateways
 /.docker/app.key
 /.docker/pwa_vapid.env
 /.docker/stack.env
+!/.docker/stack.env.example
+/.docker/.git-preserve/
 /.docker/stack.compose.env
 /.docker/running-php-image.yml
 /.docker/php-promote-runtime.yml
