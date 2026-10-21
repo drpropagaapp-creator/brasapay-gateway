@@ -1,91 +1,240 @@
 <script setup>
 import { Head, Link } from '@inertiajs/vue3';
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
+import { gsap } from 'gsap';
+import { ScrollTrigger } from 'gsap/ScrollTrigger';
+import Lenis from 'lenis';
+import { onBeforeUnmount, onMounted, ref } from 'vue';
+import BrasaLogo from '@/components/landing/BrasaLogo.vue';
+import CheckoutScene from '@/components/landing/CheckoutScene.vue';
+import EmberCanvas from '@/components/landing/EmberCanvas.vue';
+import PhoneScene from '@/components/landing/PhoneScene.vue';
+import { MARK_PATH, MARK_STOPS, MARK_VIEWBOX } from '@/components/landing/brasaMark';
+
+gsap.registerPlugin(ScrollTrigger);
 
 /**
- * Landing pública (rota / para visitantes) — estilo imersivo dark-green:
- * fundo preto-esverdeado com auroras de luz, CTAs em degradê lime→esmeralda
- * (acento do design system Paynext), logo oficial, cards flutuantes de
- * produto no hero (venda aprovada, PIX, push) e bento de recursos.
+ * Landing pública do BrasaPay — experiência cinematográfica:
+ * abertura com a marca se desenhando, rolagem suave (Lenis), cenas pinadas
+ * (celular com notificação, checkout com produto fictício), brasas em canvas,
+ * texto que acende com o scroll e microinterações magnéticas.
  */
 
-const prefersReducedMotion = ref(false);
+// ——— Abertura (uma vez por sessão) ———
+const introState = ref('idle'); // play | calm | skip
+const root = ref(null);
+let lenis = null;
+let mm = null;
+let navTrigger = null;
+let heroPlayed = false;
 
-// — Simulação de venda PIX (card flutuante do hero) —
-const SIM_SALES = [
-    { product: 'Mentoria Turbo', amount: 'R$ 497,00', secs: '1,8s' },
-    { product: 'Curso Tráfego Pro', amount: 'R$ 197,00', secs: '2,1s' },
-    { product: 'Comunidade VIP', amount: 'R$ 97,00', secs: '1,4s' },
-];
-const simPhase = ref('pago'); // aguardando | pago
-const simIndex = ref(0);
-const sale = computed(() => SIM_SALES[simIndex.value % SIM_SALES.length]);
-let simTimers = [];
+const WORD = 'brasapay';
 
-function runSimCycle() {
-    simTimers.forEach((t) => clearTimeout(t));
-    simTimers = [];
-    simPhase.value = 'aguardando';
-    simTimers.push(setTimeout(() => {
-        simPhase.value = 'pago';
-    }, 2600));
-    simTimers.push(setTimeout(() => {
-        simIndex.value += 1;
-        runSimCycle();
-    }, 6200));
+function heroEntrance(instant) {
+    if (heroPlayed) return;
+    heroPlayed = true;
+    const q = gsap.utils.selector(root.value);
+    if (instant) {
+        gsap.set(q('.hero-word i, .hero-sub, .hero-ctas, .hero-cue, .lp-nav'), { clearProps: 'all', opacity: 1 });
+        return;
+    }
+    gsap.timeline({ defaults: { ease: 'power4.out' } })
+        .to(q('.lp-nav'), { yPercent: 0, opacity: 1, duration: 0.7 }, 0)
+        .to(q('.hero-word i'), { yPercent: 0, duration: 1.0, stagger: 0.09 }, 0.05)
+        .to(q('.hero-sub'), { y: 0, opacity: 1, duration: 0.8 }, 0.55)
+        .to(q('.hero-ctas'), { y: 0, opacity: 1, duration: 0.8 }, 0.7)
+        .to(q('.hero-cue'), { opacity: 1, duration: 0.6 }, 1.1);
 }
 
-// — Parallax suave dos cards do hero —
-const tiltX = ref(0);
-const tiltY = ref(0);
-
-function onHeroMouse(e) {
-    if (prefersReducedMotion.value) return;
-    const { innerWidth: w, innerHeight: h } = window;
-    tiltX.value = (e.clientX / w - 0.5) * 2;
-    tiltY.value = (e.clientY / h - 0.5) * 2;
+function runIntro() {
+    let seen = true;
+    try {
+        seen = sessionStorage.getItem('bp-intro') !== null;
+        if (!seen) sessionStorage.setItem('bp-intro', '1');
+    } catch {
+        seen = false;
+    }
+    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (seen || reduce) {
+        introState.value = seen ? 'skip' : 'calm';
+        heroEntrance(true);
+        if (introState.value === 'calm') setTimeout(() => (introState.value = 'skip'), 1400);
+        return;
+    }
+    introState.value = 'play';
+    setTimeout(() => heroEntrance(false), 2050);
+    setTimeout(() => (introState.value = 'skip'), 2900);
 }
 
-function floatStyle(depth) {
-    return {
-        transform: `translate3d(${(tiltX.value * depth * 10).toFixed(1)}px, ${(tiltY.value * depth * 8).toFixed(1)}px, 0)`,
-    };
+// ——— Botão magnético ———
+function magnetic(e) {
+    if (e.pointerType !== 'mouse') return;
+    const el = e.currentTarget;
+    const r = el.getBoundingClientRect();
+    el.style.setProperty('--tx', `${((e.clientX - r.left - r.width / 2) * 0.3).toFixed(1)}px`);
+    el.style.setProperty('--ty', `${((e.clientY - r.top - r.height / 2) * 0.3).toFixed(1)}px`);
+}
+function magneticOut(e) {
+    e.currentTarget.style.setProperty('--tx', '0px');
+    e.currentTarget.style.setProperty('--ty', '0px');
 }
 
-// — Revelação ao rolar —
-let observer = null;
+// ——— Cartão spotlight (luz segue o cursor + leve 3D) ———
+function spot(e) {
+    if (e.pointerType !== 'mouse') return;
+    const el = e.currentTarget;
+    const r = el.getBoundingClientRect();
+    const px = (e.clientX - r.left) / r.width;
+    const py = (e.clientY - r.top) / r.height;
+    el.style.setProperty('--mx', `${(px * 100).toFixed(1)}%`);
+    el.style.setProperty('--my', `${(py * 100).toFixed(1)}%`);
+    el.style.setProperty('--rx', `${((0.5 - py) * 5).toFixed(2)}deg`);
+    el.style.setProperty('--ry', `${((px - 0.5) * 6).toFixed(2)}deg`);
+}
+function spotOut(e) {
+    e.currentTarget.style.setProperty('--rx', '0deg');
+    e.currentTarget.style.setProperty('--ry', '0deg');
+}
 
 onMounted(() => {
-    prefersReducedMotion.value = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    if (!prefersReducedMotion.value) {
-        runSimCycle();
-        window.addEventListener('mousemove', onHeroMouse, { passive: true });
-    }
+    runIntro();
 
-    observer = new IntersectionObserver(
-        (entries) => {
-            entries.forEach((entry) => {
-                if (entry.isIntersecting) {
-                    entry.target.classList.add('lp-in');
-                    observer.unobserve(entry.target);
+    mm = gsap.matchMedia();
+    mm.add('(prefers-reduced-motion: no-preference)', () => {
+        const q = gsap.utils.selector(root.value);
+
+        // Rolagem suave.
+        lenis = new Lenis({ duration: 1.15, smoothWheel: true });
+        lenis.on('scroll', ScrollTrigger.update);
+        const raf = (time) => lenis.raf(time * 1000);
+        gsap.ticker.add(raf);
+        gsap.ticker.lagSmoothing(0);
+
+        // Estados iniciais da entrada — só quando a abertura ainda vai tocar
+        // (visitante recorrente já tem tudo visível; sem JS idem).
+        if (!heroPlayed) {
+            gsap.set(q('.hero-word i'), { yPercent: 112 });
+            gsap.set(q('.hero-sub, .hero-ctas'), { y: 26, opacity: 0 });
+            gsap.set(q('.hero-cue'), { opacity: 0 });
+            gsap.set(q('.lp-nav'), { yPercent: -110, opacity: 0 });
+        }
+
+        // Garante ordem de refresh por posição no documento (as cenas pinadas
+        // dos filhos montam antes dos triggers do pai).
+        requestAnimationFrame(() => {
+            ScrollTrigger.sort();
+            ScrollTrigger.refresh();
+        });
+
+        // Barra de progresso da leitura.
+        gsap.to(q('.lp-progress'), {
+            scaleX: 1,
+            ease: 'none',
+            scrollTrigger: { start: 0, end: 'max', scrub: 0.4 },
+        });
+
+        // O hero recua enquanto a página rola por cima.
+        gsap.to(q('.hero-inner'), {
+            scale: 0.93,
+            yPercent: 8,
+            opacity: 0.25,
+            ease: 'none',
+            scrollTrigger: { trigger: q('.hero')[0], start: 'top top', end: 'bottom top', scrub: true },
+        });
+
+        // Nav esconde descendo, volta subindo.
+        let lastY = 0;
+        navTrigger = ScrollTrigger.create({
+            start: 120,
+            end: 'max',
+            onUpdate(self) {
+                const y = self.scroll();
+                if (!heroPlayed) return;
+                gsap.to(q('.lp-nav'), {
+                    yPercent: y > lastY + 4 ? -110 : 0,
+                    duration: 0.35,
+                    ease: 'power2.out',
+                    overwrite: 'auto',
+                });
+                lastY = y;
+            },
+        });
+
+        // Banda de fatos: sobe em cascata + contador.
+        gsap.set(q('.lp-stat'), { y: 30, opacity: 0 });
+        ScrollTrigger.create({
+            trigger: q('.lp-stats')[0],
+            start: 'top 82%',
+            once: true,
+            onEnter: () => {
+                gsap.to(q('.lp-stat'), { y: 0, opacity: 1, duration: 0.8, stagger: 0.1, ease: 'power3.out' });
+                const el = q('.lp-count')[0];
+                if (el) {
+                    const v = { n: 0 };
+                    gsap.to(v, {
+                        n: 10,
+                        duration: 1.4,
+                        ease: 'power2.out',
+                        onUpdate: () => (el.textContent = `${Math.round(v.n)}+`),
+                    });
                 }
-            });
-        },
-        { threshold: 0.12 }
-    );
-    document.querySelectorAll('.lp-reveal').forEach((el) => observer.observe(el));
+            },
+        });
+
+        // Revelações genéricas.
+        ScrollTrigger.batch(q('.lp-reveal'), {
+            start: 'top 86%',
+            once: true,
+            onEnter: (els) =>
+                gsap.fromTo(
+                    els,
+                    { y: 34, opacity: 0, filter: 'blur(8px)' },
+                    { y: 0, opacity: 1, filter: 'blur(0px)', duration: 0.9, stagger: 0.09, ease: 'power3.out' }
+                ),
+        });
+
+        // Manifesto: as palavras acendem conforme a rolagem passa.
+        const words = q('.mani-w');
+        gsap.set(words, { opacity: 0.14 });
+        gsap.to(words, {
+            opacity: 1,
+            stagger: 0.06,
+            ease: 'none',
+            scrollTrigger: { trigger: q('.mani')[0], start: 'top 78%', end: 'top 26%', scrub: true },
+        });
+
+        // Assinatura gigante desliza no rodapé.
+        gsap.fromTo(
+            q('.lp-drift span'),
+            { xPercent: 4 },
+            {
+                xPercent: -4,
+                ease: 'none',
+                scrollTrigger: { trigger: q('.lp-drift')[0], start: 'top bottom', end: 'bottom top', scrub: true },
+            }
+        );
+
+        // Glow final respira.
+        gsap.to(q('.final-glow'), { scale: 1.18, opacity: 0.9, duration: 2.6, yoyo: true, repeat: -1, ease: 'sine.inOut' });
+
+        return () => {
+            gsap.ticker.remove(raf);
+            lenis?.destroy();
+            lenis = null;
+            navTrigger?.kill();
+        };
+    });
 });
 
 onBeforeUnmount(() => {
-    simTimers.forEach((t) => clearTimeout(t));
-    window.removeEventListener('mousemove', onHeroMouse);
-    observer?.disconnect();
+    mm?.revert();
+    ScrollTrigger.getAll().forEach((t) => t.kill());
+    lenis?.destroy();
 });
 
-// — Conteúdo —
+// ——— Conteúdo ———
 const stats = [
     { value: 'D+0', label: 'PIX na conta na hora' },
-    { value: '10+', label: 'adquirentes com redundância' },
+    { value: '10+', label: 'adquirentes com redundância', count: true },
     { value: '~2s', label: 'da compra à confirmação' },
     { value: '24/7', label: 'saque automático por PIX' },
 ];
@@ -105,35 +254,77 @@ const acquirers = [
     { name: 'Versell', src: '/images/gateways/versell.svg' },
 ];
 
-const checkoutFeatures = [
-    'Modelos prontos — incluindo landing page completa dentro do checkout',
-    'Vídeo do YouTube ou VTurb, imagens, benefícios e avaliações na ordem que você quiser',
-    'Order bump, cupom e prova social no mesmo fluxo',
-    'Pixels e UTMs rastreados até a conversão',
+const bento = [
+    {
+        tag: 'APROVAÇÃO INSTANTÂNEA',
+        title: 'Pagou, caiu, liberou',
+        text: 'Webhook recebido, status reconferido direto na adquirente e pedido confirmado em segundos — acesso e e-mail disparados sem você tocar em nada.',
+        wide: true,
+    },
+    {
+        tag: 'BLINDAGEM MED',
+        title: 'Disputa sob controle',
+        text: 'MED aberto? O sistema acha a venda, trava o valor, avisa o vendedor responsável e mostra tudo pro admin — com prazo para responder.',
+    },
+    {
+        tag: 'REDUNDÂNCIA AUTOMÁTICA',
+        title: 'Adquirente caiu? Nem percebe',
+        text: 'Se uma adquirente recusa ou sai do ar, a cobrança nasce na próxima da fila. Seu checkout nunca fica fora do ar.',
+    },
+    {
+        tag: 'FINANCEIRO',
+        title: 'Saque automático com comprovante',
+        text: 'Saques por PIX direto da adquirente, reconciliação automática e trilha de auditoria completa.',
+    },
+    {
+        tag: 'PAINEL',
+        title: '5 temas, do seu jeito',
+        text: 'Default, Aurora, Kawaii, Prime e Studio — o visual que combina com a sua operação, para vendedor e admin.',
+        wide: true,
+    },
 ];
+
+const manifesto = 'O dinheiro do seu produto não pode esperar compensação, planilha nem suporte. Aqui, venda aprovada é dinheiro na mão — e você ouve cada uma acontecer.';
 
 const year = new Date().getFullYear();
 </script>
 
 <template>
-    <Head title="BrasaPay — venda no digital e receba na hora">
+    <Head title="BrasaPay — venda no digital, receba na hora">
         <meta
             name="description"
-            content="Gateway de pagamentos para quem vende no digital: PIX aprovado em segundos, redundância de adquirentes, proteção contra MED, checkout que converte e saque automático."
+            content="O gateway de pagamentos para quem vende no digital: PIX aprovado em segundos, redundância de adquirentes, blindagem contra MED e um checkout que é a sua página de vendas."
         />
+        <meta property="og:title" content="BrasaPay — venda no digital, receba na hora" />
+        <meta property="og:description" content="PIX aprovado em segundos, redundância de adquirentes e checkout que converte." />
     </Head>
 
-    <div class="lp">
-        <!-- Auroras de fundo -->
-        <div class="lp-aurora lp-aurora-a" aria-hidden="true"></div>
-        <div class="lp-aurora lp-aurora-b" aria-hidden="true"></div>
+    <div ref="root" class="lp" :data-intro="introState">
+        <!-- Abertura -->
+        <div v-if="introState === 'play' || introState === 'calm'" class="intro" aria-hidden="true">
+            <span class="intro-glow"></span>
+            <div class="intro-lockup">
+                <svg :viewBox="MARK_VIEWBOX" class="intro-mark">
+                    <defs>
+                        <linearGradient id="bp-intro-g" x1="0" y1="0" x2="1" y2="1">
+                            <stop v-for="[o, c] in MARK_STOPS" :key="o" :offset="o" :stop-color="c" />
+                        </linearGradient>
+                    </defs>
+                    <path :d="MARK_PATH" pathLength="1" class="intro-stroke" fill="none" stroke="url(#bp-intro-g)" stroke-width="7" stroke-linecap="round" />
+                    <path :d="MARK_PATH" fill-rule="evenodd" class="intro-fill" fill="url(#bp-intro-g)" />
+                </svg>
+                <span class="intro-word">
+                    <i v-for="(ch, n) in WORD" :key="n" :style="{ '--i': n }" :class="{ 'intro-pay': n >= 5 }">{{ ch }}</i>
+                </span>
+            </div>
+        </div>
+
+        <span class="lp-progress" aria-hidden="true"></span>
 
         <!-- Navegação -->
         <header class="lp-nav">
             <div class="lp-wrap lp-nav-in">
-                <a href="#" class="lp-logo" aria-label="BrasaPay — início">
-                    <img src="/images/logo-dark.png" alt="BrasaPay" />
-                </a>
+                <a href="#" aria-label="BrasaPay — início"><BrasaLogo :size="30" /></a>
                 <nav class="lp-nav-links" aria-label="Seções">
                     <a href="#recursos">Recursos</a>
                     <a href="#checkout">Checkout</a>
@@ -148,90 +339,47 @@ const year = new Date().getFullYear();
 
         <main>
             <!-- Hero -->
-            <section class="lp-hero">
-                <div class="lp-wrap">
-                    <div class="lp-hero-center">
-                        <p class="lp-pill">💚 Você só paga quando vende</p>
-                        <h1 class="lp-h1">
-                            O gateway pra vender<br />
-                            no digital e <span class="lp-grad">receber na&nbsp;hora.</span>
-                        </h1>
-                        <p class="lp-sub">
-                            PIX aprovado em segundos, mais de dez adquirentes com redundância automática,
-                            blindagem contra MED e um checkout que é a sua página de vendas.
-                        </p>
-                        <div class="lp-hero-ctas">
-                            <Link href="/cadastro" class="lp-btn lp-btn-green lp-btn-xl">
-                                Começar a vender <span aria-hidden="true">→</span>
-                            </Link>
-                            <a href="#recursos" class="lp-btn lp-btn-ghost lp-btn-xl">Ver recursos</a>
-                        </div>
+            <section class="hero">
+                <EmberCanvas :density="80" />
+                <div class="hero-vignette" aria-hidden="true"></div>
+                <div class="lp-wrap hero-inner">
+                    <p class="lp-pill hero-sub">💚 Você só paga quando vende</p>
+                    <h1 class="hero-h1" aria-label="Vendeu. Caiu. Na hora.">
+                        <span class="hero-word"><i>Vendeu.</i></span>
+                        <span class="hero-word"><i>Caiu.</i></span>
+                        <span class="hero-word"><i class="lp-grad">Na&nbsp;hora.</i></span>
+                    </h1>
+                    <p class="hero-sub lp-sub">
+                        O gateway de quem vive de vender no digital: PIX aprovado em segundos,
+                        redundância real de adquirentes e um checkout que é a sua página de vendas.
+                    </p>
+                    <div class="hero-ctas">
+                        <Link href="/cadastro" class="lp-btn lp-btn-green lp-btn-xl lp-magnet" @pointermove="magnetic" @pointerleave="magneticOut">
+                            Começar a vender <span aria-hidden="true">→</span>
+                        </Link>
+                        <a href="#recursos" class="lp-btn lp-btn-ghost lp-btn-xl">Ver a tecnologia</a>
                     </div>
-
-                    <!-- Palco com cards flutuantes -->
-                    <div class="lp-stage" aria-hidden="true">
-                        <div class="lp-stage-glow"></div>
-
-                        <!-- Card: venda aprovada -->
-                        <div class="lp-float lp-float-sale" :style="floatStyle(1)">
-                            <div class="lp-sale-badge">VENDA APROVADA!</div>
-                            <div class="lp-sale-row">
-                                <span class="lp-sale-check">✓</span>
-                                <div>
-                                    <p class="lp-sale-amount">{{ sale.amount }}</p>
-                                    <p class="lp-sale-sub">{{ sale.product }} · em {{ sale.secs }}</p>
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- Card: PIX -->
-                        <div class="lp-float lp-float-pix" :style="floatStyle(1.6)">
-                            <div class="lp-pix-head">
-                                <span class="lp-dot" :class="{ 'lp-dot-live': simPhase === 'aguardando' }"></span>
-                                PIX copia e cola
-                            </div>
-                            <div class="lp-pix-qr" :class="{ 'lp-pix-qr-paid': simPhase === 'pago' }">
-                                <svg viewBox="0 0 29 29">
-                                    <path
-                                        fill="currentColor"
-                                        d="M0 0h7v7H0zM2 2h3v3H2zM22 0h7v7h-7zM24 2h3v3h-3zM0 22h7v7H0zM2 24h3v3H2zM9 0h2v2H9zM13 1h2v3h-2zM17 0h2v4h-2zM20 9h3v2h-3zM9 4h3v2H9zM10 9h2v3h-2zM13 6h4v2h-4zM9 13h2v4H9zM12 14h3v2h-3zM16 12h2v3h-2zM19 14h3v3h-3zM24 10h3v2h-3zM26 14h3v3h-3zM23 18h3v2h-3zM13 18h3v3h-3zM9 20h2v3H9zM17 21h2v4h-2zM20 23h3v2h-3zM24 21h2v3h-2zM13 24h2v3h-2zM10 26h2v2h-2zM20 27h4v2h-4zM26 24h3v3h-3zM4 9h2v4H4zM0 10h3v2H0zM1 15h4v2H1zM5 17h2v3H5zM0 18h3v2H0z"
-                                    />
-                                </svg>
-                                <span v-if="simPhase === 'pago'" class="lp-pix-paid">✓ Pago</span>
-                            </div>
-                        </div>
-
-                        <!-- Card: push de venda -->
-                        <div class="lp-float lp-float-push" :style="floatStyle(2.2)">
-                            <span class="lp-push-icon">🔔</span>
-                            <div>
-                                <p class="lp-push-title">BrasaPay</p>
-                                <p class="lp-push-text">🤑 Venda realizada — {{ sale.amount }}</p>
-                            </div>
-                        </div>
-
-                        <!-- Card: saldo -->
-                        <div class="lp-float lp-float-balance" :style="floatStyle(1.3)">
-                            <p class="lp-balance-label">Saldo disponível</p>
-                            <p class="lp-balance-value">R$ 12.480,90</p>
-                            <div class="lp-balance-btn">Sacar via PIX</div>
-                        </div>
-                    </div>
-
-                    <!-- Banda de fatos -->
-                    <dl class="lp-stats lp-reveal">
-                        <div v-for="s in stats" :key="s.value" class="lp-stat">
-                            <dt class="lp-stat-value">{{ s.value }}</dt>
-                            <dd class="lp-stat-label">{{ s.label }}</dd>
-                        </div>
-                    </dl>
                 </div>
+                <div class="hero-cue" aria-hidden="true"><span></span></div>
             </section>
+
+            <!-- Fatos -->
+            <section class="lp-stats-wrap">
+                <dl class="lp-wrap lp-stats">
+                    <div v-for="s in stats" :key="s.label" class="lp-stat">
+                        <dt class="lp-stat-value" :class="{ 'lp-count': s.count }">{{ s.value }}</dt>
+                        <dd class="lp-stat-label">{{ s.label }}</dd>
+                    </div>
+                </dl>
+            </section>
+
+            <!-- Celular -->
+            <PhoneScene />
 
             <!-- Adquirentes -->
             <section id="adquirentes" class="lp-acq" aria-label="Adquirentes integradas">
-                <p class="lp-acq-label">REDUNDÂNCIA REAL, NAS ADQUIRENTES QUE O BRASIL USA</p>
-                <div class="lp-marquee" :class="{ 'lp-marquee-off': prefersReducedMotion }">
+                <p class="lp-acq-label lp-reveal">REDUNDÂNCIA REAL, NAS ADQUIRENTES QUE O BRASIL USA</p>
+                <div class="lp-marquee">
                     <div class="lp-marquee-track">
                         <div v-for="dup in 2" :key="dup" class="lp-marquee-group" :aria-hidden="dup === 2" :class="{ 'lp-marquee-dup': dup === 2 }">
                             <span v-for="a in acquirers" :key="dup + a.name" class="lp-chip">
@@ -242,315 +390,281 @@ const year = new Date().getFullYear();
                 </div>
             </section>
 
+            <!-- Checkout com produto fictício -->
+            <div id="checkout"><CheckoutScene /></div>
+
             <!-- Bento de recursos -->
             <section id="recursos" class="lp-sec">
                 <div class="lp-wrap">
                     <p class="lp-eyebrow lp-reveal">TECNOLOGIA PRÓPRIA</p>
-                    <h2 class="lp-h2 lp-reveal">Cada recurso existe pra uma coisa:<br /><span class="lp-grad">te fazer vender mais</span></h2>
-
+                    <h2 class="lp-h2 lp-reveal">Cada detalhe existe pra uma coisa:<br /><span class="lp-grad">te fazer vender mais</span></h2>
                     <div class="lp-bento">
-                        <!-- Aprovação instantânea -->
-                        <article class="lp-cell lp-cell-wide lp-reveal">
-                            <p class="lp-cell-tag">PIX · APROVAÇÃO INSTANTÂNEA</p>
-                            <h3 class="lp-h3">Pagou, caiu, liberou</h3>
-                            <p class="lp-cell-text">
-                                O webhook chega, o status é reconferido direto na adquirente e o pedido confirma
-                                em segundos — acesso liberado e e-mail enviado sem você tocar em nada.
-                            </p>
-                            <div class="lp-mini-timeline">
-                                <span class="lp-step lp-step-done">PIX pago</span>
-                                <span class="lp-step-line"></span>
-                                <span class="lp-step lp-step-done">Reconferido na API</span>
-                                <span class="lp-step-line"></span>
-                                <span class="lp-step lp-step-glow">Pedido liberado · 1,8s</span>
-                            </div>
-                        </article>
-
-                        <!-- MED -->
-                        <article class="lp-cell lp-reveal">
-                            <p class="lp-cell-tag">BLINDAGEM MED</p>
-                            <h3 class="lp-h3">Disputa sob controle</h3>
-                            <p class="lp-cell-text">
-                                MED aberto? O sistema acha a venda, trava o valor, avisa o vendedor e mostra tudo
-                                pro admin — com prazo pra responder.
-                            </p>
-                            <div class="lp-mini-med">
-                                <span class="lp-med-badge">MED · em análise</span>
-                                <span class="lp-med-amount">R$ 497,00 travados</span>
-                            </div>
-                        </article>
-
-                        <!-- Push com som -->
-                        <article class="lp-cell lp-reveal">
-                            <p class="lp-cell-tag">PUSH COM SOM</p>
-                            <h3 class="lp-h3">Você ouve o caixa tocar</h3>
-                            <p class="lp-cell-text">
-                                Notificação no celular com som de venda realizada. De onde estiver, você sabe
-                                que vendeu.
-                            </p>
-                            <div class="lp-mini-push">
-                                <span>🔊</span> cha-ching!
-                            </div>
-                        </article>
-
-                        <!-- Redundância -->
-                        <article class="lp-cell lp-reveal">
-                            <p class="lp-cell-tag">REDUNDÂNCIA AUTOMÁTICA</p>
-                            <h3 class="lp-h3">Adquirente caiu? Nem percebe</h3>
-                            <p class="lp-cell-text">
-                                Se uma adquirente recusa ou sai do ar, a cobrança nasce na próxima da fila.
-                                Seu checkout nunca fica fora do ar.
-                            </p>
-                        </article>
-
-                        <!-- Saque -->
-                        <article class="lp-cell lp-cell-wide lp-reveal">
-                            <p class="lp-cell-tag">FINANCEIRO</p>
-                            <h3 class="lp-h3">Saque automático, comprovante na mão</h3>
-                            <p class="lp-cell-text">
-                                Saques enviados por PIX direto da adquirente, com reconciliação automática,
-                                comprovante e trilha de auditoria. E-mails transacionais pelo seu provedor —
-                                Resend ou SMTP.
-                            </p>
+                        <article
+                            v-for="c in bento"
+                            :key="c.title"
+                            class="lp-cell lp-reveal"
+                            :class="{ 'lp-cell-wide': c.wide }"
+                            @pointermove="spot"
+                            @pointerleave="spotOut"
+                        >
+                            <p class="lp-cell-tag">{{ c.tag }}</p>
+                            <h3 class="lp-h3">{{ c.title }}</h3>
+                            <p class="lp-cell-text">{{ c.text }}</p>
                         </article>
                     </div>
                 </div>
             </section>
 
-            <!-- Checkout -->
-            <section id="checkout" class="lp-sec lp-sec-glass">
-                <div class="lp-wrap lp-split">
-                    <div class="lp-reveal">
-                        <p class="lp-eyebrow">BRASAPAY · CHECKOUT</p>
-                        <h2 class="lp-h2">Um checkout que é a sua <span class="lp-grad">página de vendas</span></h2>
-                        <p class="lp-sub-sm">
-                            Escolha um modelo pronto ou monte uma landing inteira dentro do checkout — o botão
-                            de compra está sempre a um toque.
-                        </p>
-                        <ul class="lp-list">
-                            <li v-for="f in checkoutFeatures" :key="f">{{ f }}</li>
-                        </ul>
-                        <Link href="/cadastro" class="lp-btn lp-btn-green">Montar meu checkout</Link>
-                    </div>
-                    <div class="lp-reveal" aria-hidden="true">
-                        <div class="lp-mock">
-                            <div class="lp-mock-url">checkout.suamarca.com</div>
-                            <div class="lp-mock-hero"></div>
-                            <div class="lp-mock-grid">
-                                <div class="lp-mock-left">
-                                    <div class="lp-skel w-80"></div>
-                                    <div class="lp-skel w-55"></div>
-                                    <div class="lp-mock-video">▶</div>
-                                    <div class="lp-skel w-90"></div>
-                                </div>
-                                <div class="lp-mock-pay">
-                                    <div class="lp-skel w-60"></div>
-                                    <div class="lp-mock-input"></div>
-                                    <div class="lp-mock-input"></div>
-                                    <div class="lp-mock-buy">Pagar com PIX</div>
-                                    <div class="lp-mock-safe">🔒 Pagamento seguro</div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
+            <!-- Manifesto -->
+            <section class="mani">
+                <p class="lp-wrap mani-p" :aria-label="manifesto">
+                    <span v-for="(w, i) in manifesto.split(' ')" :key="i" class="mani-w" aria-hidden="true">{{ w }}&nbsp;</span>
+                </p>
             </section>
 
             <!-- CTA final -->
-            <section class="lp-final">
-                <div class="lp-final-glow" aria-hidden="true"></div>
-                <div class="lp-wrap lp-final-in lp-reveal">
-                    <img src="/images/logo-dark.png" alt="" class="lp-final-logo" aria-hidden="true" />
-                    <h2 class="lp-h2">Crie a conta e gere a primeira<br />cobrança <span class="lp-grad">hoje</span></h2>
-                    <div class="lp-hero-ctas lp-final-ctas">
-                        <Link href="/cadastro" class="lp-btn lp-btn-green lp-btn-xl">Criar conta grátis</Link>
+            <section class="final">
+                <div class="final-glow" aria-hidden="true"></div>
+                <div class="lp-wrap final-in">
+                    <h2 class="lp-h2 lp-reveal">Acenda a sua operação<br /><span class="lp-grad">hoje.</span></h2>
+                    <p class="lp-sub-sm lp-reveal">Crie a conta, conecte uma adquirente e gere a primeira cobrança em minutos.</p>
+                    <div class="hero-ctas lp-reveal">
+                        <Link href="/cadastro" class="lp-btn lp-btn-green lp-btn-xl lp-magnet" @pointermove="magnetic" @pointerleave="magneticOut">
+                            Criar conta grátis
+                        </Link>
                         <Link href="/login" class="lp-btn lp-btn-ghost lp-btn-xl">Já tenho conta</Link>
                     </div>
                 </div>
+                <div class="lp-drift" aria-hidden="true"><span>brasapay</span></div>
             </section>
         </main>
 
         <footer class="lp-footer">
             <div class="lp-wrap lp-footer-in">
-                <img src="/images/logo-dark.png" alt="BrasaPay" class="lp-footer-logo" />
+                <BrasaLogo :size="24" />
                 <nav class="lp-footer-links" aria-label="Legal">
                     <Link href="/termos-de-uso">Termos de uso</Link>
                     <Link href="/politica-privacidade">Política de privacidade</Link>
                 </nav>
-                <span class="lp-footer-copy">© {{ year }}</span>
+                <span class="lp-footer-copy">© {{ year }} BrasaPay</span>
             </div>
         </footer>
     </div>
 </template>
 
 <style scoped>
-/* — Tokens — */
+/* ——— Tokens ——— */
 .lp {
     --bg: #070c09;
-    --panel: rgba(16, 24, 19, 0.75);
-    --line: rgba(120, 180, 140, 0.14);
-    --green-1: #cfeb2b; /* lime do design system */
-    --green-2: #2fd57f; /* esmeralda */
-    --teal: #19c2a0;
+    --panel: rgba(16, 24, 19, 0.72);
+    --line: rgba(120, 180, 140, 0.15);
+    --g1: #cfeb2b;
+    --g2: #2fd57f;
+    --g3: #19c2a0;
     --txt: #f2f7f2;
     --mut: #93a39a;
-    --dark-on-green: #06130b;
+    --dark: #06130b;
+    --ease-cinema: cubic-bezier(0.16, 1, 0.3, 1);
 
-    position: relative;
     background: var(--bg);
     color: var(--txt);
     font-family: 'Lexend', ui-sans-serif, system-ui, sans-serif;
     font-weight: 300;
     min-height: 100vh;
-    overflow-x: hidden;
-    isolation: isolate;
+    overflow-x: clip;
 }
-.lp-wrap {
-    width: min(1120px, 100% - 2.5rem);
+:deep(.lp-wrap) {
+    width: min(1140px, 100% - 2.5rem);
     margin-inline: auto;
 }
-
-/* — Auroras — */
-.lp-aurora {
-    position: fixed;
-    width: 70vw;
-    height: 70vw;
-    max-width: 900px;
-    max-height: 900px;
-    border-radius: 50%;
-    filter: blur(90px);
-    opacity: 0.5;
-    z-index: -1;
-    pointer-events: none;
-}
-.lp-aurora-a {
-    top: -28vw;
-    right: -18vw;
-    background: radial-gradient(circle, rgba(47, 213, 127, 0.28), transparent 65%);
-    animation: lp-drift-a 18s ease-in-out infinite alternate;
-}
-.lp-aurora-b {
-    bottom: -32vw;
-    left: -20vw;
-    background: radial-gradient(circle, rgba(207, 235, 43, 0.14), transparent 65%);
-    animation: lp-drift-b 22s ease-in-out infinite alternate;
-}
-@keyframes lp-drift-a {
-    to { transform: translate(-8vw, 10vh) scale(1.15); }
-}
-@keyframes lp-drift-b {
-    to { transform: translate(10vw, -8vh) scale(1.1); }
-}
-
-/* — Tipografia — */
-.lp-h1 {
-    font-size: clamp(2.2rem, 5.6vw, 4rem);
-    font-weight: 600;
-    line-height: 1.08;
-    letter-spacing: -0.02em;
-    margin: 1.1rem 0 1.2rem;
-}
-.lp-h2 {
-    font-size: clamp(1.6rem, 3.6vw, 2.6rem);
-    font-weight: 600;
-    line-height: 1.14;
-    letter-spacing: -0.015em;
-    margin: 0 0 1rem;
-}
-.lp-h3 {
-    font-size: 1.18rem;
-    font-weight: 500;
-    margin: 0 0 0.55rem;
-}
+:deep(.lp-grad),
 .lp-grad {
-    background: linear-gradient(95deg, var(--green-1), var(--green-2) 60%, var(--teal));
+    background: linear-gradient(95deg, var(--g1), var(--g2) 60%, var(--g3));
     -webkit-background-clip: text;
     background-clip: text;
     color: transparent;
 }
-.lp-eyebrow {
-    font-size: 0.74rem;
+:deep(.lp-h2) {
+    font-size: clamp(1.7rem, 3.8vw, 2.7rem);
+    font-weight: 600;
+    line-height: 1.12;
+    letter-spacing: -0.02em;
+    margin: 0 0 1rem;
+    color: var(--txt);
+}
+:deep(.lp-h3) {
+    font-size: 1.16rem;
     font-weight: 500;
-    letter-spacing: 0.22em;
-    color: var(--green-2);
+    margin: 0 0 0.55rem;
+}
+:deep(.lp-eyebrow) {
+    font-size: 0.72rem;
+    font-weight: 500;
+    letter-spacing: 0.24em;
+    color: var(--g2);
     margin: 0 0 0.9rem;
+}
+:deep(.lp-sub-sm) {
+    font-size: 1rem;
+    line-height: 1.7;
+    color: var(--mut);
+    max-width: 30rem;
+    margin: 0 0 1.4rem;
 }
 .lp-sub {
     font-size: 1.1rem;
     line-height: 1.7;
     color: var(--mut);
-    max-width: 38rem;
-    margin: 0 auto 2rem;
-}
-.lp-sub-sm {
-    font-size: 1rem;
-    line-height: 1.65;
-    color: var(--mut);
-    max-width: 30rem;
-    margin: 0 0 1.4rem;
+    max-width: 37rem;
+    margin: 0 auto 2.1rem;
 }
 .lp-pill {
     display: inline-flex;
     align-items: center;
     gap: 0.4rem;
-    margin: 0;
-    padding: 0.4rem 0.95rem;
+    margin: 0 0 1.3rem;
+    padding: 0.42rem 1rem;
     border-radius: 999px;
     border: 1px solid var(--line);
     background: var(--panel);
+    backdrop-filter: blur(10px);
     font-size: 0.82rem;
-    color: var(--txt);
 }
 
-/* — Botões — */
+/* ——— Botões ——— */
 .lp-btn {
     display: inline-flex;
     align-items: center;
     gap: 0.5rem;
     justify-content: center;
     border-radius: 999px;
-    padding: 0.65rem 1.4rem;
+    padding: 0.66rem 1.4rem;
     font-size: 0.93rem;
     font-weight: 500;
     text-decoration: none;
     border: 1px solid transparent;
-    transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease, background-color 0.18s ease;
+    transition: box-shadow 0.25s var(--ease-cinema), border-color 0.2s ease, transform 0.35s var(--ease-cinema);
+    transform: translate(var(--tx, 0), var(--ty, 0));
+    will-change: transform;
 }
-.lp-btn-xl {
-    padding: 0.9rem 1.9rem;
-    font-size: 1.02rem;
-}
+.lp-btn-xl { padding: 0.95rem 2rem; font-size: 1.04rem; }
 .lp-btn-green {
-    background: linear-gradient(95deg, var(--green-1), var(--green-2) 70%, var(--teal));
-    color: var(--dark-on-green);
-    box-shadow: 0 10px 34px -10px rgba(47, 213, 127, 0.55);
+    background: linear-gradient(95deg, var(--g1), var(--g2) 70%, var(--g3));
+    color: var(--dark);
+    font-weight: 600;
+    box-shadow: 0 10px 36px -10px rgba(47, 213, 127, 0.6);
 }
-.lp-btn-green:hover {
-    transform: translateY(-1px);
-    box-shadow: 0 14px 40px -10px rgba(47, 213, 127, 0.75);
-}
+.lp-btn-green:hover { box-shadow: 0 16px 48px -10px rgba(47, 213, 127, 0.85); }
 .lp-btn-ghost {
     color: var(--txt);
     border-color: var(--line);
     background: rgba(242, 247, 242, 0.04);
     backdrop-filter: blur(8px);
 }
-.lp-btn-ghost:hover {
-    border-color: rgba(47, 213, 127, 0.5);
+.lp-btn-ghost:hover { border-color: rgba(47, 213, 127, 0.5); }
+.lp-btn:focus-visible { outline: 2px solid var(--g1); outline-offset: 3px; }
+
+/* ——— Abertura ——— */
+.intro {
+    position: fixed;
+    inset: 0;
+    z-index: 100;
+    display: grid;
+    place-items: center;
+    background: #050907;
+    animation: intro-curtain 0.9s var(--ease-cinema) 2s both;
 }
-.lp-btn:focus-visible {
-    outline: 2px solid var(--green-1);
-    outline-offset: 3px;
+[data-intro='calm'] .intro { animation: intro-fade 0.9s ease 0.5s both; }
+@keyframes intro-curtain {
+    to { clip-path: inset(0 0 100% 0); visibility: hidden; }
+}
+@keyframes intro-fade {
+    to { opacity: 0; visibility: hidden; }
+}
+.intro-glow {
+    position: absolute;
+    width: 46vmin;
+    height: 46vmin;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(47, 213, 127, 0.3), transparent 70%);
+    filter: blur(30px);
+    animation: intro-bloom 2s var(--ease-cinema) both;
+}
+@keyframes intro-bloom {
+    from { transform: scale(0.3); opacity: 0; }
+    60% { opacity: 1; }
+}
+.intro-lockup {
+    display: grid;
+    justify-items: center;
+    gap: 1.1rem;
+}
+.intro-mark { width: clamp(64px, 9vmin, 96px); }
+.intro-stroke {
+    stroke-dasharray: 1;
+    stroke-dashoffset: 1;
+    animation: intro-draw 1.15s var(--ease-cinema) 0.15s forwards;
+}
+@keyframes intro-draw {
+    to { stroke-dashoffset: 0; }
+}
+.intro-fill {
+    opacity: 0;
+    animation: intro-fill 0.5s ease 1.1s forwards;
+}
+@keyframes intro-fill {
+    to { opacity: 1; }
+}
+.intro-word {
+    display: flex;
+    overflow: hidden;
+    font-size: clamp(1.6rem, 4vmin, 2.2rem);
+    font-weight: 600;
+    letter-spacing: -0.02em;
+}
+.intro-word i {
+    font-style: normal;
+    transform: translateY(120%);
+    animation: intro-rise 0.7s var(--ease-cinema) calc(0.9s + var(--i) * 0.045s) forwards;
+}
+.intro-pay {
+    background: linear-gradient(95deg, var(--g1), var(--g2));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+}
+@keyframes intro-rise {
+    to { transform: none; }
+}
+[data-intro='calm'] .intro-stroke { display: none; }
+[data-intro='calm'] .intro-fill { animation-delay: 0.1s; }
+[data-intro='calm'] .intro-word i { animation-duration: 0.01s; animation-delay: 0.1s; }
+
+/* ——— Progresso ——— */
+.lp-progress {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 2px;
+    z-index: 60;
+    background: linear-gradient(95deg, var(--g1), var(--g2), var(--g3));
+    transform-origin: 0 50%;
+    transform: scaleX(0);
+    pointer-events: none;
 }
 
-/* — Nav — */
+/* ——— Nav ——— */
 .lp-nav {
-    position: sticky;
+    position: fixed;
     top: 0;
+    left: 0;
+    right: 0;
     z-index: 50;
-    background: rgba(7, 12, 9, 0.72);
+    background: rgba(7, 12, 9, 0.7);
     backdrop-filter: blur(16px);
     border-bottom: 1px solid var(--line);
+    will-change: transform;
 }
 .lp-nav-in {
     display: flex;
@@ -558,264 +672,122 @@ const year = new Date().getFullYear();
     gap: 2rem;
     height: 68px;
 }
-.lp-logo img {
-    height: 30px;
-    width: auto;
-    display: block;
-}
-.lp-nav-links {
-    display: flex;
-    gap: 1.6rem;
-    margin-left: auto;
-}
+.lp-nav-links { display: flex; gap: 1.6rem; margin-left: auto; }
 .lp-nav-links a {
     color: var(--mut);
     font-size: 0.9rem;
     text-decoration: none;
     transition: color 0.15s ease;
 }
-.lp-nav-links a:hover {
-    color: var(--txt);
-}
-.lp-nav-cta {
-    display: flex;
-    gap: 0.6rem;
-}
+.lp-nav-links a:hover { color: var(--txt); }
+.lp-nav-cta { display: flex; gap: 0.6rem; }
 @media (max-width: 760px) {
     .lp-nav-links { display: none; }
     .lp-nav-cta { margin-left: auto; }
 }
 
-/* — Hero — */
-.lp-hero {
-    padding: clamp(3.5rem, 8vh, 6rem) 0 0;
+/* ——— Hero ——— */
+.hero {
+    position: relative;
+    min-height: 100svh;
+    display: grid;
+    place-items: center;
     text-align: center;
+    overflow: hidden;
+    isolation: isolate;
 }
-.lp-hero-center {
-    max-width: 50rem;
-    margin-inline: auto;
+.hero-vignette {
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    background:
+        radial-gradient(60% 50% at 50% 38%, rgba(47, 213, 127, 0.14), transparent 70%),
+        radial-gradient(110% 80% at 50% 110%, rgba(5, 9, 7, 0.9), transparent 55%);
 }
-.lp-hero-ctas {
+.hero-inner { padding: 7rem 0 5rem; will-change: transform; }
+.hero-h1 {
+    margin: 0 0 1.4rem;
+    font-size: clamp(2.8rem, 9vw, 6.4rem);
+    font-weight: 600;
+    line-height: 1.02;
+    letter-spacing: -0.03em;
     display: flex;
     flex-wrap: wrap;
     justify-content: center;
-    gap: 0.8rem;
+    gap: 0 1.6rem;
 }
-
-/* Palco flutuante */
-.lp-stage {
-    position: relative;
-    height: clamp(300px, 42vw, 420px);
-    margin-top: clamp(2rem, 5vh, 3.5rem);
-}
-.lp-stage-glow {
-    position: absolute;
-    inset: 12% 18%;
-    background: radial-gradient(50% 55% at 50% 50%, rgba(47, 213, 127, 0.2), transparent 70%);
-    filter: blur(28px);
-}
-.lp-float {
-    position: absolute;
-    background: var(--panel);
-    border: 1px solid var(--line);
-    border-radius: 18px;
-    backdrop-filter: blur(14px);
-    box-shadow: 0 30px 60px -30px rgba(0, 0, 0, 0.8);
-    animation: lp-bob 7s ease-in-out infinite;
-    transition: transform 0.25s ease-out;
-}
-@keyframes lp-bob {
-    50% { margin-top: -10px; }
-}
-.lp-float-sale {
-    left: 6%;
-    top: 8%;
-    padding: 1rem 1.2rem;
-    animation-delay: -1s;
-}
-.lp-sale-badge {
+.hero-word {
     display: inline-block;
-    font-size: 0.66rem;
-    font-weight: 600;
-    letter-spacing: 0.14em;
-    color: var(--dark-on-green);
-    background: linear-gradient(95deg, var(--green-1), var(--green-2));
-    border-radius: 6px;
-    padding: 0.22rem 0.5rem;
-    margin-bottom: 0.7rem;
+    overflow: hidden;
+    padding-bottom: 0.08em;
 }
-.lp-sale-row {
+.hero-word i {
+    display: inline-block;
+    font-style: normal;
+    will-change: transform;
+}
+.hero-ctas {
     display: flex;
-    align-items: center;
-    gap: 0.7rem;
-    text-align: left;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 0.9rem;
 }
-.lp-sale-check {
-    width: 38px;
-    height: 38px;
-    border-radius: 50%;
-    display: grid;
-    place-items: center;
-    background: rgba(47, 213, 127, 0.16);
-    color: var(--green-2);
-    font-weight: 600;
-}
-.lp-sale-amount {
-    margin: 0;
-    font-size: 1.25rem;
-    font-weight: 600;
-    font-variant-numeric: tabular-nums;
-}
-.lp-sale-sub {
-    margin: 0;
-    font-size: 0.78rem;
-    color: var(--mut);
-}
-.lp-float-pix {
-    right: 8%;
-    top: 0;
-    padding: 0.9rem 1rem 1rem;
-    animation-delay: -3s;
-}
-.lp-pix-head {
-    display: flex;
-    align-items: center;
-    gap: 0.45rem;
-    font-size: 0.78rem;
-    color: var(--mut);
-    margin-bottom: 0.6rem;
-}
-.lp-dot {
-    width: 7px;
-    height: 7px;
-    border-radius: 50%;
-    background: var(--green-2);
-}
-.lp-dot-live {
-    animation: lp-blink 1.1s ease-in-out infinite;
-}
-@keyframes lp-blink {
-    50% { opacity: 0.25; }
-}
-.lp-pix-qr {
-    position: relative;
-    width: 108px;
-    height: 108px;
-    background: #fff;
-    border-radius: 10px;
-    padding: 7px;
-    color: #0b140e;
-    transition: opacity 0.3s ease;
-}
-.lp-pix-qr svg {
-    width: 100%;
-    height: 100%;
-}
-.lp-pix-qr-paid svg {
-    opacity: 0.14;
-}
-.lp-pix-paid {
+.hero-cue {
     position: absolute;
-    inset: 0;
-    display: grid;
-    place-items: center;
-    font-weight: 600;
-    color: var(--green-2) !important;
-    font-size: 0.98rem;
-}
-.lp-float-push {
-    left: 16%;
-    bottom: 6%;
+    bottom: 2rem;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 24px;
+    height: 38px;
+    border: 1.5px solid var(--line);
+    border-radius: 14px;
     display: flex;
-    align-items: center;
-    gap: 0.7rem;
-    padding: 0.8rem 1.1rem;
-    animation-delay: -5s;
-    text-align: left;
+    justify-content: center;
 }
-.lp-push-icon { font-size: 1.3rem; }
-.lp-push-title {
-    margin: 0;
-    font-size: 0.72rem;
-    color: var(--mut);
+.hero-cue span {
+    width: 3px;
+    height: 8px;
+    margin-top: 7px;
+    border-radius: 2px;
+    background: var(--g2);
+    animation: cue 1.6s ease-in-out infinite;
 }
-.lp-push-text {
-    margin: 0;
-    font-size: 0.88rem;
-    font-weight: 400;
-}
-.lp-float-balance {
-    right: 14%;
-    bottom: 0;
-    padding: 1rem 1.2rem;
-    text-align: left;
-    animation-delay: -2s;
-}
-.lp-balance-label {
-    margin: 0 0 0.2rem;
-    font-size: 0.72rem;
-    color: var(--mut);
-}
-.lp-balance-value {
-    margin: 0 0 0.6rem;
-    font-size: 1.3rem;
-    font-weight: 600;
-    font-variant-numeric: tabular-nums;
-}
-.lp-balance-btn {
-    font-size: 0.78rem;
-    font-weight: 500;
-    text-align: center;
-    border-radius: 8px;
-    padding: 0.4rem 0.7rem;
-    color: var(--dark-on-green);
-    background: linear-gradient(95deg, var(--green-1), var(--green-2));
-}
-@media (max-width: 760px) {
-    .lp-stage { height: 460px; }
-    .lp-float-sale { left: 2%; top: 2%; }
-    .lp-float-pix { right: 2%; top: 16%; }
-    .lp-float-push { left: 4%; bottom: 24%; }
-    .lp-float-balance { right: 4%; bottom: 2%; }
+@keyframes cue {
+    50% { transform: translateY(10px); opacity: 0.2; }
 }
 
-/* — Stats — */
+/* ——— Fatos ——— */
+.lp-stats-wrap { border-block: 1px solid var(--line); background: rgba(16, 24, 19, 0.35); }
 .lp-stats {
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: 1rem;
-    margin: clamp(2rem, 5vh, 3rem) 0 0;
-    padding: 1.4rem 0;
-    border-block: 1px solid var(--line);
+    margin: 0;
+    padding: 1.7rem 0;
 }
 @media (max-width: 760px) {
     .lp-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 .lp-stat { text-align: center; }
 .lp-stat-value {
-    font-size: clamp(1.5rem, 3vw, 2.1rem);
+    font-size: clamp(1.6rem, 3.2vw, 2.3rem);
     font-weight: 600;
-    background: linear-gradient(95deg, var(--green-1), var(--green-2));
+    background: linear-gradient(95deg, var(--g1), var(--g2));
     -webkit-background-clip: text;
     background-clip: text;
     color: transparent;
+    font-variant-numeric: tabular-nums;
 }
-.lp-stat-label {
-    margin: 0.25rem 0 0;
-    font-size: 0.84rem;
-    color: var(--mut);
-}
+.lp-stat-label { margin: 0.3rem 0 0; font-size: 0.84rem; color: var(--mut); }
 
-/* — Adquirentes — */
-.lp-acq {
-    padding: 2.6rem 0 1.6rem;
-}
+/* ——— Adquirentes ——— */
+.lp-acq { padding: 3.2rem 0 2rem; }
 .lp-acq-label {
     text-align: center;
     font-size: 0.72rem;
     letter-spacing: 0.2em;
     color: var(--mut);
-    margin: 0 0 1.2rem;
+    margin: 0 0 1.3rem;
 }
 .lp-marquee {
     overflow: hidden;
@@ -825,24 +797,13 @@ const year = new Date().getFullYear();
 .lp-marquee-track {
     display: flex;
     width: max-content;
-    animation: lp-marquee 38s linear infinite;
+    animation: marquee 38s linear infinite;
 }
-@keyframes lp-marquee {
+.lp-marquee:hover .lp-marquee-track { animation-play-state: paused; }
+@keyframes marquee {
     to { transform: translateX(-50%); }
 }
-.lp-marquee-off .lp-marquee-track {
-    animation: none;
-    width: 100%;
-    flex-wrap: wrap;
-    justify-content: center;
-}
-.lp-marquee-off .lp-marquee-dup {
-    display: none;
-}
-.lp-marquee-group {
-    display: flex;
-    align-items: center;
-}
+.lp-marquee-group { display: flex; align-items: center; }
 .lp-chip {
     display: grid;
     place-items: center;
@@ -850,51 +811,58 @@ const year = new Date().getFullYear();
     border-radius: 12px;
     padding: 0.55rem 1.1rem;
     margin: 0 0.45rem 0.9rem;
-    min-width: 108px;
-    height: 44px;
+    min-width: 110px;
+    height: 46px;
+    transition: transform 0.25s var(--ease-cinema);
 }
+.lp-chip:hover { transform: translateY(-3px) scale(1.04); }
 .lp-chip img {
     max-height: 26px;
-    max-width: 110px;
+    max-width: 112px;
     object-fit: contain;
 }
 
-/* — Seções / bento — */
-.lp-sec {
-    padding: clamp(3.5rem, 9vh, 6.5rem) 0;
-}
-.lp-sec-glass {
-    background: linear-gradient(180deg, rgba(16, 24, 19, 0.55), transparent);
-    border-block: 1px solid var(--line);
-}
+/* ——— Bento ——— */
+.lp-sec { padding: clamp(3.5rem, 9vh, 6.5rem) 0; }
 .lp-bento {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 1rem;
     margin-top: 2.2rem;
+    perspective: 1400px;
 }
 @media (max-width: 900px) {
     .lp-bento { grid-template-columns: 1fr; }
     .lp-cell-wide { grid-column: auto !important; }
 }
 .lp-cell {
+    position: relative;
     background: var(--panel);
     border: 1px solid var(--line);
     border-radius: 20px;
-    padding: 1.6rem 1.5rem;
+    padding: 1.7rem 1.55rem;
     backdrop-filter: blur(10px);
-    transition: border-color 0.25s ease, transform 0.25s ease;
+    overflow: hidden;
+    transform: rotateX(var(--rx, 0deg)) rotateY(var(--ry, 0deg));
+    transition: transform 0.3s var(--ease-cinema), border-color 0.25s ease;
 }
-.lp-cell:hover {
-    border-color: rgba(47, 213, 127, 0.45);
-    transform: translateY(-3px);
+.lp-cell::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(320px circle at var(--mx, 50%) var(--my, 50%), rgba(47, 213, 127, 0.14), transparent 65%);
+    opacity: 0;
+    transition: opacity 0.3s ease;
+    pointer-events: none;
 }
+.lp-cell:hover { border-color: rgba(47, 213, 127, 0.45); }
+.lp-cell:hover::before { opacity: 1; }
 .lp-cell-wide { grid-column: span 2; }
 .lp-cell-tag {
-    font-size: 0.68rem;
+    font-size: 0.66rem;
     font-weight: 500;
-    letter-spacing: 0.18em;
-    color: var(--green-2);
+    letter-spacing: 0.2em;
+    color: var(--g2);
     margin: 0 0 0.75rem;
 }
 .lp-cell-text {
@@ -903,252 +871,75 @@ const year = new Date().getFullYear();
     line-height: 1.65;
     color: var(--mut);
 }
-.lp-mini-timeline {
-    display: flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 0.5rem;
-    margin-top: 1.2rem;
-}
-.lp-step {
-    font-size: 0.76rem;
-    padding: 0.35rem 0.7rem;
-    border-radius: 999px;
-    border: 1px solid var(--line);
-    color: var(--mut);
-}
-.lp-step-done {
-    color: var(--txt);
-}
-.lp-step-glow {
-    color: var(--dark-on-green);
-    background: linear-gradient(95deg, var(--green-1), var(--green-2));
-    border-color: transparent;
+
+/* ——— Manifesto ——— */
+.mani { padding: clamp(3rem, 8vh, 5.5rem) 0; }
+.mani-p {
+    margin: 0;
+    font-size: clamp(1.4rem, 3.4vw, 2.3rem);
     font-weight: 500;
+    line-height: 1.4;
+    letter-spacing: -0.015em;
+    max-width: 56rem;
 }
-.lp-step-line {
-    flex: none;
-    width: 18px;
-    height: 1px;
-    background: var(--line);
-}
-.lp-mini-med {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.5rem;
-    margin-top: 1.1rem;
-}
-.lp-med-badge {
-    font-size: 0.74rem;
-    padding: 0.3rem 0.65rem;
-    border-radius: 999px;
-    background: rgba(255, 107, 107, 0.14);
-    color: #ff8f8f;
-}
-.lp-med-amount {
-    font-size: 0.74rem;
-    padding: 0.3rem 0.65rem;
-    border-radius: 999px;
-    border: 1px solid var(--line);
-    color: var(--mut);
-}
-.lp-mini-push {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.5rem;
-    margin-top: 1.1rem;
-    font-size: 0.86rem;
-    padding: 0.45rem 0.85rem;
-    border-radius: 999px;
-    border: 1px solid rgba(47, 213, 127, 0.4);
-    color: var(--green-2);
-}
+.mani-w { display: inline-block; }
 
-/* — Split / mock — */
-.lp-split {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-    gap: clamp(2rem, 5vw, 4rem);
-    align-items: center;
-}
-@media (max-width: 900px) {
-    .lp-split { grid-template-columns: 1fr; }
-}
-.lp-list {
-    list-style: none;
-    padding: 0;
-    margin: 0 0 1.7rem;
-    display: grid;
-    gap: 0.6rem;
-}
-.lp-list li {
-    display: flex;
-    gap: 0.6rem;
-    font-size: 0.93rem;
-    line-height: 1.55;
-}
-.lp-list li::before {
-    content: '✓';
-    color: var(--green-2);
-    font-weight: 600;
-}
-.lp-mock {
-    background: var(--panel);
-    border: 1px solid var(--line);
-    border-radius: 20px;
-    padding: 0.9rem;
-    backdrop-filter: blur(10px);
-    box-shadow: 0 34px 80px -40px rgba(0, 0, 0, 0.9);
-}
-.lp-mock-url {
-    font-size: 0.72rem;
-    color: var(--mut);
-    border: 1px solid var(--line);
-    border-radius: 999px;
-    padding: 0.3rem 0.8rem;
-    width: max-content;
-    margin: 0 auto 0.8rem;
-}
-.lp-mock-hero {
-    height: 58px;
-    border-radius: 12px;
-    background: linear-gradient(110deg, rgba(207, 235, 43, 0.3), rgba(47, 213, 127, 0.28));
-    margin-bottom: 0.8rem;
-}
-.lp-mock-grid {
-    display: grid;
-    grid-template-columns: 1.25fr 1fr;
-    gap: 0.8rem;
-}
-.lp-mock-left,
-.lp-mock-pay {
-    display: grid;
-    gap: 0.55rem;
-    align-content: start;
-}
-.lp-mock-pay {
-    background: rgba(7, 12, 9, 0.65);
-    border: 1px solid var(--line);
-    border-radius: 14px;
-    padding: 0.8rem;
-}
-.lp-skel {
-    height: 9px;
-    border-radius: 5px;
-    background: rgba(147, 163, 154, 0.22);
-}
-.lp-skel.w-55 { width: 55%; }
-.lp-skel.w-60 { width: 60%; }
-.lp-skel.w-80 { width: 80%; }
-.lp-skel.w-90 { width: 90%; }
-.lp-mock-video {
-    height: 84px;
-    border-radius: 10px;
-    background: rgba(147, 163, 154, 0.1);
-    display: grid;
-    place-items: center;
-    color: rgba(242, 247, 242, 0.6);
-}
-.lp-mock-input {
-    height: 26px;
-    border-radius: 8px;
-    border: 1px solid var(--line);
-    background: rgba(147, 163, 154, 0.06);
-}
-.lp-mock-buy {
-    height: 34px;
-    border-radius: 999px;
-    display: grid;
-    place-items: center;
-    font-size: 0.78rem;
-    font-weight: 600;
-    color: var(--dark-on-green);
-    background: linear-gradient(95deg, var(--green-1), var(--green-2));
-}
-.lp-mock-safe {
-    font-size: 0.68rem;
-    color: var(--mut);
-    text-align: center;
-}
-
-/* — CTA final — */
-.lp-final {
+/* ——— Final ——— */
+.final {
     position: relative;
-    padding: clamp(4rem, 10vh, 7rem) 0;
+    padding: clamp(4rem, 10vh, 7rem) 0 0;
     text-align: center;
     overflow: hidden;
+    isolation: isolate;
 }
-.lp-final-glow {
+.final-glow {
     position: absolute;
-    inset: auto -20% -70%;
+    inset: auto -25% -75%;
     height: 130%;
-    background: radial-gradient(50% 55% at 50% 100%, rgba(47, 213, 127, 0.28), transparent 70%);
     z-index: -1;
+    background: radial-gradient(50% 55% at 50% 100%, rgba(47, 213, 127, 0.32), transparent 70%);
 }
-.lp-final-logo {
-    height: 34px;
-    width: auto;
-    margin: 0 auto 1.4rem;
-    display: block;
+.final-in { padding-bottom: 3rem; }
+.lp-drift {
+    overflow: hidden;
+    white-space: nowrap;
+    line-height: 0.82;
+    user-select: none;
 }
-.lp-final-ctas {
-    margin-top: 1.6rem;
+.lp-drift span {
+    display: inline-block;
+    font-size: clamp(5rem, 19vw, 15rem);
+    font-weight: 600;
+    letter-spacing: -0.04em;
+    color: transparent;
+    -webkit-text-stroke: 1px rgba(47, 213, 127, 0.22);
+    will-change: transform;
 }
 
-/* — Footer — */
-.lp-footer {
-    border-top: 1px solid var(--line);
-    padding: 1.6rem 0;
-}
-.lp-footer-in {
-    display: flex;
-    align-items: center;
-    gap: 1.4rem;
-    flex-wrap: wrap;
-}
-.lp-footer-logo {
-    height: 24px;
-    width: auto;
-}
-.lp-footer-links {
-    display: flex;
-    gap: 1.2rem;
-    margin-left: auto;
-}
+/* ——— Footer ——— */
+.lp-footer { border-top: 1px solid var(--line); padding: 1.7rem 0; }
+.lp-footer-in { display: flex; align-items: center; gap: 1.4rem; flex-wrap: wrap; }
+.lp-footer-links { display: flex; gap: 1.2rem; margin-left: auto; }
 .lp-footer-links a {
     color: var(--mut);
     font-size: 0.84rem;
     text-decoration: none;
 }
 .lp-footer-links a:hover { color: var(--txt); }
-.lp-footer-copy {
-    color: var(--mut);
-    font-size: 0.84rem;
-}
+.lp-footer-copy { color: var(--mut); font-size: 0.84rem; }
 @media (max-width: 640px) {
     .lp-footer-in { flex-direction: column; gap: 0.8rem; }
     .lp-footer-links { margin-left: 0; }
 }
 
-/* — Reveal — */
-.lp-reveal {
-    opacity: 0;
-    transform: translateY(20px);
-    transition: opacity 0.65s ease, transform 0.65s ease;
-}
-.lp-in {
-    opacity: 1;
-    transform: none;
-}
-
+/* ——— Reduzir movimento ——— */
 @media (prefers-reduced-motion: reduce) {
-    .lp-reveal { opacity: 1; transform: none; transition: none; }
-    .lp-aurora,
-    .lp-float,
-    .lp-dot-live,
-    .lp-marquee-track {
-        animation: none !important;
-    }
-    .lp-btn, .lp-cell { transition: none; }
+    .intro { animation-delay: 0.4s; animation-duration: 0.6s; }
+    .intro-stroke,
+    .intro-word i { animation-duration: 0.01s !important; animation-delay: 0s !important; }
+    .lp-marquee-track,
+    .hero-cue span,
+    .ck-pg-play { animation: none !important; }
+    .lp-btn, .lp-cell, .lp-chip { transition: none; transform: none; }
 }
 </style>
