@@ -38,6 +38,15 @@ class MetaUserDataHasherTest extends TestCase
         );
     }
 
+    public function test_phone_omits_incomplete_numbers_for_meta(): void
+    {
+        $hasher = new MetaUserDataHasher;
+
+        $this->assertNull($hasher->normalizePhone('5511'));
+        $this->assertNull($hasher->normalizePhone('5511999999'));
+        $this->assertNull($hasher->hashPhone('99999999'));
+    }
+
     public function test_city_and_state_match_meta_normalization(): void
     {
         $hasher = new MetaUserDataHasher;

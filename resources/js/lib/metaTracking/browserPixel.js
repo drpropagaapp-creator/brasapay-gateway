@@ -119,14 +119,53 @@ async function waitForMetaPixelInit(metaEntries, maxMs = 4200) {
     return typeof window.fbq === 'function' && ids.every((id) => metaInitedPixelIds.has(id));
 }
 
+/**
+ * E.164 (só dígitos, sem "+") para Advanced Matching.
+ * Incompleto ou tamanho inválido para o país → '' (não enviar ph).
+ * Alinhado com App\Support\MetaPhoneNormalizer.
+ */
 export function normalizeMetaPhone(phone) {
-    let digits = String(phone ?? '').replace(/\D/g, '');
-    if (digits.startsWith('00')) digits = digits.slice(2);
-    if (!digits) return '';
-    if (digits.length === 10 || digits.length === 11) {
-        digits = `55${digits}`;
+    const trimmed = String(phone ?? '').trim();
+    if (!trimmed) return '';
+
+    const explicitIntl = trimmed.startsWith('+') || /^\s*00\d/.test(trimmed);
+    let digits = trimmed.replace(/\D/g, '');
+    if (digits.startsWith('00')) {
+        digits = digits.slice(2);
     }
-    return digits;
+    if (!digits) return '';
+
+    const len = digits.length;
+    const second = digits[1] || '';
+    const third = digits[2] || '';
+
+    if (digits.startsWith('55') && (len === 12 || len === 13)) {
+        return digits;
+    }
+
+    if (explicitIntl) {
+        if (digits.startsWith('55')) return '';
+        if (len >= 10 && len <= 15) return digits;
+        return '';
+    }
+
+    if (len === 11 && !digits.startsWith('55') && third === '9') {
+        return `55${digits}`;
+    }
+
+    if (len === 10 && !digits.startsWith('55') && third >= '2' && third <= '8') {
+        return `55${digits}`;
+    }
+
+    if (len === 11 && digits.startsWith('1') && second >= '2' && second <= '9') {
+        return digits;
+    }
+
+    if (len >= 12 && len <= 15 && !digits.startsWith('55')) {
+        return digits;
+    }
+
+    return '';
 }
 
 function normalizeMetaName(name) {

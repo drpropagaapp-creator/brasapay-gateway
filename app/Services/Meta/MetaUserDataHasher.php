@@ -45,11 +45,11 @@ class MetaUserDataHasher
     }
 
     /**
-     * Dígitos E.164. Número brasileiro de 10 ou 11 dígitos (sem DDI) recebe 55.
+     * E.164 aceito pela Meta. Incompleto ou tamanho inválido → null (omite ph).
      */
     public function normalizePhone(?string $phone): ?string
     {
-        return \App\Support\WhatsappPhoneNormalizer::normalize($phone);
+        return \App\Support\MetaPhoneNormalizer::normalize($phone);
     }
 
     public function hashPhone(?string $phone): ?string
