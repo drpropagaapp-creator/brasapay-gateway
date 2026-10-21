@@ -190,7 +190,7 @@ onBeforeUnmount(() => mm?.revert());
     width: 420px;
     height: 420px;
     border-radius: 50%;
-    background: radial-gradient(circle, rgba(47, 213, 127, 0.4), rgba(207, 235, 43, 0.08) 55%, transparent 72%);
+    background: radial-gradient(circle, rgba(10, 152, 110, 0.4), rgba(92, 181, 54, 0.08) 55%, transparent 72%);
     filter: blur(34px);
 }
 .ph-device {
@@ -202,8 +202,8 @@ onBeforeUnmount(() => mm?.revert());
     aspect-ratio: 290 / 590;
     border-radius: 44px;
     padding: 10px;
-    background: linear-gradient(160deg, #2c3330, #0d1210 60%, #232a26);
-    border: 1px solid rgba(160, 200, 175, 0.22);
+    background: linear-gradient(160deg, #2a3335, #0b1315 60%, #222b2c);
+    border: 1px solid rgba(140, 195, 200, 0.22);
     box-shadow:
         0 60px 120px -40px rgba(0, 0, 0, 0.9),
         inset 0 1px 0 rgba(255, 255, 255, 0.12);
@@ -225,9 +225,9 @@ onBeforeUnmount(() => mm?.revert());
     border-radius: 35px;
     overflow: hidden;
     background:
-        radial-gradient(90% 60% at 80% 0%, rgba(47, 213, 127, 0.22), transparent 60%),
-        radial-gradient(80% 60% at 10% 100%, rgba(207, 235, 43, 0.12), transparent 60%),
-        linear-gradient(170deg, #0c1410 0%, #060a08 100%);
+        radial-gradient(90% 60% at 80% 0%, rgba(10, 152, 110, 0.22), transparent 60%),
+        radial-gradient(80% 60% at 10% 100%, rgba(92, 181, 54, 0.12), transparent 60%),
+        linear-gradient(170deg, #0a1517 0%, #04090b 100%);
     padding: 64px 12px 16px;
     display: flex;
     flex-direction: column;
@@ -253,8 +253,8 @@ onBeforeUnmount(() => mm?.revert());
     display: flex;
     align-items: center;
     gap: 0.6rem;
-    background: rgba(28, 36, 31, 0.86);
-    border: 1px solid rgba(160, 200, 175, 0.2);
+    background: rgba(22, 34, 36, 0.86);
+    border: 1px solid rgba(140, 195, 200, 0.2);
     backdrop-filter: blur(14px);
     border-radius: 16px;
     padding: 0.65rem 0.75rem;
@@ -269,7 +269,7 @@ onBeforeUnmount(() => mm?.revert());
     display: grid;
     place-items: center;
     font-size: 1.05rem;
-    background: linear-gradient(135deg, rgba(207, 235, 43, 0.25), rgba(47, 213, 127, 0.3));
+    background: linear-gradient(135deg, rgba(92, 181, 54, 0.25), rgba(10, 152, 110, 0.3));
 }
 .ph-notif-body {
     display: grid;
@@ -288,7 +288,7 @@ onBeforeUnmount(() => mm?.revert());
 }
 .ph-notif-body b {
     font-weight: 600;
-    color: #7ff0b4;
+    color: #79e0c8;
 }
 .ph-notif-time {
     margin-left: auto;
@@ -304,9 +304,9 @@ onBeforeUnmount(() => mm?.revert());
     font-weight: 500;
     padding: 0.3rem 0.6rem;
     border-radius: 999px;
-    color: #06130b;
-    background: linear-gradient(95deg, #cfeb2b, #2fd57f);
-    box-shadow: 0 8px 22px -8px rgba(47, 213, 127, 0.8);
+    color: #f4fcfa;
+    background: linear-gradient(95deg, #5cb536, #0a986e);
+    box-shadow: 0 8px 22px -8px rgba(10, 152, 110, 0.8);
 }
 .ph-balance {
     position: absolute;
@@ -318,8 +318,8 @@ onBeforeUnmount(() => mm?.revert());
     justify-content: space-between;
     padding: 0.8rem 0.95rem;
     border-radius: 16px;
-    background: rgba(14, 20, 17, 0.92);
-    border: 1px solid rgba(47, 213, 127, 0.35);
+    background: rgba(11, 20, 22, 0.92);
+    border: 1px solid rgba(10, 152, 110, 0.35);
 }
 .ph-balance span {
     font-size: 0.68rem;
@@ -329,7 +329,7 @@ onBeforeUnmount(() => mm?.revert());
     font-size: 1.02rem;
     font-weight: 600;
     font-variant-numeric: tabular-nums;
-    background: linear-gradient(95deg, #cfeb2b, #2fd57f);
+    background: linear-gradient(95deg, #5cb536, #0a986e);
     -webkit-background-clip: text;
     background-clip: text;
     color: transparent;

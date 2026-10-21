@@ -2,7 +2,6 @@
 import { gsap } from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
 import { onBeforeUnmount, onMounted, ref } from 'vue';
-import { MARK_PATH, MARK_VIEWBOX } from './brasaMark';
 
 gsap.registerPlugin(ScrollTrigger);
 
@@ -169,7 +168,9 @@ onBeforeUnmount(() => mm?.revert());
                         <!-- Aprovado -->
                         <div class="ck-paid">
                             <span class="ck-paid-mark">
-                                <svg :viewBox="MARK_VIEWBOX"><path :d="MARK_PATH" fill-rule="evenodd" fill="currentColor" /></svg>
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M20 6 9 17l-5-5" />
+                                </svg>
                             </span>
                             <strong>Pagamento aprovado</strong>
                             <span>R$ 497,00 · em 1,9s</span>
@@ -219,7 +220,7 @@ onBeforeUnmount(() => mm?.revert());
 .ck-browser {
     width: min(520px, 100%);
     border-radius: 18px;
-    border: 1px solid rgba(160, 200, 175, 0.18);
+    border: 1px solid rgba(140, 195, 200, 0.18);
     background: linear-gradient(170deg, rgba(20, 28, 23, 0.95), rgba(10, 15, 12, 0.98));
     box-shadow: 0 60px 120px -48px rgba(0, 0, 0, 0.95);
     overflow: hidden;
@@ -230,14 +231,14 @@ onBeforeUnmount(() => mm?.revert());
     align-items: center;
     gap: 0.8rem;
     padding: 0.65rem 0.9rem;
-    border-bottom: 1px solid rgba(160, 200, 175, 0.12);
+    border-bottom: 1px solid rgba(140, 195, 200, 0.12);
 }
 .ck-dots { display: flex; gap: 5px; }
 .ck-dots i {
     width: 9px;
     height: 9px;
     border-radius: 50%;
-    background: rgba(160, 200, 175, 0.25);
+    background: rgba(140, 195, 200, 0.25);
 }
 .ck-url {
     flex: 1;
@@ -262,8 +263,8 @@ onBeforeUnmount(() => mm?.revert());
 .ck-pg-hero {
     padding: 2rem 1.4rem 1.4rem;
     background:
-        radial-gradient(120% 90% at 85% 0%, rgba(47, 213, 127, 0.35), transparent 60%),
-        linear-gradient(160deg, #0c1410, #11271b);
+        radial-gradient(120% 90% at 85% 0%, rgba(10, 152, 110, 0.35), transparent 60%),
+        linear-gradient(160deg, #0a1517, #0e2328);
     color: #f2f7f2;
     text-align: center;
 }
@@ -271,7 +272,7 @@ onBeforeUnmount(() => mm?.revert());
     margin: 0 0 0.5rem;
     font-size: 0.62rem;
     letter-spacing: 0.22em;
-    color: #9fe8c0;
+    color: #8fdcd2;
 }
 .ck-pg-hero h3 {
     margin: 0 0 0.4rem;
@@ -287,7 +288,7 @@ onBeforeUnmount(() => mm?.revert());
     margin: 1rem 1.4rem;
     aspect-ratio: 16/9;
     border-radius: 12px;
-    background: linear-gradient(160deg, #15241c, #0a120d);
+    background: linear-gradient(160deg, #122226, #081114);
     display: grid;
     place-items: center;
 }
@@ -298,13 +299,13 @@ onBeforeUnmount(() => mm?.revert());
     display: grid;
     place-items: center;
     padding-left: 4px;
-    color: #06130b;
-    background: linear-gradient(95deg, #cfeb2b, #2fd57f);
-    box-shadow: 0 0 0 0 rgba(47, 213, 127, 0.55);
+    color: #f4fcfa;
+    background: linear-gradient(95deg, #5cb536, #0a986e);
+    box-shadow: 0 0 0 0 rgba(10, 152, 110, 0.55);
     animation: ck-pulse 1.8s ease-out infinite;
 }
 @keyframes ck-pulse {
-    to { box-shadow: 0 0 0 20px rgba(47, 213, 127, 0); }
+    to { box-shadow: 0 0 0 20px rgba(10, 152, 110, 0); }
 }
 .ck-pg-benefits {
     list-style: none;
@@ -357,8 +358,8 @@ onBeforeUnmount(() => mm?.revert());
     place-items: center;
     font-size: 0.84rem;
     font-weight: 600;
-    color: #06130b;
-    background: linear-gradient(95deg, #cfeb2b, #2fd57f);
+    color: #f4fcfa;
+    background: linear-gradient(95deg, #5cb536, #0a986e);
 }
 .ck-pg-safe {
     margin: 0;
@@ -393,9 +394,9 @@ onBeforeUnmount(() => mm?.revert());
     display: grid;
     justify-items: center;
     gap: 0.25rem;
-    background: rgba(12, 20, 15, 0.94);
-    border: 1px solid rgba(47, 213, 127, 0.5);
-    box-shadow: 0 0 60px -10px rgba(47, 213, 127, 0.45);
+    background: rgba(9, 19, 21, 0.94);
+    border: 1px solid rgba(10, 152, 110, 0.5);
+    box-shadow: 0 0 60px -10px rgba(10, 152, 110, 0.45);
     will-change: transform;
 }
 .ck-paid-mark {
@@ -404,8 +405,8 @@ onBeforeUnmount(() => mm?.revert());
     border-radius: 50%;
     display: grid;
     place-items: center;
-    background: linear-gradient(135deg, #cfeb2b, #2fd57f);
-    color: #06130b;
+    background: linear-gradient(135deg, #5cb536, #0a986e);
+    color: #f4fcfa;
     margin-bottom: 0.3rem;
 }
 .ck-paid-mark svg { width: 22px; height: 26px; }
@@ -418,8 +419,8 @@ onBeforeUnmount(() => mm?.revert());
     width: 7px;
     height: 7px;
     border-radius: 50%;
-    background: linear-gradient(95deg, #cfeb2b, #2fd57f);
-    box-shadow: 0 0 12px rgba(47, 213, 127, 0.9);
+    background: linear-gradient(95deg, #5cb536, #0a986e);
+    box-shadow: 0 0 12px rgba(10, 152, 110, 0.9);
     pointer-events: none;
 }
 </style>

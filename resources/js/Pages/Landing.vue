@@ -8,7 +8,6 @@ import BrasaLogo from '@/components/landing/BrasaLogo.vue';
 import CheckoutScene from '@/components/landing/CheckoutScene.vue';
 import EmberCanvas from '@/components/landing/EmberCanvas.vue';
 import PhoneScene from '@/components/landing/PhoneScene.vue';
-import { MARK_PATH, MARK_STOPS, MARK_VIEWBOX } from '@/components/landing/brasaMark';
 
 gsap.registerPlugin(ScrollTrigger);
 
@@ -289,23 +288,14 @@ const year = new Date().getFullYear();
     </Head>
 
     <div ref="root" class="lp" :data-intro="introState">
-        <!-- Abertura -->
+        <!-- Abertura: a logo oficial revelada por cortina de luz -->
         <div v-if="introState === 'play' || introState === 'calm'" class="intro" aria-hidden="true">
             <span class="intro-glow"></span>
             <div class="intro-lockup">
-                <svg :viewBox="MARK_VIEWBOX" class="intro-mark">
-                    <defs>
-                        <linearGradient id="bp-intro-g" x1="0" y1="0" x2="1" y2="1">
-                            <stop v-for="[o, c] in MARK_STOPS" :key="o" :offset="o" :stop-color="c" />
-                        </linearGradient>
-                    </defs>
-                    <path :d="MARK_PATH" pathLength="1" class="intro-stroke" fill="none" stroke="url(#bp-intro-g)" stroke-width="7" stroke-linecap="round" />
-                    <path :d="MARK_PATH" fill-rule="evenodd" class="intro-fill" fill="url(#bp-intro-g)" />
-                </svg>
-                <span class="intro-word">
-                    <i v-for="(ch, n) in WORD" :key="n" :style="{ '--i': n }" :class="{ 'intro-pay': n >= 5 }">{{ ch }}</i>
-                </span>
+                <img src="/images/brasapay/logo-branca.png" alt="" class="intro-logo" />
+                <span class="intro-shine"></span>
             </div>
+            <span class="intro-tag">pagamentos que caem na hora</span>
         </div>
 
         <span class="lp-progress" aria-hidden="true"></span>
@@ -444,15 +434,15 @@ const year = new Date().getFullYear();
 <style scoped>
 /* ——— Tokens ——— */
 .lp {
-    --bg: #070c09;
-    --panel: rgba(16, 24, 19, 0.72);
-    --line: rgba(120, 180, 140, 0.15);
-    --g1: #cfeb2b;
-    --g2: #2fd57f;
-    --g3: #19c2a0;
+    --bg: #051013;
+    --panel: rgba(12, 23, 24, 0.72);
+    --line: rgba(100, 175, 180, 0.15);
+    --g1: #5cb536;
+    --g2: #0a986e;
+    --g3: #008894;
     --txt: #f2f7f2;
     --mut: #93a39a;
-    --dark: #06130b;
+    --dark: #f4fcfa;
     --ease-cinema: cubic-bezier(0.16, 1, 0.3, 1);
 
     background: var(--bg);
@@ -541,16 +531,16 @@ const year = new Date().getFullYear();
     background: linear-gradient(95deg, var(--g1), var(--g2) 70%, var(--g3));
     color: var(--dark);
     font-weight: 600;
-    box-shadow: 0 10px 36px -10px rgba(47, 213, 127, 0.6);
+    box-shadow: 0 10px 36px -10px rgba(10, 152, 110, 0.6);
 }
-.lp-btn-green:hover { box-shadow: 0 16px 48px -10px rgba(47, 213, 127, 0.85); }
+.lp-btn-green:hover { box-shadow: 0 16px 48px -10px rgba(10, 152, 110, 0.85); }
 .lp-btn-ghost {
     color: var(--txt);
     border-color: var(--line);
     background: rgba(242, 247, 242, 0.04);
     backdrop-filter: blur(8px);
 }
-.lp-btn-ghost:hover { border-color: rgba(47, 213, 127, 0.5); }
+.lp-btn-ghost:hover { border-color: rgba(10, 152, 110, 0.5); }
 .lp-btn:focus-visible { outline: 2px solid var(--g1); outline-offset: 3px; }
 
 /* ——— Abertura ——— */
@@ -560,7 +550,7 @@ const year = new Date().getFullYear();
     z-index: 100;
     display: grid;
     place-items: center;
-    background: #050907;
+    background: #040a0c;
     animation: intro-curtain 0.9s var(--ease-cinema) 2s both;
 }
 [data-intro='calm'] .intro { animation: intro-fade 0.9s ease 0.5s both; }
@@ -575,7 +565,7 @@ const year = new Date().getFullYear();
     width: 46vmin;
     height: 46vmin;
     border-radius: 50%;
-    background: radial-gradient(circle, rgba(47, 213, 127, 0.3), transparent 70%);
+    background: radial-gradient(circle, rgba(10, 152, 110, 0.3), transparent 70%);
     filter: blur(30px);
     animation: intro-bloom 2s var(--ease-cinema) both;
 }
@@ -584,50 +574,52 @@ const year = new Date().getFullYear();
     60% { opacity: 1; }
 }
 .intro-lockup {
-    display: grid;
-    justify-items: center;
-    gap: 1.1rem;
-}
-.intro-mark { width: clamp(64px, 9vmin, 96px); }
-.intro-stroke {
-    stroke-dasharray: 1;
-    stroke-dashoffset: 1;
-    animation: intro-draw 1.15s var(--ease-cinema) 0.15s forwards;
-}
-@keyframes intro-draw {
-    to { stroke-dashoffset: 0; }
-}
-.intro-fill {
-    opacity: 0;
-    animation: intro-fill 0.5s ease 1.1s forwards;
-}
-@keyframes intro-fill {
-    to { opacity: 1; }
-}
-.intro-word {
-    display: flex;
+    position: relative;
     overflow: hidden;
-    font-size: clamp(1.6rem, 4vmin, 2.2rem);
-    font-weight: 600;
-    letter-spacing: -0.02em;
+    padding: 0.6rem 1rem;
 }
-.intro-word i {
-    font-style: normal;
-    transform: translateY(120%);
-    animation: intro-rise 0.7s var(--ease-cinema) calc(0.9s + var(--i) * 0.045s) forwards;
+.intro-logo {
+    width: clamp(240px, 38vmin, 380px);
+    height: auto;
+    display: block;
+    /* A logo é revelada por uma cortina da esquerda pra direita, saindo do desfoque. */
+    clip-path: inset(0 100% 0 0);
+    filter: blur(10px) brightness(1.6);
+    animation:
+        intro-reveal 1.1s var(--ease-cinema) 0.25s forwards,
+        intro-focus 0.9s ease 0.8s forwards;
 }
-.intro-pay {
-    background: linear-gradient(95deg, var(--g1), var(--g2));
-    -webkit-background-clip: text;
-    background-clip: text;
-    color: transparent;
+@keyframes intro-reveal {
+    to { clip-path: inset(0 0 0 0); }
 }
-@keyframes intro-rise {
-    to { transform: none; }
+@keyframes intro-focus {
+    to { filter: blur(0) brightness(1); }
 }
-[data-intro='calm'] .intro-stroke { display: none; }
-[data-intro='calm'] .intro-fill { animation-delay: 0.1s; }
-[data-intro='calm'] .intro-word i { animation-duration: 0.01s; animation-delay: 0.1s; }
+.intro-shine {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(100deg, transparent 20%, rgba(255, 255, 255, 0.35) 50%, transparent 80%);
+    transform: translateX(-120%);
+    animation: intro-shine 0.9s var(--ease-cinema) 1.25s forwards;
+    pointer-events: none;
+}
+@keyframes intro-shine {
+    to { transform: translateX(120%); }
+}
+.intro-tag {
+    position: absolute;
+    bottom: 14vh;
+    font-size: 0.82rem;
+    letter-spacing: 0.3em;
+    text-transform: uppercase;
+    color: rgba(242, 247, 242, 0.5);
+    opacity: 0;
+    animation: intro-tag 0.8s var(--ease-cinema) 1.35s forwards;
+}
+@keyframes intro-tag {
+    from { opacity: 0; transform: translateY(14px); }
+    to { opacity: 1; transform: none; }
+}
 
 /* ——— Progresso ——— */
 .lp-progress {
@@ -650,7 +642,7 @@ const year = new Date().getFullYear();
     left: 0;
     right: 0;
     z-index: 50;
-    background: rgba(7, 12, 9, 0.7);
+    background: rgba(5, 16, 19, 0.7);
     backdrop-filter: blur(16px);
     border-bottom: 1px solid var(--line);
     will-change: transform;
@@ -690,7 +682,7 @@ const year = new Date().getFullYear();
     inset: 0;
     z-index: -1;
     background:
-        radial-gradient(60% 50% at 50% 38%, rgba(47, 213, 127, 0.14), transparent 70%),
+        radial-gradient(60% 50% at 50% 38%, rgba(10, 152, 110, 0.14), transparent 70%),
         radial-gradient(110% 80% at 50% 110%, rgba(5, 9, 7, 0.9), transparent 55%);
 }
 .hero-inner { padding: 7rem 0 5rem; will-change: transform; }
@@ -746,7 +738,7 @@ const year = new Date().getFullYear();
 }
 
 /* ——— Fatos ——— */
-.lp-stats-wrap { border-block: 1px solid var(--line); background: rgba(16, 24, 19, 0.35); }
+.lp-stats-wrap { border-block: 1px solid var(--line); background: rgba(12, 23, 24, 0.35); }
 .lp-stats {
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -796,7 +788,7 @@ const year = new Date().getFullYear();
 .lp-chip {
     display: grid;
     place-items: center;
-    background: rgba(244, 248, 244, 0.93);
+    background: rgba(243, 248, 248, 0.93);
     border-radius: 12px;
     padding: 0.55rem 1.1rem;
     margin: 0 0.45rem 0.9rem;
@@ -839,12 +831,12 @@ const year = new Date().getFullYear();
     content: '';
     position: absolute;
     inset: 0;
-    background: radial-gradient(320px circle at var(--mx, 50%) var(--my, 50%), rgba(47, 213, 127, 0.14), transparent 65%);
+    background: radial-gradient(320px circle at var(--mx, 50%) var(--my, 50%), rgba(10, 152, 110, 0.14), transparent 65%);
     opacity: 0;
     transition: opacity 0.3s ease;
     pointer-events: none;
 }
-.lp-cell:hover { border-color: rgba(47, 213, 127, 0.45); }
+.lp-cell:hover { border-color: rgba(10, 152, 110, 0.45); }
 .lp-cell:hover::before { opacity: 1; }
 .lp-cell-wide { grid-column: span 2; }
 .lp-cell-tag {
@@ -886,7 +878,7 @@ const year = new Date().getFullYear();
     inset: auto -25% -75%;
     height: 130%;
     z-index: -1;
-    background: radial-gradient(50% 55% at 50% 100%, rgba(47, 213, 127, 0.32), transparent 70%);
+    background: radial-gradient(50% 55% at 50% 100%, rgba(10, 152, 110, 0.32), transparent 70%);
 }
 .final-in { padding-bottom: 3rem; }
 .lp-drift {
@@ -901,7 +893,7 @@ const year = new Date().getFullYear();
     font-weight: 600;
     letter-spacing: -0.04em;
     color: transparent;
-    -webkit-text-stroke: 1px rgba(47, 213, 127, 0.22);
+    -webkit-text-stroke: 1px rgba(10, 152, 110, 0.22);
     will-change: transform;
 }
 

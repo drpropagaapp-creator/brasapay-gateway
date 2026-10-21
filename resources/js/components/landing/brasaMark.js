@@ -12,7 +12,7 @@ export const MARK_PATH = `${MARK_OUTER} ${MARK_INNER}`;
 
 /** Paradas do degradê da marca (lime → esmeralda → teal). */
 export const MARK_STOPS = [
-    ['0%', '#cfeb2b'],
-    ['55%', '#2fd57f'],
-    ['100%', '#19c2a0'],
+    ['0%', '#5cb536'],
+    ['55%', '#0a986e'],
+    ['100%', '#008894'],
 ];
