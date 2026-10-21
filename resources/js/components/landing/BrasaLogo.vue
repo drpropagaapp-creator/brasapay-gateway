@@ -1,18 +1,19 @@
 <script setup>
 /**
- * Logo oficial do BrasaPay (lockup 361×88, fundo transparente).
- * `branca` = texto "Brasa" branco, para fundos escuros (padrão da landing);
- * `preta` = texto escuro, para fundos claros.
+ * Logo oficial do BrasaPay. Por padrão usa a versão branca empacotada
+ * (lockup 361×88, fundo transparente); `src` permite apontar para a logo
+ * do white-label compartilhada pelo painel.
  */
 defineProps({
     size: { type: Number, default: 30 },
     variant: { type: String, default: 'branca' },
+    src: { type: String, default: '' },
 });
 </script>
 
 <template>
     <img
-        :src="`/images/brasapay/logo-${variant}.png`"
+        :src="src || `/images/brasapay/logo-${variant}.png`"
         alt="BrasaPay"
         class="bp-logo"
         :style="{ height: `${size}px` }"

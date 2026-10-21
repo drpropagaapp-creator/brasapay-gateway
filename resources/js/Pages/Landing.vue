@@ -322,7 +322,7 @@ const year = new Date().getFullYear();
                 <EmberCanvas :density="80" />
                 <div class="hero-vignette" aria-hidden="true"></div>
                 <div class="lp-wrap hero-inner">
-                    <p class="lp-pill hero-sub">💚 Você só paga quando vende</p>
+                    <p class="lp-pill hero-sub"><img src="/images/brasapay/simbolo.png" alt="" class="lp-pill-mark" /> Você só paga quando vende</p>
                     <h1 class="hero-h1" aria-label="Vendeu. Caiu. Na hora.">
                         <span class="hero-word"><i>Vendeu.</i></span>
                         <span class="hero-word"><i>Caiu.</i></span>
@@ -496,6 +496,11 @@ const year = new Date().getFullYear();
     color: var(--mut);
     max-width: 37rem;
     margin: 0 auto 2.1rem;
+}
+.lp-pill-mark {
+    width: 16px;
+    height: 16px;
+    object-fit: contain;
 }
 .lp-pill {
     display: inline-flex;

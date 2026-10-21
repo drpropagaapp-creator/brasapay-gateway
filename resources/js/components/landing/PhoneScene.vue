@@ -73,7 +73,23 @@ function buildTimeline(scrubbed) {
     return tl;
 }
 
+// Relógio e data reais do visitante, como na tela de bloqueio de verdade.
+const clock = ref('');
+const today = ref('');
+let clockTimer = 0;
+
+function tickClock() {
+    const now = new Date();
+    clock.value = now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+    today.value = now.toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' });
+}
+
+tickClock();
+
 onMounted(() => {
+    tickClock();
+    clockTimer = setInterval(tickClock, 1000);
+
     mm = gsap.matchMedia();
     mm.add(
         {
@@ -87,7 +103,10 @@ onMounted(() => {
     );
 });
 
-onBeforeUnmount(() => mm?.revert());
+onBeforeUnmount(() => {
+    clearInterval(clockTimer);
+    mm?.revert();
+});
 </script>
 
 <template>
@@ -112,11 +131,11 @@ onBeforeUnmount(() => mm?.revert());
                     <div class="ph-frame">
                         <span class="ph-notch" aria-hidden="true"></span>
                         <div class="ph-screen">
-                            <p class="ph-clock">21:47</p>
-                            <p class="ph-date">quinta-feira, 12 de março</p>
+                            <p class="ph-clock">{{ clock }}</p>
+                            <p class="ph-date">{{ today }}</p>
 
                             <div class="ph-notif ph-n1">
-                                <span class="ph-notif-icon">🤑</span>
+                                <span class="ph-notif-icon"><img src="/images/brasapay/simbolo.png" alt="" /></span>
                                 <span class="ph-notif-body">
                                     <strong>BrasaPay</strong>
                                     <span>Venda aprovada — <b>R$ 497,00</b></span>
@@ -125,7 +144,7 @@ onBeforeUnmount(() => mm?.revert());
                             </div>
 
                             <div class="ph-notif ph-n2">
-                                <span class="ph-notif-icon">💸</span>
+                                <span class="ph-notif-icon"><img src="/images/brasapay/simbolo.png" alt="" /></span>
                                 <span class="ph-notif-body">
                                     <strong>BrasaPay</strong>
                                     <span>PIX recebido — <b>R$ 197,00</b></span>
@@ -133,7 +152,13 @@ onBeforeUnmount(() => mm?.revert());
                                 <span class="ph-notif-time">agora</span>
                             </div>
 
-                            <span class="ph-chip" aria-hidden="true">🔊 cha-ching!</span>
+                            <span class="ph-chip" aria-hidden="true">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M11 5 6 9H3v6h3l5 4V5z" />
+                                    <path d="M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13" />
+                                </svg>
+                                cha-ching!
+                            </span>
 
                             <div class="ph-balance">
                                 <span>Saldo disponível</span>
@@ -245,6 +270,12 @@ onBeforeUnmount(() => mm?.revert());
     font-size: 0.72rem;
     color: rgba(238, 246, 239, 0.6);
 }
+.ph-date::first-letter {
+    text-transform: uppercase;
+}
+.ph-clock {
+    font-variant-numeric: tabular-nums;
+}
 .ph-notif {
     position: absolute;
     top: 170px;
@@ -263,13 +294,20 @@ onBeforeUnmount(() => mm?.revert());
 }
 .ph-n2 { z-index: 2; }
 .ph-notif-icon {
-    width: 34px;
-    height: 34px;
+    flex: none;
+    width: 36px;
+    height: 36px;
     border-radius: 9px;
     display: grid;
     place-items: center;
-    font-size: 1.05rem;
-    background: linear-gradient(135deg, rgba(92, 181, 54, 0.25), rgba(10, 152, 110, 0.3));
+    background: linear-gradient(160deg, #0f1d20, #061012);
+    border: 1px solid rgba(0, 136, 148, 0.35);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+.ph-notif-icon img {
+    width: 24px;
+    height: 24px;
+    object-fit: contain;
 }
 .ph-notif-body {
     display: grid;
@@ -307,6 +345,13 @@ onBeforeUnmount(() => mm?.revert());
     color: #f4fcfa;
     background: linear-gradient(95deg, #5cb536, #0a986e);
     box-shadow: 0 8px 22px -8px rgba(10, 152, 110, 0.8);
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+}
+.ph-chip svg {
+    width: 12px;
+    height: 12px;
 }
 .ph-balance {
     position: absolute;

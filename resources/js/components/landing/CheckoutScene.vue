@@ -118,7 +118,7 @@ onBeforeUnmount(() => mm?.revert());
                 <div class="ck-browser">
                     <div class="ck-bar">
                         <span class="ck-dots"><i></i><i></i><i></i></span>
-                        <span class="ck-url">🔒 brasapay.com.br/c/metodo-escala-digital</span>
+                        <span class="ck-url"><svg class="ck-lock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><rect x="5" y="11" width="14" height="10" rx="2" /><path d="M8 11V8a4 4 0 0 1 8 0v3" /></svg> brasapay.com.br/c/metodo-escala-digital</span>
                     </div>
 
                     <div class="ck-viewport">
@@ -150,7 +150,7 @@ onBeforeUnmount(() => mm?.revert());
                                 <div class="ck-pg-input"></div>
                                 <div class="ck-pg-input"></div>
                                 <div class="ck-pg-btn">Pagar com PIX</div>
-                                <p class="ck-pg-safe">🔒 Compra segura · BrasaPay</p>
+                                <p class="ck-pg-safe"><svg class="ck-lock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><rect x="5" y="11" width="14" height="10" rx="2" /><path d="M8 11V8a4 4 0 0 1 8 0v3" /></svg> Compra segura · <img src="/images/brasapay/logo-preta.png" alt="BrasaPay" class="ck-safe-logo" /></p>
                             </div>
                         </div>
 
@@ -360,6 +360,16 @@ onBeforeUnmount(() => mm?.revert());
     font-weight: 600;
     color: #f4fcfa;
     background: linear-gradient(95deg, #5cb536, #0a986e);
+}
+.ck-lock {
+    width: 10px;
+    height: 10px;
+    vertical-align: -1px;
+}
+.ck-safe-logo {
+    height: 11px;
+    width: auto;
+    vertical-align: -2px;
 }
 .ck-pg-safe {
     margin: 0;
