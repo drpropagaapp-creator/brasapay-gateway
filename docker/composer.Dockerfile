@@ -1,6 +1,7 @@
 # Imagem para composer install no host (update.sh / install.sh).
 # Espelha extensões do Dockerfile principal — evita falha de platform check (ex.: ext-gd).
-FROM php:8.3-cli-alpine
+ARG PHP_BASE_IMAGE=php:8.3.36-cli-alpine
+FROM ${PHP_BASE_IMAGE}
 
 RUN apk add --no-cache \
     git unzip libzip-dev libpng-dev libjpeg-turbo-dev freetype-dev oniguruma-dev icu-dev libxml2-dev $PHPIZE_DEPS \

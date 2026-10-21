@@ -232,9 +232,18 @@ done
 IFS="$OLD_IFS"
 
 # NUNCA usa "down -v". Volumes (postgres/redis/storage) são preservados.
+GETFY_PHP_BASE_IMAGE="${GETFY_PHP_BASE_IMAGE:-php:8.3.36-cli-alpine}"
+export GETFY_PHP_BASE_IMAGE
+
 UP_ARGS="-d --remove-orphans"
 if [ "${GETFY_SKIP_DOCKER_BUILD:-0}" != "1" ]; then
-  UP_ARGS="--build ${UP_ARGS}"
+  BUILD_OPTS="--pull"
+  if [ "${GETFY_DOCKER_NO_CACHE:-0}" = "1" ]; then
+    BUILD_OPTS="$BUILD_OPTS --no-cache"
+  fi
+  echo "docker compose build $BUILD_OPTS (PHP_BASE_IMAGE=$GETFY_PHP_BASE_IMAGE)..."
+  # shellcheck disable=SC2086
+  docker compose $COMPOSE_ARGS --env-file "$ENV_FILE" build $BUILD_OPTS
 fi
 
 echo "docker compose up (volumes Postgres/Redis preservados)..."

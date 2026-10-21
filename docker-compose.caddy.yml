@@ -23,6 +23,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        PHP_BASE_IMAGE: ${GETFY_PHP_BASE_IMAGE:-php:8.3.36-cli-alpine}
     image: getfy_app:latest
     restart: unless-stopped
     logging:
