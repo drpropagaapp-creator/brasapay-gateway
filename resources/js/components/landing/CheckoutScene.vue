@@ -86,8 +86,8 @@ onMounted(() => {
     mm = gsap.matchMedia();
     mm.add(
         {
-            desktop: '(min-width: 900px) and (prefers-reduced-motion: no-preference)',
-            mobile: '(max-width: 899px) and (prefers-reduced-motion: no-preference)',
+            desktop: '(min-width: 900px)',
+            mobile: '(max-width: 899px)',
         },
         (ctx) => {
             const tl = buildTimeline(Boolean(ctx.conditions.desktop));
@@ -305,10 +305,6 @@ onBeforeUnmount(() => mm?.revert());
 }
 @keyframes ck-pulse {
     to { box-shadow: 0 0 0 20px rgba(47, 213, 127, 0); }
-}
-@media (prefers-reduced-motion: reduce) {
-    .ck-pg-play { animation: none; }
-    .ck-qr, .ck-paid, .ck-spark { display: none; }
 }
 .ck-pg-benefits {
     list-style: none;

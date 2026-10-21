@@ -46,20 +46,7 @@ function heroEntrance(instant) {
 }
 
 function runIntro() {
-    let seen = true;
-    try {
-        seen = sessionStorage.getItem('bp-intro') !== null;
-        if (!seen) sessionStorage.setItem('bp-intro', '1');
-    } catch {
-        seen = false;
-    }
-    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    if (seen || reduce) {
-        introState.value = seen ? 'skip' : 'calm';
-        heroEntrance(true);
-        if (introState.value === 'calm') setTimeout(() => (introState.value = 'skip'), 1400);
-        return;
-    }
+    // A abertura toca em todo carregamento (pedido do dono da página).
     introState.value = 'play';
     setTimeout(() => heroEntrance(false), 2050);
     setTimeout(() => (introState.value = 'skip'), 2900);
@@ -99,7 +86,9 @@ onMounted(() => {
     runIntro();
 
     mm = gsap.matchMedia();
-    mm.add('(prefers-reduced-motion: no-preference)', () => {
+    // Motion sempre ligado (decisão do dono da página): sem trava de
+    // prefers-reduced-motion — o matchMedia fica só pelo ciclo de vida.
+    mm.add('all', () => {
         const q = gsap.utils.selector(root.value);
 
         // Rolagem suave.
@@ -932,14 +921,4 @@ const year = new Date().getFullYear();
     .lp-footer-links { margin-left: 0; }
 }
 
-/* ——— Reduzir movimento ——— */
-@media (prefers-reduced-motion: reduce) {
-    .intro { animation-delay: 0.4s; animation-duration: 0.6s; }
-    .intro-stroke,
-    .intro-word i { animation-duration: 0.01s !important; animation-delay: 0s !important; }
-    .lp-marquee-track,
-    .hero-cue span,
-    .ck-pg-play { animation: none !important; }
-    .lp-btn, .lp-cell, .lp-chip { transition: none; transform: none; }
-}
 </style>

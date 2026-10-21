@@ -77,8 +77,8 @@ onMounted(() => {
     mm = gsap.matchMedia();
     mm.add(
         {
-            desktop: '(min-width: 900px) and (prefers-reduced-motion: no-preference)',
-            mobile: '(max-width: 899px) and (prefers-reduced-motion: no-preference)',
+            desktop: '(min-width: 900px)',
+            mobile: '(max-width: 899px)',
         },
         (ctx) => {
             const tl = buildTimeline(Boolean(ctx.conditions.desktop));

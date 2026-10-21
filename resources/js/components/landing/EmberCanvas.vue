@@ -143,7 +143,6 @@ function onVisibility() {
 }
 
 onMounted(() => {
-    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
     const c = canvasRef.value;
     ctx = c.getContext('2d');
     sprites = HUES.map((hue) => makeSprite(hue.color));
