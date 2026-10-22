@@ -36,3 +36,15 @@ export async function completeMemberLesson(url) {
 
     return data;
 }
+
+/** Avalia a aula sem visita Inertia — um voto por aluno, editável. */
+export async function rateMemberLesson(url, rating) {
+    const { data } = await axios.post(url, { rating }, {
+        headers: {
+            Accept: 'application/json',
+            'X-Requested-With': 'XMLHttpRequest',
+        },
+    });
+
+    return data;
+}

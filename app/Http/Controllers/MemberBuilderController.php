@@ -457,6 +457,7 @@ class MemberBuilderController extends Controller
 
         $this->normalizeCertificateConfig($config, $produto);
         $this->validateCertificateConfig($config);
+        $this->normalizeLessonOfferConfig($config, $produto);
 
         $pwa = $config['pwa'] ?? [];
         $vapidWarning = null;
@@ -1731,6 +1732,44 @@ class MemberBuilderController extends Controller
             return strtr($key, ['+' => '-', '/' => '_']);
         }
         return $key;
+    }
+
+    /**
+     * @param  array<string, mixed>  $config
+     */
+    private function normalizeLessonOfferConfig(array &$config, Product $produto): void
+    {
+        $incoming = $config['lesson_offer'] ?? [];
+        if (! is_array($incoming)) {
+            $incoming = [];
+        }
+
+        $productId = trim((string) ($incoming['product_id'] ?? ''));
+        if ($productId === '' || $productId === (string) $produto->id) {
+            $productId = '';
+        } else {
+            $exists = Product::query()
+                ->where('id', $productId)
+                ->where('tenant_id', $produto->tenant_id)
+                ->exists();
+            if (! $exists) {
+                $productId = '';
+            }
+        }
+
+        $button = trim((string) ($incoming['button_text'] ?? ''));
+        if ($button === '') {
+            $button = 'Comprar';
+        }
+        $button = mb_substr($button, 0, 40);
+
+        $enabled = (bool) ($incoming['enabled'] ?? false) && $productId !== '';
+
+        $config['lesson_offer'] = [
+            'enabled' => $enabled,
+            'product_id' => $productId !== '' ? $productId : null,
+            'button_text' => $button,
+        ];
     }
 
     /**

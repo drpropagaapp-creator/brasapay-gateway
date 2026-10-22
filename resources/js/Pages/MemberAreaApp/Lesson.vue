@@ -8,6 +8,7 @@ import { formatLessonDescription } from '@/lib/utils';
 import { sanitizeHtmlAllowlist } from '@/lib/sanitizeHtml';
 import { completeMemberLesson, useMemberAreaHref } from '@/composables/useMemberAreaHref';
 import { downloadMemberMaterial, isProtectedPdf } from '@/composables/downloadMemberMaterial';
+import MemberLessonRatingStars from '@/components/member-area/MemberLessonRatingStars.vue';
 
 defineOptions({ layout: MemberAreaAppLayout });
 
@@ -63,6 +64,7 @@ function safeLessonHtml(html) {
 }
 
 const completed = ref(props.lesson.is_completed ?? false);
+const lessonRating = ref(props.lesson.rating ?? null);
 const commentContent = ref('');
 const commentSubmitting = ref(false);
 let autoCompleteTimer = null;
@@ -194,6 +196,11 @@ function formatCommentDate(iso) {
                 Conteúdo não disponível.
             </div>
         </div>
+
+        <MemberLessonRatingStars
+            v-model="lessonRating"
+            :url="href(`/aula/${lesson.id}/rating`)"
+        />
 
         <div class="flex items-center justify-between">
             <Link :href="href('/modulos')" class="text-sm text-zinc-400 hover:text-[var(--ma-primary)]">← Voltar aos módulos</Link>

@@ -1,10 +1,12 @@
 <script setup>
-import { ref, onMounted, onUnmounted, computed } from 'vue';
+import { ref, onMounted, onUnmounted, computed, watch } from 'vue';
 import { Link, router } from '@inertiajs/vue3';
 import MemberAreaAppLayout from '@/Layouts/MemberAreaAppLayout.vue';
 import Button from '@/components/ui/Button.vue';
 import MemberAreaVideoPlayer from '@/components/MemberAreaVideoPlayer.vue';
 import MemberModuleRenewalPix from '@/components/member-area/MemberModuleRenewalPix.vue';
+import MemberLessonRatingStars from '@/components/member-area/MemberLessonRatingStars.vue';
+import MemberLessonOffer from '@/components/member-area/MemberLessonOffer.vue';
 import { formatLessonDescription } from '@/lib/utils';
 import { sanitizeHtmlAllowlist } from '@/lib/sanitizeHtml';
 import { completeMemberLesson, useMemberAreaHref } from '@/composables/useMemberAreaHref';
@@ -26,6 +28,7 @@ const props = defineProps({
     comments_enabled: { type: Boolean, default: false },
     comments_require_approval: { type: Boolean, default: true },
     lesson_comments: { type: Array, default: () => [] },
+    lesson_offer: { type: Object, default: null },
 });
 
 const { href } = useMemberAreaHref(props.slug, props.base_url);
@@ -98,8 +101,47 @@ const nextUnlockedModule = computed(() => {
     return null;
 });
 
+const currentLessonIndex = computed(() => {
+    if (!props.current_lesson) return -1;
+    return props.lessons.findIndex((lesson) => lesson.id === props.current_lesson.id);
+});
+
+const previousLesson = computed(() => {
+    const idx = currentLessonIndex.value;
+    if (idx <= 0) return null;
+    return props.lessons[idx - 1] ?? null;
+});
+
+const nextLesson = computed(() => {
+    const idx = currentLessonIndex.value;
+    if (idx < 0) return null;
+    return props.lessons[idx + 1] ?? null;
+});
+
+const canGoPrevious = computed(() => Boolean(previousLesson.value) && !previousLesson.value.is_locked);
+const canGoNextLesson = computed(() => Boolean(nextLesson.value) && !nextLesson.value.is_locked);
+const canGoNextModule = computed(() => !nextLesson.value && Boolean(nextUnlockedModule.value));
+
 function lessonUrl(lessonId) {
     return `${href(`/modulo/${props.module.id}`)}?aula=${lessonId}`;
+}
+
+function visitAdjacentLesson(lesson) {
+    if (!lesson || lesson.is_locked) return;
+    router.visit(lessonUrl(lesson.id));
+}
+
+function onLessonNavKeydown(event) {
+    if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+    const tag = (event.target?.tagName || '').toLowerCase();
+    if (tag === 'input' || tag === 'textarea' || tag === 'select' || event.target?.isContentEditable) return;
+    if (event.key === 'ArrowLeft' && canGoPrevious.value) {
+        event.preventDefault();
+        visitAdjacentLesson(previousLesson.value);
+    } else if (event.key === 'ArrowRight' && canGoNextLesson.value) {
+        event.preventDefault();
+        visitAdjacentLesson(nextLesson.value);
+    }
 }
 
 async function markComplete() {
@@ -128,14 +170,32 @@ function shouldAutoCompleteNonVideo() {
     return t === 'link' || t === 'pdf' || t === 'text' || (t !== 'video' && (props.current_lesson.content_url || props.current_lesson.content_text));
 }
 
-onMounted(() => {
-    if (props.current_lesson?.is_completed) completed.value = true;
-    else if (props.current_lesson?.type === 'video') scheduleAutoComplete();
+function syncCurrentLessonProgress() {
+    if (autoCompleteTimer) {
+        clearTimeout(autoCompleteTimer);
+        autoCompleteTimer = null;
+    }
+    completed.value = Boolean(props.current_lesson?.is_completed);
+    if (!props.current_lesson || completed.value) return;
+    if (props.current_lesson.type === 'video') scheduleAutoComplete();
     else if (shouldAutoCompleteNonVideo()) setTimeout(() => markComplete(), 500);
+}
+
+onMounted(() => {
+    window.addEventListener('keydown', onLessonNavKeydown);
+    syncCurrentLessonProgress();
 });
 
 onUnmounted(() => {
+    window.removeEventListener('keydown', onLessonNavKeydown);
     if (autoCompleteTimer) clearTimeout(autoCompleteTimer);
+});
+
+const lessonRating = ref(props.current_lesson?.rating ?? null);
+
+watch(() => props.current_lesson?.id, () => {
+    lessonRating.value = props.current_lesson?.rating ?? null;
+    syncCurrentLessonProgress();
 });
 
 const commentContent = ref('');
@@ -194,9 +254,9 @@ function scrollCarousel(sectionId, direction) {
             <!-- Conteúdo da aula (esquerda) -->
             <main class="min-w-0 flex-1 space-y-6">
             <template v-if="current_lesson">
-                <h1 class="text-2xl font-bold">{{ current_lesson.title }}</h1>
+                <h1 class="text-2xl font-bold xl:max-w-4xl">{{ current_lesson.title }}</h1>
 
-                <div class="rounded-xl border border-zinc-700 bg-zinc-800/50 overflow-hidden">
+                <div class="overflow-hidden rounded-xl border border-zinc-700 bg-zinc-800/50 xl:max-w-4xl">
                     <template v-if="current_lesson.type === 'video'">
                         <MemberAreaVideoPlayer
                             v-if="current_lesson.content_url"
@@ -261,6 +321,69 @@ function scrollCarousel(sectionId, direction) {
                         <div class="p-8 text-center text-zinc-500">Conteúdo não disponível.</div>
                     </template>
                 </div>
+
+                <MemberLessonRatingStars
+                    :key="current_lesson.id"
+                    v-model="lessonRating"
+                    :url="href(`/aula/${current_lesson.id}/rating`)"
+                />
+
+                <nav class="grid grid-cols-2 gap-3 xl:max-w-4xl" aria-label="Navegação entre aulas">
+                    <Link
+                        v-if="canGoPrevious"
+                        :href="lessonUrl(previousLesson.id)"
+                        class="flex min-w-0 items-center gap-2 rounded-xl border border-zinc-700 bg-zinc-800/50 px-3 py-3 text-left text-sm transition hover:border-[var(--ma-primary)]/50 hover:bg-zinc-800"
+                    >
+                        <ChevronLeft class="h-5 w-5 shrink-0 text-zinc-400" />
+                        <span class="min-w-0">
+                            <span class="block text-[11px] font-medium uppercase tracking-wide text-zinc-500">Aula anterior</span>
+                            <span class="mt-0.5 block truncate font-medium text-zinc-100">{{ previousLesson.title || 'Aula' }}</span>
+                        </span>
+                    </Link>
+                    <div
+                        v-else
+                        class="flex min-w-0 cursor-not-allowed items-center gap-2 rounded-xl border border-zinc-800 bg-zinc-900/40 px-3 py-3 text-left text-sm opacity-50"
+                    >
+                        <ChevronLeft class="h-5 w-5 shrink-0 text-zinc-500" />
+                        <span class="min-w-0">
+                            <span class="block text-[11px] font-medium uppercase tracking-wide text-zinc-500">Aula anterior</span>
+                            <span class="mt-0.5 block truncate text-zinc-400">{{ previousLesson?.lock_message || 'Primeira aula' }}</span>
+                        </span>
+                    </div>
+
+                    <Link
+                        v-if="canGoNextLesson"
+                        :href="lessonUrl(nextLesson.id)"
+                        class="flex min-w-0 items-center justify-end gap-2 rounded-xl border border-zinc-700 bg-zinc-800/50 px-3 py-3 text-right text-sm transition hover:border-[var(--ma-primary)]/50 hover:bg-zinc-800"
+                    >
+                        <span class="min-w-0">
+                            <span class="block text-[11px] font-medium uppercase tracking-wide text-zinc-500">Próxima aula</span>
+                            <span class="mt-0.5 block truncate font-medium text-zinc-100">{{ nextLesson.title || 'Aula' }}</span>
+                        </span>
+                        <ChevronRight class="h-5 w-5 shrink-0 text-zinc-400" />
+                    </Link>
+                    <Link
+                        v-else-if="canGoNextModule"
+                        :href="href(`/modulo/${nextUnlockedModule.id}`)"
+                        class="flex min-w-0 items-center justify-end gap-2 rounded-xl border border-emerald-700/60 bg-emerald-950/30 px-3 py-3 text-right text-sm transition hover:border-emerald-500/50 hover:bg-emerald-950/50"
+                    >
+                        <span class="min-w-0">
+                            <span class="block text-[11px] font-medium uppercase tracking-wide text-emerald-400/80">Próximo módulo</span>
+                            <span class="mt-0.5 block truncate font-medium text-zinc-100">{{ nextUnlockedModule.title || 'Módulo' }}</span>
+                        </span>
+                        <ChevronRight class="h-5 w-5 shrink-0 text-emerald-400" />
+                    </Link>
+                    <div
+                        v-else
+                        class="flex min-w-0 cursor-not-allowed items-center justify-end gap-2 rounded-xl border border-zinc-800 bg-zinc-900/40 px-3 py-3 text-right text-sm opacity-50"
+                    >
+                        <span class="min-w-0">
+                            <span class="block text-[11px] font-medium uppercase tracking-wide text-zinc-500">Próxima aula</span>
+                            <span class="mt-0.5 block truncate text-zinc-400">{{ nextLesson?.lock_message || 'Fim do módulo' }}</span>
+                        </span>
+                        <ChevronRight class="h-5 w-5 shrink-0 text-zinc-500" />
+                    </div>
+                </nav>
 
                 <div class="flex items-center justify-between">
                     <Link :href="href('/')" class="text-sm text-zinc-400 hover:text-[var(--ma-primary)]">← Voltar ao início</Link>
@@ -328,13 +451,14 @@ function scrollCarousel(sectionId, direction) {
             </main>
 
             <!-- Sidebar à direita: lista de aulas do módulo -->
-            <aside class="w-full shrink-0 rounded-xl border border-zinc-700 bg-zinc-800/50 lg:w-72">
+            <aside class="flex w-full shrink-0 flex-col rounded-xl border border-zinc-700 bg-zinc-800/50 lg:sticky lg:top-24 lg:w-96 lg:max-h-[calc(100vh-7rem)]">
                 <div class="border-b border-zinc-700 p-4">
                     <Link :href="href('/')" class="text-sm text-zinc-400 hover:text-[var(--ma-primary)]">← Início</Link>
                     <h2 class="mt-2 text-lg font-semibold">{{ module.title }}</h2>
                     <p v-if="module.section" class="text-xs text-zinc-500">{{ module.section.title }}</p>
                 </div>
-                <nav class="max-h-[60vh] overflow-y-auto p-2">
+                <MemberLessonOffer :offer="lesson_offer" />
+                <nav class="min-h-0 flex-1 overflow-y-auto p-2">
                     <template v-if="lessons.length">
                         <template v-for="lesson in lessons" :key="lesson.id">
                             <Link
@@ -347,11 +471,11 @@ function scrollCarousel(sectionId, direction) {
                             >
                                 <CheckCircle v-if="isLessonCompleted(lesson)" class="h-4 w-4 shrink-0 text-emerald-500" />
                                 <span v-else class="flex h-4 w-4 shrink-0 items-center justify-center rounded-full border border-zinc-500 text-xs">{{ lessons.indexOf(lesson) + 1 }}</span>
-                                <span class="min-w-0 flex-1 break-words whitespace-normal leading-snug line-clamp-2">{{ lesson.title || 'Sem título' }}</span>
+                                <span class="min-w-0 flex-1 break-words whitespace-normal leading-snug">{{ lesson.title || 'Sem título' }}</span>
                             </Link>
                             <div v-else class="flex cursor-not-allowed items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm opacity-70">
                                 <span class="flex h-4 w-4 shrink-0 items-center justify-center rounded-full border border-zinc-600 text-xs">{{ lessons.indexOf(lesson) + 1 }}</span>
-                                <span class="min-w-0 flex-1 break-words whitespace-normal leading-snug line-clamp-2 text-zinc-400">{{ lesson.title || 'Sem título' }}</span>
+                                <span class="min-w-0 flex-1 break-words whitespace-normal leading-snug text-zinc-400">{{ lesson.title || 'Sem título' }}</span>
                                 <span v-if="lesson.lock_message" class="shrink-0 text-[10px] text-zinc-500">{{ lesson.lock_message }}</span>
                             </div>
                         </template>

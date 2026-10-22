@@ -12,6 +12,7 @@ use App\Models\MemberCommunityPostComment;
 use App\Models\MemberCommunityPostLike;
 use App\Models\MemberInternalProduct;
 use App\Models\MemberLesson;
+use App\Models\MemberLessonRating;
 use App\Models\MemberModule;
 use App\Models\MemberSection;
 use App\Models\Order;
@@ -195,6 +196,7 @@ class MemberAreaAppController extends Controller
                 'content_text' => \App\Support\HtmlSanitizer::sanitize($currentLesson->content_text),
                 'duration_seconds' => $currentLesson->duration_seconds,
                 'is_completed' => $this->isLessonCompleted($user->id, $currentLesson->id),
+                'rating' => $this->studentLessonRating($user, $currentLesson->id),
                 'module' => $currentLesson->module ? ['id' => $currentLesson->module->id, 'title' => $currentLesson->module->title] : null,
                 'section' => $currentLesson->module && $currentLesson->module->section ? ['id' => $currentLesson->module->section->id, 'title' => $currentLesson->module->section->title] : null,
                 'watermark_enabled' => (bool) ($currentLesson->watermark_enabled ?? false),
@@ -263,6 +265,7 @@ class MemberAreaAppController extends Controller
             'comments_enabled' => $commentsEnabled,
             'comments_require_approval' => $commentsRequireApproval,
             'lesson_comments' => $lessonComments,
+            'lesson_offer' => $this->lessonOfferPayload($product, $user),
             ...$this->pushProps($product),
         ]);
     }
@@ -311,6 +314,7 @@ class MemberAreaAppController extends Controller
             'content_text' => \App\Support\HtmlSanitizer::sanitize($lesson->content_text),
             'duration_seconds' => $lesson->duration_seconds,
             'is_completed' => $this->isLessonCompleted($user->id, $lesson->id),
+            'rating' => $this->studentLessonRating($user, $lesson->id),
             'module' => $lesson->module ? ['id' => $lesson->module->id, 'title' => $lesson->module->title] : null,
             'section' => $lesson->module && $lesson->module->section ? ['id' => $lesson->module->section->id, 'title' => $lesson->module->section->title] : null,
             'watermark_enabled' => (bool) ($lesson->watermark_enabled ?? false),
@@ -687,6 +691,50 @@ class MemberAreaAppController extends Controller
         }
 
         return $this->redirectToLessonContext($request, $slug, $lesson)->with('success', $message);
+    }
+
+    public function storeLessonRating(Request $request): JsonResponse|RedirectResponse
+    {
+        $slug = $this->routeSlug($request);
+        $lesson = $this->routeMemberLesson($request);
+        $user = $request->user();
+        if (! $user) {
+            return response()->json(['success' => false, 'message' => 'Não autenticado.'], 401);
+        }
+        $product = $this->getProduct($request);
+        $this->assertNotAdminPreviewMutation($request, $product);
+        if (! $this->belongsToMemberProduct($lesson->product_id, $product)) {
+            abort(404);
+        }
+        $lesson->loadMissing('module');
+        $lessonLock = $this->moduleAccess->lessonLockPayload($lesson, $lesson->module, $product, $user, now());
+        if (($lessonLock['is_locked'] ?? false) === true) {
+            abort(403, $lessonLock['lock_message'] ?? 'Conteúdo indisponível.');
+        }
+        $validated = $request->validate([
+            'rating' => ['required', 'integer', 'min:1', 'max:5'],
+        ]);
+
+        $record = MemberLessonRating::query()->updateOrCreate(
+            [
+                'user_id' => $user->id,
+                'member_lesson_id' => $lesson->id,
+            ],
+            [
+                'product_id' => (string) $product->id,
+                'rating' => (int) $validated['rating'],
+            ]
+        );
+
+        if ($request->expectsJson() && ! $request->header('X-Inertia')) {
+            return response()->json([
+                'success' => true,
+                'rating' => (int) $record->rating,
+            ]);
+        }
+
+        return $this->redirectToLessonContext($request, $slug, $lesson)
+            ->with('success', 'Avaliação salva.');
     }
 
     public function loja(Request $request, string $slug): Response
@@ -1451,6 +1499,63 @@ class MemberAreaAppController extends Controller
             ->where('member_lesson_id', $lessonId)
             ->whereNotNull('completed_at')
             ->exists();
+    }
+
+    private function studentLessonRating(?User $user, int $lessonId): ?int
+    {
+        if (! $user) {
+            return null;
+        }
+
+        $rating = MemberLessonRating::query()
+            ->where('user_id', $user->id)
+            ->where('member_lesson_id', $lessonId)
+            ->value('rating');
+
+        return $rating !== null ? (int) $rating : null;
+    }
+
+    /**
+     * Oferta contextual no topo da lista de aulas. Some quando o aluno já tem o produto.
+     *
+     * @return array{product_id: string, name: string, price: float|int|string|null, image_url: string|null, checkout_slug: string, checkout_url: string, button_text: string}|null
+     */
+    private function lessonOfferPayload(Product $product, ?User $user): ?array
+    {
+        $config = $this->memberAreaConfigForApp($product);
+        $offer = is_array($config['lesson_offer'] ?? null) ? $config['lesson_offer'] : [];
+        if (empty($offer['enabled'])) {
+            return null;
+        }
+
+        $relatedId = trim((string) ($offer['product_id'] ?? ''));
+        if ($relatedId === '' || $relatedId === (string) $product->id) {
+            return null;
+        }
+
+        if ($user && isset($this->userOwnedProductIdMap($user)[$relatedId])) {
+            return null;
+        }
+
+        $related = Product::query()
+            ->where('id', $relatedId)
+            ->where('tenant_id', $product->tenant_id)
+            ->first();
+        if (! $related || ! $related->isAvailableForPurchase() || ! $related->checkout_slug) {
+            return null;
+        }
+
+        $button = trim((string) ($offer['button_text'] ?? ''));
+
+        return [
+            'product_id' => (string) $related->id,
+            'name' => (string) $related->name,
+            'price' => $related->price,
+            'image_url' => $related->image ? (new StorageService($product->tenant_id))->url($related->image) : null,
+            'checkout_slug' => $related->checkout_slug,
+            'checkout_url' => url('/c/'.$related->checkout_slug),
+            'button_text' => $button !== '' ? mb_substr($button, 0, 40) : 'Comprar',
+        ];
     }
 
     /**

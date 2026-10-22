@@ -39,6 +39,7 @@ import {
     Trophy,
     BarChart3,
     GripVertical,
+    Megaphone,
 } from 'lucide-vue-next';
 import {
     communityPageIconComponents,
@@ -307,6 +308,11 @@ const defaultConfig = () => ({
     community_users_can_delete_own_posts: props.produto.member_area_config?.community_users_can_delete_own_posts ?? true,
     comments_enabled: props.produto.member_area_config?.comments_enabled ?? false,
     comments_require_approval: props.produto.member_area_config?.comments_require_approval ?? true,
+    lesson_offer: {
+        enabled: Boolean(props.produto.member_area_config?.lesson_offer?.enabled),
+        product_id: props.produto.member_area_config?.lesson_offer?.product_id ?? '',
+        button_text: props.produto.member_area_config?.lesson_offer?.button_text || 'Comprar',
+    },
     gamification: { enabled: false, achievements: [], ...props.produto.member_area_config?.gamification },
 });
 
@@ -329,6 +335,7 @@ const tabs = [
     { id: 'aparencia', label: 'Aparência', icon: Palette, hasPreview: true, previewMode: 'area' },
     { id: 'header', label: 'Header', icon: LayoutList, hasPreview: true, previewMode: 'area' },
     { id: 'modulos', label: 'Módulos', icon: Layers, hasPreview: true, previewMode: 'area' },
+    { id: 'oferta', label: 'Oferta na aula', icon: Megaphone, hasPreview: false },
     { id: 'turmas', label: 'Turmas', icon: Users, hasPreview: false },
     { id: 'progresso', label: 'Progresso', icon: BarChart3, hasPreview: false },
     { id: 'comentarios', label: 'Comentários', icon: MessageSquare, hasPreview: false },
@@ -3030,6 +3037,40 @@ const inputClass = 'block w-full rounded-lg border border-zinc-300 bg-white px-3
                             </aside>
                         </div>
 
+                    </template>
+
+                    <template v-else-if="activeTab === 'oferta'">
+                        <div class="mx-auto w-full max-w-xl space-y-6">
+                            <div>
+                                <h2 class="mb-1 text-sm font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Oferta na aula</h2>
+                                <p class="mb-4 text-xs text-zinc-500 dark:text-zinc-400">
+                                    Exibe um produto no topo da lista de aulas. O aluno compra no modal, sem sair da aula. Depois da compra, a oferta some.
+                                </p>
+                                <div class="space-y-4 rounded-xl border border-zinc-200 bg-zinc-50/50 p-4 dark:border-zinc-600 dark:bg-zinc-800/30">
+                                    <Toggle v-model="configForm.member_area_config.lesson_offer.enabled" label="Exibir oferta nas aulas" />
+                                    <div>
+                                        <label class="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">Produto</label>
+                                        <select v-model="configForm.member_area_config.lesson_offer.product_id" :class="inputClass" class="w-full">
+                                            <option value="">Selecione o produto</option>
+                                            <option v-for="p in tenant_products" :key="p.id" :value="p.id">{{ p.name }}</option>
+                                        </select>
+                                        <p class="mt-1 text-xs text-zinc-500 dark:text-zinc-400">Escolha outro produto da sua conta. Não mistura com a Loja: aqui é uma oferta única, contextual.</p>
+                                    </div>
+                                    <div>
+                                        <label class="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">Texto do botão</label>
+                                        <input
+                                            v-model="configForm.member_area_config.lesson_offer.button_text"
+                                            type="text"
+                                            :class="inputClass"
+                                            class="w-full"
+                                            maxlength="40"
+                                            placeholder="Comprar"
+                                        />
+                                    </div>
+                                </div>
+                                <Button type="button" class="mt-4 w-full" @click="saveConfig" :disabled="processing">Salvar alterações</Button>
+                            </div>
+                        </div>
                     </template>
 
                     <template v-else-if="activeTab === 'turmas'">

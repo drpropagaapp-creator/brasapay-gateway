@@ -688,6 +688,11 @@ class Product extends Model
             ],
             'comments_enabled' => false,
             'comments_require_approval' => true,
+            'lesson_offer' => [
+                'enabled' => false,
+                'product_id' => null,
+                'button_text' => 'Comprar',
+            ],
             'gamification' => [
                 'enabled' => false,
                 'achievements' => [],
