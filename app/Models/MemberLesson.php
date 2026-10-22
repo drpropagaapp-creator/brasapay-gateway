@@ -57,4 +57,9 @@ class MemberLesson extends Model
     {
         return $this->hasMany(MemberComment::class, 'member_lesson_id');
     }
+
+    public function ratings(): HasMany
+    {
+        return $this->hasMany(MemberLessonRating::class, 'member_lesson_id');
+    }
 }

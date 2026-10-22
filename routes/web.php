@@ -1283,6 +1283,7 @@ Route::prefix('m/{slug}')->where(['slug' => '[a-zA-Z0-9]{6,16}'])->middleware('m
         Route::post('aula/{lesson}/complete', [\App\Http\Controllers\MemberAreaAppController::class, 'completeLesson'])->name('member-area-app.lesson.complete');
         Route::get('aula/{lesson}/material/{index}/{filename?}', [\App\Http\Controllers\MemberAreaAppController::class, 'downloadLessonMaterial'])->whereNumber('index')->where('filename', '[A-Za-z0-9._-]{1,120}')->middleware('throttle:60,1')->name('member-area-app.lesson.material');
         Route::post('aula/{lesson}/comments', [\App\Http\Controllers\MemberAreaAppController::class, 'storeLessonComment'])->name('member-area-app.lesson.comments.store');
+        Route::post('aula/{lesson}/rating', [\App\Http\Controllers\MemberAreaAppController::class, 'storeLessonRating'])->name('member-area-app.lesson.rating');
         Route::get('loja', [\App\Http\Controllers\MemberAreaAppController::class, 'loja'])->name('member-area-app.loja');
         Route::get('comunidade', [\App\Http\Controllers\MemberAreaAppController::class, 'comunidade'])->name('member-area-app.comunidade');
         Route::get('comunidade/{pageSlug}', [\App\Http\Controllers\MemberAreaAppController::class, 'comunidadePage'])->name('member-area-app.comunidade.page');
@@ -1337,6 +1338,7 @@ Route::middleware(['web', 'member.area.resolve.by.host'])->group(function () {
         Route::post('aula/{lesson}/complete', [\App\Http\Controllers\MemberAreaAppController::class, 'completeLesson'])->name('member-area-app.lesson.complete.host');
         Route::get('aula/{lesson}/material/{index}/{filename?}', [\App\Http\Controllers\MemberAreaAppController::class, 'downloadLessonMaterial'])->whereNumber('index')->where('filename', '[A-Za-z0-9._-]{1,120}')->middleware('throttle:60,1')->name('member-area-app.lesson.material.host');
         Route::post('aula/{lesson}/comments', [\App\Http\Controllers\MemberAreaAppController::class, 'storeLessonComment'])->name('member-area-app.lesson.comments.store.host');
+        Route::post('aula/{lesson}/rating', [\App\Http\Controllers\MemberAreaAppController::class, 'storeLessonRating'])->name('member-area-app.lesson.rating.host');
         Route::get('loja', [\App\Http\Controllers\MemberAreaAppController::class, 'loja'])->name('member-area-app.loja.host');
         Route::get('comunidade', [\App\Http\Controllers\MemberAreaAppController::class, 'comunidade'])->name('member-area-app.comunidade.host');
         Route::get('comunidade/{pageSlug}', [\App\Http\Controllers\MemberAreaAppController::class, 'comunidadePage'])->name('member-area-app.comunidade.page.host');
