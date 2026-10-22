@@ -146,6 +146,7 @@ class VendasController extends Controller
                 ->orWhere('orders.email', 'like', $like)
                 ->orWhereHas('user', fn ($uq) => $uq->where('name', 'like', $like)->orWhere('email', 'like', $like))
                 ->orWhereHas('product', fn ($pq) => $pq->where('name', 'like', $like))
+                ->orWhereHas('orderItems.product', fn ($pq) => $pq->where('name', 'like', $like))
                 ->orWhereHas('productOffer', fn ($oq) => $oq->where('name', 'like', $like))
                 ->orWhereHas('subscriptionPlan', fn ($sq) => $sq->where('name', 'like', $like));
         });
@@ -181,6 +182,30 @@ class VendasController extends Controller
         return array_values($ids);
     }
 
+    private function normalizeOrderBumpFilter(Request $request): string
+    {
+        $value = strtolower((string) ($this->normalizeString($request->query('order_bump')) ?? 'all'));
+
+        return in_array($value, ['all', 'with', 'without'], true) ? $value : 'all';
+    }
+
+    /**
+     * Pedido cujo produto principal ou algum item (order bump) está na lista.
+     *
+     * @param  list<string>  $productIds
+     */
+    private function constrainOrdersToProducts($query, array $productIds)
+    {
+        if ($productIds === []) {
+            return $query;
+        }
+
+        return $query->where(function ($q) use ($productIds) {
+            $q->whereIn('product_id', $productIds)
+                ->orWhereHas('orderItems', fn ($items) => $items->whereIn('product_id', $productIds));
+        });
+    }
+
     private function applyProductFilters($query, Request $request)
     {
         $productIds = $this->normalizeProductIds($request);
@@ -189,18 +214,31 @@ class VendasController extends Controller
             $productIds = array_values(array_intersect($productIds, $allowed));
         }
 
-        if (count($productIds) === 1) {
-            $query->where('product_id', $productIds[0]);
-        } elseif (count($productIds) > 1) {
-            $query->whereIn('product_id', $productIds);
-        }
+        $query = $this->constrainOrdersToProducts($query, $productIds);
 
         $offerId = $request->query('offer_id');
         $offerId = is_string($offerId) || is_int($offerId) ? (string) $offerId : null;
         $offerId = $this->normalizeString($offerId);
 
         if ($offerId !== null) {
-            $query->where('product_offer_id', (int) $offerId);
+            $offerPk = (int) $offerId;
+            $query->where(function ($q) use ($offerPk) {
+                $q->where('product_offer_id', $offerPk)
+                    ->orWhereHas('orderItems', fn ($items) => $items->where('product_offer_id', $offerPk));
+            });
+        }
+
+        return $query;
+    }
+
+    private function applyOrderBumpFilter($query, Request $request)
+    {
+        $filter = $this->normalizeOrderBumpFilter($request);
+        if ($filter === 'with') {
+            return $query->whereHas('orderItems', fn ($items) => $items->where('position', '>', 0));
+        }
+        if ($filter === 'without') {
+            return $query->whereDoesntHave('orderItems', fn ($items) => $items->where('position', '>', 0));
         }
 
         return $query;
@@ -327,13 +365,14 @@ class VendasController extends Controller
 
         if (auth()->user()?->isTeam()) {
             $allowed = app(TeamAccessService::class)->allowedProductIdsFor(auth()->user());
-            $query->whereIn('product_id', $allowed ?: ['__none__']);
+            $query = $this->constrainOrdersToProducts($query, $allowed ?: ['__none__']);
         }
 
         $query = $this->applyStatusFilter($query, $statusFilter);
         $query = $this->applyPeriodFilter($query, $request);
         $query = $this->applySearchFilter($query, $request);
         $query = $this->applyProductFilters($query, $request);
+        $query = $this->applyOrderBumpFilter($query, $request);
         $query = $this->applyPaymentFilters($query, $request);
         $query = $this->applySaleChannelFilter($query, $request);
         $query = $this->applyAffiliateFilter($query, $request);
@@ -372,6 +411,8 @@ class VendasController extends Controller
         $arr['list_key'] = 'order:'.$o->id;
         $arr['sale_origin'] = $o->sale_origin ?? (is_array($o->metadata) ? ($o->metadata['sale_origin'] ?? null) : null);
         $arr['sale_origin_label'] = SaleOrigin::label($arr['sale_origin']);
+        $arr['has_order_bump'] = ($o->relationLoaded('orderItems') ? $o->orderItems : collect())
+            ->contains(fn ($item) => (int) ($item->position ?? 0) > 0);
         $arr['installments'] = CardInstallmentEconomics::countFromOrder($o);
 
         $commission = $o->relationLoaded('affiliateCommission')
@@ -424,6 +465,7 @@ class VendasController extends Controller
             'date_to' => $this->normalizeString($request->query('date_to')),
             'product_ids' => $this->normalizeProductIds($request),
             'offer_id' => $this->normalizeString((string) ($request->query('offer_id') ?? '')),
+            'order_bump' => $this->normalizeOrderBumpFilter($request),
             'payment_method' => $this->normalizeString($request->query('payment_method')) ?? 'all',
             'payment_status' => $this->normalizeString($request->query('payment_status')) ?? 'all',
             'utm_source' => $this->normalizeString($request->query('utm_source')),
@@ -633,6 +675,7 @@ class VendasController extends Controller
                 'date_to' => $this->normalizeString($request->query('date_to')),
                 'product_ids' => $this->normalizeProductIds($request),
                 'offer_id' => $this->normalizeString((string) ($request->query('offer_id') ?? '')),
+                'order_bump' => $this->normalizeOrderBumpFilter($request),
                 'payment_method' => $this->normalizeString($request->query('payment_method')) ?? 'all',
                 'payment_status' => $this->normalizeString($request->query('payment_status')) ?? 'all',
                 'utm_source' => $this->normalizeString($request->query('utm_source')),
@@ -672,6 +715,10 @@ class VendasController extends Controller
             return false;
         }
 
+        if ($this->normalizeOrderBumpFilter($request) !== 'all') {
+            return false;
+        }
+
         if ($this->normalizeString($request->query('utm_source'))) {
             return false;
         }
@@ -706,6 +753,10 @@ class VendasController extends Controller
         }
 
         if ($this->normalizeString($request->query('offer_id'))) {
+            return false;
+        }
+
+        if ($this->normalizeOrderBumpFilter($request) !== 'all') {
             return false;
         }
 
@@ -1011,7 +1062,7 @@ class VendasController extends Controller
     public function export(Request $request): StreamedResponse
     {
         $format = $request->query('format', 'csv');
-        if (! in_array($format, ['csv', 'xls'], true)) {
+        if (! in_array($format, ['csv', 'xls', 'json'], true)) {
             $format = 'csv';
         }
 
@@ -1020,28 +1071,78 @@ class VendasController extends Controller
 
         $vendas = $filteredQuery
             ->with([
-                'product:id,name',
+                'product:id,name,checkout_slug',
                 'user:id,name,email',
-                'orderItems:id,order_id,amount',
+                'productOffer:id,name,checkout_slug',
+                'subscriptionPlan:id,name,checkout_slug',
+                'orderItems:id,order_id,product_id,amount,position',
+                'orderItems.product:id,name',
+                'checkoutSession:'.CheckoutSession::eagerSelectForOrderRelation(),
+                'affiliateCommission.affiliate:id,name',
             ])
             ->orderByDesc('created_at')
             ->get();
 
-        $rows = $vendas->map(function (Order $o) {
-            $net = OrderFeeBreakdownService::forOrder($o)['net'];
-
-            return [
-                'data' => $o->created_at?->format('d/m/Y H:i'),
-                'produto' => $this->productDisplayName($o),
-                'cliente' => $o->user?->name ?? $o->email ?? '–',
-                'email' => $o->email ?? '–',
-                'status' => $this->statusLabelForOrder($o),
-                'gateway' => $o->paymentMethodDisplayLabel(),
-                'valor_liquido' => number_format($net, 2, ',', '.'),
+        if ($format === 'json') {
+            $payload = [
+                'formato' => 'stacker-vendas-json-v1',
+                'exportado_em' => now()->toIso8601String(),
+                'total' => $vendas->count(),
+                'vendas' => $vendas->map(fn (Order $o) => $this->orderToExportJson($o))->values()->all(),
             ];
-        })->all();
+            $filename = 'vendas_'.date('Y-m-d_His').'.json';
 
-        $headers = ['Data', 'Produto', 'Cliente', 'E-mail', 'Status', 'Método', 'Valor líquido'];
+            return response()->streamDownload(function () use ($payload) {
+                echo json_encode(
+                    $payload,
+                    JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE
+                );
+            }, $filename, [
+                'Content-Type' => 'application/json; charset=UTF-8',
+            ]);
+        }
+
+        $rows = $vendas->map(fn (Order $o) => $this->orderToExportRow($o))->all();
+
+        $headers = [
+            'ID',
+            'Referência',
+            'Data',
+            'Status',
+            'Origem',
+            'Canal',
+            'Tipo',
+            'Renovação',
+            'Cupom',
+            'Produto',
+            'Oferta',
+            'Plano',
+            'Order bump',
+            'Itens',
+            'Valor bruto',
+            'Frete',
+            'Taxas',
+            'Valor líquido',
+            'Parcelas',
+            'Método',
+            'Adquirente',
+            'Cliente',
+            'E-mail',
+            'Telefone',
+            'CPF',
+            'Afiliado',
+            'Comissão afiliado %',
+            'Comissão afiliado',
+            'utm_source',
+            'utm_medium',
+            'utm_campaign',
+            'utm_content',
+            'utm_term',
+            'sck',
+            'src',
+            'Endereço',
+            'Checkout',
+        ];
 
         if ($format === 'csv') {
             $filename = 'vendas_'.date('Y-m-d_His').'.csv';
@@ -1083,6 +1184,241 @@ class VendasController extends Controller
         }, $filename, [
             'Content-Type' => 'application/vnd.ms-excel; charset=UTF-8',
         ]);
+    }
+
+    /**
+     * Estrutura aninhada para consumo por IA (números, booleanos e itens separados).
+     *
+     * @return array<string, mixed>
+     */
+    private function orderToExportJson(Order $o): array
+    {
+        $breakdown = OrderFeeBreakdownService::forOrder($o);
+        $items = ($o->relationLoaded('orderItems') ? $o->orderItems : collect())
+            ->sortBy(fn ($item) => (int) ($item->position ?? 0))
+            ->values();
+        $hasBump = $items->contains(fn ($item) => (int) ($item->position ?? 0) > 0);
+        $commission = $o->relationLoaded('affiliateCommission') ? $o->affiliateCommission : null;
+        $commissionMeta = is_array($commission?->metadata) ? $commission->metadata : [];
+        $installments = CardInstallmentEconomics::countFromOrder($o);
+        $origin = $o->sale_origin ?? (is_array($o->metadata) ? ($o->metadata['sale_origin'] ?? null) : null);
+        $origin = is_string($origin) ? $origin : null;
+        $addr = is_array($o->shipping_address) ? $o->shipping_address : [];
+        $enderecoTexto = $this->exportShippingAddress($o);
+
+        $tracking = [];
+        foreach (CheckoutSession::TRACKING_FIELD_KEYS as $key) {
+            $value = $this->exportTrackingValue($o, $key);
+            $tracking[$key] = $value !== '' ? $value : null;
+        }
+
+        return [
+            'id' => (int) $o->id,
+            'referencia' => (string) ($o->public_reference ?: $o->id),
+            'criado_em' => $o->created_at?->toIso8601String(),
+            'status' => (string) ($o->status ?? ''),
+            'status_label' => $this->statusLabelForOrder($o),
+            'origem' => $origin,
+            'origem_label' => SaleOrigin::label($origin),
+            'canal' => $this->saleChannelExportLabel($o),
+            'tipo' => $this->paymentTypeLabel($o),
+            'renovacao' => (bool) $o->is_renewal,
+            'cupom' => $this->blankToNull($o->coupon_code),
+            'produto' => $o->product?->name ?? $this->productDisplayName($o),
+            'oferta' => $this->blankToNull($o->productOffer?->name),
+            'plano' => $this->blankToNull($o->subscriptionPlan?->name),
+            'tem_order_bump' => $hasBump,
+            'itens' => $items->isEmpty()
+                ? [[
+                    'produto' => $this->productDisplayName($o),
+                    'valor' => round((float) $breakdown['gross'], 2),
+                    'order_bump' => false,
+                ]]
+                : $items->map(fn ($item) => [
+                    'produto' => $item->product?->name ?? 'Item',
+                    'valor' => round((float) $item->amount, 2),
+                    'order_bump' => (int) ($item->position ?? 0) > 0,
+                ])->all(),
+            'valores' => [
+                'bruto' => round((float) $breakdown['gross'], 2),
+                'frete' => round((float) ($o->shipping_amount ?? 0), 2),
+                'taxas' => round((float) $breakdown['fee'], 2),
+                'liquido' => round((float) $breakdown['net'], 2),
+            ],
+            'parcelas' => $installments,
+            'metodo' => $o->paymentMethodDisplayLabel(),
+            'adquirente' => $o->acquirerDisplayName(),
+            'cliente' => [
+                'nome' => $this->blankToNull($o->user?->name ?? $o->email),
+                'email' => $this->blankToNull($o->email ?? $o->user?->email),
+                'telefone' => $this->blankToNull($o->phone),
+                'cpf' => $this->blankToNull($o->cpf),
+            ],
+            'afiliado' => $commission ? [
+                'nome' => $this->blankToNull($commissionMeta['affiliate_name'] ?? $commission->affiliate?->name),
+                'comissao_percentual' => round((float) $commission->commission_percent, 2),
+                'comissao' => round((float) ($commission->commission_net ?? $commission->commission_gross), 2),
+            ] : null,
+            'tracking' => $tracking,
+            'endereco' => $enderecoTexto !== '' ? [
+                'texto' => $enderecoTexto,
+                'rua' => $this->blankToNull($addr['street'] ?? null),
+                'numero' => $this->blankToNull($addr['number'] ?? null),
+                'complemento' => $this->blankToNull($addr['complement'] ?? null),
+                'bairro' => $this->blankToNull($addr['neighborhood'] ?? null),
+                'cidade' => $this->blankToNull($addr['city'] ?? null),
+                'uf' => $this->blankToNull($addr['state'] ?? null),
+                'cep' => $this->blankToNull($addr['zip'] ?? null),
+            ] : null,
+            'checkout' => url('/c/'.$o->getCheckoutSlug()),
+        ];
+    }
+
+    private function blankToNull(mixed $value): ?string
+    {
+        $v = trim((string) ($value ?? ''));
+
+        return $v !== '' ? $v : null;
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private function orderToExportRow(Order $o): array
+    {
+        $breakdown = OrderFeeBreakdownService::forOrder($o);
+        $items = $o->relationLoaded('orderItems') ? $o->orderItems : collect();
+        $hasBump = $items->contains(fn ($item) => (int) ($item->position ?? 0) > 0);
+        $commission = $o->relationLoaded('affiliateCommission') ? $o->affiliateCommission : null;
+        $commissionMeta = is_array($commission?->metadata) ? $commission->metadata : [];
+        $installments = CardInstallmentEconomics::countFromOrder($o);
+        $origin = $o->sale_origin ?? (is_array($o->metadata) ? ($o->metadata['sale_origin'] ?? null) : null);
+
+        return [
+            'id' => (string) $o->id,
+            'referencia' => (string) ($o->public_reference ?: $o->id),
+            'data' => $o->created_at?->format('d/m/Y H:i') ?? '',
+            'status' => $this->statusLabelForOrder($o),
+            'origem' => SaleOrigin::label(is_string($origin) ? $origin : null),
+            'canal' => $this->saleChannelExportLabel($o),
+            'tipo' => $this->paymentTypeLabel($o),
+            'renovacao' => $this->formatExportYesNo((bool) $o->is_renewal),
+            'cupom' => (string) ($o->coupon_code ?? ''),
+            'produto' => $o->product?->name ?? $this->productDisplayName($o),
+            'oferta' => (string) ($o->productOffer?->name ?? ''),
+            'plano' => (string) ($o->subscriptionPlan?->name ?? ''),
+            'order_bump' => $this->formatExportYesNo($hasBump),
+            'itens' => $this->exportOrderItemsLabel($o),
+            'valor_bruto' => $this->formatExportMoney((float) $breakdown['gross']),
+            'frete' => $this->formatExportMoney((float) ($o->shipping_amount ?? 0)),
+            'taxas' => $this->formatExportMoney((float) $breakdown['fee']),
+            'valor_liquido' => $this->formatExportMoney((float) $breakdown['net']),
+            'parcelas' => $installments > 1 ? $installments.'x' : '1x',
+            'metodo' => $o->paymentMethodDisplayLabel(),
+            'adquirente' => $o->acquirerDisplayName(),
+            'cliente' => (string) ($o->user?->name ?? $o->email ?? ''),
+            'email' => (string) ($o->email ?? $o->user?->email ?? ''),
+            'telefone' => (string) ($o->phone ?? ''),
+            'cpf' => (string) ($o->cpf ?? ''),
+            'afiliado' => (string) ($commissionMeta['affiliate_name'] ?? $commission?->affiliate?->name ?? ''),
+            'comissao_percent' => $commission ? $this->formatExportMoney((float) $commission->commission_percent) : '',
+            'comissao' => $commission ? $this->formatExportMoney((float) ($commission->commission_net ?? $commission->commission_gross)) : '',
+            'utm_source' => $this->exportTrackingValue($o, 'utm_source'),
+            'utm_medium' => $this->exportTrackingValue($o, 'utm_medium'),
+            'utm_campaign' => $this->exportTrackingValue($o, 'utm_campaign'),
+            'utm_content' => $this->exportTrackingValue($o, 'utm_content'),
+            'utm_term' => $this->exportTrackingValue($o, 'utm_term'),
+            'sck' => $this->exportTrackingValue($o, 'sck'),
+            'src' => $this->exportTrackingValue($o, 'src'),
+            'endereco' => $this->exportShippingAddress($o),
+            'checkout' => url('/c/'.$o->getCheckoutSlug()),
+        ];
+    }
+
+    private function saleChannelExportLabel(Order $order): string
+    {
+        if ($order->isPixGoSale()) {
+            return PixGoAccess::sidebarLabel();
+        }
+        if (app(MedPolicyService::class)->isApiPixRestOrder($order)) {
+            return 'API PIX';
+        }
+
+        return 'Checkout';
+    }
+
+    private function formatExportMoney(float $value): string
+    {
+        return number_format($value, 2, ',', '.');
+    }
+
+    private function formatExportYesNo(bool $value): string
+    {
+        return $value ? 'Sim' : 'Não';
+    }
+
+    private function exportTrackingValue(Order $order, string $key): string
+    {
+        $session = $order->relationLoaded('checkoutSession') ? $order->checkoutSession : null;
+        $fromSession = $session?->{$key} ?? null;
+        $meta = is_array($order->metadata) ? $order->metadata : [];
+        $fromMeta = $meta[$key] ?? null;
+
+        return trim((string) ($fromSession ?? $fromMeta ?? ''));
+    }
+
+    private function exportOrderItemsLabel(Order $order): string
+    {
+        $items = $order->relationLoaded('orderItems') ? $order->orderItems : collect();
+        if ($items->isEmpty()) {
+            return $this->productDisplayName($order);
+        }
+
+        return $items
+            ->sortBy(fn ($item) => (int) ($item->position ?? 0))
+            ->map(function ($item) {
+                $isBump = (int) ($item->position ?? 0) > 0;
+                $name = $item->product?->name ?? 'Item';
+                if ($isBump) {
+                    $name .= ' (Bump)';
+                }
+
+                return $name.' ('.$this->formatExportMoney((float) $item->amount).')';
+            })
+            ->implode('; ');
+    }
+
+    private function exportShippingAddress(Order $order): string
+    {
+        $addr = $order->shipping_address;
+        if (! is_array($addr) || $addr === []) {
+            return '';
+        }
+
+        $parts = [];
+        $street = trim((string) ($addr['street'] ?? ''));
+        if ($street !== '') {
+            $number = trim((string) ($addr['number'] ?? ''));
+            $parts[] = $number !== '' ? $street.', '.$number : $street;
+        }
+        foreach (['complement', 'neighborhood'] as $key) {
+            $value = trim((string) ($addr[$key] ?? ''));
+            if ($value !== '') {
+                $parts[] = $value;
+            }
+        }
+        $city = trim((string) ($addr['city'] ?? ''));
+        $state = trim((string) ($addr['state'] ?? ''));
+        $cityState = trim($city.($city !== '' && $state !== '' ? ' — ' : '').$state);
+        if ($cityState !== '') {
+            $parts[] = $cityState;
+        }
+        $zip = trim((string) ($addr['zip'] ?? ''));
+        if ($zip !== '') {
+            $parts[] = 'CEP '.$zip;
+        }
+
+        return implode(' - ', $parts);
     }
 
     private function statusLabel(?string $status): string
