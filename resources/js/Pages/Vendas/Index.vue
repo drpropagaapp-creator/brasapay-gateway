@@ -26,6 +26,8 @@ import {
     X,
     Package,
     ChevronDown,
+    ChevronLeft,
+    ChevronRight,
     RotateCcw,
 } from 'lucide-vue-next';
 import Checkbox from '@/components/ui/Checkbox.vue';
@@ -234,6 +236,56 @@ const filterForm = ref({
 });
 
 const vendasList = computed(() => props.vendas?.data ?? props.vendas ?? []);
+
+const vendasPaginationLinks = computed(() => (Array.isArray(props.vendas?.links) ? props.vendas.links : []));
+const vendasCurrentPage = computed(() => Number(props.vendas?.current_page ?? 1) || 1);
+const vendasLastPage = computed(() => Number(props.vendas?.last_page ?? 1) || 1);
+const showVendasPagination = computed(() => vendasLastPage.value > 1 || vendasPaginationLinks.value.length > 3);
+
+const vendasPrevLink = computed(() => vendasPaginationLinks.value[0] ?? null);
+const vendasNextLink = computed(() => {
+    const links = vendasPaginationLinks.value;
+    return links.length ? links[links.length - 1] : null;
+});
+
+const mobilePageLinks = computed(() => {
+    const numbered = vendasPaginationLinks.value.filter((link) => /^\d+$/.test(htmlToText(link?.label)));
+    if (numbered.length <= 5) return numbered;
+
+    const current = vendasCurrentPage.value;
+    const last = vendasLastPage.value;
+    let start = current - 2;
+    let end = current + 2;
+    if (current <= 3) {
+        start = 1;
+        end = Math.min(5, last);
+    } else if (current >= last - 2) {
+        start = Math.max(1, last - 4);
+        end = last;
+    }
+
+    return numbered.filter((link) => {
+        const page = Number(htmlToText(link.label));
+        return page >= start && page <= end;
+    });
+});
+
+function goToVendasPage(url) {
+    if (!url) return;
+    router.visit(url, { preserveState: true });
+}
+
+function paginationItemClass(link, compact = false) {
+    return [
+        'relative inline-flex items-center justify-center rounded-lg text-sm font-medium transition',
+        compact ? 'h-9 min-w-[2.25rem] shrink-0 px-2' : 'px-3 py-2',
+        link?.active
+            ? 'z-10 bg-[var(--color-primary)] text-white'
+            : link?.url
+              ? 'text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-700'
+              : 'cursor-not-allowed text-zinc-400 dark:text-zinc-500',
+    ];
+}
 
 const advancedFiltersOpen = ref(false);
 const productFilterOpen = ref(false);
@@ -1255,29 +1307,54 @@ const exportJsonUrl = computed(() => `/vendas/export?${buildExportSearchParams('
         </div>
         </AuroraPageSection>
 
-        <!-- Paginação -->
+        <!-- Paginação: no mobile usa janela curta para não cortar as páginas 1 e 2. -->
         <nav
-            v-if="vendas?.links?.length > 3"
-            class="flex items-center justify-center gap-2"
+            v-if="showVendasPagination"
+            class="w-full min-w-0"
             :aria-label="t('common.pagination', 'Paginação')"
         >
-            <a
-                v-for="link in vendas.links"
-                :key="link.label"
-                :href="link.url"
-                :aria-current="link.active ? 'page' : undefined"
-                :aria-disabled="!link.url"
-                :class="[
-                    'relative inline-flex items-center rounded-lg px-3 py-2 text-sm font-medium transition',
-                    link.active
-                        ? 'z-10 bg-[var(--color-primary)] text-white'
-                        : link.url
-                          ? 'text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-700'
-                          : 'cursor-not-allowed text-zinc-400 dark:text-zinc-500',
-                ]"
-                v-text="htmlToText(link.label)"
-                @click.prevent="link.url && router.visit(link.url, { preserveState: true })"
-            />
+            <div class="flex items-center justify-center gap-1 sm:hidden">
+                <a
+                    :href="vendasPrevLink?.url || undefined"
+                    :aria-label="t('pagination.previous', 'Anterior')"
+                    :aria-disabled="!vendasPrevLink?.url"
+                    :class="paginationItemClass(vendasPrevLink, true)"
+                    @click.prevent="goToVendasPage(vendasPrevLink?.url)"
+                >
+                    <ChevronLeft class="h-4 w-4" aria-hidden="true" />
+                </a>
+                <a
+                    v-for="link in mobilePageLinks"
+                    :key="`mobile-${htmlToText(link.label)}`"
+                    :href="link.url || undefined"
+                    :aria-current="link.active ? 'page' : undefined"
+                    :aria-disabled="!link.url"
+                    :class="paginationItemClass(link, true)"
+                    v-text="htmlToText(link.label)"
+                    @click.prevent="goToVendasPage(link.url)"
+                />
+                <a
+                    :href="vendasNextLink?.url || undefined"
+                    :aria-label="t('pagination.next', 'Próximo')"
+                    :aria-disabled="!vendasNextLink?.url"
+                    :class="paginationItemClass(vendasNextLink, true)"
+                    @click.prevent="goToVendasPage(vendasNextLink?.url)"
+                >
+                    <ChevronRight class="h-4 w-4" aria-hidden="true" />
+                </a>
+            </div>
+            <div class="hidden flex-wrap items-center justify-center gap-2 sm:flex">
+                <a
+                    v-for="(link, index) in vendasPaginationLinks"
+                    :key="`${link.label}-${index}`"
+                    :href="link.url || undefined"
+                    :aria-current="link.active ? 'page' : undefined"
+                    :aria-disabled="!link.url"
+                    :class="paginationItemClass(link)"
+                    v-text="htmlToText(link.label)"
+                    @click.prevent="goToVendasPage(link.url)"
+                />
+            </div>
         </nav>
 
         <!-- Sidebar de detalhes -->
