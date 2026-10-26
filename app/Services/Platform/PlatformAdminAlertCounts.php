@@ -3,37 +3,87 @@
 namespace App\Services\Platform;
 
 use App\Models\MedDispute;
+use App\Models\PlatformAdminMenuView;
 use App\Models\RefundRequest;
 use App\Models\User;
 use App\Models\Withdrawal;
 use App\Services\MerchantWithdrawalService;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Schema;
 
 class PlatformAdminAlertCounts
 {
+    public const KEY_KYC = 'kyc';
+
+    public const KEY_SAQUES = 'saques';
+
+    public const KEY_FINANCEIRO = 'financeiro';
+
+    public const KEY_DISPUTAS = 'disputas';
+
+    public const KEY_TRANSACOES = 'transacoes';
+
     /**
      * Contadores para badges do menu do operador (/plataforma).
+     * Depois que o admin abre a página, o número zera até surgir um evento novo.
      *
      * @return array<string, int>
      */
-    public function sidebarBadges(): array
+    public function sidebarBadges(?User $user = null): array
     {
         return [
-            'kyc' => $this->kycPendingCount(),
-            'saques' => $this->withdrawalsAttentionCount(),
-            'financeiro' => $this->withdrawalsPendingCount(),
-            'disputas' => $this->medDisputesOpenCount(),
-            'transacoes' => $this->refundRequestsPendingCount(),
+            self::KEY_KYC => $this->kycPendingCount($user),
+            self::KEY_SAQUES => $this->withdrawalsAttentionCount($user),
+            self::KEY_FINANCEIRO => $this->withdrawalsPendingCount($user),
+            self::KEY_DISPUTAS => $this->medDisputesOpenCount($user),
+            self::KEY_TRANSACOES => $this->refundRequestsPendingCount($user),
         ];
     }
 
-    public function kycPendingCount(): int
+    public function menuKeyForRequest(Request $request): ?string
+    {
+        if (! $request->isMethod('GET')) {
+            return null;
+        }
+
+        $name = (string) $request->route()?->getName();
+
+        return match ($name) {
+            'plataforma.transacoes.index' => self::KEY_TRANSACOES,
+            'plataforma.saques.index' => self::KEY_SAQUES,
+            'plataforma.financeiro.index' => self::KEY_FINANCEIRO,
+            'plataforma.kyc.index', 'plataforma.kyc.show' => self::KEY_KYC,
+            'plataforma.disputas.index', 'plataforma.disputas.show' => self::KEY_DISPUTAS,
+            default => null,
+        };
+    }
+
+    public function markViewed(User $user, string $menuKey): void
+    {
+        if (! in_array($menuKey, $this->menuKeys(), true) || ! $this->viewsTableReady()) {
+            return;
+        }
+
+        PlatformAdminMenuView::query()->updateOrCreate(
+            [
+                'user_id' => $user->id,
+                'menu_key' => $menuKey,
+            ],
+            [
+                'viewed_at' => now(),
+            ]
+        );
+    }
+
+    public function kycPendingCount(?User $user = null): int
     {
         if (! Schema::hasColumn('users', 'kyc_status')) {
             return 0;
         }
 
-        return (int) User::query()
+        $query = User::query()
             ->where('role', User::ROLE_INFOPRODUTOR)
             ->whereNotNull('tenant_id')
             ->where(function ($sub) {
@@ -41,56 +91,126 @@ class PlatformAdminAlertCounts
                 if (Schema::hasColumn('users', 'kyc_needs_document_review')) {
                     $sub->orWhere('kyc_needs_document_review', true);
                 }
-            })
-            ->count();
+            });
+
+        $this->applyUnseenFilter($query, $user, self::KEY_KYC);
+
+        return (int) $query->count();
     }
 
-    public function withdrawalsPendingCount(): int
+    public function withdrawalsPendingCount(?User $user = null): int
     {
         if (! Schema::hasTable('withdrawals')) {
             return 0;
         }
 
-        return (int) Withdrawal::query()
-            ->where('status', MerchantWithdrawalService::STATUS_PENDING)
-            ->count();
+        $query = Withdrawal::query()
+            ->where('status', MerchantWithdrawalService::STATUS_PENDING);
+
+        $this->applyUnseenFilter($query, $user, self::KEY_FINANCEIRO);
+
+        return (int) $query->count();
     }
 
-    public function withdrawalsFailedCount(): int
+    public function withdrawalsFailedCount(?User $user = null): int
     {
         if (! Schema::hasTable('withdrawals')) {
             return 0;
         }
 
-        return (int) Withdrawal::query()
-            ->where('status', MerchantWithdrawalService::STATUS_FAILED)
-            ->count();
+        $query = Withdrawal::query()
+            ->where('status', MerchantWithdrawalService::STATUS_FAILED);
+
+        $this->applyUnseenFilter($query, $user, self::KEY_SAQUES);
+
+        return (int) $query->count();
     }
 
-    public function withdrawalsAttentionCount(): int
+    public function withdrawalsAttentionCount(?User $user = null): int
     {
-        return $this->withdrawalsPendingCount() + $this->withdrawalsFailedCount();
+        if (! Schema::hasTable('withdrawals')) {
+            return 0;
+        }
+
+        $query = Withdrawal::query()
+            ->whereIn('status', [
+                MerchantWithdrawalService::STATUS_PENDING,
+                MerchantWithdrawalService::STATUS_FAILED,
+            ]);
+
+        $this->applyUnseenFilter($query, $user, self::KEY_SAQUES);
+
+        return (int) $query->count();
     }
 
-    public function medDisputesOpenCount(): int
+    public function medDisputesOpenCount(?User $user = null): int
     {
         if (! Schema::hasTable('med_disputes')) {
             return 0;
         }
 
-        if (! Schema::hasColumn('med_disputes', 'responsible_party')) {
-            return (int) MedDispute::query()->open()->count();
+        $query = MedDispute::query()->open();
+        if (Schema::hasColumn('med_disputes', 'responsible_party')) {
+            $query->platformManaged();
         }
 
-        return (int) MedDispute::query()->platformManaged()->open()->count();
+        $this->applyUnseenFilter($query, $user, self::KEY_DISPUTAS);
+
+        return (int) $query->count();
     }
 
-    public function refundRequestsPendingCount(): int
+    public function refundRequestsPendingCount(?User $user = null): int
     {
         if (! Schema::hasTable('refund_requests')) {
             return 0;
         }
 
-        return (int) RefundRequest::query()->pending()->count();
+        $query = RefundRequest::query()->pending();
+        $this->applyUnseenFilter($query, $user, self::KEY_TRANSACOES);
+
+        return (int) $query->count();
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function menuKeys(): array
+    {
+        return [
+            self::KEY_KYC,
+            self::KEY_SAQUES,
+            self::KEY_FINANCEIRO,
+            self::KEY_DISPUTAS,
+            self::KEY_TRANSACOES,
+        ];
+    }
+
+    private function viewsTableReady(): bool
+    {
+        return Schema::hasTable('platform_admin_menu_views');
+    }
+
+    private function viewedAt(?User $user, string $menuKey): ?Carbon
+    {
+        if ($user === null || ! $this->viewsTableReady()) {
+            return null;
+        }
+
+        $viewedAt = PlatformAdminMenuView::query()
+            ->where('user_id', $user->id)
+            ->where('menu_key', $menuKey)
+            ->value('viewed_at');
+
+        return $viewedAt ? Carbon::parse($viewedAt) : null;
+    }
+
+    private function applyUnseenFilter(Builder $query, ?User $user, string $menuKey, string $column = 'updated_at'): void
+    {
+        $since = $this->viewedAt($user, $menuKey);
+        if ($since === null) {
+            return;
+        }
+
+        $query->where($column, '>', $since);
     }
 }

@@ -33,6 +33,7 @@ use App\Services\TeamAccessService;
 use App\Support\CardInstallments;
 use App\Support\EmailLogoImage;
 use App\Support\HtmlSanitizer;
+use App\Support\MarketplaceSettings;
 use App\Support\MoneyDecimal;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\Request;
@@ -765,7 +766,17 @@ class ProdutosController extends Controller
 
         $validated['is_active'] = $request->boolean('is_active', true);
         if (Schema::hasColumn('products', 'show_in_marketplace')) {
-            $validated['show_in_marketplace'] = $request->boolean('show_in_marketplace');
+            $wantMarketplace = $request->boolean('show_in_marketplace');
+            $wasMarketplace = (bool) $produto->show_in_marketplace;
+            $validated['show_in_marketplace'] = $wantMarketplace;
+            if (
+                $wantMarketplace
+                && ! $wasMarketplace
+                && Schema::hasColumn('products', 'marketplace_approved')
+                && MarketplaceSettings::autoAcceptEnabled()
+            ) {
+                $validated['marketplace_approved'] = true;
+            }
         }
         $validated['currency'] = $validated['currency'] ?? config('products.currency_default', 'BRL');
         $validated['price'] = MoneyDecimal::storageFromBrl(

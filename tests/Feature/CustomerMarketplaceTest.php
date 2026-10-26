@@ -36,6 +36,7 @@ class CustomerMarketplaceTest extends TestCase
             'price' => 49.9,
             'currency' => 'BRL',
             'show_in_marketplace' => true,
+            'marketplace_approved' => true,
             'is_active' => true,
         ]);
 
@@ -47,11 +48,21 @@ class CustomerMarketplaceTest extends TestCase
             'is_active' => true,
         ]);
 
+        $this->createTestProduct([
+            'tenant_id' => $seller->id,
+            'name' => 'Curso aguardando',
+            'checkout_slug' => 'mktpendente',
+            'show_in_marketplace' => true,
+            'marketplace_approved' => false,
+            'is_active' => true,
+        ]);
+
         $owned = $this->createTestProduct([
             'tenant_id' => $seller->id,
             'name' => 'Curso ja comprado',
             'checkout_slug' => 'mktowned',
             'show_in_marketplace' => true,
+            'marketplace_approved' => true,
             'is_active' => true,
         ]);
 
@@ -70,6 +81,7 @@ class CustomerMarketplaceTest extends TestCase
             'name' => 'Curso inativo',
             'checkout_slug' => 'mktinativo',
             'show_in_marketplace' => true,
+            'marketplace_approved' => true,
             'is_active' => false,
         ]);
 
@@ -123,7 +135,9 @@ class CustomerMarketplaceTest extends TestCase
             'show_in_marketplace' => true,
         ])->assertRedirect();
 
-        $this->assertTrue((bool) $product->fresh()->show_in_marketplace);
+        $fresh = $product->fresh();
+        $this->assertTrue((bool) $fresh->show_in_marketplace);
+        $this->assertTrue((bool) $fresh->marketplace_approved);
     }
 
     public function test_checkout_from_marketplace_marks_the_sale_origin(): void
