@@ -3,7 +3,7 @@ import VueApexCharts from 'vue3-apexcharts';
 import ConquistasWidget from '@/components/layout/ConquistasWidget.vue';
 import DashboardPeriodToolbar from '@/components/dashboard/DashboardPeriodToolbar.vue';
 import DashboardCustomPeriodForm from '@/components/dashboard/DashboardCustomPeriodForm.vue';
-import { CircleDollarSign, ShoppingCart, CreditCard, ShoppingBag, RotateCcw, Package } from 'lucide-vue-next';
+import { CircleDollarSign, ShoppingCart, CreditCard, ShoppingBag, RotateCcw, Package, Code2 } from 'lucide-vue-next';
 
 defineProps({
     title: { type: String, required: true },
@@ -16,6 +16,8 @@ defineProps({
     hideValuesLabel: { type: String, default: 'Ocultar valores' },
     showValuesLabel: { type: String, default: 'Mostrar valores' },
     vendas_totais: { type: Number, default: 0 },
+    vendas_api: { type: Number, default: 0 },
+    quantidade_vendas_api: { type: Number, default: 0 },
     vendas_pendentes: { type: Number, default: 0 },
     quantidade_vendas: { type: Number, default: 0 },
     ticket_medio: { type: Number, default: 0 },
@@ -62,7 +64,7 @@ const emit = defineEmits(['update:period', 'toggle-values']);
 
         <DashboardCustomPeriodForm />
 
-        <div class="grid gap-4 sm:grid-cols-2">
+        <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <div class="rounded-xl border border-zinc-200 bg-zinc-50 p-5 dark:border-zinc-700 dark:bg-zinc-800/50">
                 <div class="flex items-center gap-2 text-zinc-600 dark:text-zinc-400">
                     <CircleDollarSign class="h-5 w-5" />
@@ -71,6 +73,16 @@ const emit = defineEmits(['update:period', 'toggle-values']);
                 <p class="mt-2 text-2xl font-bold text-zinc-900 dark:text-white">{{ displayCurrency(vendas_totais) }}</p>
                 <p class="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
                     {{ labels.pendingSales }}: {{ displayCurrency(vendas_pendentes) }}
+                </p>
+            </div>
+            <div class="rounded-xl border border-zinc-200 bg-zinc-50 p-5 dark:border-zinc-700 dark:bg-zinc-800/50">
+                <div class="flex items-center gap-2 text-zinc-600 dark:text-zinc-400">
+                    <Code2 class="h-5 w-5" />
+                    <span class="text-sm font-medium">{{ labels.apiSales }}</span>
+                </div>
+                <p class="mt-2 text-2xl font-bold text-zinc-900 dark:text-white">{{ displayCurrency(vendas_api) }}</p>
+                <p class="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
+                    {{ displayNumber(quantidade_vendas_api) }} {{ labels.ordersCount }}
                 </p>
             </div>
             <div class="rounded-xl border border-zinc-200 bg-zinc-50 p-5 dark:border-zinc-700 dark:bg-zinc-800/50">
