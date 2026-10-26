@@ -32,6 +32,7 @@ import {
     ContactRound,
     ChartNoAxesCombined,
     Webhook,
+    Store,
 } from 'lucide-vue-next';
 import { useSidebar } from '@/composables/useSidebar';
 
@@ -104,6 +105,7 @@ const navGroupsCore = [
             { name: 'Transações API', href: '/plataforma/transacoes-api', icon: Code2 },
             { name: 'Disputas MED', href: '/plataforma/disputas', icon: AlertTriangle, badgeKey: 'disputas' },
             { name: 'Produtos', href: '/plataforma/produtos', icon: Package },
+            { name: 'Marketplace', href: '/plataforma/marketplace', icon: Store },
         ],
     },
     {
@@ -197,6 +199,9 @@ function isActive(href) {
     }
     if (href === '/plataforma/produtos') {
         return url === '/plataforma/produtos' || url.startsWith('/plataforma/produtos/');
+    }
+    if (href === '/plataforma/marketplace') {
+        return url === '/plataforma/marketplace' || url.startsWith('/plataforma/marketplace/');
     }
     if (href === '/plataforma/verificacoes-kyc') {
         return url === '/plataforma/verificacoes-kyc' || url.startsWith('/plataforma/verificacoes-kyc/');

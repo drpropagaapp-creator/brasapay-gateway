@@ -166,7 +166,7 @@ class HandleInertiaRequests extends Middleware
             $medOpenCount = $headerCounts['med_open_count'];
         }
         if ($user && $user->canAccessPlatformPanel()) {
-            $platformAdminSidebarBadges = $sharedCache->platformAdminSidebarBadges();
+            $platformAdminSidebarBadges = $sharedCache->platformAdminSidebarBadges($user, $request);
         }
 
         $path = $request->path();

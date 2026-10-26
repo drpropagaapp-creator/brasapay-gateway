@@ -608,6 +608,17 @@ Route::prefix('plataforma')->name('plataforma.')->group(function () {
         Route::post('/financeiro/saques/{withdrawal}/rejeitar', [\App\Http\Controllers\Platform\FinancialController::class, 'rejectWithdrawal'])->name('financeiro.saques.reject');
 
         Route::get('/produtos', [\App\Http\Controllers\Platform\PlatformProductsController::class, 'index'])->name('produtos.index');
+
+        Route::get('/marketplace', [\App\Http\Controllers\Platform\PlatformMarketplaceController::class, 'index'])->name('marketplace.index');
+        Route::post('/marketplace/aceitacao-automatica', [\App\Http\Controllers\Platform\PlatformMarketplaceController::class, 'updateAutoAccept'])
+            ->name('marketplace.auto-accept')
+            ->middleware('throttle:30,1');
+        Route::post('/marketplace/{product}/autorizar', [\App\Http\Controllers\Platform\PlatformMarketplaceController::class, 'authorizeProduct'])
+            ->name('marketplace.authorize')
+            ->middleware('throttle:60,1');
+        Route::post('/marketplace/{product}/revogar', [\App\Http\Controllers\Platform\PlatformMarketplaceController::class, 'revokeProduct'])
+            ->name('marketplace.revoke')
+            ->middleware('throttle:60,1');
         Route::get('/produtos/{product}/area-membros/preview', [\App\Http\Controllers\Platform\PlatformProductsController::class, 'previewMemberArea'])
             ->name('produtos.member-area.preview')
             ->middleware('throttle:30,1');

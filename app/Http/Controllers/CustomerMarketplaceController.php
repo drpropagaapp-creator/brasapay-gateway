@@ -33,7 +33,7 @@ class CustomerMarketplaceController extends Controller
         $ownedIds = $user instanceof User ? $this->ownedProductIds($user) : [];
 
         $query = Product::query()
-            ->where('show_in_marketplace', true)
+            ->listedOnMarketplace()
             ->availableForPurchase()
             ->whereNotNull('checkout_slug')
             ->where('checkout_slug', '!=', '')
