@@ -4,8 +4,10 @@ namespace Tests\Feature;
 
 use App\Http\Middleware\EnsureInstalled;
 use App\Http\Middleware\EnsureStackerLicense;
+use App\Models\ApiApplication;
 use App\Models\Order;
 use App\Models\User;
+use App\Support\ApiScopes;
 use Carbon\Carbon;
 use Illuminate\Foundation\Http\Middleware\ValidateCsrfToken;
 use Illuminate\Support\Facades\Schema;
@@ -116,6 +118,67 @@ class SellerDashboardCustomPeriodTest extends TestCase
 
                     return abs($sum - 80) < 0.01 && abs((float) ($at15['total'] ?? 0) - 80) < 0.01;
                 })
+            );
+    }
+
+    public function test_dashboard_includes_api_pix_sales_in_total_and_exposes_api_card(): void
+    {
+        if (! Schema::hasColumn('orders', 'api_application_id')) {
+            $this->markTestSkipped('api_application_id column missing');
+        }
+
+        Carbon::setTestNow(Carbon::parse('2026-08-21 12:00:00'));
+        $seller = $this->infoprodutor();
+        $buyer = User::factory()->create(['role' => User::ROLE_CLIENTE]);
+        $product = $this->createTestProduct(['tenant_id' => $seller->id]);
+        $apiApp = ApiApplication::create([
+            'tenant_id' => $seller->id,
+            'name' => 'API PIX',
+            'slug' => ApiApplication::generateUniqueSlug((int) $seller->id, 'API PIX'),
+            'api_key_hash' => hash('sha256', 'key'),
+            'public_key' => ApiApplication::generatePublicKey(),
+            'secret_key_hash' => hash('sha256', 'sec'),
+            'payment_gateways' => ApiApplication::defaultPaymentGateways(),
+            'allowed_ips' => [],
+            'is_active' => true,
+            'is_legacy' => true,
+            'scopes' => ApiScopes::legacyDefaults(),
+        ]);
+
+        $checkout = $this->createOrder($seller, $buyer, $product, ['amount' => 100]);
+        $api = $this->createOrder($seller, $buyer, $product, [
+            'amount' => 40,
+            'api_application_id' => $apiApp->id,
+            'metadata' => ['source' => 'api'],
+        ]);
+        $outsideApi = $this->createOrder($seller, $buyer, $product, [
+            'amount' => 80,
+            'api_application_id' => $apiApp->id,
+            'metadata' => ['source' => 'api'],
+        ]);
+
+        Order::query()->whereKey($checkout->id)->update([
+            'created_at' => Carbon::parse('2026-08-12 10:00:00'),
+            'updated_at' => Carbon::parse('2026-08-12 10:00:00'),
+        ]);
+        Order::query()->whereKey($api->id)->update([
+            'created_at' => Carbon::parse('2026-08-13 11:00:00'),
+            'updated_at' => Carbon::parse('2026-08-13 11:00:00'),
+        ]);
+        Order::query()->whereKey($outsideApi->id)->update([
+            'created_at' => Carbon::parse('2026-08-21 09:00:00'),
+            'updated_at' => Carbon::parse('2026-08-21 09:00:00'),
+        ]);
+
+        $this->actingAs($seller)
+            ->get('/dashboard?period=personalizado&from=2026-08-10&to=2026-08-15')
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->component('Dashboard/Index')
+                ->where('vendas_totais', 140)
+                ->where('quantidade_vendas', 2)
+                ->where('vendas_api', 40)
+                ->where('quantidade_vendas_api', 1)
             );
     }
 

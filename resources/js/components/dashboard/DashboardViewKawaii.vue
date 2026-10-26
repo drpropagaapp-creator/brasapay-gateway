@@ -16,6 +16,7 @@ import {
     RotateCcw,
     TrendingUp,
     ChevronDown,
+    Code2,
 } from 'lucide-vue-next';
 
 const props = defineProps({
@@ -29,6 +30,8 @@ const props = defineProps({
     hideValuesLabel: { type: String, default: 'Ocultar valores' },
     showValuesLabel: { type: String, default: 'Mostrar valores' },
     vendas_totais: { type: Number, default: 0 },
+    vendas_api: { type: Number, default: 0 },
+    quantidade_vendas_api: { type: Number, default: 0 },
     vendas_pendentes: { type: Number, default: 0 },
     quantidade_vendas: { type: Number, default: 0 },
     ticket_medio: { type: Number, default: 0 },
@@ -164,13 +167,20 @@ const kawaiiChartOptions = computed(() => {
 
         <DashboardCustomPeriodForm />
 
-        <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
             <KawaiiMetricCard
                 :icon="CircleDollarSign"
                 :label="labels.totalSales"
                 :value="displayCurrency(vendas_totais)"
                 variant="hero"
                 tint="green"
+            />
+            <KawaiiMetricCard
+                :icon="Code2"
+                :label="labels.apiSales"
+                :value="displayCurrency(vendas_api)"
+                :footer="`${displayNumber(quantidade_vendas_api)} ${labels.ordersCount}`"
+                tint="blue"
             />
             <KawaiiMetricCard
                 :icon="ShoppingCart"
