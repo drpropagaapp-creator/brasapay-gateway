@@ -46,7 +46,7 @@ export function normalizeMerchantFeeRulesForSubmit(rules) {
     }
     const out = {};
     for (const [key, block] of Object.entries(rules)) {
-        if (key === 'card_installments' || !block || typeof block !== 'object') {
+        if (key === 'card_installments' || key === 'low_ticket' || !block || typeof block !== 'object') {
             continue;
         }
         const row = {};

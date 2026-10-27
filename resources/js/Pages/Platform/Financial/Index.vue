@@ -41,6 +41,8 @@ const feeMethodRows = [
     { key: 'withdrawal', label: 'Saque' },
 ];
 
+const lowTicketMethodRows = feeMethodRows.filter((row) => row.key !== 'withdrawal');
+
 defineOptions({ layout: LayoutPlatform });
 
 const page = usePage();
@@ -57,6 +59,10 @@ const props = defineProps({
     merchant_fee_rules: {
         type: Object,
         default: () => ({}),
+    },
+    low_ticket_fees: {
+        type: Object,
+        default: () => ({ enabled: false, max_amount: 0 }),
     },
     card_installment_rules: {
         type: Object,
@@ -773,10 +779,27 @@ function feeBlock(key) {
     };
 }
 
+function lowTicketFeeBlock(key) {
+    const r = props.low_ticket_fees?.[key] || {};
+    const percentRaw = r.percent ?? 0;
+    return {
+        percent: formatPercentForInput(percentRaw) || '0',
+        fixed: r.fixed ?? 0,
+    };
+}
+
 function buildFeeRulesFromProps() {
     const out = {};
     for (const row of feeMethodRows) {
         out[row.key] = feeBlock(row.key);
+    }
+    return out;
+}
+
+function buildLowTicketFeeRulesFromProps() {
+    const out = {};
+    for (const row of lowTicketMethodRows) {
+        out[row.key] = lowTicketFeeBlock(row.key);
     }
     return out;
 }
@@ -826,6 +849,10 @@ function flushFeeInputs() {
         feePercentRefs[row.key]?.commit?.();
         feeFixedRefs[row.key]?.commit?.();
     }
+    for (const row of lowTicketMethodRows) {
+        feePercentRefs[`lt-${row.key}`]?.commit?.();
+        feeFixedRefs[`lt-${row.key}`]?.commit?.();
+    }
     for (const n of INSTALLMENT_COUNTS) {
         feePercentRefs[`inst-${n}`]?.commit?.();
         feeFixedRefs[`inst-${n}`]?.commit?.();
@@ -837,6 +864,16 @@ function updateFeeField(key, field, value) {
         ...feeForm.merchant_fee_rules,
         [key]: {
             ...feeForm.merchant_fee_rules[key],
+            [field]: value,
+        },
+    };
+}
+
+function updateLowTicketFeeField(key, field, value) {
+    feeForm.low_ticket_fee_rules = {
+        ...feeForm.low_ticket_fee_rules,
+        [key]: {
+            ...feeForm.low_ticket_fee_rules[key],
             [field]: value,
         },
     };
@@ -886,6 +923,9 @@ const feeForm = useForm({
         boleto: feeBlock('boleto'),
         withdrawal: feeBlock('withdrawal'),
     },
+    low_ticket_enabled: !!props.low_ticket_fees?.enabled,
+    low_ticket_max_amount: Number(props.low_ticket_fees?.max_amount ?? 0) || 0,
+    low_ticket_fee_rules: buildLowTicketFeeRulesFromProps(),
     api_pix_enabled: props.api_pix_enabled,
 });
 
@@ -902,6 +942,9 @@ function submitFees() {
     feeForm
         .transform((data) => ({
             merchant_fee_rules: normalizeMerchantFeeRulesForSubmit(data.merchant_fee_rules),
+            low_ticket_enabled: !!data.low_ticket_enabled,
+            low_ticket_max_amount: Number(data.low_ticket_max_amount) || 0,
+            low_ticket_fee_rules: normalizeMerchantFeeRulesForSubmit(data.low_ticket_fee_rules),
             api_pix_enabled: data.api_pix_enabled,
         }))
         .put('/plataforma/financeiro/taxas', {
@@ -911,6 +954,9 @@ function submitFees() {
                 await nextTick();
                 feeForm.defaults({
                     merchant_fee_rules: buildFeeRulesFromProps(),
+                    low_ticket_enabled: !!props.low_ticket_fees?.enabled,
+                    low_ticket_max_amount: Number(props.low_ticket_fees?.max_amount ?? 0) || 0,
+                    low_ticket_fee_rules: buildLowTicketFeeRulesFromProps(),
                     api_pix_enabled: props.api_pix_enabled,
                 });
                 feeForm.reset();
@@ -1570,13 +1616,43 @@ function submitSettlement() {
                         <strong class="ml-2">Fixo:</strong> valor em <em>reais</em>, não centavos (ex.: <code class="rounded bg-zinc-100 px-1 dark:bg-zinc-800">1,50</code> = R$ 1,50 por transação).
                     </p>
                     <form class="space-y-6" @submit.prevent="submitFees">
+                        <label class="flex items-start gap-3 rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-3 dark:border-zinc-700 dark:bg-zinc-900/60">
+                            <input
+                                v-model="feeForm.low_ticket_enabled"
+                                type="checkbox"
+                                class="mt-0.5 h-4 w-4 rounded border-zinc-300"
+                            />
+                            <span>
+                                <span class="block text-sm font-medium text-zinc-800 dark:text-zinc-100">
+                                    Ativar taxa diferente para low tickets
+                                </span>
+                                <span class="mt-1 block text-xs text-zinc-500 dark:text-zinc-400">
+                                    Usa as colunas low ticket quando o valor do produto principal (sem order bump, upsell ou frete) for até o teto.
+                                    Pedidos já creditados na carteira não mudam.
+                                </span>
+                            </span>
+                        </label>
+                        <div v-if="feeForm.low_ticket_enabled" class="max-w-xs">
+                            <label class="text-sm font-medium text-zinc-800 dark:text-zinc-200">
+                                Tickets até (R$)
+                            </label>
+                            <FeeFixedInput
+                                :model-value="feeForm.low_ticket_max_amount"
+                                @update:model-value="(v) => { feeForm.low_ticket_max_amount = v; }"
+                            />
+                            <p class="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+                                Produto principal até este valor usa a tabela low ticket no pedido inteiro.
+                            </p>
+                        </div>
                         <div class="overflow-x-auto">
-                            <table class="w-full min-w-[520px] text-left text-sm">
+                            <table class="w-full min-w-[760px] text-left text-sm">
                                 <thead class="border-b border-zinc-200 text-xs uppercase text-zinc-500 dark:border-zinc-600">
                                     <tr>
                                         <th class="pb-2 pr-4">Canal</th>
                                         <th class="pb-2 pr-4">Percentual (%)</th>
-                                        <th class="pb-2">Valor fixo</th>
+                                        <th class="pb-2 pr-4">Valor fixo</th>
+                                        <th class="pb-2 pr-4">Low ticket (%)</th>
+                                        <th class="pb-2">Low ticket fixo</th>
                                     </tr>
                                 </thead>
                                 <tbody class="divide-y divide-zinc-100 dark:divide-zinc-700">
@@ -1589,12 +1665,32 @@ function submitSettlement() {
                                                 @update:model-value="(v) => updateFeeField(row.key, 'percent', v)"
                                             />
                                         </td>
-                                        <td class="py-3">
+                                        <td class="py-3 pr-4">
                                             <FeeFixedInput
                                                 :ref="(el) => setFeeFixedRef(row.key, el)"
                                                 :model-value="feeForm.merchant_fee_rules[row.key].fixed"
                                                 @update:model-value="(v) => updateFeeField(row.key, 'fixed', v)"
                                             />
+                                        </td>
+                                        <td class="py-3 pr-4">
+                                            <FeePercentInput
+                                                v-if="row.key !== 'withdrawal'"
+                                                :ref="(el) => setFeePercentRef('lt-' + row.key, el)"
+                                                :model-value="feeForm.low_ticket_fee_rules[row.key].percent"
+                                                :disabled="!feeForm.low_ticket_enabled"
+                                                @update:model-value="(v) => updateLowTicketFeeField(row.key, 'percent', v)"
+                                            />
+                                            <span v-else class="text-xs text-zinc-400">—</span>
+                                        </td>
+                                        <td class="py-3">
+                                            <FeeFixedInput
+                                                v-if="row.key !== 'withdrawal'"
+                                                :ref="(el) => setFeeFixedRef('lt-' + row.key, el)"
+                                                :model-value="feeForm.low_ticket_fee_rules[row.key].fixed"
+                                                :disabled="!feeForm.low_ticket_enabled"
+                                                @update:model-value="(v) => updateLowTicketFeeField(row.key, 'fixed', v)"
+                                            />
+                                            <span v-else class="text-xs text-zinc-400">—</span>
                                         </td>
                                     </tr>
                                 </tbody>
