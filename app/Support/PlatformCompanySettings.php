@@ -22,7 +22,7 @@ final class PlatformCompanySettings
     public const KEY_CHECKOUT_NOTICE = 'platform_checkout_notice';
 
     /** @var list<string> */
-    public const CHECKOUT_NOTICE_LOCALES = ['pt_BR', 'en', 'es'];
+    public const CHECKOUT_NOTICE_LOCALES = ['pt_BR', 'en', 'es', 'it'];
 
     public const DEFAULT_CHECKOUT_NOTICE = <<<'TXT'
 Ao concluir a compra na {plataforma}, você declara estar de acordo com os {termos} e a política de {privacidade} da empresa {razao_social}, inscrita no CNPJ {cnpj}.
@@ -40,6 +40,12 @@ TXT;
 Al completar la compra en {plataforma}, declaras estar de acuerdo con los {termos} y la política de {privacidade} de {razao_social}, inscrita en el CNPJ {cnpj}.
 
 La responsabilidad por la oferta, entrega y calidad del producto es de {infoprodutor}, que realiza la venta a través de nuestra plataforma, mediante el correo {email_infoprodutor}.
+TXT;
+
+    public const DEFAULT_CHECKOUT_NOTICE_IT = <<<'TXT'
+Completando l’acquisto su {plataforma}, dichiari di accettare i {termos} e l’informativa sulla {privacidade} di {razao_social}, iscritta con CNPJ {cnpj}.
+
+La responsabilità dell’offerta, della consegna e della qualità del prodotto è di {infoprodutor}, che vende tramite la nostra piattaforma all’indirizzo {email_infoprodutor}.
 TXT;
 
     /**
@@ -92,6 +98,7 @@ TXT;
             'pt_BR' => self::DEFAULT_CHECKOUT_NOTICE,
             'en' => self::DEFAULT_CHECKOUT_NOTICE_EN,
             'es' => self::DEFAULT_CHECKOUT_NOTICE_ES,
+            'it' => self::DEFAULT_CHECKOUT_NOTICE_IT,
         ];
     }
 
@@ -171,7 +178,7 @@ TXT;
     }
 
     /**
-     * Textos interpolados por idioma (pt_BR, en, es). Null quando desativado ou vazio.
+     * Textos interpolados por idioma (pt_BR, en, es, it). Null quando desativado ou vazio.
      * Mantém {termos} e {privacidade} para o front renderizar os links.
      *
      * @return array<string, string>|null

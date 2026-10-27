@@ -794,7 +794,6 @@ Route::middleware(['auth', 'admin.tenant', 'seller.panel', 'stacker.license', 'r
         ->name('affiliate.join.enroll')
         ->middleware('throttle:30,1')
         ->where('token', '[a-z0-9]{32,64}');
-    Route::post('/painel/idioma', [\App\Http\Controllers\PanelLanguageController::class, 'switch'])->name('panel.language.switch');
     Route::post('/painel/push-subscribe', [\App\Http\Controllers\PanelPwaController::class, 'pushSubscribe'])->name('panel.pwa.push-subscribe')->middleware('throttle:20,1');
     Route::post('/painel/push-test', [\App\Http\Controllers\PanelNotificationsController::class, 'testPush'])->name('panel.notifications.push-test')->middleware('throttle:10,1');
     Route::get('/painel/notifications', [\App\Http\Controllers\PanelNotificationsController::class, 'index'])->name('panel.notifications.index');
@@ -1261,6 +1260,9 @@ Route::middleware(['auth', 'customer.panel'])->group(function () {
     Route::post('/painel-cliente/reembolso', [\App\Http\Controllers\CustomerPanelController::class, 'requestRefund'])->name('painel-cliente.refund')->middleware('throttle:20,1');
 });
 
+Route::post('/painel/idioma', [\App\Http\Controllers\PanelLanguageController::class, 'switch'])
+    ->middleware(['auth', 'throttle:30,1'])
+    ->name('panel.language.switch');
 Route::post('/painel/trocar', [\App\Http\Controllers\PanelSwitchController::class, 'switch'])->middleware(['auth', 'throttle:30,1'])->name('panel.switch');
 Route::post('/acessar-como-cliente/sair', [\App\Http\Controllers\Platform\CustomerImpersonationController::class, 'leave'])
     ->middleware(['auth', 'throttle:30,1'])

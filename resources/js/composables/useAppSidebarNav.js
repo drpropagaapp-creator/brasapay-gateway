@@ -82,8 +82,8 @@ export function useAppSidebarNav() {
     const navItems = computed(() => {
         if (page.props.customer_panel) {
             return [
-                { name: 'Minhas compras', href: '/painel-cliente', icon: Package },
-                { name: 'Marketplace', href: '/painel-cliente/marketplace', icon: Store },
+                { name: t('customer.sidebar.purchases', 'Minhas compras'), href: '/painel-cliente', icon: Package },
+                { name: t('customer.sidebar.marketplace', 'Marketplace'), href: '/painel-cliente/marketplace', icon: Store },
             ];
         }
 

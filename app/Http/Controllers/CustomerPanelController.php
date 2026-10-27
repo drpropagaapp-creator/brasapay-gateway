@@ -8,6 +8,7 @@ use App\Models\RefundRequest;
 use App\Models\User;
 use App\Services\DeliverableAccessLinkService;
 use App\Services\MemberAreaResolver;
+use App\Services\PlatformI18nService;
 use App\Services\RefundRequestService;
 use App\Services\StorageService;
 use App\Support\RefundEligibility;
@@ -67,7 +68,7 @@ class CustomerPanelController extends Controller
 
         return Inertia::render('Cliente/Index', [
             'purchases' => $items,
-            'pageTitle' => 'Minhas compras',
+            'pageTitle' => $this->trans('customer.purchases.title', 'Minhas compras'),
         ]);
     }
 
@@ -82,7 +83,7 @@ class CustomerPanelController extends Controller
         $order = Order::query()->where('id', $validated['order_id'])->where('user_id', $user->id)->firstOrFail();
 
         if (! RefundEligibility::canCustomerRequestRefund($order)) {
-            return back()->with('error', 'Este pedido não está elegível para reembolso.');
+            return back()->with('error', $this->trans('customer.flash.refund_not_eligible', 'Este pedido não está elegível para reembolso.'));
         }
 
         try {
@@ -94,10 +95,10 @@ class CustomerPanelController extends Controller
         } catch (\Throwable $e) {
             report($e);
 
-            return back()->with('error', 'Não foi possível registrar a solicitação. Tente novamente.');
+            return back()->with('error', $this->trans('customer.flash.refund_failed', 'Não foi possível registrar a solicitação. Tente novamente.'));
         }
 
-        return back()->with('success', 'Solicitação de reembolso enviada ao vendedor.');
+        return back()->with('success', $this->trans('customer.flash.refund_sent', 'Solicitação de reembolso enviada ao vendedor.'));
     }
 
     /**
@@ -122,7 +123,7 @@ class CustomerPanelController extends Controller
             'public_reference' => $order->public_reference,
             'amount' => $lineAmount,
             'product_id' => $productId,
-            'product_name' => $product?->name ?? 'Produto',
+            'product_name' => $product?->name ?? $this->trans('customer.purchases.product_fallback', 'Produto'),
             'product_type' => $product?->type,
             'product_type_label' => $this->productTypeLabel($product),
             'product_image_url' => $this->productImageUrl($product),
@@ -331,13 +332,13 @@ class CustomerPanelController extends Controller
     private function paymentMethodLabel(Order $order): ?string
     {
         return match ($order->resolveCheckoutPaymentMethodKey()) {
-            'pix' => 'Pix',
-            'pix_auto' => 'Pix automático',
-            'card' => 'Cartão',
-            'boleto' => 'Boleto',
-            'apple_pay' => 'Apple Pay',
-            'google_pay' => 'Google Pay',
-            'open_finance' => 'Open Finance',
+            'pix' => $this->trans('customer.payment.pix', 'Pix'),
+            'pix_auto' => $this->trans('customer.payment.pix_auto', 'Pix automático'),
+            'card' => $this->trans('customer.payment.card', 'Cartão'),
+            'boleto' => $this->trans('customer.payment.boleto', 'Boleto'),
+            'apple_pay' => $this->trans('customer.payment.apple_pay', 'Apple Pay'),
+            'google_pay' => $this->trans('customer.payment.google_pay', 'Google Pay'),
+            'open_finance' => $this->trans('customer.payment.open_finance', 'Open Finance'),
             default => null,
         };
     }
@@ -390,7 +391,7 @@ class CustomerPanelController extends Controller
             trim((string) ($addr['complement'] ?? '')) ?: null,
             trim((string) ($addr['neighborhood'] ?? '')) ?: null,
             $cityLine,
-            $zip !== '' ? 'CEP '.$zip : null,
+            $zip !== '' ? $this->trans('customer.purchases.zip_prefix', 'CEP {zip}', ['zip' => $zip]) : null,
         ]));
 
         $meta = is_array($order->metadata) ? $order->metadata : [];
@@ -399,8 +400,11 @@ class CustomerPanelController extends Controller
         $deliveryLabel = null;
         if ($min !== null && $min !== '') {
             $deliveryLabel = (int) $min === (int) ($max ?? $min)
-                ? ((int) $min).' dias úteis'
-                : ((int) $min).'–'.((int) $max).' dias úteis';
+                ? $this->trans('customer.purchases.business_days', '{n} dias úteis', ['n' => (int) $min])
+                : $this->trans('customer.purchases.business_days_range', '{min}–{max} dias úteis', [
+                    'min' => (int) $min,
+                    'max' => (int) $max,
+                ]);
         }
 
         if ($lines === [] && $deliveryLabel === null) {
@@ -434,5 +438,17 @@ class CustomerPanelController extends Controller
         }
 
         return (new StorageService($product->tenant_id))->url($product->image);
+    }
+
+    private function trans(string $key, string $fallback, array $replace = []): string
+    {
+        $i18n = app(PlatformI18nService::class);
+        $locale = $i18n->resolveLocale(request());
+        $value = (string) ($i18n->messagesFor($locale)[$key] ?? $fallback);
+        foreach ($replace as $search => $repl) {
+            $value = str_replace('{'.$search.'}', (string) $repl, $value);
+        }
+
+        return $value;
     }
 }

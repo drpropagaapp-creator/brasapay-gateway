@@ -172,20 +172,29 @@ function getPluginTabComponent(componentName) {
     return asyncComp;
 }
 
+const checkoutTranslationLocales = [
+    { code: 'pt_BR', label: 'Português (BR)' },
+    { code: 'en', label: 'English' },
+    { code: 'es', label: 'Español' },
+    { code: 'it', label: 'Italiano' },
+];
+
 const defaultTranslations = () => ({
     pt_BR: {},
     en: {},
     es: {},
+    it: {},
     ...(props.settings.checkout_translations ?? {}),
 });
 const defaultCurrencies = () => [...(props.settings.currencies ?? [])];
 
 function checkoutNoticeMap(value) {
-    const out = { pt_BR: '', en: '', es: '' };
+    const out = { pt_BR: '', en: '', es: '', it: '' };
     if (value && typeof value === 'object' && !Array.isArray(value)) {
         out.pt_BR = value.pt_BR ?? '';
         out.en = value.en ?? '';
         out.es = value.es ?? '';
+        out.it = value.it ?? '';
         return out;
     }
     if (typeof value === 'string') {
@@ -383,23 +392,15 @@ watch(activeTab, (id) => {
 
 const translationKeys = computed(() => {
     const t = form.checkout_translations ?? {};
-    const keys = new Set([
-        ...Object.keys(t.pt_BR ?? {}),
-        ...Object.keys(t.en ?? {}),
-        ...Object.keys(t.es ?? {}),
-    ]);
+    const keys = new Set(checkoutTranslationLocales.flatMap((item) => Object.keys(t[item.code] ?? {})));
     return [...keys].sort();
 });
 
-const localeLabels = { pt_BR: 'Português (BR)', en: 'English', es: 'Español' };
-
 function ensureTranslationKey(key) {
-    if (!form.checkout_translations.pt_BR) form.checkout_translations.pt_BR = {};
-    if (!form.checkout_translations.en) form.checkout_translations.en = {};
-    if (!form.checkout_translations.es) form.checkout_translations.es = {};
-    if (form.checkout_translations.pt_BR[key] === undefined) form.checkout_translations.pt_BR[key] = '';
-    if (form.checkout_translations.en[key] === undefined) form.checkout_translations.en[key] = '';
-    if (form.checkout_translations.es[key] === undefined) form.checkout_translations.es[key] = '';
+    for (const item of checkoutTranslationLocales) {
+        if (!form.checkout_translations[item.code]) form.checkout_translations[item.code] = {};
+        if (form.checkout_translations[item.code][key] === undefined) form.checkout_translations[item.code][key] = '';
+    }
 }
 
 const CURRENCY_PRESETS = {
@@ -1439,7 +1440,7 @@ const selectClass =
                         <div class="border-b border-zinc-200 bg-zinc-50 px-6 py-5 dark:border-zinc-700 dark:bg-zinc-800">
                             <h2 class="text-base font-semibold text-zinc-900 dark:text-white">Checkout – textos por idioma</h2>
                             <p class="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
-                                Edite os textos exibidos no checkout. Português (BR), English, Español.
+                                Edite os textos exibidos no checkout. Português (BR), English, Español, Italiano.
                             </p>
                         </div>
                         <div class="overflow-x-auto p-6 pt-0">
@@ -1458,9 +1459,13 @@ const selectClass =
                                     <thead class="bg-zinc-50 dark:bg-zinc-800">
                                         <tr>
                                             <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Chave</th>
-                                            <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Português (BR)</th>
-                                            <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">English</th>
-                                            <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Español</th>
+                                            <th
+                                                v-for="item in checkoutTranslationLocales"
+                                                :key="item.code"
+                                                class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400"
+                                            >
+                                                {{ item.label }}
+                                            </th>
                                         </tr>
                                     </thead>
                                     <tbody class="divide-y divide-zinc-200 dark:divide-zinc-700">
@@ -1470,25 +1475,13 @@ const selectClass =
                                             class="bg-white transition hover:bg-zinc-50 dark:bg-zinc-800/60 dark:hover:bg-zinc-700/80"
                                         >
                                             <td class="whitespace-nowrap px-4 py-3 font-mono text-xs text-zinc-500 dark:text-zinc-400 align-top">{{ key }}</td>
-                                            <td class="px-4 py-3 align-top">
+                                            <td
+                                                v-for="item in checkoutTranslationLocales"
+                                                :key="`${item.code}-${key}`"
+                                                class="px-4 py-3 align-top"
+                                            >
                                                 <input
-                                                    v-model="form.checkout_translations.pt_BR[key]"
-                                                    type="text"
-                                                    :class="inputClass + ' text-sm py-2'"
-                                                    @focus="ensureTranslationKey(key)"
-                                                />
-                                            </td>
-                                            <td class="px-4 py-3 align-top">
-                                                <input
-                                                    v-model="form.checkout_translations.en[key]"
-                                                    type="text"
-                                                    :class="inputClass + ' text-sm py-2'"
-                                                    @focus="ensureTranslationKey(key)"
-                                                />
-                                            </td>
-                                            <td class="px-4 py-3 align-top">
-                                                <input
-                                                    v-model="form.checkout_translations.es[key]"
+                                                    v-model="form.checkout_translations[item.code][key]"
                                                     type="text"
                                                     :class="inputClass + ' text-sm py-2'"
                                                     @focus="ensureTranslationKey(key)"

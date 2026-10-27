@@ -69,6 +69,7 @@ class PlatformI18nService
                 ['code' => 'pt_BR', 'name' => 'Português (Brasil)', 'is_default' => true, 'is_active' => true],
                 ['code' => 'en', 'name' => 'English', 'is_default' => false, 'is_active' => true],
                 ['code' => 'es', 'name' => 'Español', 'is_default' => false, 'is_active' => true],
+                ['code' => 'it', 'name' => 'Italiano', 'is_default' => false, 'is_active' => true],
             ];
         }
 
@@ -158,7 +159,7 @@ class PlatformI18nService
     private function isLocaleActive(string $locale): bool
     {
         if (! Schema::hasTable('platform_languages')) {
-            return in_array($locale, ['pt_BR', 'en', 'es'], true);
+            return in_array($locale, ['pt_BR', 'en', 'es', 'it'], true);
         }
 
         $row = PlatformLanguage::query()
@@ -179,6 +180,7 @@ class PlatformI18nService
             'pt_BR' => 'Português (Brasil)',
             'en' => 'English',
             'es' => 'Español',
+            'it' => 'Italiano',
             default => strtoupper($locale),
         };
     }

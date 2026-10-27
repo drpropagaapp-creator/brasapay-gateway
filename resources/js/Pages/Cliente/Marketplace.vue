@@ -1,8 +1,9 @@
 <script setup>
-import { reactive } from 'vue';
+import { computed, reactive } from 'vue';
 import { Head, router } from '@inertiajs/vue3';
 import LayoutInfoprodutor from '@/Layouts/LayoutInfoprodutor.vue';
 import { Package, Search } from 'lucide-vue-next';
+import { useI18n } from '@/composables/useI18n';
 
 defineOptions({ layout: LayoutInfoprodutor });
 
@@ -12,6 +13,21 @@ const props = defineProps({
     categories: { type: Array, default: () => [] },
     platformName: { type: String, default: 'plataforma' },
 });
+
+const { t, locale } = useI18n();
+const numberLocale = computed(() => ({
+    pt_BR: 'pt-BR',
+    en: 'en-US',
+    es: 'es-ES',
+    it: 'it-IT',
+}[locale.value] || 'pt-BR'));
+
+function interpolate(value, vars = {}) {
+    return Object.entries(vars).reduce(
+        (out, [key, val]) => out.replaceAll(`{${key}}`, String(val)),
+        String(value ?? ''),
+    );
+}
 
 const filterForm = reactive({
     q: props.filters?.q || '',
@@ -31,18 +47,18 @@ function applyFilters() {
 
 function formatMoney(amount, currency) {
     const code = ['BRL', 'EUR', 'USD'].includes(currency) ? currency : 'BRL';
-    return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: code }).format(Number(amount) || 0);
+    return new Intl.NumberFormat(numberLocale.value, { style: 'currency', currency: code }).format(Number(amount) || 0);
 }
 </script>
 
 <template>
     <div>
-        <Head title="Marketplace" />
+        <Head :title="t('customer.marketplace.title', 'Marketplace')" />
         <div class="space-y-6">
             <div>
-                <h1 class="text-2xl font-bold tracking-tight text-zinc-900 dark:text-white">Marketplace</h1>
+                <h1 class="text-2xl font-bold tracking-tight text-zinc-900 dark:text-white">{{ t('customer.marketplace.title', 'Marketplace') }}</h1>
                 <p class="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
-                    Outros produtos da {{ platformName }}. A compra abre direto no checkout.
+                    {{ interpolate(t('customer.marketplace.subtitle', 'Outros produtos da {name}. A compra abre direto no checkout.'), { name: platformName }) }}
                 </p>
             </div>
 
@@ -55,7 +71,7 @@ function formatMoney(amount, currency) {
                     <input
                         v-model="filterForm.q"
                         type="search"
-                        placeholder="Buscar por nome"
+                        :placeholder="t('customer.marketplace.search_placeholder', 'Buscar por nome')"
                         class="w-full rounded-lg border border-zinc-200 bg-zinc-50 py-2 pl-9 pr-3 text-sm text-zinc-900 placeholder:text-zinc-400 focus:border-[var(--color-primary)] focus:outline-none focus:ring-1 focus:ring-[var(--color-primary)] dark:border-zinc-600 dark:bg-zinc-900 dark:text-white"
                     />
                 </div>
@@ -64,14 +80,14 @@ function formatMoney(amount, currency) {
                     class="rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm dark:border-zinc-600 dark:bg-zinc-900 dark:text-white"
                     @change="applyFilters"
                 >
-                    <option value="">Todas as categorias</option>
+                    <option value="">{{ t('customer.marketplace.all_categories', 'Todas as categorias') }}</option>
                     <option v-for="cat in categories" :key="cat.value" :value="cat.value">{{ cat.label }}</option>
                 </select>
                 <button
                     type="submit"
                     class="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:opacity-90 dark:bg-white dark:text-zinc-900"
                 >
-                    Buscar
+                    {{ t('customer.marketplace.search', 'Buscar') }}
                 </button>
             </form>
 
@@ -79,7 +95,7 @@ function formatMoney(amount, currency) {
                 v-if="!(products.data || []).length"
                 class="rounded-xl border border-dashed border-zinc-200 px-4 py-10 text-center text-sm text-zinc-500 dark:border-zinc-700 dark:text-zinc-400"
             >
-                Nenhum produto no marketplace com esses filtros.
+                {{ t('customer.marketplace.empty', 'Nenhum produto no marketplace com esses filtros.') }}
             </p>
 
             <div v-else class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
@@ -114,7 +130,7 @@ function formatMoney(amount, currency) {
                             :href="product.checkout_url"
                             class="mt-auto inline-flex items-center justify-center rounded-xl bg-[var(--color-primary)] px-4 py-2.5 text-sm font-semibold text-white transition hover:opacity-90"
                         >
-                            Comprar
+                            {{ t('customer.marketplace.buy', 'Comprar') }}
                         </a>
                     </div>
                 </article>

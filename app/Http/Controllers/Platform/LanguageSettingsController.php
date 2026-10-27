@@ -194,6 +194,7 @@ class LanguageSettingsController extends Controller
             'pt_BR' => 'Português (Brasil)',
             'en' => 'English',
             'es' => 'Español',
+            'it' => 'Italiano',
             default => strtoupper($locale),
         };
     }

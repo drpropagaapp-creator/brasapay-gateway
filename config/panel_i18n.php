@@ -1,6 +1,6 @@
 <?php
 
-return [
+$panelI18n = [
     'default_locale' => 'pt_BR',
     'group' => 'seller',
     'locales' => [
@@ -1688,5 +1688,13 @@ return [
             'students.import.error' => 'Import error. Check CSV format.',
             'common.irreversible_action' => 'This action cannot be undone.',
         ],
+        'it' => require __DIR__.'/panel_i18n_it.php',
     ],
 ];
+
+$customer = require __DIR__.'/panel_i18n_customer.php';
+foreach ($customer as $code => $messages) {
+    $panelI18n['locales'][$code] = array_merge($panelI18n['locales'][$code] ?? [], $messages);
+}
+
+return $panelI18n;

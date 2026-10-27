@@ -277,6 +277,7 @@ class PlatformCompanySettingsTest extends TestCase
                     'pt_BR' => 'Aviso em {plataforma} PT',
                     'en' => 'Notice on {plataforma} EN',
                     'es' => 'Aviso en {plataforma} ES',
+                    'it' => 'Avviso su {plataforma} IT',
                 ],
             ])
             ->assertRedirect();
@@ -287,6 +288,7 @@ class PlatformCompanySettingsTest extends TestCase
         $this->assertSame('Aviso em {plataforma} PT', $stored['pt_BR']);
         $this->assertSame('Notice on {plataforma} EN', $stored['en']);
         $this->assertSame('Aviso en {plataforma} ES', $stored['es']);
+        $this->assertSame('Avviso su {plataforma} IT', $stored['it']);
     }
 
     public function test_checkout_notice_keeps_legacy_plain_string_as_portuguese(): void

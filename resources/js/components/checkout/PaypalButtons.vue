@@ -26,6 +26,7 @@ function paypalLocale(locale) {
     const lower = raw.toLowerCase();
     if (lower.startsWith('en')) return 'en_US';
     if (lower.startsWith('es')) return 'es_ES';
+    if (lower.startsWith('it')) return 'it_IT';
     return 'pt_BR';
 }
 

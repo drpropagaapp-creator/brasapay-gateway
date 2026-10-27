@@ -27,9 +27,9 @@ const props = defineProps({
     priceInCurrency: { type: Function, default: (v) => v },
     formatPrice: { type: Function, default: (v, c) => String(v) },
     locale: { type: String, default: 'pt_BR' },
-    supportedLocales: { type: Array, default: () => ['pt_BR', 'en', 'es'] },
+    supportedLocales: { type: Array, default: () => ['pt_BR', 'en', 'es', 'it'] },
     currencyList: { type: Array, default: () => [] },
-    localeLabels: { type: Object, default: () => ({ pt_BR: 'PT', en: 'EN', es: 'ES' }) },
+    localeLabels: { type: Object, default: () => ({ pt_BR: 'PT', en: 'EN', es: 'ES', it: 'IT' }) },
 });
 
 const emit = defineEmits(['set-locale', 'set-currency']);
