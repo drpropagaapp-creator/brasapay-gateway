@@ -36,7 +36,9 @@ const props = defineProps({
     addressData: { type: Object, default: () => ({}) },
     /** Etapa atual 1 ou 2 (v-model step) */
     step: { type: Number, default: 1 },
-    formatPrice: { type: Function, default: (v) => `R$ ${Number(v).toFixed(2)}` },
+    formatPrice: { type: Function, default: (v, c) => `R$ ${Number(v).toFixed(2)}` },
+    priceInCurrency: { type: Function, default: (v) => Number(v) || 0 },
+    displayCurrency: { type: String, default: 'BRL' },
     /** Parcelamento habilitado nas configurações do produto */
     cardInstallmentsEnabled: { type: Boolean, default: false },
     cardMaxInstallments: { type: Number, default: 1 },
@@ -281,7 +283,7 @@ function goToStep2() {
                 <label class="mb-1 block text-sm font-medium text-gray-700">{{ t('checkout.installments') || 'Parcelas' }}</label>
                 <select v-model.number="selectedInstallments" :class="inputClass" class="cursor-pointer">
                     <option v-for="n in cardMaxInstallments" :key="n" :value="n">
-                        {{ n }}x de {{ formatPrice(checkoutTotalBrl / n) }}
+                        {{ n }}x de {{ formatPrice(priceInCurrency(checkoutTotalBrl / n), displayCurrency) }}
                     </option>
                 </select>
             </div>

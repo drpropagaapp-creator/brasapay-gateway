@@ -454,6 +454,7 @@ function onConversionPixelsReady() {
                             :t="t"
                             :display-currency="displayCurrency"
                             :format-price="formatPrice"
+                            :price-in-currency="priceInCurrency"
                             :suggested-country-code="props.suggested_country_code"
                             :card-payee-code="card_payee_code || ''"
                             :card-efi-sandbox="card_efi_sandbox"
