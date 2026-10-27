@@ -7,8 +7,7 @@ import MemberAreaVideoPlayer from '@/components/MemberAreaVideoPlayer.vue';
 import MemberModuleRenewalPix from '@/components/member-area/MemberModuleRenewalPix.vue';
 import MemberLessonRatingStars from '@/components/member-area/MemberLessonRatingStars.vue';
 import MemberLessonOffer from '@/components/member-area/MemberLessonOffer.vue';
-import { formatLessonDescription } from '@/lib/utils';
-import { sanitizeHtmlAllowlist } from '@/lib/sanitizeHtml';
+import { renderLessonDescription } from '@/lib/lessonDescription';
 import { completeMemberLesson, useMemberAreaHref } from '@/composables/useMemberAreaHref';
 import { downloadMemberMaterial, isProtectedPdf } from '@/composables/downloadMemberMaterial';
 import { Link as LinkIcon, CheckCircle, ChevronLeft, ChevronRight } from 'lucide-vue-next';
@@ -32,12 +31,6 @@ const props = defineProps({
 });
 
 const { href } = useMemberAreaHref(props.slug, props.base_url);
-
-function safeLessonHtml(html) {
-    return sanitizeHtmlAllowlist(html, {
-        FORBID_TAGS: ['script', 'iframe', 'object', 'embed'],
-    });
-}
 
 function normalizePdfFiles(lesson) {
     const list = Array.isArray(lesson?.content_files) ? lesson.content_files : [];
@@ -267,8 +260,8 @@ function scrollCarousel(sectionId, direction) {
                         />
                         <div
                             v-if="current_lesson.content_text"
-                            class="prose prose-invert max-w-none border-t border-zinc-700 p-6"
-                            v-html="formatLessonDescription(current_lesson.content_text)"
+                            class="lesson-rich-text prose prose-invert max-w-none border-t border-zinc-700 p-6"
+                            v-html="renderLessonDescription(current_lesson.content_text)"
                         />
                         <div v-if="!current_lesson.content_url && !current_lesson.content_text" class="p-8 text-center text-zinc-500">
                             Conteúdo não disponível.
@@ -282,7 +275,7 @@ function scrollCarousel(sectionId, direction) {
                             </a>
                         </div>
                     </template>
-                    <div v-else-if="current_lesson.type === 'link' && current_lesson.content_text" class="prose prose-invert max-w-none border-t border-zinc-700 p-6" v-html="formatLessonDescription(current_lesson.content_text)" />
+                    <div v-else-if="current_lesson.type === 'link' && current_lesson.content_text" class="lesson-rich-text prose prose-invert max-w-none border-t border-zinc-700 p-6" v-html="renderLessonDescription(current_lesson.content_text)" />
                     <template v-else-if="current_lesson.type === 'pdf' && currentPdfFiles.length">
                         <div class="p-6">
                             <div class="space-y-2">
@@ -313,9 +306,9 @@ function scrollCarousel(sectionId, direction) {
                             </div>
                         </div>
                     </template>
-                    <div v-else-if="current_lesson.type === 'pdf' && current_lesson.content_text" class="prose prose-invert max-w-none border-t border-zinc-700 p-6" v-html="formatLessonDescription(current_lesson.content_text)" />
+                    <div v-else-if="current_lesson.type === 'pdf' && current_lesson.content_text" class="lesson-rich-text prose prose-invert max-w-none border-t border-zinc-700 p-6" v-html="renderLessonDescription(current_lesson.content_text)" />
                     <template v-else-if="current_lesson.type === 'text' && current_lesson.content_text">
-                        <div class="prose prose-invert max-w-none p-6" v-html="safeLessonHtml(current_lesson.content_text)" />
+                        <div class="lesson-rich-text prose prose-invert max-w-none p-6" v-html="renderLessonDescription(current_lesson.content_text)" />
                     </template>
                     <template v-else>
                         <div class="p-8 text-center text-zinc-500">Conteúdo não disponível.</div>

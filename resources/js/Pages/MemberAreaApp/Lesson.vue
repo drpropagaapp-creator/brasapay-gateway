@@ -4,8 +4,7 @@ import { Link, router } from '@inertiajs/vue3';
 import MemberAreaAppLayout from '@/Layouts/MemberAreaAppLayout.vue';
 import Button from '@/components/ui/Button.vue';
 import MemberAreaVideoPlayer from '@/components/MemberAreaVideoPlayer.vue';
-import { formatLessonDescription } from '@/lib/utils';
-import { sanitizeHtmlAllowlist } from '@/lib/sanitizeHtml';
+import { renderLessonDescription } from '@/lib/lessonDescription';
 import { completeMemberLesson, useMemberAreaHref } from '@/composables/useMemberAreaHref';
 import { downloadMemberMaterial, isProtectedPdf } from '@/composables/downloadMemberMaterial';
 import MemberLessonRatingStars from '@/components/member-area/MemberLessonRatingStars.vue';
@@ -56,12 +55,6 @@ async function downloadProtectedPdf(file, index) {
 }
 
 const { href } = useMemberAreaHref(props.slug, props.base_url);
-
-function safeLessonHtml(html) {
-    return sanitizeHtmlAllowlist(html, {
-        FORBID_TAGS: ['script', 'iframe', 'object', 'embed'],
-    });
-}
 
 const completed = ref(props.lesson.is_completed ?? false);
 const lessonRating = ref(props.lesson.rating ?? null);
@@ -142,8 +135,8 @@ function formatCommentDate(iso) {
                 />
                 <div
                     v-if="lesson.content_text"
-                    class="prose prose-invert max-w-none border-t border-zinc-700 p-6"
-                    v-html="formatLessonDescription(lesson.content_text)"
+                    class="lesson-rich-text prose prose-invert max-w-none border-t border-zinc-700 p-6"
+                    v-html="renderLessonDescription(lesson.content_text)"
                 />
                 <div v-if="!lesson.content_url && !lesson.content_text" class="p-8 text-center text-zinc-500">
                     Conteúdo não disponível.
@@ -157,7 +150,7 @@ function formatCommentDate(iso) {
                     </a>
                 </div>
             </template>
-            <div v-else-if="lesson.type === 'link' && lesson.content_text" class="prose prose-invert max-w-none border-t border-zinc-700 p-6" v-html="formatLessonDescription(lesson.content_text)" />
+            <div v-else-if="lesson.type === 'link' && lesson.content_text" class="lesson-rich-text prose prose-invert max-w-none border-t border-zinc-700 p-6" v-html="renderLessonDescription(lesson.content_text)" />
             <template v-else-if="lesson.type === 'pdf' && pdfFiles.length">
                 <div class="p-6">
                     <div class="space-y-2">
@@ -188,9 +181,9 @@ function formatCommentDate(iso) {
                     </div>
                 </div>
             </template>
-            <div v-else-if="lesson.type === 'pdf' && lesson.content_text" class="prose prose-invert max-w-none border-t border-zinc-700 p-6" v-html="formatLessonDescription(lesson.content_text)" />
+            <div v-else-if="lesson.type === 'pdf' && lesson.content_text" class="lesson-rich-text prose prose-invert max-w-none border-t border-zinc-700 p-6" v-html="renderLessonDescription(lesson.content_text)" />
             <template v-else-if="lesson.type === 'text' && lesson.content_text">
-                <div class="prose prose-invert max-w-none p-6" v-html="safeLessonHtml(lesson.content_text)" />
+                <div class="lesson-rich-text prose prose-invert max-w-none p-6" v-html="renderLessonDescription(lesson.content_text)" />
             </template>
             <div v-else class="p-8 text-center text-zinc-500">
                 Conteúdo não disponível.

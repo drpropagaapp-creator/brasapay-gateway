@@ -34,6 +34,7 @@ use App\Services\StorageService;
 use App\Services\GamificationService;
 use App\Services\MemberProgressService;
 use App\Services\TeamAccessService;
+use App\Support\HtmlSanitizer;
 use App\Support\MemberAreaPwaIconUrls;
 use App\Support\MemberLessonMaterialUpload;
 use App\Support\PublicAppUrl;
@@ -286,7 +287,7 @@ class MemberBuilderController extends Controller
                             'content_files' => $l->content_files,
                             'release_after_days' => $l->release_after_days,
                             'release_at_date' => $l->release_at_date?->format('Y-m-d'),
-                            'content_text' => \App\Support\HtmlSanitizer::sanitize($l->content_text),
+                            'content_text' => HtmlSanitizer::sanitizeLessonHtml($l->content_text),
                             'duration_seconds' => $l->duration_seconds,
                             'is_free' => $l->is_free,
                             'watermark_enabled' => (bool) ($l->watermark_enabled ?? false),
@@ -902,7 +903,7 @@ class MemberBuilderController extends Controller
                     'position' => $l->position,
                     'type' => $l->type,
                     'content_url' => $l->content_url,
-                    'content_text' => \App\Support\HtmlSanitizer::sanitize($l->content_text),
+                    'content_text' => HtmlSanitizer::sanitizeLessonHtml($l->content_text),
                     'duration_seconds' => $l->duration_seconds,
                     'is_free' => $l->is_free,
                     'watermark_enabled' => (bool) ($l->watermark_enabled ?? false),
@@ -1068,7 +1069,7 @@ class MemberBuilderController extends Controller
             'release_after_days' => $validated['release_after_days'] ?? null,
             'release_at_date' => $validated['release_at_date'] ?? null,
             'content_text' => isset($validated['content_text'])
-                ? \App\Support\HtmlSanitizer::sanitize($validated['content_text'])
+                ? HtmlSanitizer::sanitizeLessonHtml($validated['content_text'])
                 : null,
             'duration_seconds' => $validated['duration_seconds'] ?? null,
             'is_free' => $request->boolean('is_free', false),
@@ -1139,7 +1140,13 @@ class MemberBuilderController extends Controller
             }
         }
         if (array_key_exists('content_text', $validated)) {
-            $validated['content_text'] = \App\Support\HtmlSanitizer::sanitize($validated['content_text']);
+            $incoming = HtmlSanitizer::sanitizeLessonHtml($validated['content_text']);
+            $current = (string) ($lesson->content_text ?? '');
+            if ($incoming === $current) {
+                unset($validated['content_text']);
+            } else {
+                $validated['content_text'] = $incoming;
+            }
         }
 
         $watermarkEnabled = array_key_exists('watermark_enabled', $validated)
