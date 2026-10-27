@@ -104,7 +104,7 @@ const navGroupsCore = [
             { name: 'Transações', href: '/plataforma/transacoes', icon: ArrowLeftRight, badgeKey: 'transacoes' },
             { name: 'Transações API', href: '/plataforma/transacoes-api', icon: Code2 },
             { name: 'Disputas MED', href: '/plataforma/disputas', icon: AlertTriangle, badgeKey: 'disputas' },
-            { name: 'Produtos', href: '/plataforma/produtos', icon: Package },
+            { name: 'Produtos', href: '/plataforma/produtos?filter=pending', icon: Package, badgeKey: 'produtos' },
             { name: 'Marketplace', href: '/plataforma/marketplace', icon: Store },
         ],
     },
@@ -171,6 +171,11 @@ const navGroups = computed(() => {
 
 function isNavItemActive(href) {
     if (href.includes('?')) {
+        const pathOnly = href.split('?')[0];
+        if (pathOnly === '/plataforma/produtos') {
+            return isActive('/plataforma/produtos');
+        }
+
         const url = page.url.split('#')[0];
 
         return url === href;

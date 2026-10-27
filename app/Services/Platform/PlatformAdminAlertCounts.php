@@ -4,6 +4,7 @@ namespace App\Services\Platform;
 
 use App\Models\MedDispute;
 use App\Models\PlatformAdminMenuView;
+use App\Models\Product;
 use App\Models\RefundRequest;
 use App\Models\User;
 use App\Models\Withdrawal;
@@ -17,6 +18,8 @@ class PlatformAdminAlertCounts
 {
     public const KEY_KYC = 'kyc';
 
+    public const KEY_PRODUTOS = 'produtos';
+
     public const KEY_SAQUES = 'saques';
 
     public const KEY_FINANCEIRO = 'financeiro';
@@ -27,7 +30,8 @@ class PlatformAdminAlertCounts
 
     /**
      * Contadores para badges do menu do operador (/plataforma).
-     * Depois que o admin abre a página, o número zera até surgir um evento novo.
+     * KYC e Produtos permanecem enquanto houver item sem análise.
+     * Os demais zeram ao abrir a página até surgir um evento novo.
      *
      * @return array<string, int>
      */
@@ -35,6 +39,7 @@ class PlatformAdminAlertCounts
     {
         return [
             self::KEY_KYC => $this->kycPendingCount($user),
+            self::KEY_PRODUTOS => $this->productsPendingCount($user),
             self::KEY_SAQUES => $this->withdrawalsAttentionCount($user),
             self::KEY_FINANCEIRO => $this->withdrawalsPendingCount($user),
             self::KEY_DISPUTAS => $this->medDisputesOpenCount($user),
@@ -55,9 +60,23 @@ class PlatformAdminAlertCounts
             'plataforma.saques.index' => self::KEY_SAQUES,
             'plataforma.financeiro.index' => self::KEY_FINANCEIRO,
             'plataforma.kyc.index', 'plataforma.kyc.show' => self::KEY_KYC,
+            'plataforma.produtos.index' => self::KEY_PRODUTOS,
             'plataforma.disputas.index', 'plataforma.disputas.show' => self::KEY_DISPUTAS,
             default => null,
         };
+    }
+
+    /**
+     * KYC e Produtos contam a fila real; visitar a página não zera o badge.
+     */
+    public function clearsBadgeOnVisit(string $menuKey): bool
+    {
+        return in_array($menuKey, [
+            self::KEY_SAQUES,
+            self::KEY_FINANCEIRO,
+            self::KEY_DISPUTAS,
+            self::KEY_TRANSACOES,
+        ], true);
     }
 
     public function markViewed(User $user, string $menuKey): void
@@ -93,9 +112,18 @@ class PlatformAdminAlertCounts
                 }
             });
 
-        $this->applyUnseenFilter($query, $user, self::KEY_KYC);
-
         return (int) $query->count();
+    }
+
+    public function productsPendingCount(?User $user = null): int
+    {
+        if (! Schema::hasTable('products') || ! Schema::hasColumn('products', 'approval_status')) {
+            return 0;
+        }
+
+        return (int) Product::query()
+            ->where('approval_status', Product::APPROVAL_PENDING)
+            ->count();
     }
 
     public function withdrawalsPendingCount(?User $user = null): int
@@ -178,6 +206,7 @@ class PlatformAdminAlertCounts
     {
         return [
             self::KEY_KYC,
+            self::KEY_PRODUTOS,
             self::KEY_SAQUES,
             self::KEY_FINANCEIRO,
             self::KEY_DISPUTAS,

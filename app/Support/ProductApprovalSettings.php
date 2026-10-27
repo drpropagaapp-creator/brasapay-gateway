@@ -6,6 +6,7 @@ use App\Models\Setting;
 
 /**
  * Configuração global: aprovar novos produtos automaticamente ou enviar para análise.
+ * Em modo manual, a fila aparece em Plataforma → Produtos com contador até aceitar ou recusar.
  */
 final class ProductApprovalSettings
 {

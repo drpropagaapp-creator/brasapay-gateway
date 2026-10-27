@@ -5,12 +5,14 @@ namespace App\Services;
 use App\Mail\KycApprovedMail;
 use App\Mail\KycRejectedMail;
 use App\Mail\KycSubmittedAdminMail;
+use App\Mail\ProductSubmittedAdminMail;
 use App\Mail\RefundRequestAdminMail;
 use App\Mail\VerifyEmailMail;
 use App\Mail\WelcomeInfoprodutorMail;
 use App\Mail\ManualApprovalPinResetAdminMail;
 use App\Mail\WithdrawalFailedAdminMail;
 use App\Mail\WithdrawalPayoutErrorAdminMail;
+use App\Models\Product;
 use App\Models\RefundRequest;
 use App\Models\Setting;
 use App\Models\User;
@@ -36,6 +38,26 @@ class PlatformEmailNotifications
 
         $this->mail->send(
             new KycSubmittedAdminMail($merchant, $branding, $reviewUrl),
+            $emails
+        );
+    }
+
+    public function productSubmittedForReview(Product $product, bool $resubmitted = false): void
+    {
+        $emails = $this->adminRecipients();
+        if ($emails === []) {
+            return;
+        }
+
+        $product->loadMissing('tenantOwner');
+        $branding = BrandingEmailData::forTenant(null);
+        $reviewUrl = route('plataforma.produtos.index', [
+            'filter' => 'pending',
+            'q' => $product->name,
+        ]);
+
+        $this->mail->send(
+            new ProductSubmittedAdminMail($product, $product->tenantOwner, $branding, $reviewUrl, $resubmitted),
             $emails
         );
     }

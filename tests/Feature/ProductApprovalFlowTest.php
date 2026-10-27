@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Jobs\SendProductApprovedMailJob;
 use App\Jobs\SendProductRejectedMailJob;
+use App\Mail\ProductSubmittedAdminMail;
 use App\Models\PlatformAuditLog;
 use App\Models\Product;
 use App\Models\Setting;
@@ -12,6 +13,7 @@ use App\Services\ProductApprovalService;
 use App\Support\ProductApprovalSettings;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Schema;
 use Tests\TestCase;
 
@@ -36,6 +38,13 @@ class ProductApprovalFlowTest extends TestCase
         $seller->forceFill(['tenant_id' => $seller->id])->save();
 
         return $seller->fresh();
+    }
+
+    private function configurePlatformAdminMail(): void
+    {
+        Setting::set('kyc_notification_emails', 'ops-prod@example.com', null);
+        Setting::set('email_provider', 'smtp', null);
+        Setting::set('smtp_host', 'smtp.plataforma.com', null);
     }
 
     public function test_auto_approve_setting_defaults_to_enabled(): void
@@ -311,6 +320,72 @@ class ProductApprovalFlowTest extends TestCase
         $this->assertFalse((bool) $product->is_active);
         $this->assertFalse($product->isAvailableForPurchase());
         $this->assertNotNull($product->approval_reason);
+    }
+
+    public function test_manual_product_create_notifies_platform_admins(): void
+    {
+        Mail::fake();
+        $this->configurePlatformAdminMail();
+        Setting::set(ProductApprovalSettings::KEY, '0', null);
+        $seller = $this->seller();
+
+        $this->actingAs($seller)->post(route('produtos.store'), [
+            'name' => 'Produto Em Análise Mail',
+            'type' => Product::TYPE_LINK,
+            'billing_type' => Product::BILLING_ONE_TIME,
+            'price' => 50,
+            'is_active' => true,
+            'deliverable_link' => 'https://example.com/file',
+        ])->assertRedirect(route('produtos.index'));
+
+        Mail::assertSent(ProductSubmittedAdminMail::class, function (ProductSubmittedAdminMail $mail) {
+            return $mail->product->name === 'Produto Em Análise Mail'
+                && $mail->resubmitted === false;
+        });
+    }
+
+    public function test_auto_approved_product_does_not_notify_platform_admins(): void
+    {
+        Mail::fake();
+        $this->configurePlatformAdminMail();
+        Setting::set(ProductApprovalSettings::KEY, '1', null);
+        $seller = $this->seller();
+
+        $this->actingAs($seller)->post(route('produtos.store'), [
+            'name' => 'Produto Auto Mail',
+            'type' => Product::TYPE_LINK,
+            'billing_type' => Product::BILLING_ONE_TIME,
+            'price' => 50,
+            'is_active' => true,
+            'deliverable_link' => 'https://example.com/file',
+        ])->assertRedirect(route('produtos.index'));
+
+        Mail::assertNotSent(ProductSubmittedAdminMail::class);
+    }
+
+    public function test_resubmit_notifies_platform_admins(): void
+    {
+        Mail::fake();
+        $this->configurePlatformAdminMail();
+        $seller = $this->seller();
+        $product = $this->createTestProduct([
+            'tenant_id' => $seller->id,
+            'name' => 'Produto Reenviado Mail',
+            'is_active' => false,
+            'approval_status' => Product::APPROVAL_REJECTED,
+            'approval_reason' => 'A descrição do produto promete resultados financeiros garantidos.',
+            'reviewed_by' => 1,
+            'reviewed_at' => now(),
+        ]);
+
+        $this->actingAs($seller)
+            ->post(route('produtos.resubmit', $product))
+            ->assertRedirect();
+
+        Mail::assertSent(ProductSubmittedAdminMail::class, function (ProductSubmittedAdminMail $mail) {
+            return $mail->product->name === 'Produto Reenviado Mail'
+                && $mail->resubmitted === true;
+        });
     }
 
     public function test_admin_cannot_activate_pending_product(): void

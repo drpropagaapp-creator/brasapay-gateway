@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Http\Middleware\EnsureInstalled;
 use App\Http\Middleware\EnsureStackerLicense;
+use App\Jobs\SendProductApprovedMailJob;
 use App\Mail\RefundRequestAdminMail;
 use App\Mail\WithdrawalFailedAdminMail;
 use App\Models\Order;
@@ -17,6 +18,7 @@ use App\Services\MerchantWithdrawalService;
 use App\Services\Platform\PlatformAdminAlertCounts;
 use Illuminate\Foundation\Http\Middleware\ValidateCsrfToken;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Schema;
@@ -66,10 +68,88 @@ class PlatformAdminAlertsTest extends TestCase
             ->assertInertia(fn ($page) => $page
                 ->has('platform_admin_sidebar_badges')
                 ->has('platform_admin_sidebar_badges.kyc')
+                ->has('platform_admin_sidebar_badges.produtos')
                 ->has('platform_admin_sidebar_badges.saques')
                 ->has('platform_admin_sidebar_badges.disputas')
                 ->has('platform_admin_sidebar_badges.transacoes')
             );
+    }
+
+    public function test_kyc_badge_stays_until_the_case_is_reviewed(): void
+    {
+        $this->withoutMiddleware([
+            EnsureInstalled::class,
+            EnsureStackerLicense::class,
+            ValidateCsrfToken::class,
+        ]);
+
+        if (! Schema::hasColumn('users', 'kyc_status')) {
+            $this->markTestSkipped('kyc_status column missing');
+        }
+
+        $admin = $this->platformAdmin('plat-badge-kyc@example.com');
+        $pendingKyc = User::query()->create([
+            'name' => 'KYC Pending Badge',
+            'email' => 'kyc-pending-badge@example.com',
+            'password' => Hash::make('password'),
+            'role' => User::ROLE_INFOPRODUTOR,
+            'kyc_status' => User::KYC_PENDING_REVIEW,
+        ]);
+        $pendingKyc->update(['tenant_id' => $pendingKyc->id]);
+
+        $this->actingAs($admin)
+            ->get(route('plataforma.kyc.index'))
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->where('platform_admin_sidebar_badges.kyc', 1));
+
+        $pendingKyc->update(['kyc_status' => User::KYC_APPROVED]);
+
+        $this->actingAs($admin)
+            ->get(route('plataforma.dashboard'))
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->where('platform_admin_sidebar_badges.kyc', 0));
+    }
+
+    public function test_products_badge_stays_until_approved_or_rejected(): void
+    {
+        $this->withoutMiddleware([
+            EnsureInstalled::class,
+            EnsureStackerLicense::class,
+            ValidateCsrfToken::class,
+        ]);
+
+        if (! Schema::hasColumn('products', 'approval_status')) {
+            $this->markTestSkipped('approval_status column missing');
+        }
+
+        Bus::fake([SendProductApprovedMailJob::class]);
+
+        $admin = $this->platformAdmin('plat-badge-prod@example.com');
+        $seller = $this->seller('seller-badge-prod@example.com');
+        $product = $this->createTestProduct([
+            'tenant_id' => $seller->id,
+            'name' => 'Produto Na Fila',
+            'is_active' => false,
+            'approval_status' => Product::APPROVAL_PENDING,
+        ]);
+
+        $this->actingAs($admin)
+            ->get(route('plataforma.produtos.index'))
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->where('platform_admin_sidebar_badges.produtos', 1));
+
+        $this->actingAs($admin)
+            ->post(route('plataforma.produtos.approve', $product))
+            ->assertRedirect();
+
+        $this->actingAs($admin)
+            ->get(route('plataforma.dashboard'))
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->where('platform_admin_sidebar_badges.produtos', 0));
     }
 
     public function test_mark_failed_sends_admin_email_when_configured(): void
