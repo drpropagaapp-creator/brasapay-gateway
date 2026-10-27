@@ -16,7 +16,7 @@ class SetPanelLocale
     public function handle(Request $request, Closure $next): Response
     {
         $user = $request->user();
-        if ($user && ($user->canAccessSellerPanel() || $user->canAccessPlatformPanel())) {
+        if ($user) {
             app()->setLocale($this->i18n->resolveLocale($request));
         }
 

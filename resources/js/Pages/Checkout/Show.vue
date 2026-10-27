@@ -208,12 +208,12 @@ const {
     storageKey: props.product?.checkout_slug || 'default',
 });
 
-const localeLabels = { pt_BR: 'PT', en: 'EN', es: 'ES' };
+const localeLabels = { pt_BR: 'PT', en: 'EN', es: 'ES', it: 'IT' };
 
 function noticeForLocale(notice, loc) {
     if (!notice) return '';
     if (typeof notice === 'string') return notice;
-    return notice[loc] || notice.pt_BR || notice.en || notice.es || '';
+    return notice[loc] || notice.pt_BR || notice.en || notice.es || notice.it || '';
 }
 
 const platformNoticeForLocale = computed(() => noticeForLocale(props.platform_checkout_notice, locale.value));

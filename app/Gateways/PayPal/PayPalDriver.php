@@ -431,6 +431,9 @@ class PayPalDriver implements GatewayDriver
         if ($lower === 'pt' || str_starts_with($lower, 'pt_')) {
             return 'pt-BR';
         }
+        if ($lower === 'it' || str_starts_with($lower, 'it_')) {
+            return 'it-IT';
+        }
         if (preg_match('/^([a-z]{2})_([a-z]{2})$/i', $raw, $m)) {
             return strtolower($m[1]).'-'.strtoupper($m[2]);
         }

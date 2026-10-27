@@ -354,7 +354,7 @@ class HandleInertiaRequests extends Middleware
             'platform_ga4' => PlatformGa4Settings::inertiaConfig(),
         ];
 
-        if ($user && ($user->canAccessSellerPanel() || $user->canAccessPlatformPanel())) {
+        if ($user) {
             $i18n = app(PlatformI18nService::class);
             $locale = $i18n->resolveLocale($request);
             $shared['i18n'] = [

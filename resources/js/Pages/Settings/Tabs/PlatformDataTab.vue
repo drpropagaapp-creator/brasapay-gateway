@@ -17,7 +17,12 @@ const noticeLocales = [
     { code: 'pt_BR', label: 'Português (BR)' },
     { code: 'en', label: 'English' },
     { code: 'es', label: 'Español' },
+    { code: 'it', label: 'Italiano' },
 ];
+
+function emptyNoticeMap(pt = '') {
+    return { pt_BR: pt, en: '', es: '', it: '' };
+}
 
 const fallbackPlaceholders = [
     { token: '{cnpj}', label: 'CNPJ da empresa operadora' },
@@ -51,7 +56,7 @@ const noticeMap = computed(() => {
         return value;
     }
 
-    return { pt_BR: typeof value === 'string' ? value : '', en: '', es: '' };
+    return emptyNoticeMap(typeof value === 'string' ? value : '');
 });
 
 const currentNotice = computed({
@@ -68,26 +73,18 @@ const noticeDefaults = computed(() => {
         return value;
     }
 
-    return {
-        pt_BR: typeof value === 'string' ? value : '',
-        en: '',
-        es: '',
-    };
+    return emptyNoticeMap(typeof value === 'string' ? value : '');
 });
 
 function ensureNoticeMap() {
     const current = props.form.platform_checkout_notice;
     if (current && typeof current === 'object' && !Array.isArray(current)) {
-        if (current.pt_BR === undefined) current.pt_BR = '';
-        if (current.en === undefined) current.en = '';
-        if (current.es === undefined) current.es = '';
+        for (const item of noticeLocales) {
+            if (current[item.code] === undefined) current[item.code] = '';
+        }
         return;
     }
-    props.form.platform_checkout_notice = {
-        pt_BR: typeof current === 'string' ? current : '',
-        en: '',
-        es: '',
-    };
+    props.form.platform_checkout_notice = emptyNoticeMap(typeof current === 'string' ? current : '');
 }
 
 function onCnpjInput(event) {
@@ -218,7 +215,7 @@ const noticePreview = computed(() => previewReplace(currentNotice.value));
                         Exibir aviso no final do checkout
                     </span>
                     <span class="mt-0.5 block text-xs text-zinc-500 dark:text-zinc-400">
-                        Desativado: o checkout mostra Termos · Privacidade. Ativado: a mensagem abaixo substitui esses links no quadro do checkout. Cada idioma segue a chave já usada no seletor do checkout (pt_BR, en, es).
+                        Desativado: o checkout mostra Termos · Privacidade. Ativado: a mensagem abaixo substitui esses links no quadro do checkout. Cada idioma segue a chave já usada no seletor do checkout (pt_BR, en, es, it).
                     </span>
                 </span>
             </label>

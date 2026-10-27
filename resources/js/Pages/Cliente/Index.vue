@@ -4,6 +4,7 @@ import { useForm, usePage } from '@inertiajs/vue3';
 import LayoutInfoprodutor from '@/Layouts/LayoutInfoprodutor.vue';
 import Button from '@/components/ui/Button.vue';
 import { copyTextToClipboard } from '@/lib/copyText';
+import { useI18n } from '@/composables/useI18n';
 import {
     Calendar,
     Check,
@@ -23,6 +24,48 @@ const props = defineProps({
 });
 
 const page = usePage();
+const { t, locale } = useI18n();
+
+const numberLocale = computed(() => ({
+    pt_BR: 'pt-BR',
+    en: 'en-US',
+    es: 'es-ES',
+    it: 'it-IT',
+}[locale.value] || 'pt-BR'));
+
+function interpolate(value, vars = {}) {
+    return Object.entries(vars).reduce(
+        (out, [key, val]) => out.replaceAll(`{${key}}`, String(val)),
+        String(value ?? ''),
+    );
+}
+
+function productTypeLabel(row) {
+    if (row?.product_type) {
+        return t(`customer.product_type.${row.product_type}`, row.product_type_label || '');
+    }
+    return row?.product_type_label || '';
+}
+
+function accessCta(row) {
+    const keys = {
+        area_membros: 'customer.access.members',
+        area_membros_externa: 'customer.access.external',
+        link: 'customer.access.link',
+        aplicativo: 'customer.access.app',
+    };
+    return t(keys[row?.product_type] || 'customer.access.default', row?.access_cta || t('customer.purchases.access', 'Acessar'));
+}
+
+function accessHint(row) {
+    if (row?.access_url) return '';
+    const keys = {
+        produto_fisico: 'customer.hint.physical',
+        link_pagamento: 'customer.hint.payment_link',
+        area_membros_externa: 'customer.hint.external',
+    };
+    return t(keys[row?.product_type] || 'customer.hint.default', row?.access_hint || '');
+}
 const impersonating = computed(() => page.props.customer_impersonation?.active === true);
 const searchQuery = ref('');
 const filter = ref('all');
@@ -69,13 +112,13 @@ const hasGranted = computed(() => (props.purchases || []).some((row) => row.is_m
 const hasAccess = computed(() => (props.purchases || []).some((row) => row.access_url));
 
 function formatBRL(n) {
-    return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Number(n) || 0);
+    return new Intl.NumberFormat(numberLocale.value, { style: 'currency', currency: 'BRL' }).format(Number(n) || 0);
 }
 
 function refundStatusLabel(status) {
-    if (status === 'pending') return 'Reembolso em análise';
-    if (status === 'approved') return 'Reembolso aprovado';
-    if (status === 'rejected') return 'Reembolso recusado';
+    if (status === 'pending') return t('customer.purchases.refund_pending', 'Reembolso em análise');
+    if (status === 'approved') return t('customer.purchases.refund_approved', 'Reembolso aprovado');
+    if (status === 'rejected') return t('customer.purchases.refund_rejected', 'Reembolso recusado');
     return '';
 }
 
@@ -126,12 +169,12 @@ async function copyValue(value, key) {
     <div class="space-y-6">
         <div>
             <p class="text-lg font-semibold tracking-tight text-zinc-900 dark:text-white sm:text-xl">
-                Olá<span v-if="firstName">, {{ firstName }}</span>
+                {{ t('customer.purchases.hello', 'Olá') }}<span v-if="firstName">, {{ firstName }}</span>
             </p>
             <p class="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
-                <template v-if="purchaseCount === 1">Você tem 1 produto nesta conta.</template>
-                <template v-else-if="purchaseCount > 1">Você tem {{ purchaseCount }} produtos nesta conta.</template>
-                <template v-else>Quando uma compra for concluída, o acesso aparece aqui.</template>
+                <template v-if="purchaseCount === 1">{{ t('customer.purchases.count_one', 'Você tem 1 produto nesta conta.') }}</template>
+                <template v-else-if="purchaseCount > 1">{{ interpolate(t('customer.purchases.count_many', 'Você tem {n} produtos nesta conta.'), { n: purchaseCount }) }}</template>
+                <template v-else>{{ t('customer.purchases.empty_intro', 'Quando uma compra for concluída, o acesso aparece aqui.') }}</template>
             </p>
         </div>
 
@@ -155,7 +198,7 @@ async function copyValue(value, key) {
                     <input
                         v-model="searchQuery"
                         type="search"
-                        placeholder="Buscar produto, pedido ou vendedor"
+                        :placeholder="t('customer.purchases.search_placeholder', 'Buscar produto, pedido ou vendedor')"
                         class="w-full rounded-xl border border-zinc-200 bg-white py-2.5 pl-9 pr-3 text-sm text-zinc-900 placeholder:text-zinc-400 shadow-sm focus:border-[var(--color-primary)] focus:outline-none focus:ring-1 focus:ring-[var(--color-primary)] dark:border-zinc-700 dark:bg-zinc-900 dark:text-white"
                     />
                 </div>
@@ -168,7 +211,7 @@ async function copyValue(value, key) {
                             : 'border border-zinc-200 bg-white text-zinc-600 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800'"
                         @click="filter = 'all'"
                     >
-                        Todos
+                        {{ t('customer.purchases.filter_all', 'Todos') }}
                     </button>
                     <button
                         v-if="hasAccess"
@@ -179,7 +222,7 @@ async function copyValue(value, key) {
                             : 'border border-zinc-200 bg-white text-zinc-600 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800'"
                         @click="filter = 'access'"
                     >
-                        Com acesso
+                        {{ t('customer.purchases.filter_access', 'Com acesso') }}
                     </button>
                     <button
                         v-if="hasGranted"
@@ -190,7 +233,7 @@ async function copyValue(value, key) {
                             : 'border border-zinc-200 bg-white text-zinc-600 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800'"
                         @click="filter = 'granted'"
                     >
-                        Liberados
+                        {{ t('customer.purchases.filter_granted', 'Liberados') }}
                     </button>
                 </div>
             </div>
@@ -199,7 +242,7 @@ async function copyValue(value, key) {
                 v-if="!filteredPurchases.length"
                 class="rounded-xl border border-dashed border-zinc-200 px-4 py-8 text-center text-sm text-zinc-500 dark:border-zinc-700 dark:text-zinc-400"
             >
-                Nenhum produto encontrado com essa busca.
+                {{ t('customer.purchases.none_found', 'Nenhum produto encontrado com essa busca.') }}
             </p>
 
             <div
@@ -230,25 +273,25 @@ async function copyValue(value, key) {
                                 v-if="row.product_type_label"
                                 class="rounded-full bg-black/70 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white backdrop-blur-sm"
                             >
-                                {{ row.product_type_label }}
+                                {{ productTypeLabel(row) }}
                             </span>
                             <span
                                 v-if="row.is_order_bump"
                                 class="rounded-full bg-zinc-900/80 px-2 py-0.5 text-[10px] font-semibold text-white"
                             >
-                                Extra
+                                {{ t('customer.purchases.badge_extra', 'Extra') }}
                             </span>
                             <span
                                 v-if="row.is_manual_grant"
                                 class="rounded-full bg-emerald-600/90 px-2 py-0.5 text-[10px] font-semibold text-white"
                             >
-                                Liberado
+                                {{ t('customer.purchases.badge_granted', 'Liberado') }}
                             </span>
                             <span
                                 v-if="row.is_renewal"
                                 class="rounded-full bg-sky-600/90 px-2 py-0.5 text-[10px] font-semibold text-white"
                             >
-                                Renovação
+                                {{ t('customer.purchases.badge_renewal', 'Renovação') }}
                             </span>
                         </div>
                     </div>
@@ -281,10 +324,10 @@ async function copyValue(value, key) {
                                 {{ refundStatusLabel(row.refund_status) }}
                             </p>
                             <p
-                                v-if="!row.access_url && row.access_hint"
+                                v-if="!row.access_url && accessHint(row)"
                                 class="mt-2 text-xs leading-relaxed text-zinc-500 dark:text-zinc-400"
                             >
-                                {{ row.access_hint }}
+                                {{ accessHint(row) }}
                             </p>
                         </div>
                         <div class="mt-auto flex flex-col gap-2">
@@ -295,7 +338,7 @@ async function copyValue(value, key) {
                                 rel="noopener noreferrer"
                                 class="inline-flex w-full items-center justify-center gap-1.5 rounded-xl bg-[var(--color-primary)] px-3 py-2.5 text-sm font-medium text-white transition hover:opacity-90"
                             >
-                                {{ row.access_cta || 'Acessar' }}
+                                {{ accessCta(row) }}
                                 <ExternalLink class="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
                             </a>
                             <div class="flex gap-2">
@@ -304,7 +347,7 @@ async function copyValue(value, key) {
                                     class="flex-1 rounded-xl border border-zinc-200 px-3 py-2 text-xs font-medium text-zinc-700 transition hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800"
                                     @click="openDetails(row)"
                                 >
-                                    Detalhes
+                                    {{ t('customer.purchases.details', 'Detalhes') }}
                                 </button>
                                 <button
                                     v-if="row.can_request_refund && !impersonating"
@@ -312,7 +355,7 @@ async function copyValue(value, key) {
                                     class="flex-1 rounded-xl border border-zinc-200 px-3 py-2 text-xs font-medium text-zinc-700 transition hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800"
                                     @click="openRefund(row)"
                                 >
-                                    Reembolso
+                                    {{ t('customer.purchases.refund', 'Reembolso') }}
                                 </button>
                             </div>
                         </div>
@@ -326,9 +369,9 @@ async function copyValue(value, key) {
             class="rounded-2xl border border-dashed border-zinc-200 bg-zinc-50/80 px-6 py-14 text-center dark:border-zinc-700 dark:bg-zinc-900/40"
         >
             <Package class="mx-auto h-12 w-12 text-zinc-400" aria-hidden="true" />
-            <p class="mt-4 text-base font-medium text-zinc-800 dark:text-zinc-200">Nenhuma compra por aqui ainda</p>
+            <p class="mt-4 text-base font-medium text-zinc-800 dark:text-zinc-200">{{ t('customer.purchases.empty_title', 'Nenhuma compra por aqui ainda') }}</p>
             <p class="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
-                Assim que o pagamento for confirmado, o produto e o acesso aparecem nesta página.
+                {{ t('customer.purchases.empty_body', 'Assim que o pagamento for confirmado, o produto e o acesso aparecem nesta página.') }}
             </p>
         </div>
 
@@ -348,13 +391,13 @@ async function copyValue(value, key) {
                         <div class="min-w-0">
                             <h2 class="text-lg font-semibold text-zinc-900 dark:text-white">{{ detailsRow.product_name }}</h2>
                             <p v-if="detailsRow.product_type_label" class="mt-0.5 text-sm text-zinc-500 dark:text-zinc-400">
-                                {{ detailsRow.product_type_label }}
+                                {{ productTypeLabel(detailsRow) }}
                             </p>
                         </div>
                         <button
                             type="button"
                             class="rounded-lg p-1 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800"
-                            aria-label="Fechar"
+                            :aria-label="t('customer.purchases.close', 'Fechar')"
                             @click="closeDetails"
                         >
                             <X class="h-5 w-5" />
@@ -363,29 +406,29 @@ async function copyValue(value, key) {
 
                     <dl class="mt-5 space-y-3 text-sm">
                         <div v-if="detailsRow.seller_name" class="flex justify-between gap-4">
-                            <dt class="text-zinc-500 dark:text-zinc-400">Vendedor</dt>
+                            <dt class="text-zinc-500 dark:text-zinc-400">{{ t('customer.purchases.seller', 'Vendedor') }}</dt>
                             <dd class="text-right font-medium text-zinc-900 dark:text-white">{{ detailsRow.seller_name }}</dd>
                         </div>
                         <div v-if="detailsRow.purchased_at_label" class="flex justify-between gap-4">
-                            <dt class="text-zinc-500 dark:text-zinc-400">Data</dt>
+                            <dt class="text-zinc-500 dark:text-zinc-400">{{ t('customer.purchases.date', 'Data') }}</dt>
                             <dd class="text-right font-medium text-zinc-900 dark:text-white">{{ detailsRow.purchased_at_label }}</dd>
                         </div>
                         <div v-if="!detailsRow.is_manual_grant" class="flex justify-between gap-4">
-                            <dt class="text-zinc-500 dark:text-zinc-400">Valor</dt>
+                            <dt class="text-zinc-500 dark:text-zinc-400">{{ t('customer.purchases.amount', 'Valor') }}</dt>
                             <dd class="text-right font-medium text-zinc-900 dark:text-white">{{ formatBRL(detailsRow.amount) }}</dd>
                         </div>
                         <div v-if="detailsRow.payment_method_label" class="flex justify-between gap-4">
-                            <dt class="text-zinc-500 dark:text-zinc-400">Pagamento</dt>
+                            <dt class="text-zinc-500 dark:text-zinc-400">{{ t('customer.purchases.payment', 'Pagamento') }}</dt>
                             <dd class="text-right font-medium text-zinc-900 dark:text-white">{{ detailsRow.payment_method_label }}</dd>
                         </div>
                         <div v-if="detailsRow.public_reference" class="flex items-center justify-between gap-4">
-                            <dt class="text-zinc-500 dark:text-zinc-400">Pedido</dt>
+                            <dt class="text-zinc-500 dark:text-zinc-400">{{ t('customer.purchases.order', 'Pedido') }}</dt>
                             <dd class="flex items-center gap-2">
                                 <span class="font-medium text-zinc-900 dark:text-white">#{{ detailsRow.public_reference }}</span>
                                 <button
                                     type="button"
                                     class="rounded-md p-1 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800"
-                                    :aria-label="copiedKey === 'ref' ? 'Copiado' : 'Copiar número do pedido'"
+                                    :aria-label="copiedKey === 'ref' ? t('customer.purchases.copied', 'Copiado') : t('customer.purchases.copy_order', 'Copiar número do pedido')"
                                     @click="copyValue(detailsRow.public_reference, 'ref')"
                                 >
                                     <Check v-if="copiedKey === 'ref'" class="h-4 w-4 text-emerald-600" />
@@ -394,11 +437,11 @@ async function copyValue(value, key) {
                             </dd>
                         </div>
                         <div v-if="detailsRow.is_manual_grant" class="flex justify-between gap-4">
-                            <dt class="text-zinc-500 dark:text-zinc-400">Origem</dt>
-                            <dd class="text-right font-medium text-zinc-900 dark:text-white">Acesso liberado pelo vendedor</dd>
+                            <dt class="text-zinc-500 dark:text-zinc-400">{{ t('customer.purchases.origin', 'Origem') }}</dt>
+                            <dd class="text-right font-medium text-zinc-900 dark:text-white">{{ t('customer.purchases.origin_granted', 'Acesso liberado pelo vendedor') }}</dd>
                         </div>
                         <div v-if="detailsRow.refund_status" class="flex justify-between gap-4">
-                            <dt class="text-zinc-500 dark:text-zinc-400">Reembolso</dt>
+                            <dt class="text-zinc-500 dark:text-zinc-400">{{ t('customer.purchases.refund_status', 'Reembolso') }}</dt>
                             <dd class="text-right font-medium text-zinc-900 dark:text-white">
                                 {{ refundStatusLabel(detailsRow.refund_status) }}
                             </dd>
@@ -411,7 +454,7 @@ async function copyValue(value, key) {
                     >
                         <p class="inline-flex items-center gap-1.5 text-sm font-medium text-zinc-900 dark:text-white">
                             <Truck class="h-4 w-4" aria-hidden="true" />
-                            Entrega
+                            {{ t('customer.purchases.delivery', 'Entrega') }}
                         </p>
                         <p
                             v-for="(line, idx) in detailsRow.shipping.lines"
@@ -421,15 +464,15 @@ async function copyValue(value, key) {
                             {{ line }}
                         </p>
                         <p v-if="detailsRow.shipping.delivery_label" class="mt-2 text-xs text-zinc-500">
-                            Prazo estimado: {{ detailsRow.shipping.delivery_label }}
+                            {{ interpolate(t('customer.purchases.delivery_eta', 'Prazo estimado: {label}'), { label: detailsRow.shipping.delivery_label }) }}
                         </p>
                     </div>
 
                     <p
-                        v-if="detailsRow.access_hint"
+                        v-if="accessHint(detailsRow)"
                         class="mt-4 text-sm text-zinc-600 dark:text-zinc-400"
                     >
-                        {{ detailsRow.access_hint }}
+                        {{ accessHint(detailsRow) }}
                     </p>
 
                     <div class="mt-5 flex flex-col gap-2">
@@ -440,7 +483,7 @@ async function copyValue(value, key) {
                             rel="noopener noreferrer"
                             class="inline-flex w-full items-center justify-center gap-1.5 rounded-xl bg-[var(--color-primary)] px-3 py-2.5 text-sm font-medium text-white transition hover:opacity-90"
                         >
-                            {{ detailsRow.access_cta || 'Acessar' }}
+                            {{ accessCta(detailsRow) }}
                             <ExternalLink class="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
                         </a>
                         <a
@@ -449,7 +492,7 @@ async function copyValue(value, key) {
                             class="inline-flex w-full items-center justify-center gap-1.5 rounded-xl border border-zinc-200 px-3 py-2.5 text-sm font-medium text-zinc-700 transition hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800"
                         >
                             <Mail class="h-4 w-4" aria-hidden="true" />
-                            Falar com o vendedor
+                            {{ t('customer.purchases.contact_seller', 'Falar com o vendedor') }}
                         </a>
                         <Button
                             v-if="detailsRow.can_request_refund && !impersonating"
@@ -458,7 +501,7 @@ async function copyValue(value, key) {
                             class="w-full"
                             @click="openRefund(detailsRow); closeDetails()"
                         >
-                            Solicitar reembolso
+                            {{ t('customer.purchases.request_refund', 'Solicitar reembolso') }}
                         </Button>
                     </div>
                 </div>
@@ -478,30 +521,30 @@ async function copyValue(value, key) {
                     @click.stop
                 >
                     <div class="flex items-start justify-between gap-4">
-                        <h2 class="text-lg font-semibold text-zinc-900 dark:text-white">Solicitar reembolso</h2>
+                        <h2 class="text-lg font-semibold text-zinc-900 dark:text-white">{{ t('customer.purchases.refund_title', 'Solicitar reembolso') }}</h2>
                         <button
                             type="button"
                             class="rounded-lg p-1 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800"
-                            aria-label="Fechar"
+                            :aria-label="t('customer.purchases.close', 'Fechar')"
                             @click="closeRefund"
                         >
                             <X class="h-5 w-5" />
                         </button>
                     </div>
                     <p class="mt-2 text-sm text-zinc-600 dark:text-zinc-400">
-                        Pedido #{{ refundOrderPublicRef }}. Descreva o motivo; o vendedor será notificado por e-mail.
+                        {{ interpolate(t('customer.purchases.refund_help', 'Pedido #{ref}. Descreva o motivo; o vendedor será notificado por e-mail.'), { ref: refundOrderPublicRef }) }}
                     </p>
                     <textarea
                         v-model="refundForm.reason"
                         rows="5"
                         class="mt-4 w-full rounded-xl border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 shadow-sm focus:border-[var(--color-primary)] focus:outline-none focus:ring-1 focus:ring-[var(--color-primary)] dark:border-zinc-600 dark:bg-zinc-950 dark:text-white"
-                        placeholder="Motivo da solicitação"
+                        :placeholder="t('customer.purchases.refund_placeholder', 'Motivo da solicitação')"
                     />
                     <p v-if="refundForm.errors.reason" class="mt-1 text-xs text-red-600">{{ refundForm.errors.reason }}</p>
                     <p v-if="refundForm.errors.order_id" class="mt-1 text-xs text-red-600">{{ refundForm.errors.order_id }}</p>
                     <div class="mt-4 flex justify-end gap-2">
-                        <Button type="button" variant="secondary" @click="closeRefund">Cancelar</Button>
-                        <Button type="button" :disabled="refundForm.processing" @click="submitRefund">Enviar solicitação</Button>
+                        <Button type="button" variant="secondary" @click="closeRefund">{{ t('customer.purchases.cancel', 'Cancelar') }}</Button>
+                        <Button type="button" :disabled="refundForm.processing" @click="submitRefund">{{ t('customer.purchases.submit_refund', 'Enviar solicitação') }}</Button>
                     </div>
                 </div>
             </div>
