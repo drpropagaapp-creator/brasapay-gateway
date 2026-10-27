@@ -197,6 +197,7 @@ const props = defineProps({
     orderBumpIds: { type: Array, default: () => [] },
     primaryColor: { type: String, default: '#7427F1' },
     formatPrice: { type: Function, default: (v, c) => `R$ ${Number(v).toFixed(2)}` },
+    priceInCurrency: { type: Function, default: (v) => Number(v) || 0 },
     config: { type: Object, default: () => ({}) },
     /** Métodos disponíveis: [{ id: 'pix'|'card'|'boleto', label: string, gateway_name?: string }] */
     availablePaymentMethods: { type: Array, default: () => [] },
@@ -1165,7 +1166,7 @@ function installmentOptionLabel(n) {
         return tf('checkout.installments_cash', 'À vista');
     }
     const total = Number(props.checkoutTotalBrl) || 0;
-    const each = props.formatPrice(total / n, props.displayCurrency);
+    const each = props.formatPrice(props.priceInCurrency(total / n), props.displayCurrency);
     return tf('checkout.installments_times', '{n}x de {amount} sem juros')
         .replace('{n}', String(n))
         .replace('{amount}', each);
@@ -3097,6 +3098,7 @@ function submit() {
                 :order-bump-color="orderBumpColor"
                 :t="t"
                 :format-price="formatPrice"
+                :price-in-currency="priceInCurrency"
                 :display-currency="displayCurrency"
                 class="mt-8"
                 @update:selected-ids="emit('update:orderBumpIds', $event)"
@@ -3298,6 +3300,8 @@ function submit() {
                         :address-data="asaasAddressData"
                         :step="asaasCardStep"
                         :format-price="formatPrice"
+                        :price-in-currency="priceInCurrency"
+                        :display-currency="displayCurrency"
                         :card-installments-enabled="cardInstallmentsEnabled && effectiveCardMaxInstallments > 1"
                         :card-max-installments="effectiveCardMaxInstallments"
                         :checkout-total-brl="checkoutTotalBrl"
