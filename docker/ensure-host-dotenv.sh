@@ -24,7 +24,9 @@ if [ ! -f "$STACK_ENV" ]; then
   exit 0
 fi
 
-unset GETFY_DB_CONNECTION GETFY_DB_HOST GETFY_DB_PORT GETFY_DB_DATABASE GETFY_DB_USERNAME GETFY_DB_PASSWORD 2>/dev/null || true
+# shellcheck disable=SC1091
+. "$(cd "$(dirname "$0")" && pwd)/unset-db-shell-env.sh"
+unset_db_shell_env
 # Não usar `source` — GETFY_COMPOSE_FILES sem aspas vira "command not found".
 while IFS= read -r line || [ -n "$line" ]; do
   line="$(printf '%s' "$line" | tr -d '\r')"

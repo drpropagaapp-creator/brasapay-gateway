@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Gateways\MercadoPago\MercadoPagoDriver;
 use App\Gateways\Pagarme\PagarmeDriver;
 use App\Http\Middleware\EnsureInstalled;
 use App\Models\CheckoutSession;
@@ -110,6 +111,29 @@ class CardInstallmentsProductCheckoutTest extends TestCase
                 ->component('Produtos/Edit')
                 ->where('checkout_gateway_ui.card_show_installments', true)
                 ->where('checkout_gateway_ui.card_installments_gateway_name', 'CajuPay'));
+    }
+
+    public function test_product_edit_shows_installments_when_only_mercadopago_card_is_connected(): void
+    {
+        $this->setCardOrder(['mercadopago', 'pagarme']);
+        $this->connectGateway('mercadopago', [
+            'public_key' => 'TEST-pk',
+            'access_token' => 'TEST-token',
+        ]);
+
+        $seller = $this->approvedSeller();
+        $product = $this->createTestProduct([
+            'tenant_id' => $seller->id,
+            'price' => 97.90,
+        ]);
+
+        $this->actingAs($seller)
+            ->get(route('produtos.edit', $product->id).'?tab=configuracoes')
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->component('Produtos/Edit')
+                ->where('checkout_gateway_ui.card_show_installments', true)
+                ->where('checkout_gateway_ui.card_installments_gateway_name', 'Mercado Pago'));
     }
 
     public function test_subscription_product_save_forces_installments_off(): void
@@ -354,6 +378,55 @@ class CardInstallmentsProductCheckoutTest extends TestCase
         $this->assertSame(3, $captured['installments']);
         $token = json_decode((string) $captured['payment_token'], true);
         $this->assertSame(3, $token['installments']);
+
+        $order = Order::query()->latest('id')->first();
+        $this->assertNotNull($order);
+        $this->assertSame(3, (int) ($order->metadata['installments'] ?? 0));
+    }
+
+    public function test_checkout_sends_clamped_installments_to_mercadopago_driver(): void
+    {
+        Event::fake();
+        $this->setCardOrder(['mercadopago']);
+        $this->connectGateway('mercadopago', [
+            'public_key' => 'TEST-pk',
+            'access_token' => 'TEST-token',
+        ]);
+
+        $product = $this->checkoutProduct([
+            'price' => 97.90,
+            'checkout_config' => [
+                'card_installments' => ['enabled' => true, 'max' => 6],
+            ],
+        ]);
+
+        $captured = null;
+        $driver = Mockery::mock(MercadoPagoDriver::class);
+        $driver->shouldReceive('createCardPayment')
+            ->once()
+            ->andReturnUsing(function ($credentials, $amount, $consumer, $externalId, array $card) use (&$captured) {
+                $captured = $card;
+
+                return ['transaction_id' => 'mp_test_3x', 'status' => 'approved'];
+            });
+        $this->app->instance(MercadoPagoDriver::class, $driver);
+
+        $session = $this->checkoutSession($product);
+        $response = $this->postJson('/checkout', $this->cardPayload($session, $product, [
+            'payment_token' => json_encode([
+                'token' => 'tok_mp',
+                'payment_method_id' => 'visa',
+                'installments' => 12,
+            ]),
+            'installments' => 3,
+        ]));
+
+        $response->assertOk();
+        $this->assertNotNull($captured);
+        $this->assertSame(3, $captured['installments']);
+        $token = json_decode((string) $captured['payment_token'], true);
+        $this->assertSame(3, $token['installments']);
+        $this->assertSame('tok_mp', $token['token']);
 
         $order = Order::query()->latest('id')->first();
         $this->assertNotNull($order);

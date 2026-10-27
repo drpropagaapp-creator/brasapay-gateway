@@ -23,12 +23,16 @@ fi
 
 COMPOSER_IMAGE="${GETFY_COMPOSER_IMAGE:-getfy/composer-php83:local}"
 COMPOSER_DOCKERFILE="$ROOT_DIR/docker/composer.Dockerfile"
+PHP_BASE_IMAGE="${GETFY_PHP_BASE_IMAGE:-php:8.3.36-cli-alpine}"
 
 if [ -z "${GETFY_COMPOSER_IMAGE:-}" ]; then
-  if ! docker image inspect "$COMPOSER_IMAGE" >/dev/null 2>&1; then
-    echo "Construindo imagem Composer com extensões PHP ($COMPOSER_IMAGE) ..."
-    docker build -f "$COMPOSER_DOCKERFILE" -t "$COMPOSER_IMAGE" "$ROOT_DIR/docker"
+  BUILD_OPTS="--pull --build-arg PHP_BASE_IMAGE=${PHP_BASE_IMAGE}"
+  if [ "${GETFY_DOCKER_NO_CACHE:-0}" = "1" ]; then
+    BUILD_OPTS="$BUILD_OPTS --no-cache"
   fi
+  echo "Construindo/atualizando imagem Composer ($COMPOSER_IMAGE) a partir de $PHP_BASE_IMAGE ..."
+  # shellcheck disable=SC2086
+  docker build $BUILD_OPTS -f "$COMPOSER_DOCKERFILE" -t "$COMPOSER_IMAGE" "$ROOT_DIR/docker"
 fi
 
 echo "Instalando dependências PHP (composer install) com imagem $COMPOSER_IMAGE e rede do host ..."

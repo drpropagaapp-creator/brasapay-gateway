@@ -26,6 +26,8 @@ import {
     X,
     Package,
     ChevronDown,
+    ChevronLeft,
+    ChevronRight,
     RotateCcw,
 } from 'lucide-vue-next';
 import Checkbox from '@/components/ui/Checkbox.vue';
@@ -76,6 +78,11 @@ const selectedAffiliateVenda = ref(null);
 
 function isCommissionRow(v) {
     return !!(v?.is_affiliate_commission || v?.is_coproduction_commission);
+}
+
+function hasOrderBump(v) {
+    if (v?.has_order_bump) return true;
+    return (v?.order_items ?? []).some((item) => Number(item?.position ?? 0) > 0);
 }
 
 function openAffiliateDetail(venda) {
@@ -184,6 +191,12 @@ const paymentStatusOptions = [
     { value: 'refunded', label: t('sales.status.refunded', 'Reembolsado') },
 ];
 
+const orderBumpOptions = [
+    { value: 'all', label: t('sales.order_bump.all', 'Todos') },
+    { value: 'with', label: t('sales.order_bump.with', 'Com order bump') },
+    { value: 'without', label: t('sales.order_bump.without', 'Sem order bump') },
+];
+
 function initialProductIds(f) {
     if (Array.isArray(f?.product_ids) && f.product_ids.length) {
         return [...f.product_ids];
@@ -209,6 +222,7 @@ const filterForm = ref({
     date_to: props.filters?.date_to ?? '',
     product_ids: initialProductIds(props.filters),
     offer_id: props.filters?.offer_id ?? '',
+    order_bump: props.filters?.order_bump ?? 'all',
     payment_method: props.filters?.payment_method ?? 'all',
     payment_status: props.filters?.payment_status ?? 'all',
     utm_source: props.filters?.utm_source ?? '',
@@ -220,6 +234,56 @@ const filterForm = ref({
 });
 
 const vendasList = computed(() => props.vendas?.data ?? props.vendas ?? []);
+
+const vendasPaginationLinks = computed(() => (Array.isArray(props.vendas?.links) ? props.vendas.links : []));
+const vendasCurrentPage = computed(() => Number(props.vendas?.current_page ?? 1) || 1);
+const vendasLastPage = computed(() => Number(props.vendas?.last_page ?? 1) || 1);
+const showVendasPagination = computed(() => vendasLastPage.value > 1 || vendasPaginationLinks.value.length > 3);
+
+const vendasPrevLink = computed(() => vendasPaginationLinks.value[0] ?? null);
+const vendasNextLink = computed(() => {
+    const links = vendasPaginationLinks.value;
+    return links.length ? links[links.length - 1] : null;
+});
+
+const mobilePageLinks = computed(() => {
+    const numbered = vendasPaginationLinks.value.filter((link) => /^\d+$/.test(htmlToText(link?.label)));
+    if (numbered.length <= 5) return numbered;
+
+    const current = vendasCurrentPage.value;
+    const last = vendasLastPage.value;
+    let start = current - 2;
+    let end = current + 2;
+    if (current <= 3) {
+        start = 1;
+        end = Math.min(5, last);
+    } else if (current >= last - 2) {
+        start = Math.max(1, last - 4);
+        end = last;
+    }
+
+    return numbered.filter((link) => {
+        const page = Number(htmlToText(link.label));
+        return page >= start && page <= end;
+    });
+});
+
+function goToVendasPage(url) {
+    if (!url) return;
+    router.visit(url, { preserveState: true });
+}
+
+function paginationItemClass(link, compact = false) {
+    return [
+        'relative inline-flex items-center justify-center rounded-lg text-sm font-medium transition',
+        compact ? 'h-9 min-w-[2.25rem] shrink-0 px-2' : 'px-3 py-2',
+        link?.active
+            ? 'z-10 bg-[var(--color-primary)] text-white'
+            : link?.url
+              ? 'text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-700'
+              : 'cursor-not-allowed text-zinc-400 dark:text-zinc-500',
+    ];
+}
 
 const advancedFiltersOpen = ref(false);
 const productFilterOpen = ref(false);
@@ -239,6 +303,7 @@ watch(
         filterForm.value.date_to = f.date_to ?? '';
         filterForm.value.product_ids = Array.isArray(f.product_ids) ? [...f.product_ids] : [];
         filterForm.value.offer_id = f.offer_id ?? '';
+        filterForm.value.order_bump = f.order_bump ?? 'all';
         filterForm.value.payment_method = f.payment_method ?? 'all';
         filterForm.value.payment_status = f.payment_status ?? 'all';
         filterForm.value.utm_source = f.utm_source ?? '';
@@ -282,7 +347,7 @@ function buildQuery(overrides = {}) {
             return;
         }
         if (typeof v === 'string' && v.trim() === '') return;
-        if ((k === 'period' || k === 'payment_method' || k === 'payment_status' || k === 'commission_status') && v === 'all') return;
+        if ((k === 'period' || k === 'payment_method' || k === 'payment_status' || k === 'commission_status' || k === 'order_bump') && v === 'all') return;
         if (k === 'sale_channel' && (v === '' || v === 'all')) return;
         cleaned[k] = v;
     });
@@ -585,6 +650,7 @@ function clearFilters() {
         date_to: '',
         product_ids: [],
         offer_id: '',
+        order_bump: 'all',
         payment_method: 'all',
         payment_status: 'all',
         utm_source: '',
@@ -608,7 +674,7 @@ function buildExportSearchParams(format) {
             return;
         }
         if (typeof v === 'string' && v.trim() === '') return;
-        if ((k === 'period' || k === 'payment_method' || k === 'payment_status') && v === 'all') return;
+        if ((k === 'period' || k === 'payment_method' || k === 'payment_status' || k === 'order_bump') && v === 'all') return;
         if (k === 'sale_channel' && (v === '' || v === 'all')) return;
         params.append(k, String(v));
     });
@@ -618,6 +684,8 @@ function buildExportSearchParams(format) {
 const exportCsvUrl = computed(() => `/vendas/export?${buildExportSearchParams('csv').toString()}`);
 
 const exportXlsUrl = computed(() => `/vendas/export?${buildExportSearchParams('xls').toString()}`);
+
+const exportJsonUrl = computed(() => `/vendas/export?${buildExportSearchParams('json').toString()}`);
 </script>
 
 <template>
@@ -701,6 +769,13 @@ const exportXlsUrl = computed(() => `/vendas/export?${buildExportSearchParams('x
                         <Download class="h-4 w-4" />
                         {{ t('sales.export.xls', 'Exportar XLS') }}
                     </a>
+                    <a
+                        :href="exportJsonUrl"
+                        :class="btnSecondary"
+                    >
+                        <Download class="h-4 w-4" />
+                        {{ t('sales.export.json', 'Exportar JSON') }}
+                    </a>
                 </div>
             </div>
 
@@ -736,8 +811,8 @@ const exportXlsUrl = computed(() => `/vendas/export?${buildExportSearchParams('x
                 </button>
             </div>
 
-            <div class="grid gap-3 lg:grid-cols-6">
-                <div class="lg:col-span-2">
+            <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+                <div>
                     <label class="mb-1 block text-xs font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">{{ t('dashboard.period', 'Período') }}</label>
                     <select
                         v-model="filterForm.period"
@@ -767,7 +842,7 @@ const exportXlsUrl = computed(() => `/vendas/export?${buildExportSearchParams('x
                     />
                 </div>
 
-                <div class="min-w-0 space-y-2 lg:col-span-2">
+                <div class="min-w-0 space-y-2">
                     <label class="mb-1 block text-xs font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">{{ t('sidebar.products', 'Produtos') }}</label>
                     <div class="flex flex-wrap items-start gap-2">
                         <div class="relative shrink-0" data-vendas-product-filter>
@@ -842,6 +917,17 @@ const exportXlsUrl = computed(() => `/vendas/export?${buildExportSearchParams('x
                         <option v-for="o in offersForSelectedProduct" :key="o.id" :value="o.id">
                             {{ o.product_name ? `${o.product_name} - ${o.name}` : o.name }}
                         </option>
+                    </select>
+                </div>
+
+                <div>
+                    <label class="mb-1 block text-xs font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">{{ t('sales.order_bump', 'Order bump') }}</label>
+                    <select
+                        v-model="filterForm.order_bump"
+                        class="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-900 transition focus:border-[var(--color-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]/20 dark:border-zinc-700 dark:bg-zinc-900 dark:text-white"
+                        @change="onFilterChange"
+                    >
+                        <option v-for="o in orderBumpOptions" :key="o.value" :value="o.value">{{ o.label }}</option>
                     </select>
                 </div>
 
@@ -962,6 +1048,10 @@ const exportXlsUrl = computed(() => `/vendas/export?${buildExportSearchParams('x
                         </p>
                         <p class="mt-1 break-words text-sm font-semibold leading-snug text-zinc-900 dark:text-white">
                             {{ v.product_display_name ?? v.product?.name ?? '–' }}
+                            <span
+                                v-if="hasOrderBump(v)"
+                                class="ml-1 inline-flex rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium uppercase text-amber-800 dark:bg-amber-900/40 dark:text-amber-200"
+                            >{{ t('sales.order_bump.badge', 'Bump') }}</span>
                             <span
                                 v-if="v.is_api_pix"
                                 class="ml-1 inline-flex rounded-full bg-sky-100 px-1.5 py-0.5 text-[10px] font-medium uppercase text-sky-800 dark:bg-sky-900/40 dark:text-sky-200"
@@ -1113,6 +1203,10 @@ const exportXlsUrl = computed(() => `/vendas/export?${buildExportSearchParams('x
                         <td class="px-4 py-3 text-sm text-zinc-900 dark:text-white">
                             {{ v.product_display_name ?? v.product?.name ?? '–' }}
                             <span
+                                v-if="hasOrderBump(v)"
+                                class="ml-1 inline-flex rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium uppercase text-amber-800 dark:bg-amber-900/40 dark:text-amber-200"
+                            >{{ t('sales.order_bump.badge', 'Bump') }}</span>
+                            <span
                                 v-if="v.is_api_pix"
                                 class="ml-1 inline-flex rounded-full bg-sky-100 px-1.5 py-0.5 text-[10px] font-medium uppercase text-sky-800 dark:bg-sky-900/40 dark:text-sky-200"
                             >API PIX</span>
@@ -1198,29 +1292,54 @@ const exportXlsUrl = computed(() => `/vendas/export?${buildExportSearchParams('x
         </div>
         </AuroraPageSection>
 
-        <!-- Paginação -->
+        <!-- Paginação: no mobile usa janela curta para não cortar as páginas 1 e 2. -->
         <nav
-            v-if="vendas?.links?.length > 3"
-            class="flex items-center justify-center gap-2"
+            v-if="showVendasPagination"
+            class="w-full min-w-0"
             :aria-label="t('common.pagination', 'Paginação')"
         >
-            <a
-                v-for="link in vendas.links"
-                :key="link.label"
-                :href="link.url"
-                :aria-current="link.active ? 'page' : undefined"
-                :aria-disabled="!link.url"
-                :class="[
-                    'relative inline-flex items-center rounded-lg px-3 py-2 text-sm font-medium transition',
-                    link.active
-                        ? 'z-10 bg-[var(--color-primary)] text-white'
-                        : link.url
-                          ? 'text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-700'
-                          : 'cursor-not-allowed text-zinc-400 dark:text-zinc-500',
-                ]"
-                v-text="htmlToText(link.label)"
-                @click.prevent="link.url && router.visit(link.url, { preserveState: true })"
-            />
+            <div class="flex items-center justify-center gap-1 sm:hidden">
+                <a
+                    :href="vendasPrevLink?.url || undefined"
+                    :aria-label="t('pagination.previous', 'Anterior')"
+                    :aria-disabled="!vendasPrevLink?.url"
+                    :class="paginationItemClass(vendasPrevLink, true)"
+                    @click.prevent="goToVendasPage(vendasPrevLink?.url)"
+                >
+                    <ChevronLeft class="h-4 w-4" aria-hidden="true" />
+                </a>
+                <a
+                    v-for="link in mobilePageLinks"
+                    :key="`mobile-${htmlToText(link.label)}`"
+                    :href="link.url || undefined"
+                    :aria-current="link.active ? 'page' : undefined"
+                    :aria-disabled="!link.url"
+                    :class="paginationItemClass(link, true)"
+                    v-text="htmlToText(link.label)"
+                    @click.prevent="goToVendasPage(link.url)"
+                />
+                <a
+                    :href="vendasNextLink?.url || undefined"
+                    :aria-label="t('pagination.next', 'Próximo')"
+                    :aria-disabled="!vendasNextLink?.url"
+                    :class="paginationItemClass(vendasNextLink, true)"
+                    @click.prevent="goToVendasPage(vendasNextLink?.url)"
+                >
+                    <ChevronRight class="h-4 w-4" aria-hidden="true" />
+                </a>
+            </div>
+            <div class="hidden flex-wrap items-center justify-center gap-2 sm:flex">
+                <a
+                    v-for="(link, index) in vendasPaginationLinks"
+                    :key="`${link.label}-${index}`"
+                    :href="link.url || undefined"
+                    :aria-current="link.active ? 'page' : undefined"
+                    :aria-disabled="!link.url"
+                    :class="paginationItemClass(link)"
+                    v-text="htmlToText(link.label)"
+                    @click.prevent="goToVendasPage(link.url)"
+                />
+            </div>
         </nav>
 
         <!-- Sidebar de detalhes -->

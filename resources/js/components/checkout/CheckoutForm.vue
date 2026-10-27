@@ -25,7 +25,7 @@ import { isValidCpf } from '@/utils/brazilianDocuments.js';
 import { navigateAfterCheckout } from '@/lib/checkoutRedirect.js';
 import { trackCheckoutAddPaymentInfo, trackCheckoutPurchase } from '@/composables/useCheckoutPurchaseTracking.js';
 import { applyMetaAdvancedMatching } from '@/composables/useMetaCheckoutTracking.js';
-import { splitCustomerName } from '@/lib/metaTracking/browserPixel.js';
+import { splitCustomerName, normalizeMetaPhone } from '@/lib/metaTracking/browserPixel.js';
 import { getMetricsSessionKey } from '@/lib/metricsTracking.js';
 import CheckoutLegalFooter from './CheckoutLegalFooter.vue';
 import { usePlatformBranding } from '@/composables/usePlatformBranding';
@@ -198,6 +198,7 @@ const props = defineProps({
     orderBumpIds: { type: Array, default: () => [] },
     primaryColor: { type: String, default: '#7427F1' },
     formatPrice: { type: Function, default: (v, c) => `R$ ${Number(v).toFixed(2)}` },
+    priceInCurrency: { type: Function, default: (v) => Number(v) || 0 },
     config: { type: Object, default: () => ({}) },
     /** Métodos disponíveis: [{ id: 'pix'|'card'|'boleto', label: string, gateway_name?: string }] */
     availablePaymentMethods: { type: Array, default: () => [] },
@@ -486,7 +487,7 @@ const paypalButtonsReady = computed(() => {
     if (!email.includes('@')) return false;
     if (showName.value && !(form.name || '').trim()) return false;
     if (showCpf.value && (form.cpf || '').replace(/\D/g, '').length < 11) return false;
-    if (showPhone.value && phoneDigits.value.replace(/\D/g, '').length < 8) return false;
+    if (showPhone.value && !isCheckoutPhoneComplete()) return false;
     if (props.requiresShipping) {
         const cep = (form.address_zipcode || '').replace(/\D/g, '');
         if (cep.length < 8) return false;
@@ -772,8 +773,16 @@ let trackTimeout = null;
 let contactSyncTimeout = null;
 const trackStepSent = ref({ form_started: false, form_filled: false });
 
+function currentCheckoutPhone() {
+    return showPhone.value ? `${form.country_code || ''}${phoneDigits.value || ''}` : '';
+}
+
+function isCheckoutPhoneComplete() {
+    return Boolean(normalizeMetaPhone(currentCheckoutPhone()));
+}
+
 function currentMetaCustomer() {
-    const phone = showPhone.value ? `${form.country_code || ''}${phoneDigits.value || ''}` : '';
+    const phone = currentCheckoutPhone();
     return {
         email: form.email || '',
         phone,
@@ -1158,7 +1167,7 @@ function installmentOptionLabel(n) {
         return tf('checkout.installments_cash', 'À vista');
     }
     const total = Number(props.checkoutTotalBrl) || 0;
-    const each = props.formatPrice(total / n, props.displayCurrency);
+    const each = props.formatPrice(props.priceInCurrency(total / n), props.displayCurrency);
     return tf('checkout.installments_times', '{n}x de {amount} sem juros')
         .replace('{n}', String(n))
         .replace('{amount}', each);
@@ -1302,18 +1311,19 @@ watch(
 );
 
 watch(
-    () => [form.payment_method, isCardGatewayMercadopago.value, props.cardMercadopagoPublicKey, props.checkoutTotalBrl],
-    async ([method, isMP, , totalBrl]) => {
+    () => [form.payment_method, isCardGatewayMercadopago.value, props.cardMercadopagoPublicKey, props.checkoutTotalBrl, effectiveCardMaxInstallments.value],
+    async ([method, isMP, , totalBrl, maxInst], previous) => {
         if (method !== 'card' || !isMP) {
             destroyMercadopagoBrick();
             return;
         }
         await nextTick();
         const amount = Math.max(0.01, Number(totalBrl) || 0);
+        const prevMax = Array.isArray(previous) ? previous[4] : undefined;
         const ctrl = mercadopagoBrickController.value
             ?? (typeof window !== 'undefined' ? window.cardPaymentBrickController : null);
         // Preferir update() (doc Brick) em vez de remount quando só o valor muda.
-        if (ctrl && typeof ctrl.update === 'function' && mercadopagoBrickReady.value) {
+        if (ctrl && typeof ctrl.update === 'function' && mercadopagoBrickReady.value && prevMax === maxInst) {
             try {
                 await ctrl.update({ amount });
                 return;
@@ -1486,7 +1496,7 @@ function validateCajuPayCustomerFields() {
             errors.cpf = 'CPF inválido.';
         }
     }
-    if (showPhone.value && (phoneDigits.value || '').length < 8) {
+    if (showPhone.value && !isCheckoutPhoneComplete()) {
         errors.phone = 'Telefone inválido.';
     }
     if (Object.keys(errors).length > 0) {
@@ -1952,6 +1962,10 @@ function destroyMercadopagoBrick() {
 }
 
 function submitCardWithMercadopagoFormData(formData) {
+    const brickInstallments = Number(formData?.installments);
+    const requested = Number.isFinite(brickInstallments) && brickInstallments >= 1
+        ? Math.floor(brickInstallments)
+        : 1;
     const payload = {
         product_id: form.product_id,
         payment_method: 'card',
@@ -1961,7 +1975,7 @@ function submitCardWithMercadopagoFormData(formData) {
         phone: showPhone.value ? form.country_code + phoneDigits.value : '',
         coupon_code: (form.coupon_code || '').trim() || null,
         payment_token: JSON.stringify(formData),
-        installments: 1,
+        installments: Math.min(effectiveCardMaxInstallments.value, Math.max(1, requested)),
     };
     if (props.productOfferId) payload.product_offer_id = props.productOfferId;
     if (props.subscriptionPlanId) payload.subscription_plan_id = props.subscriptionPlanId;
@@ -2007,6 +2021,7 @@ async function initMercadopagoBrick() {
     const amount = Math.max(0.01, Number(props.checkoutTotalBrl) || 0);
     const email = (form.email || '').trim() || undefined;
     const nameParts = (form.name || '').trim().split(/\s+/);
+    const maxInstallments = Math.max(1, Number(effectiveCardMaxInstallments.value) || 1);
     const settings = {
         initialization: {
             amount,
@@ -2014,6 +2029,12 @@ async function initMercadopagoBrick() {
                 email,
                 firstName: nameParts[0] || undefined,
                 lastName: nameParts.slice(1).join(' ') || undefined,
+            },
+        },
+        customization: {
+            paymentMethods: {
+                minInstallments: 1,
+                maxInstallments,
             },
         },
         callbacks: {
@@ -3090,6 +3111,7 @@ function submit() {
                 :order-bump-color="orderBumpColor"
                 :t="t"
                 :format-price="formatPrice"
+                :price-in-currency="priceInCurrency"
                 :display-currency="displayCurrency"
                 class="mt-8"
                 @update:selected-ids="emit('update:orderBumpIds', $event)"
@@ -3291,6 +3313,8 @@ function submit() {
                         :address-data="asaasAddressData"
                         :step="asaasCardStep"
                         :format-price="formatPrice"
+                        :price-in-currency="priceInCurrency"
+                        :display-currency="displayCurrency"
                         :card-installments-enabled="cardInstallmentsEnabled && effectiveCardMaxInstallments > 1"
                         :card-max-installments="effectiveCardMaxInstallments"
                         :checkout-total-brl="checkoutTotalBrl"
@@ -3596,7 +3620,7 @@ function submit() {
                         </div>
                     </div>
                 </div>
-                <!-- Parcelas (Pagar.me e Efí; Stripe/MP/Asaas/CajuPay têm UI própria) -->
+                <!-- Parcelas (Pagar.me, Efí e Cielo; Stripe/MP/Asaas/CajuPay têm UI própria) -->
                 <div
                     v-if="showInstallmentsSelect"
                     class="mt-4"
@@ -3813,6 +3837,7 @@ function submit() {
                 :logo-url="platformLogoUrl"
                 :app-name="appName"
                 :notice="platformCheckoutNotice"
+                :secure-purchase-text="t('checkout.secure_purchase')"
             />
         </footer>
 

@@ -6,11 +6,23 @@ import CheckoutPlatformNotice from '@/components/checkout/CheckoutPlatformNotice
 
 const props = defineProps({
     form: { type: Object, required: true },
-    noticeDefault: { type: String, default: '' },
+    noticeDefault: { type: [String, Object], default: '' },
     placeholders: { type: Array, default: () => [] },
 });
 
 const noticeTextarea = ref(null);
+const noticeLocale = ref('pt_BR');
+
+const noticeLocales = [
+    { code: 'pt_BR', label: 'Português (BR)' },
+    { code: 'en', label: 'English' },
+    { code: 'es', label: 'Español' },
+    { code: 'it', label: 'Italiano' },
+];
+
+function emptyNoticeMap(pt = '') {
+    return { pt_BR: pt, en: '', es: '', it: '' };
+}
 
 const fallbackPlaceholders = [
     { token: '{cnpj}', label: 'CNPJ da empresa operadora' },
@@ -38,20 +50,59 @@ const noticeEnabled = computed({
     },
 });
 
+const noticeMap = computed(() => {
+    const value = props.form.platform_checkout_notice;
+    if (value && typeof value === 'object' && !Array.isArray(value)) {
+        return value;
+    }
+
+    return emptyNoticeMap(typeof value === 'string' ? value : '');
+});
+
+const currentNotice = computed({
+    get: () => String(noticeMap.value[noticeLocale.value] ?? ''),
+    set: (value) => {
+        ensureNoticeMap();
+        props.form.platform_checkout_notice[noticeLocale.value] = value;
+    },
+});
+
+const noticeDefaults = computed(() => {
+    const value = props.noticeDefault;
+    if (value && typeof value === 'object' && !Array.isArray(value)) {
+        return value;
+    }
+
+    return emptyNoticeMap(typeof value === 'string' ? value : '');
+});
+
+function ensureNoticeMap() {
+    const current = props.form.platform_checkout_notice;
+    if (current && typeof current === 'object' && !Array.isArray(current)) {
+        for (const item of noticeLocales) {
+            if (current[item.code] === undefined) current[item.code] = '';
+        }
+        return;
+    }
+    props.form.platform_checkout_notice = emptyNoticeMap(typeof current === 'string' ? current : '');
+}
+
 function onCnpjInput(event) {
     props.form.platform_cnpj = formatCnpjMask(event.target.value);
 }
 
 function insertToken(token) {
+    ensureNoticeMap();
     const el = noticeTextarea.value;
-    const current = String(props.form.platform_checkout_notice ?? '');
+    const locale = noticeLocale.value;
+    const current = String(props.form.platform_checkout_notice[locale] ?? '');
     if (!el || typeof el.selectionStart !== 'number') {
-        props.form.platform_checkout_notice = `${current}${token}`;
+        props.form.platform_checkout_notice[locale] = `${current}${token}`;
         return;
     }
     const start = el.selectionStart;
     const end = el.selectionEnd;
-    props.form.platform_checkout_notice = `${current.slice(0, start)}${token}${current.slice(end)}`;
+    props.form.platform_checkout_notice[locale] = `${current.slice(0, start)}${token}${current.slice(end)}`;
     requestAnimationFrame(() => {
         const pos = start + token.length;
         el.focus();
@@ -60,13 +111,15 @@ function insertToken(token) {
 }
 
 function applyDefaultNotice() {
-    if (props.form.platform_checkout_notice && !confirm('Substituir o texto atual pelo modelo padrão?')) {
+    const locale = noticeLocale.value;
+    const current = String(noticeMap.value[locale] ?? '');
+    if (current && !confirm('Substituir o texto atual pelo modelo padrão deste idioma?')) {
         return;
     }
-    props.form.platform_checkout_notice = props.noticeDefault
-        || `Ao concluir a compra na {plataforma}, você declara estar de acordo com os {termos} e a política de {privacidade} da empresa {razao_social}, inscrita no CNPJ {cnpj}.
-
-A responsabilidade pela oferta, entrega e qualidade do produto é de {infoprodutor}, que realiza a venda por meio da nossa plataforma, através do email {email_infoprodutor}.`;
+    ensureNoticeMap();
+    props.form.platform_checkout_notice[locale] = noticeDefaults.value[locale]
+        || noticeDefaults.value.pt_BR
+        || '';
 }
 
 function previewReplace(template) {
@@ -90,7 +143,7 @@ function previewReplace(template) {
     return text;
 }
 
-const noticePreview = computed(() => previewReplace(props.form.platform_checkout_notice));
+const noticePreview = computed(() => previewReplace(currentNotice.value));
 </script>
 
 <template>
@@ -162,7 +215,7 @@ const noticePreview = computed(() => previewReplace(props.form.platform_checkout
                         Exibir aviso no final do checkout
                     </span>
                     <span class="mt-0.5 block text-xs text-zinc-500 dark:text-zinc-400">
-                        Desativado: o checkout mostra Termos · Privacidade. Ativado: a mensagem abaixo substitui esses links no quadro do checkout.
+                        Desativado: o checkout mostra Termos · Privacidade. Ativado: a mensagem abaixo substitui esses links no quadro do checkout. Cada idioma segue a chave já usada no seletor do checkout (pt_BR, en, es, it).
                     </span>
                 </span>
             </label>
@@ -172,9 +225,9 @@ const noticePreview = computed(() => previewReplace(props.form.platform_checkout
 
             <div class="mt-5 space-y-3">
                 <div class="flex flex-wrap items-center justify-between gap-2">
-                    <label for="platform_checkout_notice" class="text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                    <p class="text-xs font-medium text-zinc-600 dark:text-zinc-400">
                         Mensagem do checkout
-                    </label>
+                    </p>
                     <button
                         type="button"
                         class="text-xs font-medium text-sky-700 hover:underline dark:text-sky-300"
@@ -184,8 +237,23 @@ const noticePreview = computed(() => previewReplace(props.form.platform_checkout
                     </button>
                 </div>
 
+                <div class="flex flex-wrap gap-1 rounded-lg bg-zinc-100 p-1 dark:bg-zinc-800">
+                    <button
+                        v-for="item in noticeLocales"
+                        :key="item.code"
+                        type="button"
+                        class="rounded-md px-3 py-1.5 text-xs font-medium transition"
+                        :class="noticeLocale === item.code
+                            ? 'bg-white text-zinc-900 shadow-sm dark:bg-zinc-950 dark:text-zinc-100'
+                            : 'text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200'"
+                        @click="noticeLocale = item.code"
+                    >
+                        {{ item.label }}
+                    </button>
+                </div>
+
                 <p class="text-xs text-zinc-500 dark:text-zinc-400">
-                    Use as variáveis abaixo. Clique para inserir no texto. Elas são preenchidas automaticamente na hora da compra.
+                    Use as variáveis abaixo. Clique para inserir no texto. Elas são preenchidas automaticamente na hora da compra. Idioma sem texto usa o português.
                 </p>
                 <div class="flex flex-wrap gap-1.5">
                     <button
@@ -207,15 +275,18 @@ const noticePreview = computed(() => previewReplace(props.form.platform_checkout
                 </ul>
 
                 <textarea
-                    id="platform_checkout_notice"
+                    :id="`platform_checkout_notice_${noticeLocale}`"
                     ref="noticeTextarea"
-                    v-model="form.platform_checkout_notice"
+                    v-model="currentNotice"
                     rows="8"
                     maxlength="5000"
                     class="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm leading-relaxed text-zinc-900 shadow-sm focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30 dark:border-zinc-600 dark:bg-zinc-950 dark:text-zinc-100"
-                    placeholder="Escreva o aviso ou clique em Inserir modelo."
+                    placeholder="Escreva o aviso neste idioma ou clique em Inserir modelo."
                 />
-                <p v-if="form.errors.platform_checkout_notice" class="text-sm text-red-600 dark:text-red-400">
+                <p v-if="form.errors[`platform_checkout_notice.${noticeLocale}`]" class="text-sm text-red-600 dark:text-red-400">
+                    {{ form.errors[`platform_checkout_notice.${noticeLocale}`] }}
+                </p>
+                <p v-else-if="form.errors.platform_checkout_notice" class="text-sm text-red-600 dark:text-red-400">
                     {{ form.errors.platform_checkout_notice }}
                 </p>
 

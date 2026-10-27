@@ -24,6 +24,8 @@ const props = defineProps({
     to: { type: String, default: null },
     chart_granularity: { type: String, default: 'day' },
     vendas_totais: { type: Number, default: 0 },
+    vendas_api: { type: Number, default: 0 },
+    quantidade_vendas_api: { type: Number, default: 0 },
     vendas_pendentes: { type: Number, default: 0 },
     quantidade_vendas: { type: Number, default: 0 },
     ticket_medio: { type: Number, default: 0 },
@@ -68,6 +70,7 @@ function todayIso() {
 
 const dashboardLabels = computed(() => ({
     totalSales: t('dashboard.total_sales', 'Vendas totais'),
+    apiSales: t('dashboard.api_sales', 'Vendas API'),
     pendingSales: t('dashboard.pending_sales', 'Vendas pendentes'),
     salesCount: t('dashboard.sales_count', 'Quantidade de vendas'),
     avgTicket: t('dashboard.avg_ticket', 'Ticket médio'),
@@ -223,6 +226,8 @@ const sharedViewProps = computed(() => ({
     hideValuesLabel: t('dashboard.hide_values', 'Ocultar valores'),
     showValuesLabel: t('dashboard.show_values', 'Mostrar valores'),
     vendas_totais: props.vendas_totais,
+    vendas_api: props.vendas_api,
+    quantidade_vendas_api: props.quantidade_vendas_api,
     vendas_pendentes: props.vendas_pendentes,
     quantidade_vendas: props.quantidade_vendas,
     ticket_medio: props.ticket_medio,

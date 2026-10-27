@@ -16,6 +16,9 @@ class EffectiveMerchantFees
     /** @var list<string> */
     private const RULE_KEYS = ['pix', 'api_pix', 'pixgo', 'open_finance', 'card', 'apple_pay', 'google_pay', 'boleto', 'withdrawal'];
 
+    /** Canais de venda que aceitam tabela low ticket (saque fica de fora). */
+    private const SALE_RULE_KEYS = ['pix', 'api_pix', 'pixgo', 'open_finance', 'card', 'apple_pay', 'google_pay', 'boleto'];
+
     /**
      * @return array{
      *     pix: array{percent: float, fixed: float},
@@ -27,7 +30,8 @@ class EffectiveMerchantFees
      *     google_pay: array{percent: float, fixed: float},
      *     boleto: array{percent: float, fixed: float},
      *     withdrawal: array{percent: float, fixed: float},
-     *     card_installments: array<int, array{percent: float, fixed: float, days_to_available: int}>
+     *     card_installments: array<int, array{percent: float, fixed: float, days_to_available: int}>,
+     *     low_ticket: array{enabled: bool, max_amount: float, max_order_amount: float}&array<string, mixed>
      * }
      */
     public static function platformDefaults(): array
@@ -80,6 +84,9 @@ class EffectiveMerchantFees
         $base['card_installments'] = CardInstallmentEconomics::normalizeRules(
             is_array($installRaw) ? $installRaw : null,
             $base['card']
+        );
+        $base['low_ticket'] = self::normalizeLowTicket(
+            is_array($raw) ? ($raw['low_ticket'] ?? null) : null
         );
 
         return $base;
@@ -232,7 +239,7 @@ class EffectiveMerchantFees
      * @param  'pix'|'open_finance'|'card'|'apple_pay'|'google_pay'|'boleto'|'withdrawal'|'pix_auto'  $method
      * @return array{fee: float, net: float, gross: float, percent: float, fixed: float}
      */
-    public static function calculateSaleFee(int $tenantId, string $method, float $gross, ?string $source = null, ?int $installments = null): array
+    public static function calculateSaleFee(int $tenantId, string $method, float $gross, ?string $source = null, ?int $installments = null, ?float $productAmount = null, ?float $itemsAmount = null): array
     {
         $map = [
             'pix' => 'pix',
@@ -256,7 +263,12 @@ class EffectiveMerchantFees
         }
         $percent = PercentDecimal::toFloat(PercentDecimal::normalize($rules[$key]['percent'] ?? 0));
         $fixed = round((float) ($rules[$key]['fixed'] ?? 0), 2);
-        if ($key === 'card' && $installments !== null && CardInstallmentEconomics::platformHasSavedTable()) {
+        $useLowTicket = self::appliesLowTicket($rules, $productAmount, $itemsAmount);
+        if ($useLowTicket) {
+            $lowBlock = is_array($rules['low_ticket'][$key] ?? null) ? $rules['low_ticket'][$key] : [];
+            $percent = PercentDecimal::toFloat(PercentDecimal::normalize($lowBlock['percent'] ?? 0));
+            $fixed = round((float) ($lowBlock['fixed'] ?? 0), 2);
+        } elseif ($key === 'card' && $installments !== null && CardInstallmentEconomics::platformHasSavedTable()) {
             $row = CardInstallmentEconomics::ruleFor(
                 $rules['card_installments'] ?? [],
                 $installments
@@ -322,5 +334,80 @@ class EffectiveMerchantFees
         }
 
         return null;
+    }
+
+    /**
+     * Valor do produto principal do checkout (sem order bump, upsell ou frete).
+     */
+    public static function mainProductAmount(Order $order): float
+    {
+        return $order->mainProductAmount();
+    }
+
+    /**
+     * @param  array<string, mixed>  $rules
+     */
+    public static function appliesLowTicket(array $rules, ?float $productAmount, ?float $itemsAmount = null): bool
+    {
+        $low = $rules['low_ticket'] ?? null;
+        if (! is_array($low) || empty($low['enabled']) || $productAmount === null) {
+            return false;
+        }
+
+        $max = round((float) ($low['max_amount'] ?? 0), 2);
+        if ($max <= 0 || round($productAmount, 2) > $max) {
+            return false;
+        }
+
+        $maxOrder = round((float) ($low['max_order_amount'] ?? 0), 2);
+        if ($maxOrder > 0 && $itemsAmount !== null && round($itemsAmount, 2) >= $maxOrder) {
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
+     * @param  array<string, mixed>|null  $raw
+     * @return array{enabled: bool, max_amount: float, max_order_amount: float}&array<string, array{percent: float, fixed: float}|bool|float>
+     */
+    public static function normalizeLowTicket(?array $raw): array
+    {
+        $out = [
+            'enabled' => false,
+            'max_amount' => 0.0,
+            'max_order_amount' => 0.0,
+        ];
+        foreach (self::SALE_RULE_KEYS as $key) {
+            $out[$key] = ['percent' => 0.0, 'fixed' => 0.0];
+        }
+
+        if (! is_array($raw)) {
+            return $out;
+        }
+
+        $out['enabled'] = filter_var($raw['enabled'] ?? false, FILTER_VALIDATE_BOOLEAN);
+        $out['max_amount'] = max(0.0, round((float) ($raw['max_amount'] ?? 0), 2));
+        $out['max_order_amount'] = max(0.0, round((float) ($raw['max_order_amount'] ?? 0), 2));
+
+        foreach (self::SALE_RULE_KEYS as $key) {
+            if (! isset($raw[$key]) || ! is_array($raw[$key])) {
+                continue;
+            }
+            $out[$key] = [
+                'percent' => PercentDecimal::toFloat(PercentDecimal::normalize($raw[$key]['percent'] ?? 0)),
+                'fixed' => round((float) ($raw[$key]['fixed'] ?? 0), 2),
+            ];
+        }
+
+        return $out;
+    }
+
+    /**
+     * @return list<string>
+     */
+    public static function saleRuleKeys(): array
+    {
+        return self::SALE_RULE_KEYS;
     }
 }

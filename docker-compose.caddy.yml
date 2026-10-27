@@ -23,6 +23,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        PHP_BASE_IMAGE: ${GETFY_PHP_BASE_IMAGE:-php:8.3.36-cli-alpine}
     image: getfy_app:latest
     restart: unless-stopped
     logging:
@@ -54,6 +56,7 @@ services:
       SESSION_DRIVER: ${GETFY_SESSION_DRIVER:-file}
       GETFY_DOCKER: "true"
       GETFY_RUN_SETUP: "true"
+      GETFY_SKIP_MIGRATE: ${GETFY_SKIP_MIGRATE:-0}
       LOG_CHANNEL: ${LOG_CHANNEL:-stack}
       LOG_STACK: ${LOG_STACK:-daily}
       LOG_LEVEL: ${LOG_LEVEL:-warning}

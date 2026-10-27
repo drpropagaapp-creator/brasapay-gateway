@@ -69,7 +69,8 @@ class FinancialController extends Controller
 
         $feeDefaults = EffectiveMerchantFees::platformDefaults();
         $cardInstallmentRules = $feeDefaults['card_installments'] ?? [];
-        unset($feeDefaults['card_installments']);
+        $lowTicket = $feeDefaults['low_ticket'] ?? EffectiveMerchantFees::normalizeLowTicket(null);
+        unset($feeDefaults['card_installments'], $feeDefaults['low_ticket']);
 
         return Inertia::render('Platform/Financial/Index', [
             'gateways' => $this->buildGatewaysListForSettings($tenantId),
@@ -78,6 +79,7 @@ class FinancialController extends Controller
             'cajupay_accounts' => CajuPayAccountsController::listForAdmin(),
             'cajupay_credential_keys' => config('gateways.gateways.cajupay.credential_keys', []),
             'merchant_fee_rules' => $feeDefaults,
+            'low_ticket_fees' => $lowTicket,
             'card_installment_rules' => $cardInstallmentRules,
             'platform_card_installments_enabled' => PlatformCardInstallments::globalEnabled(),
             'platform_card_installments_max' => PlatformCardInstallments::maxAllowed(),
@@ -316,6 +318,10 @@ class FinancialController extends Controller
             'card_installment_rules.*.fixed' => ['nullable', 'numeric', 'min:0', 'max:999999'],
             'card_installment_rules.*.days_to_available' => ['nullable', 'integer', 'min:0', 'max:365'],
             'api_pix_enabled' => ['nullable', 'boolean'],
+            'low_ticket_enabled' => ['nullable', 'boolean'],
+            'low_ticket_max_amount' => ['nullable', 'numeric', 'min:0', 'max:999999'],
+            'low_ticket_max_order_amount' => ['nullable', 'numeric', 'min:0', 'max:999999'],
+            'low_ticket_fee_rules' => ['nullable', 'array'],
         ]);
         $rules = ['pix', 'api_pix', 'pixgo', 'open_finance', 'card', 'apple_pay', 'google_pay', 'boleto', 'withdrawal'];
         foreach ($rules as $key) {
@@ -340,6 +346,30 @@ class FinancialController extends Controller
             $existingRaw = json_decode($existingRaw, true);
         }
         $existingInstallments = is_array($existingRaw) ? ($existingRaw['card_installments'] ?? null) : null;
+
+        if ($request->exists('low_ticket_enabled') || $request->exists('low_ticket_fee_rules')) {
+            foreach (EffectiveMerchantFees::saleRuleKeys() as $key) {
+                $request->validate([
+                    "low_ticket_fee_rules.$key" => ['nullable', 'array'],
+                    "low_ticket_fee_rules.$key.percent" => ['nullable', 'numeric', 'min:0', 'max:100'],
+                    "low_ticket_fee_rules.$key.fixed" => ['nullable', 'numeric', 'min:0', 'max:999999'],
+                ]);
+            }
+
+            $lowTicketRaw = [
+                'enabled' => (bool) ($validated['low_ticket_enabled'] ?? false),
+                'max_amount' => $validated['low_ticket_max_amount'] ?? 0,
+                'max_order_amount' => $validated['low_ticket_max_order_amount'] ?? 0,
+            ];
+            foreach (EffectiveMerchantFees::saleRuleKeys() as $key) {
+                $lowTicketRaw[$key] = $validated['low_ticket_fee_rules'][$key] ?? [];
+            }
+            $out['low_ticket'] = EffectiveMerchantFees::normalizeLowTicket($lowTicketRaw);
+        } elseif (is_array($existingRaw) && isset($existingRaw['low_ticket'])) {
+            $out['low_ticket'] = EffectiveMerchantFees::normalizeLowTicket(
+                is_array($existingRaw['low_ticket']) ? $existingRaw['low_ticket'] : null
+            );
+        }
 
         if ($request->exists('card_installment_rules')) {
             $incoming = is_array($validated['card_installment_rules'] ?? null)

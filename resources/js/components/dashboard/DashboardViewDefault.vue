@@ -2,7 +2,7 @@
 import { computed } from 'vue';
 import { Link } from '@inertiajs/vue3';
 import VueApexCharts from 'vue3-apexcharts';
-import { CircleDollarSign, ShoppingCart, Receipt, RotateCcw, Package, QrCode, CreditCard, Wallet, ArrowRight, Clock } from 'lucide-vue-next';
+import { CircleDollarSign, ShoppingCart, Receipt, RotateCcw, Package, QrCode, CreditCard, Wallet, ArrowRight, Clock, Code2 } from 'lucide-vue-next';
 import ConquistasWidget from '@/components/layout/ConquistasWidget.vue';
 import DashboardPeriodToolbar from '@/components/dashboard/DashboardPeriodToolbar.vue';
 import DashboardCustomPeriodForm from '@/components/dashboard/DashboardCustomPeriodForm.vue';
@@ -25,6 +25,8 @@ const props = defineProps({
     hideValuesLabel: { type: String, default: 'Ocultar valores' },
     showValuesLabel: { type: String, default: 'Mostrar valores' },
     vendas_totais: { type: Number, default: 0 },
+    vendas_api: { type: Number, default: 0 },
+    quantidade_vendas_api: { type: Number, default: 0 },
     vendas_pendentes: { type: Number, default: 0 },
     quantidade_vendas: { type: Number, default: 0 },
     ticket_medio: { type: Number, default: 0 },
@@ -204,11 +206,12 @@ const areaOptions = computed(() => ({
         </div>
 
         <!-- KPIs -->
-        <div class="grid gap-5 sm:grid-cols-2 xl:grid-cols-4">
+        <div class="grid gap-5 sm:grid-cols-2" :class="vendas_api > 0 || quantidade_vendas_api > 0 ? 'xl:grid-cols-5' : 'xl:grid-cols-4'">
             <PnKpiCard :index="2" :label="labels.salesCount" :icon="ShoppingCart" :value="quantidade_vendas" :bars="kpiBars" :masked="!valuesVisible" />
             <PnKpiCard :index="3" :label="labels.avgTicket" :icon="CircleDollarSign" :value="ticket_medio" prefix="R$ " :decimals="2" :bars="kpiBars ? [...kpiBars].reverse() : null" :masked="!valuesVisible" />
             <PnKpiCard :index="4" :label="labels.refunds" :icon="RotateCcw" :value="reembolsos_total" prefix="R$ " :decimals="2" :caption="`${displayNumber(reembolsos_count)} ${labels.ordersCount}`" :masked="!valuesVisible" />
-            <PnKpiCard :index="5" :label="labels.products" :icon="Package" :value="quantidade_produtos" :caption="`${displayNumber(abandono_carrinho)} ${labels.abandonedCount}`" :masked="!valuesVisible" />
+            <PnKpiCard v-if="vendas_api > 0 || quantidade_vendas_api > 0" :index="5" :label="labels.apiSales" :icon="Code2" :value="vendas_api" prefix="R$ " :decimals="2" :caption="`${displayNumber(quantidade_vendas_api)} ${labels.ordersCount}`" :masked="!valuesVisible" />
+            <PnKpiCard :index="6" :label="labels.products" :icon="Package" :value="quantidade_produtos" :caption="`${displayNumber(abandono_carrinho)} ${labels.abandonedCount}`" :masked="!valuesVisible" />
         </div>
 
         <!-- Desempenho + meios de pagamento -->

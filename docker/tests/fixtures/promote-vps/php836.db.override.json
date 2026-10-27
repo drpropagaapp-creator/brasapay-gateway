@@ -1,0 +1,24 @@
+{
+  "services": {
+    "app": {
+      "environment": {
+        "DB_CONNECTION": "pgsql",
+        "DB_HOST": "postgres",
+        "DB_PORT": "5432",
+        "DB_DATABASE": "getfy",
+        "DB_USERNAME": "getfy_prod",
+        "DB_PASSWORD": "Correct$$Pass!"
+      }
+    },
+    "queue": {
+      "environment": {
+        "DB_CONNECTION": "pgsql",
+        "DB_HOST": "postgres",
+        "DB_PORT": "5432",
+        "DB_DATABASE": "getfy",
+        "DB_USERNAME": "getfy_prod",
+        "DB_PASSWORD": "Correct$$Pass!"
+      }
+    }
+  }
+}

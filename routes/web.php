@@ -606,6 +606,17 @@ Route::prefix('plataforma')->name('plataforma.')->group(function () {
         Route::post('/financeiro/saques/{withdrawal}/rejeitar', [\App\Http\Controllers\Platform\FinancialController::class, 'rejectWithdrawal'])->name('financeiro.saques.reject');
 
         Route::get('/produtos', [\App\Http\Controllers\Platform\PlatformProductsController::class, 'index'])->name('produtos.index');
+
+        Route::get('/marketplace', [\App\Http\Controllers\Platform\PlatformMarketplaceController::class, 'index'])->name('marketplace.index');
+        Route::post('/marketplace/aceitacao-automatica', [\App\Http\Controllers\Platform\PlatformMarketplaceController::class, 'updateAutoAccept'])
+            ->name('marketplace.auto-accept')
+            ->middleware('throttle:30,1');
+        Route::post('/marketplace/{product}/autorizar', [\App\Http\Controllers\Platform\PlatformMarketplaceController::class, 'authorizeProduct'])
+            ->name('marketplace.authorize')
+            ->middleware('throttle:60,1');
+        Route::post('/marketplace/{product}/revogar', [\App\Http\Controllers\Platform\PlatformMarketplaceController::class, 'revokeProduct'])
+            ->name('marketplace.revoke')
+            ->middleware('throttle:60,1');
         Route::get('/produtos/{product}/area-membros/preview', [\App\Http\Controllers\Platform\PlatformProductsController::class, 'previewMemberArea'])
             ->name('produtos.member-area.preview')
             ->middleware('throttle:30,1');
@@ -781,7 +792,6 @@ Route::middleware(['auth', 'admin.tenant', 'seller.panel', 'stacker.license', 'r
         ->name('affiliate.join.enroll')
         ->middleware('throttle:30,1')
         ->where('token', '[a-z0-9]{32,64}');
-    Route::post('/painel/idioma', [\App\Http\Controllers\PanelLanguageController::class, 'switch'])->name('panel.language.switch');
     Route::post('/painel/push-subscribe', [\App\Http\Controllers\PanelPwaController::class, 'pushSubscribe'])->name('panel.pwa.push-subscribe')->middleware('throttle:20,1');
     Route::post('/painel/push-test', [\App\Http\Controllers\PanelNotificationsController::class, 'testPush'])->name('panel.notifications.push-test')->middleware('throttle:10,1');
     Route::get('/painel/notifications', [\App\Http\Controllers\PanelNotificationsController::class, 'index'])->name('panel.notifications.index');
@@ -1248,6 +1258,9 @@ Route::middleware(['auth', 'customer.panel'])->group(function () {
     Route::post('/painel-cliente/reembolso', [\App\Http\Controllers\CustomerPanelController::class, 'requestRefund'])->name('painel-cliente.refund')->middleware('throttle:20,1');
 });
 
+Route::post('/painel/idioma', [\App\Http\Controllers\PanelLanguageController::class, 'switch'])
+    ->middleware(['auth', 'throttle:30,1'])
+    ->name('panel.language.switch');
 Route::post('/painel/trocar', [\App\Http\Controllers\PanelSwitchController::class, 'switch'])->middleware(['auth', 'throttle:30,1'])->name('panel.switch');
 Route::post('/acessar-como-cliente/sair', [\App\Http\Controllers\Platform\CustomerImpersonationController::class, 'leave'])
     ->middleware(['auth', 'throttle:30,1'])
@@ -1281,6 +1294,7 @@ Route::prefix('m/{slug}')->where(['slug' => '[a-zA-Z0-9]{6,16}'])->middleware('m
         Route::post('aula/{lesson}/complete', [\App\Http\Controllers\MemberAreaAppController::class, 'completeLesson'])->name('member-area-app.lesson.complete');
         Route::get('aula/{lesson}/material/{index}/{filename?}', [\App\Http\Controllers\MemberAreaAppController::class, 'downloadLessonMaterial'])->whereNumber('index')->where('filename', '[A-Za-z0-9._-]{1,120}')->middleware('throttle:60,1')->name('member-area-app.lesson.material');
         Route::post('aula/{lesson}/comments', [\App\Http\Controllers\MemberAreaAppController::class, 'storeLessonComment'])->name('member-area-app.lesson.comments.store');
+        Route::post('aula/{lesson}/rating', [\App\Http\Controllers\MemberAreaAppController::class, 'storeLessonRating'])->name('member-area-app.lesson.rating');
         Route::get('loja', [\App\Http\Controllers\MemberAreaAppController::class, 'loja'])->name('member-area-app.loja');
         Route::get('comunidade', [\App\Http\Controllers\MemberAreaAppController::class, 'comunidade'])->name('member-area-app.comunidade');
         Route::get('comunidade/{pageSlug}', [\App\Http\Controllers\MemberAreaAppController::class, 'comunidadePage'])->name('member-area-app.comunidade.page');
@@ -1335,6 +1349,7 @@ Route::middleware(['web', 'member.area.resolve.by.host'])->group(function () {
         Route::post('aula/{lesson}/complete', [\App\Http\Controllers\MemberAreaAppController::class, 'completeLesson'])->name('member-area-app.lesson.complete.host');
         Route::get('aula/{lesson}/material/{index}/{filename?}', [\App\Http\Controllers\MemberAreaAppController::class, 'downloadLessonMaterial'])->whereNumber('index')->where('filename', '[A-Za-z0-9._-]{1,120}')->middleware('throttle:60,1')->name('member-area-app.lesson.material.host');
         Route::post('aula/{lesson}/comments', [\App\Http\Controllers\MemberAreaAppController::class, 'storeLessonComment'])->name('member-area-app.lesson.comments.store.host');
+        Route::post('aula/{lesson}/rating', [\App\Http\Controllers\MemberAreaAppController::class, 'storeLessonRating'])->name('member-area-app.lesson.rating.host');
         Route::get('loja', [\App\Http\Controllers\MemberAreaAppController::class, 'loja'])->name('member-area-app.loja.host');
         Route::get('comunidade', [\App\Http\Controllers\MemberAreaAppController::class, 'comunidade'])->name('member-area-app.comunidade.host');
         Route::get('comunidade/{pageSlug}', [\App\Http\Controllers\MemberAreaAppController::class, 'comunidadePage'])->name('member-area-app.comunidade.page.host');

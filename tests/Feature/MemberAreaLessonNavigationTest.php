@@ -107,6 +107,37 @@ class MemberAreaLessonNavigationTest extends TestCase
             ->assertRedirect(route('member-area-app.show', $product->checkout_slug));
     }
 
+    public function test_module_content_exposes_ordered_lessons_for_adjacent_navigation(): void
+    {
+        [, $product, $student, $first] = $this->enrolledStudent();
+        $module = $first->module;
+        $second = MemberLesson::create([
+            'member_module_id' => $module->id,
+            'product_id' => $product->id,
+            'title' => 'Aula 2 longa o suficiente para caber na lista',
+            'position' => 2,
+            'type' => MemberLesson::TYPE_TEXT,
+            'content_text' => 'Segunda aula',
+        ]);
+
+        $this->actingAs($student)
+            ->get(route('member-area-app.module', [
+                'slug' => $product->checkout_slug,
+                'module' => $module->id,
+                'aula' => $second->id,
+            ]))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('MemberAreaApp/ModuleContent')
+                ->where('current_lesson.id', $second->id)
+                ->has('lessons', 2)
+                ->where('lessons.0.id', $first->id)
+                ->where('lessons.0.is_locked', false)
+                ->where('lessons.1.id', $second->id)
+                ->where('lessons.1.is_locked', false)
+            );
+    }
+
     public function test_custom_domain_module_content_does_not_type_error_with_product_route_param(): void
     {
         [, $product, $student, $lesson] = $this->enrolledStudent();

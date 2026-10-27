@@ -1,6 +1,6 @@
 <?php
 
-return [
+$panelI18n = [
     'default_locale' => 'pt_BR',
     'group' => 'seller',
     'locales' => [
@@ -419,12 +419,18 @@ return [
             'sales.metrics.card_sales' => 'Vendas no cartão',
             'sales.export.csv' => 'Exportar CSV',
             'sales.export.xls' => 'Exportar XLS',
+            'sales.export.json' => 'Exportar JSON',
             'sales.search_placeholder' => 'Buscar por cliente, e-mail, pedido, produto...',
             'sales.clear_search' => 'Limpar busca',
             'sales.clear_filters' => 'Limpar filtros',
             'sales.products.all' => 'Todos produtos',
             'sales.offer' => 'Oferta',
             'sales.offers.all' => 'Todas ofertas',
+            'sales.order_bump' => 'Order bump',
+            'sales.order_bump.all' => 'Todos',
+            'sales.order_bump.with' => 'Com order bump',
+            'sales.order_bump.without' => 'Sem order bump',
+            'sales.order_bump.badge' => 'Bump',
             'sales.method' => 'Método',
             'sales.show_advanced_filters' => 'Mostrar filtros avançados',
             'sales.hide_advanced_filters' => 'Ocultar filtros avançados',
@@ -973,12 +979,18 @@ return [
             'sales.metrics.card_sales' => 'Ventas con tarjeta',
             'sales.export.csv' => 'Exportar CSV',
             'sales.export.xls' => 'Exportar XLS',
+            'sales.export.json' => 'Exportar JSON',
             'sales.search_placeholder' => 'Buscar por cliente, correo, pedido, producto...',
             'sales.clear_search' => 'Limpiar búsqueda',
             'sales.clear_filters' => 'Limpiar filtros',
             'sales.products.all' => 'Todos los productos',
             'sales.offer' => 'Oferta',
             'sales.offers.all' => 'Todas las ofertas',
+            'sales.order_bump' => 'Order bump',
+            'sales.order_bump.all' => 'Todos',
+            'sales.order_bump.with' => 'Con order bump',
+            'sales.order_bump.without' => 'Sin order bump',
+            'sales.order_bump.badge' => 'Bump',
             'sales.method' => 'Método',
             'sales.show_advanced_filters' => 'Mostrar filtros avanzados',
             'sales.hide_advanced_filters' => 'Ocultar filtros avanzados',
@@ -1529,12 +1541,18 @@ return [
             'sales.metrics.card_sales' => 'Card sales',
             'sales.export.csv' => 'Export CSV',
             'sales.export.xls' => 'Export XLS',
+            'sales.export.json' => 'Export JSON',
             'sales.search_placeholder' => 'Search by customer, email, order, product...',
             'sales.clear_search' => 'Clear search',
             'sales.clear_filters' => 'Clear filters',
             'sales.products.all' => 'All products',
             'sales.offer' => 'Offer',
             'sales.offers.all' => 'All offers',
+            'sales.order_bump' => 'Order bump',
+            'sales.order_bump.all' => 'All',
+            'sales.order_bump.with' => 'With order bump',
+            'sales.order_bump.without' => 'Without order bump',
+            'sales.order_bump.badge' => 'Bump',
             'sales.method' => 'Method',
             'sales.show_advanced_filters' => 'Show advanced filters',
             'sales.hide_advanced_filters' => 'Hide advanced filters',
@@ -1670,5 +1688,13 @@ return [
             'students.import.error' => 'Import error. Check CSV format.',
             'common.irreversible_action' => 'This action cannot be undone.',
         ],
+        'it' => require __DIR__.'/panel_i18n_it.php',
     ],
 ];
+
+$customer = require __DIR__.'/panel_i18n_customer.php';
+foreach ($customer as $code => $messages) {
+    $panelI18n['locales'][$code] = array_merge($panelI18n['locales'][$code] ?? [], $messages);
+}
+
+return $panelI18n;

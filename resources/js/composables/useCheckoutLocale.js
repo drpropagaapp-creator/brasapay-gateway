@@ -4,7 +4,7 @@ import { ref, computed, watch, isRef } from 'vue';
 const LOCALE_MANUAL_KEY = 'checkout_locale_v2';
 const CURRENCY_MANUAL_KEY = 'checkout_currency_v2';
 
-const SUPPORTED_LOCALES = ['pt_BR', 'en', 'es'];
+const SUPPORTED_LOCALES = ['pt_BR', 'en', 'es', 'it'];
 
 /** Regiões ISO (language tag) que usamos para EUR no fallback do navegador. */
 const EUR_REGIONS = new Set([
@@ -43,6 +43,7 @@ function inferLocaleFromNavigator() {
     if (lower.startsWith('pt')) return 'pt_BR';
     if (lower.startsWith('es')) return 'es';
     if (lower.startsWith('en')) return 'en';
+    if (lower.startsWith('it')) return 'it';
     return null;
 }
 
@@ -65,6 +66,7 @@ function inferLocaleFromCountry(country) {
     if (!code) return null;
     if (code === 'BR') return 'pt_BR';
     if (['ES', 'MX', 'AR', 'CO', 'CL', 'PE'].includes(code)) return 'es';
+    if (code === 'IT') return 'it';
     return 'en';
 }
 

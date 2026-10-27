@@ -10,6 +10,7 @@ const props = defineProps({
     orderBumpColor: { type: String, default: '#F59E0B' },
     t: { type: Function, default: (k) => k },
     formatPrice: { type: Function, default: (v, c) => `R$ ${Number(v).toFixed(2)}` },
+    priceInCurrency: { type: Function, default: (v) => Number(v) || 0 },
     displayCurrency: { type: String, default: 'BRL' },
 });
 
@@ -62,6 +63,10 @@ const orderBumpTagStyle = computed(() => ({
 const totalBumpsBrl = computed(() =>
     selectedBumps.value.reduce((sum, b) => sum + (Number(b.amount_brl) || 0), 0)
 );
+
+function formatBumpAmount(amountBrl) {
+    return props.formatPrice(props.priceInCurrency(amountBrl), props.displayCurrency);
+}
 
 const allBumpIds = computed(() => (props.orderBumps || []).map((b) => b.id));
 const allSelected = computed(
@@ -212,15 +217,15 @@ defineExpose({
                         <div class="shrink-0 flex flex-col items-end">
                             <template v-if="bump.original_amount_brl != null && bump.original_amount_brl > bump.amount_brl">
                                 <span class="text-sm font-normal text-gray-400 line-through">
-                                    +{{ formatPrice(bump.original_amount_brl, displayCurrency) }}
+                                    +{{ formatBumpAmount(bump.original_amount_brl) }}
                                 </span>
                                 <span class="text-base font-bold" :style="{ color: primaryColor }">
-                                    +{{ formatPrice(bump.amount_brl, displayCurrency) }}
+                                    +{{ formatBumpAmount(bump.amount_brl) }}
                                 </span>
                             </template>
                             <template v-else>
                                 <span class="text-base font-bold" :style="{ color: primaryColor }">
-                                    +{{ formatPrice(bump.amount_brl, displayCurrency) }}
+                                    +{{ formatBumpAmount(bump.amount_brl) }}
                                 </span>
                             </template>
                         </div>

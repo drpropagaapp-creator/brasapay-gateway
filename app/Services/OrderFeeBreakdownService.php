@@ -109,7 +109,9 @@ class OrderFeeBreakdownService
             $feeMethod,
             $gross,
             $source,
-            $feeMethod === 'card' ? CardInstallmentEconomics::countFromOrder($order) : null
+            $feeMethod === 'card' ? CardInstallmentEconomics::countFromOrder($order) : null,
+            $order->mainProductAmount(),
+            $order->mainPlusBumpsAmount()
         );
 
         return [

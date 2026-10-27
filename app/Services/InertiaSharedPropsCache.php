@@ -2,11 +2,13 @@
 
 namespace App\Services;
 
+use App\Models\PanelNotification;
+use App\Models\User;
 use App\Plugins\PluginRegistry;
 use App\Services\CajuPay\CajuPayMedService;
 use App\Services\LegalDocumentsService;
 use App\Services\Platform\PlatformAdminAlertCounts;
-use App\Models\PanelNotification;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 
 /**
@@ -21,8 +23,6 @@ class InertiaSharedPropsCache
     private const PLUGINS_TTL = 300;
 
     private const HEADER_COUNTS_TTL = 30;
-
-    private const PLATFORM_ADMIN_BADGES_TTL = 30;
 
     private const LEGAL_LINKS_TTL = 600;
 
@@ -129,16 +129,24 @@ class InertiaSharedPropsCache
     /**
      * @return array<string, int>
      */
-    public function platformAdminSidebarBadges(): array
+    public function platformAdminSidebarBadges(User $user, Request $request): array
     {
-        return Cache::remember('inertia.platform_admin_sidebar_badges', self::PLATFORM_ADMIN_BADGES_TTL, function () {
-            return app(PlatformAdminAlertCounts::class)->sidebarBadges();
-        });
+        $counts = app(PlatformAdminAlertCounts::class);
+        $menuKey = $counts->menuKeyForRequest($request);
+        if ($menuKey !== null && $counts->clearsBadgeOnVisit($menuKey)) {
+            $counts->markViewed($user, $menuKey);
+            self::forgetPlatformAdminSidebarBadges((int) $user->id);
+        }
+
+        return $counts->sidebarBadges($user);
     }
 
-    public static function forgetPlatformAdminSidebarBadges(): void
+    public static function forgetPlatformAdminSidebarBadges(?int $userId = null): void
     {
         Cache::forget('inertia.platform_admin_sidebar_badges');
+        if ($userId !== null && $userId > 0) {
+            Cache::forget('inertia.platform_admin_sidebar_badges.'.$userId);
+        }
     }
 
     /**

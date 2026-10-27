@@ -12,6 +12,7 @@ const props = defineProps({
     /** Quando true, permite vazio (override opcional). */
     allowEmpty: { type: Boolean, default: false },
     inputClass: { type: String, default: '' },
+    disabled: { type: Boolean, default: false },
 });
 
 const emit = defineEmits(['update:modelValue']);
@@ -86,8 +87,10 @@ defineExpose({ commit });
             lang="pt-BR"
             autocomplete="off"
             :placeholder="allowEmpty ? 'Padrão' : '0,00'"
+            :disabled="disabled"
             :class="[
                 'w-full rounded-lg border border-zinc-300 py-2 pl-3 pr-8 text-zinc-900 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-100',
+                disabled ? 'cursor-not-allowed opacity-60' : '',
                 inputClass,
             ]"
             @focus="onFocus"

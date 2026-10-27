@@ -1,4 +1,5 @@
-FROM php:8.3-cli-alpine AS php_base
+ARG PHP_BASE_IMAGE=php:8.3.36-cli-alpine
+FROM ${PHP_BASE_IMAGE} AS php_base
 
 RUN apk add --no-cache \
     git unzip libzip-dev libpng-dev libjpeg-turbo-dev freetype-dev oniguruma-dev \
@@ -35,6 +36,7 @@ RUN if [ ! -f vendor/autoload.php ]; then \
       exit 1; \
     fi \
     && chmod +x /usr/local/bin/getfy-entrypoint \
+    && rm -f bootstrap/cache/config.php bootstrap/cache/routes.php bootstrap/cache/routes-v7.php bootstrap/cache/events.php \
     && mkdir -p storage/framework/cache/data storage/framework/sessions storage/framework/views bootstrap/cache .docker \
     && chmod -R 777 storage bootstrap/cache .docker
 

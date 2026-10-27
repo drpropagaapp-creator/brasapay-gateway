@@ -1,0 +1,8 @@
+# Como na VPS: desliga setup / seleciona runtime. NÃO contém DB_PASSWORD.
+services:
+  app:
+    environment:
+      GETFY_RUN_SETUP: "false"
+  queue:
+    environment:
+      GETFY_RUN_SETUP: "false"

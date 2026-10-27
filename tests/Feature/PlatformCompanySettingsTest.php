@@ -6,10 +6,17 @@ use App\Models\Setting;
 use App\Models\User;
 use App\Services\LegalDocumentsService;
 use App\Support\PlatformCompanySettings;
+use Illuminate\Support\Facades\Cache;
 use Tests\TestCase;
 
 class PlatformCompanySettingsTest extends TestCase
 {
+    protected function setUp(): void
+    {
+        parent::setUp();
+        Cache::flush();
+    }
+
     public function test_defaults_are_empty(): void
     {
         Setting::query()->whereIn('key', [
@@ -66,6 +73,7 @@ class PlatformCompanySettingsTest extends TestCase
             ->assertRedirect()
             ->assertSessionHasErrors('platform_cnpj');
 
+        Cache::forget('setting.global.'.PlatformCompanySettings::KEY_CNPJ);
         $this->assertSame('', PlatformCompanySettings::cnpjDigits());
     }
 
@@ -172,18 +180,19 @@ class PlatformCompanySettingsTest extends TestCase
         $response->assertInertia(fn ($page) => $page
             ->component('Checkout/Show')
             ->where('platform_checkout_notice', function ($notice) {
-                $this->assertIsString($notice);
-                $this->assertStringContainsString('Stacker Gateway LTDA', $notice);
-                $this->assertStringContainsString('11.222.333/0001-81', $notice);
-                $this->assertStringContainsString('João Vendedor', $notice);
-                $this->assertStringContainsString('joao@seller.test', $notice);
-                $this->assertStringContainsString('Loja do João', $notice);
-                $this->assertStringNotContainsString('{cnpj}', $notice);
-                $this->assertStringNotContainsString('{infoprodutor}', $notice);
-                $this->assertStringNotContainsString('{empresa}', $notice);
-                $this->assertStringContainsString('{termos}', $notice);
-                $this->assertStringContainsString('{privacidade}', $notice);
-                $this->assertStringNotContainsString('<a ', $notice);
+                $text = (string) data_get($notice, 'pt_BR', '');
+                $this->assertNotSame('', $text);
+                $this->assertStringContainsString('Stacker Gateway LTDA', $text);
+                $this->assertStringContainsString('11.222.333/0001-81', $text);
+                $this->assertStringContainsString('João Vendedor', $text);
+                $this->assertStringContainsString('joao@seller.test', $text);
+                $this->assertStringContainsString('Loja do João', $text);
+                $this->assertStringNotContainsString('{cnpj}', $text);
+                $this->assertStringNotContainsString('{infoprodutor}', $text);
+                $this->assertStringNotContainsString('{empresa}', $text);
+                $this->assertStringContainsString('{termos}', $text);
+                $this->assertStringContainsString('{privacidade}', $text);
+                $this->assertStringNotContainsString('<a ', $text);
 
                 return true;
             }));
@@ -219,9 +228,9 @@ class PlatformCompanySettingsTest extends TestCase
             ->assertInertia(fn ($page) => $page
                 ->component('Checkout/Show')
                 ->where('platform_checkout_notice', function ($notice) {
-                    $this->assertIsString($notice);
-                    $this->assertStringContainsString('suporte.curso@loja.test', $notice);
-                    $this->assertStringNotContainsString('{email_suporte_produto}', $notice);
+                    $text = (string) data_get($notice, 'pt_BR', '');
+                    $this->assertStringContainsString('suporte.curso@loja.test', $text);
+                    $this->assertStringNotContainsString('{email_suporte_produto}', $text);
 
                     return true;
                 }));
@@ -246,7 +255,70 @@ class PlatformCompanySettingsTest extends TestCase
         $this->assertTrue(PlatformCompanySettings::isCheckoutNoticeEnabled());
         $this->assertSame(
             'Compra na {plataforma} — {razao_social} CNPJ {cnpj}.',
+            PlatformCompanySettings::decodeCheckoutNotices(
+                Setting::get(PlatformCompanySettings::KEY_CHECKOUT_NOTICE, '', null)
+            )['pt_BR']
+        );
+    }
+
+    public function test_platform_admin_can_save_checkout_notice_per_locale(): void
+    {
+        $admin = User::factory()->create([
+            'role' => User::ROLE_PLATFORM_ADMIN,
+            'tenant_id' => null,
+        ]);
+
+        $this->actingAs($admin)
+            ->put('/plataforma/configuracoes', [
+                'platform_legal_name' => 'Empresa Aviso LTDA',
+                'platform_cnpj' => '11.222.333/0001-81',
+                'platform_checkout_notice_enabled' => true,
+                'platform_checkout_notice' => [
+                    'pt_BR' => 'Aviso em {plataforma} PT',
+                    'en' => 'Notice on {plataforma} EN',
+                    'es' => 'Aviso en {plataforma} ES',
+                    'it' => 'Avviso su {plataforma} IT',
+                ],
+            ])
+            ->assertRedirect();
+
+        $stored = PlatformCompanySettings::decodeCheckoutNotices(
             Setting::get(PlatformCompanySettings::KEY_CHECKOUT_NOTICE, '', null)
         );
+        $this->assertSame('Aviso em {plataforma} PT', $stored['pt_BR']);
+        $this->assertSame('Notice on {plataforma} EN', $stored['en']);
+        $this->assertSame('Aviso en {plataforma} ES', $stored['es']);
+        $this->assertSame('Avviso su {plataforma} IT', $stored['it']);
+    }
+
+    public function test_checkout_notice_keeps_legacy_plain_string_as_portuguese(): void
+    {
+        $seller = User::factory()->create([
+            'role' => User::ROLE_INFOPRODUTOR,
+            'name' => 'Ana Vendedora',
+        ]);
+        $seller->forceFill(['tenant_id' => $seller->id])->save();
+
+        Setting::set(PlatformCompanySettings::KEY_CHECKOUT_NOTICE_ENABLED, '1', null);
+        Setting::set(PlatformCompanySettings::KEY_CHECKOUT_NOTICE, 'Texto legado {infoprodutor}', null);
+
+        $product = $this->createTestProduct([
+            'tenant_id' => $seller->id,
+            'checkout_slug' => 'noticelegacy',
+            'checkout_config' => [
+                'customer_fields' => ['name' => false, 'cpf' => false, 'phone' => false, 'coupon' => false],
+            ],
+        ]);
+
+        $this->get('/c/'.$product->checkout_slug)
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->component('Checkout/Show')
+                ->where('platform_checkout_notice', function ($notice) {
+                    $this->assertSame('Texto legado Ana Vendedora', data_get($notice, 'pt_BR'));
+                    $this->assertNull(data_get($notice, 'en'));
+
+                    return true;
+                }));
     }
 }

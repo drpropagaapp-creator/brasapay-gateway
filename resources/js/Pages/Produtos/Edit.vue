@@ -1550,7 +1550,7 @@ function submit() {
                                         class="w-full"
                                     />
                                     <p class="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-                                        Quem já comprou na plataforma vê imagem, nome, categoria e valor. O botão Comprar abre o checkout deste produto.
+                                        Quem já comprou na plataforma vê imagem, nome, categoria e valor. O botão Comprar abre o checkout deste produto. A plataforma pode exigir autorização antes da publicação.
                                     </p>
                                 </div>
                                 <div

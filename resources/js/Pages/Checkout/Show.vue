@@ -72,7 +72,7 @@ const props = defineProps({
     /** Quando true, loga motivos de tracking Meta no console do browser. */
     meta_tracking_debug: { type: Boolean, default: false },
     /** Aviso legal da plataforma no rodapé do quadro. Vazio = Termos · Privacidade. */
-    platform_checkout_notice: { type: String, default: '' },
+    platform_checkout_notice: { type: [String, Object], default: null },
 });
 
 const previewConfig = ref(null);
@@ -214,7 +214,15 @@ const {
     storageKey: props.product?.checkout_slug || 'default',
 });
 
-const localeLabels = { pt_BR: 'PT', en: 'EN', es: 'ES' };
+const localeLabels = { pt_BR: 'PT', en: 'EN', es: 'ES', it: 'IT' };
+
+function noticeForLocale(notice, loc) {
+    if (!notice) return '';
+    if (typeof notice === 'string') return notice;
+    return notice[loc] || notice.pt_BR || notice.en || notice.es || notice.it || '';
+}
+
+const platformNoticeForLocale = computed(() => noticeForLocale(props.platform_checkout_notice, locale.value));
 const { branding, appName } = usePlatformBranding();
 const platformLogoUrl = computed(() =>
     String(branding.value?.app_logo || branding.value?.app_logo_icon || '').trim()
@@ -678,6 +686,7 @@ function onConversionPixelsReady() {
                             :t="t"
                             :display-currency="displayCurrency"
                             :format-price="formatPrice"
+                            :price-in-currency="priceInCurrency"
                             :suggested-country-code="props.suggested_country_code"
                             :card-payee-code="card_payee_code || ''"
                             :card-efi-sandbox="card_efi_sandbox"
@@ -698,7 +707,7 @@ function onConversionPixelsReady() {
                             :product-subtotal-brl="
                                 appliedCoupon?.final_price ?? product?.price_brl ?? product?.price ?? 0
                             "
-                            :platform-checkout-notice="platform_checkout_notice || ''"
+                            :platform-checkout-notice="platformNoticeForLocale"
                             @update:shipping-amount="onShippingAmountUpdate"
                             @coupon-applied="onCouponApplied"
                             @coupon-cleared="onCouponCleared"
@@ -729,7 +738,8 @@ function onConversionPixelsReady() {
                         <CheckoutLegalFooter
                             :logo-url="platformLogoUrl"
                             :app-name="appName"
-                            :notice="platform_checkout_notice || ''"
+                            :notice="platformNoticeForLocale"
+                            :secure-purchase-text="t('checkout.secure_purchase')"
                         />
                     </div>
                 </div>

@@ -151,6 +151,40 @@ class Order extends Model
         return round((float) $this->orderItems->sum(fn ($it) => (float) ($it->amount ?? 0)), 2);
     }
 
+    /**
+     * Valor cobrado do produto principal (posição 0). Order bump, upsell e frete ficam de fora.
+     */
+    public function mainProductAmount(): float
+    {
+        $this->loadMissing('orderItems');
+
+        if ($this->orderItems->isNotEmpty()) {
+            $main = $this->orderItems->first(fn (OrderItem $item) => (int) ($item->position ?? 0) === 0)
+                ?? $this->orderItems->sortBy(fn (OrderItem $item) => (int) ($item->position ?? 0))->first();
+            if ($main !== null) {
+                return round((float) $main->amount, 2);
+            }
+        }
+
+        $amount = (float) $this->amount - (float) ($this->shipping_amount ?? 0);
+
+        return max(0.0, round($amount, 2));
+    }
+
+    /**
+     * Soma do produto principal + order bumps (sem frete nem upsell).
+     */
+    public function mainPlusBumpsAmount(): float
+    {
+        $this->loadMissing('orderItems');
+
+        if ($this->orderItems->isNotEmpty()) {
+            return round((float) $this->orderItems->sum(fn (OrderItem $item) => (float) ($item->amount ?? 0)), 2);
+        }
+
+        return $this->mainProductAmount();
+    }
+
     public function getCheckoutSlug(): string
     {
         if ($this->productOffer && $this->productOffer->checkout_slug) {

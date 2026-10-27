@@ -309,7 +309,9 @@ fi
 
 # Preserva / reconcilia GETFY_DB_* (nunca regenera user se volume Postgres existe).
 # Falha = aborta o apply (evita recreate do app com user fantasma → 522).
-unset GETFY_DB_CONNECTION GETFY_DB_HOST GETFY_DB_PORT GETFY_DB_DATABASE GETFY_DB_USERNAME GETFY_DB_PASSWORD 2>/dev/null || true
+# shellcheck disable=SC1091
+. docker/unset-db-shell-env.sh
+unset_db_shell_env
 if [ -f docker/ensure-db-credentials.sh ]; then
   chmod +x docker/ensure-db-credentials.sh 2>/dev/null || true
   if ! sh docker/ensure-db-credentials.sh; then
@@ -345,19 +347,28 @@ else
   echo "vendor/autoload.php presente — pulando composer install."
 fi
 
-COMPOSE=(docker compose -p "$COMPOSE_PROJECT_NAME" --project-directory "$COMPOSE_WORK_DIR" $COMPOSE_ARGS --env-file "$ENV_FILE_ABS")
-if [ -f "$ROOT_DIR/.env" ]; then
-  # .env depois: só para STACKER_* etc. GETFY_DB_* já foram espelhados do stack.env
-  # por ensure-db-credentials — se divergirem, stack.env venceu na sync.
-  COMPOSE+=(--env-file "$ROOT_DIR/.env")
+COMPOSE_ENV_FILE="$ENV_FILE_ABS"
+if [ -f docker/write-compose-env.sh ]; then
+  COMPOSE_ENV_FILE="$(cd "$ROOT_DIR" && sh docker/write-compose-env.sh)"
+  case "$COMPOSE_ENV_FILE" in
+    /*) ;;
+    *) COMPOSE_ENV_FILE="$ROOT_DIR/$COMPOSE_ENV_FILE" ;;
+  esac
 fi
+COMPOSE=(docker compose -p "$COMPOSE_PROJECT_NAME" --project-directory "$COMPOSE_WORK_DIR" $COMPOSE_ARGS --env-file "$COMPOSE_ENV_FILE")
 # Shell exports de DB_* sobrescrevem qualquer --env-file.
-unset GETFY_DB_CONNECTION GETFY_DB_HOST GETFY_DB_PORT GETFY_DB_DATABASE GETFY_DB_USERNAME GETFY_DB_PASSWORD 2>/dev/null || true
-unset DB_USERNAME DB_PASSWORD DB_HOST DB_PORT DB_DATABASE DB_CONNECTION 2>/dev/null || true
+unset_db_shell_env
 
 echo "=== Rebuild imagem app ==="
 echo "Build context: $COMPOSE_WORK_DIR"
-docker build -t getfy_app:latest -f "$COMPOSE_WORK_DIR/Dockerfile" "$COMPOSE_WORK_DIR"
+PHP_BASE_IMAGE="${GETFY_PHP_BASE_IMAGE:-php:8.3.36-cli-alpine}"
+BUILD_OPTS="--pull --build-arg PHP_BASE_IMAGE=${PHP_BASE_IMAGE}"
+if [ "${GETFY_DOCKER_NO_CACHE:-0}" = "1" ]; then
+  BUILD_OPTS="$BUILD_OPTS --no-cache"
+fi
+echo "docker build $BUILD_OPTS -t getfy_app:latest"
+# shellcheck disable=SC2086
+docker build $BUILD_OPTS -t getfy_app:latest -f "$COMPOSE_WORK_DIR/Dockerfile" "$COMPOSE_WORK_DIR"
 
 ensure_php_uploads_ini
 
@@ -512,13 +523,18 @@ fi
 echo "=== Garantindo demais serviços (sem recreate / sem tocar no Caddy) ==="
 "${COMPOSE[@]}" up -d --remove-orphans --no-recreate "${COMPOSE_UP_SERVICES[@]}"
 
-echo "=== Migrate + optimize:clear ==="
-if "${COMPOSE[@]}" exec -T app php artisan migrate --force; then
-  :
-else
-  echo "Aviso: migrate falhou (schema pode já estar atualizado)." >&2
-fi
+echo "=== optimize:clear ==="
 "${COMPOSE[@]}" exec -T app php artisan optimize:clear || true
+if [ "${GETFY_SKIP_MIGRATE:-0}" = "1" ]; then
+  echo "GETFY_SKIP_MIGRATE=1 — pulando migrate --force."
+else
+  echo "=== Migrate ==="
+  if "${COMPOSE[@]}" exec -T app php artisan migrate --force; then
+    :
+  else
+    echo "Aviso: migrate falhou (schema pode já estar atualizado)." >&2
+  fi
+fi
 
 echo "=== Health check pós-atualização ==="
 if [ -f docker/post-update-healthcheck.sh ]; then

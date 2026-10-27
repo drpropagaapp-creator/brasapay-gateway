@@ -28,14 +28,17 @@ if [ ! -f "$ENV_FILE" ]; then
   exit 1
 fi
 
-unset GETFY_DB_CONNECTION GETFY_DB_HOST GETFY_DB_PORT GETFY_DB_DATABASE GETFY_DB_USERNAME GETFY_DB_PASSWORD 2>/dev/null || true
-set -a
 # shellcheck disable=SC1091
-. "$ENV_FILE"
-set +a
+. docker/unset-db-shell-env.sh
+unset_db_shell_env
 
 COMPOSE_FILE="$(sh docker/detect-compose-files.sh 2>/dev/null || echo 'docker-compose.yml')"
-COMPOSE_ARGS="-f $COMPOSE_FILE --env-file $ENV_FILE"
+COMPOSE_ENV="$ENV_FILE"
+if [ -f docker/write-compose-env.sh ]; then
+  COMPOSE_ENV="$(sh docker/write-compose-env.sh)"
+fi
+COMPOSE_ARGS="-f $COMPOSE_FILE --env-file $COMPOSE_ENV"
+GETFY_APP_URL="$(grep -E '^[[:space:]]*GETFY_APP_URL[[:space:]]*=' "$ENV_FILE" 2>/dev/null | tail -1 | cut -d= -f2- | tr -d '\r' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//;s/^"//;s/"$//' || true)"
 
 dc() {
   docker compose $COMPOSE_ARGS "$@"

@@ -15,6 +15,7 @@ use App\Services\Checkout\CheckoutAbandonmentMetrics;
 use App\Services\TeamAccessService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Schema;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -47,7 +48,7 @@ class DashboardController extends Controller
         $tenantId = auth()->user()->tenant_id;
         $userId = (int) auth()->id();
         $hasAffiliateEnrollments = AffiliateCommissionQuery::userHasApprovedEnrollments($userId);
-        $cacheKey = 'dashboard:v7:'.($tenantId ?? 'global').':'.$userId.':'.$period.':'.($from ?? '').':'.($to ?? '');
+        $cacheKey = 'dashboard:v8:'.($tenantId ?? 'global').':'.$userId.':'.$period.':'.($from ?? '').':'.($to ?? '');
 
         $payload = Cache::remember($cacheKey, self::CACHE_TTL_SECONDS, function () use ($tenantId, $period, $userId, $hasAffiliateEnrollments, $start, $end, $from, $to, $chartGranularity) {
 
@@ -70,6 +71,13 @@ class DashboardController extends Controller
 
         $vendasTotais = (float) $ordersCompleted->sum('amount');
         $quantidadeVendas = $ordersCompleted->count();
+        $vendasApi = 0.0;
+        $quantidadeVendasApi = 0;
+        if (Schema::hasColumn('orders', 'api_application_id')) {
+            $ordersApi = (clone $ordersCompleted)->whereNotNull('api_application_id');
+            $vendasApi = (float) $ordersApi->sum('amount');
+            $quantidadeVendasApi = $ordersApi->count();
+        }
         // Compras próprias (sem comissões de afiliado) para a métrica abandono / compras.
         $comprasProprias = $quantidadeVendas;
         $vendasPendentes = (float) $ordersPending->sum('amount');
@@ -137,6 +145,8 @@ class DashboardController extends Controller
             return [
                 'period' => $period,
                 'vendas_totais' => round($vendasTotais, 2),
+                'vendas_api' => round($vendasApi, 2),
+                'quantidade_vendas_api' => $quantidadeVendasApi,
                 'vendas_pendentes' => round($vendasPendentes, 2),
                 'quantidade_vendas' => $quantidadeVendas,
                 'ticket_medio' => round($ticketMedio, 2),

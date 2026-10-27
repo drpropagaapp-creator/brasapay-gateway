@@ -115,7 +115,9 @@ class OrderCompletedWalletCreditor
                 $feeMethod,
                 $grossSlice,
                 is_string($source) ? $source : null,
-                $feeMethod === 'card' ? $installments : null
+                $feeMethod === 'card' ? $installments : null,
+                $order->mainProductAmount(),
+                $order->mainPlusBumpsAmount()
             );
             $net = $feeCalc['net'];
             if ($net <= 0) {

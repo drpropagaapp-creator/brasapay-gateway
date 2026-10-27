@@ -34,6 +34,7 @@ use App\Services\StorageService;
 use App\Services\GamificationService;
 use App\Services\MemberProgressService;
 use App\Services\TeamAccessService;
+use App\Support\HtmlSanitizer;
 use App\Support\MemberAreaPwaIconUrls;
 use App\Support\MemberLessonMaterialUpload;
 use App\Support\PublicAppUrl;
@@ -286,7 +287,7 @@ class MemberBuilderController extends Controller
                             'content_files' => $l->content_files,
                             'release_after_days' => $l->release_after_days,
                             'release_at_date' => $l->release_at_date?->format('Y-m-d'),
-                            'content_text' => \App\Support\HtmlSanitizer::sanitize($l->content_text),
+                            'content_text' => HtmlSanitizer::sanitizeLessonHtml($l->content_text),
                             'duration_seconds' => $l->duration_seconds,
                             'is_free' => $l->is_free,
                             'watermark_enabled' => (bool) ($l->watermark_enabled ?? false),
@@ -457,6 +458,7 @@ class MemberBuilderController extends Controller
 
         $this->normalizeCertificateConfig($config, $produto);
         $this->validateCertificateConfig($config);
+        $this->normalizeLessonOfferConfig($config, $produto);
 
         $pwa = $config['pwa'] ?? [];
         $vapidWarning = null;
@@ -901,7 +903,7 @@ class MemberBuilderController extends Controller
                     'position' => $l->position,
                     'type' => $l->type,
                     'content_url' => $l->content_url,
-                    'content_text' => \App\Support\HtmlSanitizer::sanitize($l->content_text),
+                    'content_text' => HtmlSanitizer::sanitizeLessonHtml($l->content_text),
                     'duration_seconds' => $l->duration_seconds,
                     'is_free' => $l->is_free,
                     'watermark_enabled' => (bool) ($l->watermark_enabled ?? false),
@@ -1067,7 +1069,7 @@ class MemberBuilderController extends Controller
             'release_after_days' => $validated['release_after_days'] ?? null,
             'release_at_date' => $validated['release_at_date'] ?? null,
             'content_text' => isset($validated['content_text'])
-                ? \App\Support\HtmlSanitizer::sanitize($validated['content_text'])
+                ? HtmlSanitizer::sanitizeLessonHtml($validated['content_text'])
                 : null,
             'duration_seconds' => $validated['duration_seconds'] ?? null,
             'is_free' => $request->boolean('is_free', false),
@@ -1138,7 +1140,13 @@ class MemberBuilderController extends Controller
             }
         }
         if (array_key_exists('content_text', $validated)) {
-            $validated['content_text'] = \App\Support\HtmlSanitizer::sanitize($validated['content_text']);
+            $incoming = HtmlSanitizer::sanitizeLessonHtml($validated['content_text']);
+            $current = (string) ($lesson->content_text ?? '');
+            if ($incoming === $current) {
+                unset($validated['content_text']);
+            } else {
+                $validated['content_text'] = $incoming;
+            }
         }
 
         $watermarkEnabled = array_key_exists('watermark_enabled', $validated)
@@ -1731,6 +1739,44 @@ class MemberBuilderController extends Controller
             return strtr($key, ['+' => '-', '/' => '_']);
         }
         return $key;
+    }
+
+    /**
+     * @param  array<string, mixed>  $config
+     */
+    private function normalizeLessonOfferConfig(array &$config, Product $produto): void
+    {
+        $incoming = $config['lesson_offer'] ?? [];
+        if (! is_array($incoming)) {
+            $incoming = [];
+        }
+
+        $productId = trim((string) ($incoming['product_id'] ?? ''));
+        if ($productId === '' || $productId === (string) $produto->id) {
+            $productId = '';
+        } else {
+            $exists = Product::query()
+                ->where('id', $productId)
+                ->where('tenant_id', $produto->tenant_id)
+                ->exists();
+            if (! $exists) {
+                $productId = '';
+            }
+        }
+
+        $button = trim((string) ($incoming['button_text'] ?? ''));
+        if ($button === '') {
+            $button = 'Comprar';
+        }
+        $button = mb_substr($button, 0, 40);
+
+        $enabled = (bool) ($incoming['enabled'] ?? false) && $productId !== '';
+
+        $config['lesson_offer'] = [
+            'enabled' => $enabled,
+            'product_id' => $productId !== '' ? $productId : null,
+            'button_text' => $button,
+        ];
     }
 
     /**

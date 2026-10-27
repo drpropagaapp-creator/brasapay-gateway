@@ -64,6 +64,7 @@ class Product extends Model
         'currency',
         'is_active',
         'show_in_marketplace',
+        'marketplace_approved',
         'admin_blocked',
         'approval_status',
         'approval_reason',
@@ -92,6 +93,7 @@ class Product extends Model
             'price' => 'decimal:2',
             'is_active' => 'boolean',
             'show_in_marketplace' => 'boolean',
+            'marketplace_approved' => 'boolean',
             'admin_blocked' => 'boolean',
             'reviewed_at' => 'datetime',
             'checkout_config' => 'array',
@@ -713,6 +715,11 @@ class Product extends Model
             ],
             'comments_enabled' => false,
             'comments_require_approval' => true,
+            'lesson_offer' => [
+                'enabled' => false,
+                'product_id' => null,
+                'button_text' => 'Comprar',
+            ],
             'gamification' => [
                 'enabled' => false,
                 'achievements' => [],
@@ -771,6 +778,21 @@ class Product extends Model
 
         if (\Illuminate\Support\Facades\Schema::hasColumn((new static)->getTable(), 'approval_status')) {
             $query->where('approval_status', self::APPROVAL_APPROVED);
+        }
+
+        return $query;
+    }
+
+    public function scopeListedOnMarketplace(Builder $query): Builder
+    {
+        if (! \Illuminate\Support\Facades\Schema::hasColumn((new static)->getTable(), 'show_in_marketplace')) {
+            return $query->whereRaw('0 = 1');
+        }
+
+        $query->where('show_in_marketplace', true);
+
+        if (\Illuminate\Support\Facades\Schema::hasColumn((new static)->getTable(), 'marketplace_approved')) {
+            $query->where('marketplace_approved', true);
         }
 
         return $query;

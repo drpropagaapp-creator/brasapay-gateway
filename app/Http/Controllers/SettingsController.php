@@ -190,6 +190,16 @@ class SettingsController extends Controller
             $this->validatePlatformStepUp($request);
         }
 
+        if (is_string($request->input('platform_checkout_notice'))) {
+            $request->merge([
+                'platform_checkout_notice' => [
+                    'pt_BR' => (string) $request->input('platform_checkout_notice'),
+                    'en' => '',
+                    'es' => '',
+                ],
+            ]);
+        }
+
         $validated = $request->validate([
             'totp_code' => ['nullable', 'string', 'max:16'],
             'email_provider' => ['nullable', 'string', 'in:smtp,hostinger,sendgrid,resend'],
@@ -214,9 +224,9 @@ class SettingsController extends Controller
             'resend_mail_from_name' => ['nullable', 'string', 'max:255'],
             'kyc_notification_emails' => ['nullable', 'string', 'max:5000'],
             'checkout_translations' => ['nullable', 'array'],
-            'checkout_translations.pt_BR' => ['nullable', 'array'],
-            'checkout_translations.en' => ['nullable', 'array'],
-            'checkout_translations.es' => ['nullable', 'array'],
+            ...collect(array_keys((array) config('checkout_translations', [])))
+                ->mapWithKeys(fn (string $locale) => ["checkout_translations.$locale" => ['nullable', 'array']])
+                ->all(),
             'currencies' => ['nullable', 'array'],
             'currencies.*.code' => ['required', 'string', 'max:10'],
             'currencies.*.symbol' => ['required', 'string', 'max:10'],
@@ -274,7 +284,10 @@ class SettingsController extends Controller
                 },
             ],
             'platform_checkout_notice_enabled' => ['nullable', 'boolean'],
-            'platform_checkout_notice' => ['nullable', 'string', 'max:5000'],
+            'platform_checkout_notice' => ['nullable'],
+            ...collect(PlatformCompanySettings::CHECKOUT_NOTICE_LOCALES)
+                ->mapWithKeys(fn (string $locale) => ["platform_checkout_notice.$locale" => ['nullable', 'string', 'max:5000']])
+                ->all(),
             ...DatabaseBackupSettings::validationRules(),
         ]);
 

@@ -6,6 +6,7 @@ use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\Product;
 use App\Models\User;
+use App\Services\PlatformI18nService;
 use App\Services\StorageService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Schema;
@@ -25,15 +26,16 @@ class CustomerMarketplaceController extends Controller
             return Inertia::render('Cliente/Marketplace', [
                 'products' => ['data' => [], 'links' => []],
                 'filters' => ['q' => $search, 'category' => $category],
-                'categories' => Product::categoriesForSelect(),
+                'categories' => $this->translatedCategories(),
                 'platformName' => $platformName,
+                'pageTitle' => $this->trans('customer.marketplace.title', 'Marketplace'),
             ]);
         }
 
         $ownedIds = $user instanceof User ? $this->ownedProductIds($user) : [];
 
         $query = Product::query()
-            ->where('show_in_marketplace', true)
+            ->listedOnMarketplace()
             ->availableForPurchase()
             ->whereNotNull('checkout_slug')
             ->where('checkout_slug', '!=', '')
@@ -58,8 +60,9 @@ class CustomerMarketplaceController extends Controller
                 'q' => $search,
                 'category' => $category,
             ],
-            'categories' => Product::categoriesForSelect(),
+            'categories' => $this->translatedCategories(),
             'platformName' => $platformName,
+            'pageTitle' => $this->trans('customer.marketplace.title', 'Marketplace'),
         ]);
     }
 
@@ -118,9 +121,48 @@ class CustomerMarketplaceController extends Controller
             'image_url' => $imageUrl !== '' ? $imageUrl : null,
             'price' => (float) $product->price,
             'currency' => $currency,
-            'category_label' => Product::categoryLabels()[$product->category] ?? null,
+            'category' => $product->category,
+            'category_label' => $this->categoryLabel($product->category),
             'seller_name' => $sellerName !== '' ? $sellerName : null,
             'checkout_url' => url('/c/'.$slug).'?origem=marketplace',
         ];
+    }
+
+    /**
+     * @return list<array{value: string, label: string}>
+     */
+    private function translatedCategories(): array
+    {
+        return array_map(function (array $item) {
+            $value = (string) ($item['value'] ?? '');
+
+            return [
+                'value' => $value,
+                'label' => $this->categoryLabel($value) ?: (string) ($item['label'] ?? $value),
+            ];
+        }, Product::categoriesForSelect());
+    }
+
+    private function categoryLabel(?string $category): ?string
+    {
+        if ($category === null || $category === '') {
+            return null;
+        }
+
+        $fallback = Product::categoryLabels()[$category] ?? $category;
+
+        return $this->trans('customer.category.'.$category, $fallback);
+    }
+
+    private function trans(string $key, string $fallback, array $replace = []): string
+    {
+        $i18n = app(PlatformI18nService::class);
+        $locale = $i18n->resolveLocale(request());
+        $value = (string) ($i18n->messagesFor($locale)[$key] ?? $fallback);
+        foreach ($replace as $search => $repl) {
+            $value = str_replace('{'.$search.'}', (string) $repl, $value);
+        }
+
+        return $value;
     }
 }

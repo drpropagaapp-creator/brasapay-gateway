@@ -57,10 +57,10 @@ return Application::configure(basePath: dirname(__DIR__))
             \App\Http\Middleware\EnsureInstalled::class,
             \App\Http\Middleware\ConfigureCheckoutIframeSession::class,
             \App\Http\Middleware\ApplyBrandingConfig::class,
-            \App\Http\Middleware\SetPanelLocale::class,
         ], append: [
             \App\Http\Middleware\RestrictCustomerImpersonation::class,
             \App\Http\Middleware\BlockMutationsWhenDemoMode::class,
+            \App\Http\Middleware\SetPanelLocale::class,
             \App\Http\Middleware\HandleInertiaRequests::class,
             \App\Http\Middleware\PreventCacheForHtml::class,
             \App\Http\Middleware\SecurityHeaders::class,
