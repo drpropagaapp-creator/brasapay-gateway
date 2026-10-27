@@ -364,8 +364,10 @@ class VendasController extends Controller
         $query = Order::forTenant($tenantId);
 
         if (auth()->user()?->isTeam()) {
+            // Escopo de equipe pelo produto principal: casar por order bump
+            // exporia o pedido inteiro (outro produto, cliente, valores).
             $allowed = app(TeamAccessService::class)->allowedProductIdsFor(auth()->user());
-            $query = $this->constrainOrdersToProducts($query, $allowed ?: ['__none__']);
+            $query->whereIn('product_id', $allowed ?: ['__none__']);
         }
 
         $query = $this->applyStatusFilter($query, $statusFilter);
