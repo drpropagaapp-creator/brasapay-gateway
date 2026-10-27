@@ -28,6 +28,7 @@ use App\Services\MemberModuleAccessService;
 use App\Services\MemberProgressService;
 use App\Services\MemberStudentActivityLogService;
 use App\Services\StorageService;
+use App\Support\HtmlSanitizer;
 use App\Support\MemberAreaAdminPreview;
 use App\Support\PublicAppUrl;
 use Illuminate\Http\JsonResponse;
@@ -193,7 +194,7 @@ class MemberAreaAppController extends Controller
                 'content_url' => $this->studentFacingLessonContentUrl($request, $slug, $currentLesson, $studentFiles),
                 'content_files' => $studentFiles,
                 'link_title' => $currentLesson->link_title,
-                'content_text' => \App\Support\HtmlSanitizer::sanitize($currentLesson->content_text),
+                'content_text' => HtmlSanitizer::sanitizeLessonHtml($currentLesson->content_text),
                 'duration_seconds' => $currentLesson->duration_seconds,
                 'is_completed' => $this->isLessonCompleted($user->id, $currentLesson->id),
                 'rating' => $this->studentLessonRating($user, $currentLesson->id),
@@ -311,7 +312,7 @@ class MemberAreaAppController extends Controller
             'content_url' => $this->studentFacingLessonContentUrl($request, $slug, $lesson, $studentFiles),
             'content_files' => $studentFiles,
             'link_title' => $lesson->link_title,
-            'content_text' => \App\Support\HtmlSanitizer::sanitize($lesson->content_text),
+            'content_text' => HtmlSanitizer::sanitizeLessonHtml($lesson->content_text),
             'duration_seconds' => $lesson->duration_seconds,
             'is_completed' => $this->isLessonCompleted($user->id, $lesson->id),
             'rating' => $this->studentLessonRating($user, $lesson->id),
