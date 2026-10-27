@@ -290,7 +290,9 @@ class MercadoPagoDriver implements GatewayDriver
             throw new \RuntimeException('Mercado Pago: dados do cartão incompletos. Preencha novamente e tente de novo.');
         }
 
-        $installments = (int) ($formData['installments'] ?? 1);
+        $fromPayload = (int) ($card['installments'] ?? 0);
+        $fromForm = (int) ($formData['installments'] ?? 1);
+        $installments = $fromPayload >= 1 ? $fromPayload : $fromForm;
         if ($installments < 1) {
             $installments = 1;
         }
