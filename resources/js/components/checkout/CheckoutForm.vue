@@ -3824,6 +3824,7 @@ function submit() {
                 :logo-url="platformLogoUrl"
                 :app-name="appName"
                 :notice="platformCheckoutNotice"
+                :secure-purchase-text="t('checkout.secure_purchase')"
             />
         </footer>
 

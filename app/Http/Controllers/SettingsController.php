@@ -188,6 +188,16 @@ class SettingsController extends Controller
             $this->validatePlatformStepUp($request);
         }
 
+        if (is_string($request->input('platform_checkout_notice'))) {
+            $request->merge([
+                'platform_checkout_notice' => [
+                    'pt_BR' => (string) $request->input('platform_checkout_notice'),
+                    'en' => '',
+                    'es' => '',
+                ],
+            ]);
+        }
+
         $validated = $request->validate([
             'totp_code' => ['nullable', 'string', 'max:16'],
             'email_provider' => ['nullable', 'string', 'in:smtp,hostinger,sendgrid'],
@@ -269,7 +279,10 @@ class SettingsController extends Controller
                 },
             ],
             'platform_checkout_notice_enabled' => ['nullable', 'boolean'],
-            'platform_checkout_notice' => ['nullable', 'string', 'max:5000'],
+            'platform_checkout_notice' => ['nullable'],
+            'platform_checkout_notice.pt_BR' => ['nullable', 'string', 'max:5000'],
+            'platform_checkout_notice.en' => ['nullable', 'string', 'max:5000'],
+            'platform_checkout_notice.es' => ['nullable', 'string', 'max:5000'],
             ...DatabaseBackupSettings::validationRules(),
         ]);
 

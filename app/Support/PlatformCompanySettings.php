@@ -21,10 +21,25 @@ final class PlatformCompanySettings
 
     public const KEY_CHECKOUT_NOTICE = 'platform_checkout_notice';
 
+    /** @var list<string> */
+    public const CHECKOUT_NOTICE_LOCALES = ['pt_BR', 'en', 'es'];
+
     public const DEFAULT_CHECKOUT_NOTICE = <<<'TXT'
 Ao concluir a compra na {plataforma}, você declara estar de acordo com os {termos} e a política de {privacidade} da empresa {razao_social}, inscrita no CNPJ {cnpj}.
 
 A responsabilidade pela oferta, entrega e qualidade do produto é de {infoprodutor}, que realiza a venda por meio da nossa plataforma, através do email {email_infoprodutor}.
+TXT;
+
+    public const DEFAULT_CHECKOUT_NOTICE_EN = <<<'TXT'
+By completing your purchase on {plataforma}, you agree to the {termos} and {privacidade} policy of {razao_social}, registered under CNPJ {cnpj}.
+
+Responsibility for the offer, delivery and quality of the product lies with {infoprodutor}, who sells through our platform via {email_infoprodutor}.
+TXT;
+
+    public const DEFAULT_CHECKOUT_NOTICE_ES = <<<'TXT'
+Al completar la compra en {plataforma}, declaras estar de acuerdo con los {termos} y la política de {privacidade} de {razao_social}, inscrita en el CNPJ {cnpj}.
+
+La responsabilidad por la oferta, entrega y calidad del producto es de {infoprodutor}, que realiza la venta a través de nuestra plataforma, mediante el correo {email_infoprodutor}.
 TXT;
 
     /**
@@ -68,14 +83,77 @@ TXT;
             || $value === 'true';
     }
 
+    /**
+     * @return array<string, string>
+     */
+    public static function defaultCheckoutNotices(): array
+    {
+        return [
+            'pt_BR' => self::DEFAULT_CHECKOUT_NOTICE,
+            'en' => self::DEFAULT_CHECKOUT_NOTICE_EN,
+            'es' => self::DEFAULT_CHECKOUT_NOTICE_ES,
+        ];
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    public static function checkoutNoticeTemplates(): array
+    {
+        $stored = self::decodeCheckoutNotices(Setting::get(self::KEY_CHECKOUT_NOTICE, '', null));
+        if (($stored['pt_BR'] ?? '') === '') {
+            $stored['pt_BR'] = self::DEFAULT_CHECKOUT_NOTICE;
+        }
+
+        return $stored;
+    }
+
     public static function checkoutNoticeTemplate(): string
     {
-        $stored = HtmlSanitizer::plainTextMultiline(
-            (string) Setting::get(self::KEY_CHECKOUT_NOTICE, '', null),
-            5000
-        );
+        return self::checkoutNoticeTemplates()['pt_BR'];
+    }
 
-        return $stored !== '' ? $stored : self::DEFAULT_CHECKOUT_NOTICE;
+    /**
+     * @return array<string, string>
+     */
+    public static function decodeCheckoutNotices(mixed $stored): array
+    {
+        $out = array_fill_keys(self::CHECKOUT_NOTICE_LOCALES, '');
+        $map = [];
+
+        if (is_array($stored)) {
+            $map = $stored;
+        } else {
+            $raw = trim((string) $stored);
+            if ($raw !== '') {
+                $decoded = json_decode($raw, true);
+                if (is_array($decoded) && self::isCheckoutNoticeMap($decoded)) {
+                    $map = $decoded;
+                } else {
+                    $map = ['pt_BR' => (string) $stored];
+                }
+            }
+        }
+
+        foreach (self::CHECKOUT_NOTICE_LOCALES as $locale) {
+            $out[$locale] = HtmlSanitizer::plainTextMultiline((string) ($map[$locale] ?? ''), 5000);
+        }
+
+        return $out;
+    }
+
+    /**
+     * @param  array<mixed>  $value
+     */
+    private static function isCheckoutNoticeMap(array $value): bool
+    {
+        foreach (self::CHECKOUT_NOTICE_LOCALES as $locale) {
+            if (array_key_exists($locale, $value)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
@@ -93,26 +171,30 @@ TXT;
     }
 
     /**
-     * Texto interpolado para o checkout. Null quando desativado ou vazio.
+     * Textos interpolados por idioma (pt_BR, en, es). Null quando desativado ou vazio.
      * Mantém {termos} e {privacidade} para o front renderizar os links.
+     *
+     * @return array<string, string>|null
      */
-    public static function resolvedCheckoutNoticeForTenant(?int $tenantId, ?Product $product = null): ?string
+    public static function resolvedCheckoutNoticeForTenant(?int $tenantId, ?Product $product = null): ?array
     {
         if (! self::isCheckoutNoticeEnabled()) {
             return null;
         }
 
-        $template = HtmlSanitizer::plainTextMultiline(
-            (string) Setting::get(self::KEY_CHECKOUT_NOTICE, '', null),
-            5000
-        );
-        if ($template === '') {
-            return null;
+        $templates = self::decodeCheckoutNotices(Setting::get(self::KEY_CHECKOUT_NOTICE, '', null));
+        $resolved = [];
+        foreach ($templates as $locale => $template) {
+            if ($template === '') {
+                continue;
+            }
+            $text = trim(self::replaceCheckoutNoticePlaceholders($template, $tenantId, $product));
+            if ($text !== '') {
+                $resolved[$locale] = $text;
+            }
         }
 
-        $text = trim(self::replaceCheckoutNoticePlaceholders($template, $tenantId, $product));
-
-        return $text !== '' ? $text : null;
+        return $resolved !== [] ? $resolved : null;
     }
 
     /**
@@ -126,8 +208,8 @@ TXT;
             'platform_legal_name' => self::legalName(),
             'platform_cnpj' => $digits !== '' ? BrazilianDocuments::formatCnpj($digits) : '',
             'platform_checkout_notice_enabled' => self::isCheckoutNoticeEnabled() ? '1' : '0',
-            'platform_checkout_notice' => self::checkoutNoticeTemplate(),
-            'platform_checkout_notice_default' => self::DEFAULT_CHECKOUT_NOTICE,
+            'platform_checkout_notice' => self::checkoutNoticeTemplates(),
+            'platform_checkout_notice_default' => self::defaultCheckoutNotices(),
             'platform_checkout_notice_placeholders' => self::CHECKOUT_NOTICE_PLACEHOLDERS,
         ];
     }
@@ -160,7 +242,7 @@ TXT;
         if (array_key_exists('platform_checkout_notice', $validated)) {
             Setting::set(
                 self::KEY_CHECKOUT_NOTICE,
-                HtmlSanitizer::plainTextMultiline((string) ($validated['platform_checkout_notice'] ?? ''), 5000),
+                self::decodeCheckoutNotices($validated['platform_checkout_notice'] ?? ''),
                 null
             );
         }

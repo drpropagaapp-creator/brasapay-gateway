@@ -133,7 +133,7 @@ class InertiaSharedPropsCache
     {
         $counts = app(PlatformAdminAlertCounts::class);
         $menuKey = $counts->menuKeyForRequest($request);
-        if ($menuKey !== null) {
+        if ($menuKey !== null && $counts->clearsBadgeOnVisit($menuKey)) {
             $counts->markViewed($user, $menuKey);
             self::forgetPlatformAdminSidebarBadges((int) $user->id);
         }

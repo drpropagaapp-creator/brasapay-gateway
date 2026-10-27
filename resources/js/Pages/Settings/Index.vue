@@ -180,6 +180,20 @@ const defaultTranslations = () => ({
 });
 const defaultCurrencies = () => [...(props.settings.currencies ?? [])];
 
+function checkoutNoticeMap(value) {
+    const out = { pt_BR: '', en: '', es: '' };
+    if (value && typeof value === 'object' && !Array.isArray(value)) {
+        out.pt_BR = value.pt_BR ?? '';
+        out.en = value.en ?? '';
+        out.es = value.es ?? '';
+        return out;
+    }
+    if (typeof value === 'string') {
+        out.pt_BR = value;
+    }
+    return out;
+}
+
 function sellerIntegrationFormFields(source) {
     const catalog = props.seller_integrations_catalog || [];
     const fields = {};
@@ -261,7 +275,7 @@ const form = useForm({
     platform_legal_name: props.settings.platform_legal_name ?? '',
     platform_cnpj: props.settings.platform_cnpj ?? '',
     platform_checkout_notice_enabled: props.settings.platform_checkout_notice_enabled ?? '0',
-    platform_checkout_notice: props.settings.platform_checkout_notice ?? '',
+    platform_checkout_notice: checkoutNoticeMap(props.settings.platform_checkout_notice),
     kyc_allowed_identity_types: Array.isArray(props.settings.kyc_allowed_identity_types)
         ? [...props.settings.kyc_allowed_identity_types]
         : ['rg', 'cnh', 'passport'],
@@ -786,7 +800,7 @@ function applyPlatformCompanySettingsFromSettings(s) {
     form.platform_legal_name = s.platform_legal_name ?? '';
     form.platform_cnpj = s.platform_cnpj ?? '';
     form.platform_checkout_notice_enabled = s.platform_checkout_notice_enabled ?? '0';
-    form.platform_checkout_notice = s.platform_checkout_notice ?? '';
+    form.platform_checkout_notice = checkoutNoticeMap(s.platform_checkout_notice);
 }
 
 function syncPlatformCompanySettingsFromProps() {
@@ -1181,7 +1195,7 @@ const selectClass =
                     <section class="overflow-hidden rounded-xl border border-zinc-200 bg-white p-6 shadow-sm dark:border-zinc-700 dark:bg-zinc-800/50">
                         <h2 class="mb-2 text-base font-semibold text-zinc-900 dark:text-white">Alertas por e-mail do operador</h2>
                         <p class="mb-3 text-sm text-zinc-600 dark:text-zinc-400">
-                            E-mails que recebem avisos automáticos da plataforma: KYC pendente, falha em saque, erro ao processar payout, nova solicitação de reembolso, etc. Um endereço por linha ou separados por vírgula. Deixe em branco para não enviar alertas.
+                            E-mails que recebem avisos automáticos da plataforma: KYC pendente, produto aguardando aprovação, falha em saque, erro ao processar payout, nova solicitação de reembolso, etc. Um endereço por linha ou separados por vírgula. Deixe em branco para não enviar alertas.
                         </p>
                         <label class="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">Destinatários</label>
                         <textarea
@@ -1714,7 +1728,8 @@ const selectClass =
                             </span>
                         </label>
                         <ul class="mt-4 space-y-1.5 text-xs text-zinc-500 dark:text-zinc-400">
-                            <li>• Fila de análise em <strong class="font-medium text-zinc-700 dark:text-zinc-300">Plataforma → Produtos</strong></li>
+                            <li>• Fila de análise em <strong class="font-medium text-zinc-700 dark:text-zinc-300">Plataforma → Produtos</strong>, com contador no menu até o produto ser aceito ou recusado</li>
+                            <li>• O operador recebe e-mail nos mesmos destinatários de Alertas por e-mail</li>
                             <li>• Desativada: produtos novos são liberados automaticamente (comportamento padrão)</li>
                         </ul>
                     </section>

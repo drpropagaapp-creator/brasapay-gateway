@@ -7,6 +7,7 @@ defineProps({
     appName: { type: String, default: '' },
     notice: { type: String, default: '' },
     showSecureLine: { type: Boolean, default: true },
+    securePurchaseText: { type: String, default: 'Compra 100% segura' },
 });
 </script>
 
@@ -22,7 +23,7 @@ defineProps({
         </div>
         <p v-if="showSecureLine" class="flex items-center justify-center gap-2 text-sm text-gray-500">
             <Shield class="h-4 w-4 shrink-0" aria-hidden="true" />
-            Compra 100% segura
+            {{ securePurchaseText }}
         </p>
         <p class="text-center text-xs text-gray-400" :class="showSecureLine ? 'mt-2' : ''">
             Este site é protegido pelo reCAPTCHA do Google

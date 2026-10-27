@@ -78,6 +78,7 @@ class ProductApprovalService
                 'tenant_id' => $product->tenant_id,
                 'product_name' => $product->name,
             ], $request);
+            $this->notifyAdminsOfPendingProduct($product, false);
         }
     }
 
@@ -117,6 +118,7 @@ class ProductApprovalService
             ], $request);
 
             SendProductApprovedMailJob::dispatch($locked->id);
+            InertiaSharedPropsCache::forgetPlatformAdminSidebarBadges();
 
             return $locked->fresh();
         });
@@ -165,6 +167,7 @@ class ProductApprovalService
             ], $request);
 
             SendProductRejectedMailJob::dispatch($locked->id);
+            InertiaSharedPropsCache::forgetPlatformAdminSidebarBadges();
 
             return $locked->fresh();
         });
@@ -176,7 +179,7 @@ class ProductApprovalService
             throw new InvalidArgumentException('Execute as migrações do banco para usar a aprovação de produtos.');
         }
 
-        return DB::transaction(function () use ($product, $request) {
+        $fresh = DB::transaction(function () use ($product, $request) {
             $locked = Product::query()->whereKey($product->id)->lockForUpdate()->firstOrFail();
 
             if ($locked->approval_status !== Product::APPROVAL_REJECTED) {
@@ -199,6 +202,10 @@ class ProductApprovalService
 
             return $locked->fresh();
         });
+
+        $this->notifyAdminsOfPendingProduct($fresh, true);
+
+        return $fresh;
     }
 
     public function setActiveByAdmin(Product $product, bool $active, User $admin, ?Request $request = null): Product
@@ -242,6 +249,12 @@ class ProductApprovalService
         if ($product->approval_status !== Product::APPROVAL_APPROVED) {
             throw new InvalidArgumentException('Este produto ainda não pode ser ativado porque não foi aprovado.');
         }
+    }
+
+    private function notifyAdminsOfPendingProduct(Product $product, bool $resubmitted): void
+    {
+        InertiaSharedPropsCache::forgetPlatformAdminSidebarBadges();
+        app(PlatformEmailNotifications::class)->productSubmittedForReview($product, $resubmitted);
     }
 
     /**
