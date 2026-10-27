@@ -1635,8 +1635,8 @@ function submitSettlement() {
                                 </span>
                             </span>
                         </label>
-                        <div v-if="feeForm.low_ticket_enabled" class="grid gap-4 sm:grid-cols-2">
-                            <div class="max-w-xs">
+                        <div v-if="feeForm.low_ticket_enabled" class="space-y-4">
+                            <div class="max-w-sm rounded-xl border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-700 dark:bg-zinc-900/60">
                                 <label class="text-sm font-medium text-zinc-800 dark:text-zinc-200">
                                     Tickets até (R$)
                                 </label>
@@ -1648,16 +1648,17 @@ function submitSettlement() {
                                     Produto principal até este valor pode usar a tabela low ticket.
                                 </p>
                             </div>
-                            <div class="max-w-xs">
+                            <div class="max-w-sm rounded-xl border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-700 dark:bg-zinc-900/60">
                                 <label class="text-sm font-medium text-zinc-800 dark:text-zinc-200">
-                                    Pedido máximo com bumps (R$)
+                                    Teto da soma com order bumps (R$)
                                 </label>
                                 <FeeFixedInput
                                     :model-value="feeForm.low_ticket_max_order_amount"
                                     @update:model-value="(v) => { feeForm.low_ticket_max_order_amount = v; }"
                                 />
                                 <p class="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-                                    Se a soma produto + order bumps chegar a este valor, usa a taxa normal. 0 desliga este teto.
+                                    Você define o valor. Se produto + order bumps chegar a este teto, usa a taxa normal.
+                                    Deixe 0,00 para não limitar a soma.
                                 </p>
                             </div>
                         </div>
