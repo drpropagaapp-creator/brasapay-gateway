@@ -320,6 +320,7 @@ class FinancialController extends Controller
             'api_pix_enabled' => ['nullable', 'boolean'],
             'low_ticket_enabled' => ['nullable', 'boolean'],
             'low_ticket_max_amount' => ['nullable', 'numeric', 'min:0', 'max:999999'],
+            'low_ticket_max_order_amount' => ['nullable', 'numeric', 'min:0', 'max:999999'],
             'low_ticket_fee_rules' => ['nullable', 'array'],
         ]);
         $rules = ['pix', 'api_pix', 'pixgo', 'open_finance', 'card', 'apple_pay', 'google_pay', 'boleto', 'withdrawal'];
@@ -358,6 +359,7 @@ class FinancialController extends Controller
             $lowTicketRaw = [
                 'enabled' => (bool) ($validated['low_ticket_enabled'] ?? false),
                 'max_amount' => $validated['low_ticket_max_amount'] ?? 0,
+                'max_order_amount' => $validated['low_ticket_max_order_amount'] ?? 0,
             ];
             foreach (EffectiveMerchantFees::saleRuleKeys() as $key) {
                 $lowTicketRaw[$key] = $validated['low_ticket_fee_rules'][$key] ?? [];

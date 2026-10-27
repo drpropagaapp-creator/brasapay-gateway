@@ -48,6 +48,7 @@ class LowTicketFeesTest extends TestCase
             ],
             'low_ticket_enabled' => true,
             'low_ticket_max_amount' => 20,
+            'low_ticket_max_order_amount' => 50,
             'low_ticket_fee_rules' => [
                 'pix' => ['percent' => 1.5, 'fixed' => 0.2],
                 'api_pix' => ['percent' => 1.5, 'fixed' => 0.2],
@@ -59,6 +60,7 @@ class LowTicketFeesTest extends TestCase
         $defaults = EffectiveMerchantFees::platformDefaults();
         $this->assertTrue($defaults['low_ticket']['enabled']);
         $this->assertSame(20.0, $defaults['low_ticket']['max_amount']);
+        $this->assertSame(50.0, $defaults['low_ticket']['max_order_amount']);
         $this->assertSame(1.5, $defaults['low_ticket']['pix']['percent']);
         $this->assertSame(0.2, $defaults['low_ticket']['pix']['fixed']);
         $this->assertSame(2.0, $defaults['low_ticket']['card']['percent']);
@@ -189,6 +191,7 @@ class LowTicketFeesTest extends TestCase
         ]);
 
         $this->assertSame(15.0, $order->fresh()->mainProductAmount());
+        $this->assertSame(45.0, $order->fresh()->mainPlusBumpsAmount());
 
         event(new OrderCompleted($order->fresh()));
 
@@ -198,7 +201,43 @@ class LowTicketFeesTest extends TestCase
         $this->assertEqualsWithDelta(0.88, $breakdown['fee'], 0.01);
     }
 
-    private function seedLowTicketRules(): void
+    public function test_low_ticket_stays_when_product_plus_bumps_is_below_order_cap(): void
+    {
+        $this->seedLowTicketRules(50.0);
+        $seller = $this->infoprodutor();
+
+        $calc = EffectiveMerchantFees::calculateSaleFee((int) $seller->id, 'pix', 45.0, 'checkout', null, 15.0, 45.0);
+        $this->assertSame(1.5, $calc['percent']);
+        $this->assertSame(0.2, $calc['fixed']);
+        $this->assertEqualsWithDelta(0.88, $calc['fee'], 0.01);
+    }
+
+    public function test_normal_fee_when_product_plus_bumps_reaches_order_cap(): void
+    {
+        $this->seedLowTicketRules(50.0);
+        $seller = $this->infoprodutor();
+
+        $atCap = EffectiveMerchantFees::calculateSaleFee((int) $seller->id, 'pix', 50.0, 'checkout', null, 15.0, 50.0);
+        $this->assertSame(5.0, $atCap['percent']);
+        $this->assertSame(1.0, $atCap['fixed']);
+        $this->assertEqualsWithDelta(3.50, $atCap['fee'], 0.01);
+
+        $aboveCap = EffectiveMerchantFees::calculateSaleFee((int) $seller->id, 'pix', 55.0, 'checkout', null, 15.0, 55.0);
+        $this->assertSame(5.0, $aboveCap['percent']);
+        $this->assertSame(1.0, $aboveCap['fixed']);
+    }
+
+    public function test_order_cap_zero_does_not_limit_bumps(): void
+    {
+        $this->seedLowTicketRules(0.0);
+        $seller = $this->infoprodutor();
+
+        $calc = EffectiveMerchantFees::calculateSaleFee((int) $seller->id, 'pix', 80.0, 'checkout', null, 15.0, 80.0);
+        $this->assertSame(1.5, $calc['percent']);
+        $this->assertSame(0.2, $calc['fixed']);
+    }
+
+    private function seedLowTicketRules(float $maxOrderAmount = 0.0): void
     {
         Setting::set('merchant_fee_rules', [
             'pix' => ['percent' => 5.0, 'fixed' => 1.0],
@@ -213,6 +252,7 @@ class LowTicketFeesTest extends TestCase
             'low_ticket' => [
                 'enabled' => true,
                 'max_amount' => 20.0,
+                'max_order_amount' => $maxOrderAmount,
                 'pix' => ['percent' => 1.5, 'fixed' => 0.2],
                 'api_pix' => ['percent' => 1.5, 'fixed' => 0.2],
                 'card' => ['percent' => 2.0, 'fixed' => 0.3],

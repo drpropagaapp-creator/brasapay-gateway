@@ -166,6 +166,20 @@ class Order extends Model
         return max(0.0, round($amount, 2));
     }
 
+    /**
+     * Soma do produto principal + order bumps (sem frete nem upsell).
+     */
+    public function mainPlusBumpsAmount(): float
+    {
+        $this->loadMissing('orderItems');
+
+        if ($this->orderItems->isNotEmpty()) {
+            return round((float) $this->orderItems->sum(fn (OrderItem $item) => (float) ($item->amount ?? 0)), 2);
+        }
+
+        return $this->mainProductAmount();
+    }
+
     public function getCheckoutSlug(): string
     {
         if ($this->productOffer && $this->productOffer->checkout_slug) {
