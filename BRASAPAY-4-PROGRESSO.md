@@ -1,6 +1,6 @@
 # BrasaPay 4.0 — registro de progresso
 
-A Onda 1 está em produção desde 28/10/2026 (main). A Onda 2 também está em produção desde 28/10/2026.
+A Onda 1 está em produção desde 28/10/2026 (main). A Onda 2 também está em produção desde 28/10/2026. A Onda 3 está na branch `feat/brasapay-4-onda3`, ainda sem deploy.
 
 ## Onda 1 — confiabilidade financeira e operacional
 
@@ -78,5 +78,48 @@ Branch: `feat/brasapay-4-onda2`, em produção desde 28/10/2026 (main 53c8357).
 - Intelligence: importar custo direto das contas de anúncio (hoje é cadastro manual).
 - Experiments: testar outros elementos além da landing (preço, order bump).
 
-## Onda 3
-Não iniciada.
+## Onda 3 — plataforma e expansão
+
+Branch: `feat/brasapay-4-onda3`. Implementada e testada no sandbox; **sem deploy** (aguarda autorização).
+
+| Item | Status | Onde |
+|---|---|---|
+| Brasa Developers | Implementado e testado | Sandbox `/api/sandbox/v1` (chaves `gpk_test_`/`gsk_test_`), `LogApiRequest`, portal `/desenvolvedores`, `OpenApiSpec` (`/docs/api-pagamentos/openapi.json`) |
+| Biblioteca de templates (Brasa Marketplace) | Implementado e testado | `TemplateLibraryService`, `/biblioteca`, admin `/plataforma/biblioteca` |
+| Brasa Enterprise (white-label) | Implementado e testado | `EnterpriseService`, `ResolveWhiteLabelHost` + `EnforceWhiteLabelOwnership`, `/marca-e-dominio`, admin `/plataforma/enterprise` |
+| Brasa AI | Implementado e testado — **desligado até o admin configurar a chave** | `AiAssistantService`, `AiToolbox`, `AnthropicProvider` (SDK oficial `anthropic-ai/sdk`), `/assistente`, admin `/plataforma/assistente-ia` |
+| Command Center (recursos avançados) | Implementado e testado | `CommandCenterService`, `ops:evaluate-alerts`, `/plataforma/central` |
+
+### Migrations
+- `2026_11_01_100000_brasa_developers` — colunas novas com padrão: `api_keys.environment` (`live`), `api_webhook_deliveries.duration_ms`/`livemode`, `api_application_webhooks.environment` (`live`); tabelas `api_request_logs`, `sandbox_transactions`
+- `2026_11_01_110000_create_marketplace_tables` — `marketplace_templates`, `marketplace_template_versions`, `marketplace_installs`, `marketplace_reviews`
+- `2026_11_01_120000_create_enterprise_tables` — `enterprise_accounts`, `enterprise_domains`
+- `2026_11_01_130000_create_ai_assistant_tables` — `ai_conversations`, `ai_messages`
+- `2026_11_01_140000_create_ops_alerts_table` — `ops_alerts`
+
+### Dependência nova
+- `anthropic-ai/sdk` ^1.3 (lock: 6 pacotes novos, nenhuma atualização de pacote existente)
+
+### Agendamentos novos
+- `ops:evaluate-alerts` — a cada 5 minutos
+- `developers:prune --days=30 --sandbox-days=90` — diário 04:20
+- `ai:prune --days=180` — diário 04:30
+- `enterprise:verify-domains` — diário 05:10
+
+### Garantias
+- Sandbox: chave de sandbox nunca acessa `/api/v1` e vice-versa; nada cria pedido, cobrança, saldo ou saque; webhooks de teste vão só para endpoints de webhook de sandbox (secret próprio) com `livemode: false` e cabeçalho `X-Webhook-Livemode`.
+- Registro de chamadas da API sem corpo, cabeçalhos nem credenciais; payload de webhook exibido com dados pessoais mascarados.
+- OpenAPI só documenta rotas que existem (teste confere contra as rotas registradas).
+- Templates passam por revisão; instalam pelo importador oficial com a mesma tela de prévia/confirmação; não levam aulas, comunidade, coprodução, credenciais, cupons, integrações nem compradores; pacote conferido por hash; templates de recuperação não aceitam links próprios; preço sempre 0.
+- White-label muda só a apresentação (tenant financeiro, adquirentes e credenciais iguais). Domínio só ativa com TXT + HTTPS; nele abre só o checkout do próprio seller (mapa rota → recurso, negado por padrão); domínios da plataforma reservados; reverificação diária desativa quem perder DNS/HTTPS.
+- AI só consulta, por ferramentas tipadas com schema estrito; tenant e produtos vêm do usuário logado; permissões de equipe iguais às telas; sem dados pessoais de compradores; resultados de ferramenta delimitados como dados; limites por usuário/dia, conta/mês e plataforma/mês; no máximo 1 pergunta por conta e 3 na plataforma ao mesmo tempo; prazo total de 90 s.
+- Command Center: alertas só de números reais, com histórico; reprocessamento manual só de jobs de notificação/rastreamento (cobrança, saque e conciliação ficam nas telas próprias); tudo auditado.
+
+### Testes
+`tests/Feature/{BrasaDevelopersTest,BrasaMarketplaceTest,BrasaEnterpriseTest,BrasaAiTest,BrasaCommandCenterTest}.php` (30 testes). Suíte completa (1810 testes) sem falhas novas em relação à lista pré-existente.
+
+### Pendências da Onda 3
+- Enterprise: no domínio próprio, fluxos que redirecionam para PayPal, CajuPay SDK e Lina continuam no domínio da plataforma; e-mails transacionais com a marca do cliente ainda não.
+- Marketplace: templates pagos (arquitetura pronta, sem cobrança até definir a operação comercial e fiscal); prévia visual da landing.
+- AI: explicações por IA no Command Center; histórico mais longo de conversa.
+- Developers: métricas de consumo por chave; sandbox para assinaturas.
