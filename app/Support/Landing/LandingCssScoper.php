@@ -5,8 +5,10 @@ namespace App\Support\Landing;
 /**
  * CSS personalizado de um bloco da landing, confinado ao próprio bloco.
  *
- * - Todo seletor recebe o prefixo do bloco (`.lpb-<id>`); `html`, `body` e
- *   `:root` viram o próprio bloco. Não há como mirar o formulário de pagamento.
+ * - Todo seletor vira descendente do bloco (`.lpb-<id> …`); seletores que
+ *   alcançariam o contêiner ou fora dele (html/body/:root, combinador inicial,
+ *   aninhamento) são descartados. Não há como mirar o formulário de pagamento.
+ * - Aspas e escapes são removidos antes da análise e a saída é reconferida.
  * - Remove @import/@charset/@namespace/@font-face, `expression()`, `behavior`,
  *   `-moz-binding`, `javascript:`, URLs que não sejam https e `</`.
  * - Remove `position: fixed|sticky`: nada sai do bloco para cobrir ou imitar o
@@ -26,10 +28,51 @@ final class LandingCssScoper
 
         $css = mb_substr($css, 0, self::MAX_LENGTH);
         $css = preg_replace('#/\*.*?\*/#s', '', $css) ?? '';
-        $css = str_replace(['</', '<!--', '-->', '\\'], '', $css);
+        // Sem aspas e sem escapes: strings CSS poderiam esconder chaves e fazer este
+        // parser enxergar uma estrutura diferente da do navegador.
+        $css = str_replace(['</', '<!--', '-->', '\\', '"', "'"], '', $css);
+        if (! self::bracesBalanced($css)) {
+            return '';
+        }
         $css = preg_replace('/@(import|charset|namespace|font-face)\b[^;{]*(;|\{[^}]*\})/i', '', $css) ?? '';
 
-        return trim(self::scopeBlock($css, $scope));
+        $out = trim(self::scopeBlock($css, $scope));
+
+        return self::everyRuleIsScoped($out, $scope) ? $out : '';
+    }
+
+    private static function bracesBalanced(string $css): bool
+    {
+        $depth = 0;
+        $len = strlen($css);
+        for ($i = 0; $i < $len; $i++) {
+            if ($css[$i] === '{') {
+                $depth++;
+            } elseif ($css[$i] === '}' && --$depth < 0) {
+                return false;
+            }
+        }
+
+        return $depth === 0;
+    }
+
+    /** Conferência final: todo seletor de regra comum começa pelo escopo do bloco. */
+    private static function everyRuleIsScoped(string $css, string $scope): bool
+    {
+        $flat = preg_replace('/@(-webkit-)?keyframes\s+[\w-]+\{(?:[^{}]*\{[^{}]*\})*\}/i', '', $css) ?? '';
+        $flat = preg_replace('/@media[^{]*\{/i', '', $flat) ?? '';
+        if (! preg_match_all('/(?:^|\})\s*([^{}]+)\{/', $flat, $m)) {
+            return true;
+        }
+        foreach ($m[1] as $prelude) {
+            foreach (explode(',', $prelude) as $sel) {
+                if (! str_starts_with(trim($sel), $scope.' ')) {
+                    return false;
+                }
+            }
+        }
+
+        return true;
     }
 
     private static function scopeBlock(string $css, string $scope): string
@@ -77,11 +120,16 @@ final class LandingCssScoper
             $selectors = [];
             foreach (explode(',', $prelude) as $sel) {
                 $sel = trim($sel);
-                if ($sel === '') {
+                // Descarta o que alcançaria o próprio contêiner ou fora dele: html/body/:root
+                // (viraria o bloco em si), combinador inicial (~ + > = irmão/filho do escopo)
+                // e aninhamento (&).
+                if ($sel === ''
+                    || preg_match('/^(html|body|:root)\b/i', $sel)
+                    || preg_match('/^[~+>]/', $sel)
+                    || str_contains($sel, '&')) {
                     continue;
                 }
-                $sel = preg_replace('/^(html|body|:root)\b/i', '', $sel) ?? '';
-                $selectors[] = trim($scope.' '.trim($sel));
+                $selectors[] = $scope.' '.$sel;
             }
             $decl = self::cleanDeclarations($body);
             if ($selectors !== [] && $decl !== '') {

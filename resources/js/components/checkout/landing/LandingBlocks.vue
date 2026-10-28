@@ -62,16 +62,23 @@ function blockClass(block) {
 /** Escopo de CSS para a prévia do Builder (no público o servidor já entrega `css_scoped`). */
 function previewScopedCss(block) {
     if (typeof block.props?.css_scoped === 'string') return block.props.css_scoped;
-    const raw = String(block.props?.css || '').replace(/<\/?/g, '').replace(/@import[^;]*;?/gi, '');
+    // Mesmas regras do servidor (só prévia): sem aspas/escapes, só descendentes do bloco.
+    const raw = String(block.props?.css || '').replace(/<\/?|["'\\]/g, '').replace(/@import[^;]*;?/gi, '');
+    let depth = 0;
+    for (const ch of raw) {
+        if (ch === '{') depth += 1;
+        else if (ch === '}' && --depth < 0) return '';
+    }
+    if (depth !== 0) return '';
     const scope = `.lpb-${block.id}`;
     return raw.replace(/([^{}@]+)\{/g, (m, sel) => {
         const scoped = sel
             .split(',')
             .map((x) => x.trim())
-            .filter(Boolean)
-            .map((x) => `${scope} ${x.replace(/^(html|body|:root)\b/i, '')}`.trim())
+            .filter((x) => x && !/^(html|body|:root)\b/i.test(x) && !/^[~+>]/.test(x) && !x.includes('&'))
+            .map((x) => `${scope} ${x}`)
             .join(',');
-        return `${scoped}{`;
+        return `${scoped || `${scope} .lpb-noop`}{`;
     }).replace(/position\s*:\s*(fixed|sticky)/gi, 'position:static');
 }
 
@@ -281,8 +288,10 @@ const visibleBlocks = computed(() => props.blocks.filter((b) => b && b.type !== 
     padding-block: var(--lpb-pad, 24px);
     border-radius: var(--lpb-radius, 0);
     font-size: calc(1rem * var(--lpb-scale, 1));
-    contain: paint;
-    isolation: isolate;
+    /* Nada do bloco (nem fixed/absolute do HTML do seller) sai dele para cobrir o checkout. */
+    contain: paint !important;
+    isolation: isolate !important;
+    position: relative !important;
 }
 .lpb-has-bg { padding-inline: 1.25rem; }
 .lpb-inner { margin-inline: auto; max-width: 48rem; }

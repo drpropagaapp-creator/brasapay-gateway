@@ -79,6 +79,32 @@ class LandingBlockSchemaTest extends TestCase
         }
     }
 
+    public function test_seletores_que_escapariam_do_bloco_sao_descartados(): void
+    {
+        $css = LandingCssScoper::scope(
+            'body{contain:none;position:absolute;z-index:9999} :root{display:none}'
+            .' ~ #checkout-purchase-area{display:none} + div{opacity:0} > .x{color:red} & .y{color:red} .ok{color:green}',
+            '.lpb-abc1'
+        );
+
+        $this->assertSame('.lpb-abc1 .ok{color:green}', $css);
+    }
+
+    public function test_aspas_nao_dessincronizam_o_parser(): void
+    {
+        $css = LandingCssScoper::scope('.a{content:"}"} body{color:red} .b{color:blue}', '.lpb-abc1');
+
+        $this->assertStringNotContainsString('"', $css);
+        foreach (array_filter(array_map('trim', preg_split('/\{[^}]*\}/', $css))) as $sel) {
+            $this->assertStringStartsWith('.lpb-abc1 ', $sel);
+        }
+    }
+
+    public function test_chaves_desbalanceadas_invalidam_o_css(): void
+    {
+        $this->assertSame('', LandingCssScoper::scope('.a{color:red} } body{color:blue', '.lpb-abc1'));
+    }
+
     public function test_bloco_html_gera_css_escopado(): void
     {
         $blocks = LandingBlockSchema::sanitize([
