@@ -29,11 +29,13 @@ class BrasaCommandCenterTest extends TestCase
             'amount' => '50.00', 'email' => 'c@x.com', 'payment_method' => 'pix', 'metadata' => []]);
     }
 
-    private function failedJob(string $class): string
+    private function failedJob(object $job): string
     {
         $uuid = (string) Str::uuid();
+        $class = get_class($job);
         DB::table('failed_jobs')->insert(['uuid' => $uuid, 'connection' => 'redis', 'queue' => 'default', 'failed_at' => now(),
-            'payload' => json_encode(['uuid' => $uuid, 'displayName' => $class, 'job' => 'Illuminate\\Queue\\CallQueuedHandler@call', 'data' => ['commandName' => $class, 'command' => 'x']]),
+            'payload' => json_encode(['uuid' => $uuid, 'displayName' => $class, 'job' => 'Illuminate\\Queue\\CallQueuedHandler@call', 'maxTries' => null, 'timeout' => null,
+                'data' => ['commandName' => $class, 'command' => serialize($job)]]),
             'exception' => "RuntimeException: falhou\n#0 trace"]);
 
         return $uuid;
@@ -76,8 +78,8 @@ class BrasaCommandCenterTest extends TestCase
     {
         Queue::fake();
         $admin = $this->admin();
-        $payment = $this->failedJob(\App\Jobs\ProcessWithdrawalPayoutJob::class);
-        $webhook = $this->failedJob(\App\Jobs\DeliverApiWebhookJob::class);
+        $payment = $this->failedJob((new \ReflectionClass(\App\Jobs\ProcessWithdrawalPayoutJob::class))->newInstanceWithoutConstructor());
+        $webhook = $this->failedJob(new \App\Jobs\DeliverApiWebhookJob('entrega-1'));
 
         $this->actingAs($admin)->post("/plataforma/central/jobs/{$payment}/reprocessar")->assertStatus(422);
         $this->assertTrue(DB::table('failed_jobs')->where('uuid', $payment)->exists());
