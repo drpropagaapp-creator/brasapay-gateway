@@ -499,6 +499,10 @@ Route::prefix('plataforma')->name('plataforma.')->group(function () {
             ->middleware('throttle:60,1')->name('smart-routing.simulate');
         Route::put('/ops/adquirentes/seller/{user}', [\App\Http\Controllers\Platform\SmartRoutingController::class, 'tenantMode'])
             ->middleware('throttle:30,1')->name('smart-routing.tenant');
+        Route::get('/risco', [\App\Http\Controllers\Platform\RiskController::class, 'index'])->name('risk.index');
+        Route::put('/risco/{assessment}', [\App\Http\Controllers\Platform\RiskController::class, 'review'])
+            ->middleware('throttle:60,1')->name('risk.review');
+        Route::get('/central', [\App\Http\Controllers\Platform\CommandCenterController::class, 'index'])->name('command-center');
         Route::get('/tesouraria', [\App\Http\Controllers\Platform\TreasuryController::class, 'index'])->name('treasury.index');
         Route::post('/tesouraria/executar', [\App\Http\Controllers\Platform\TreasuryController::class, 'run'])
             ->middleware('throttle:3,1')

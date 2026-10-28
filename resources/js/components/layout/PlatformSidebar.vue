@@ -15,6 +15,8 @@ import {
     Smartphone,
     Wallet,
     Landmark,
+    Gauge,
+    ShieldAlert,
     Activity,
     ArrowLeftRight,
     AlertTriangle,
@@ -68,6 +70,7 @@ const navGroupsCore = [
         label: null,
         items: [
             { name: 'Dashboard', href: '/plataforma/dashboard', icon: LayoutDashboard },
+            { name: 'Command Center', href: '/plataforma/central', icon: Gauge },
         ],
     },
     {
@@ -100,6 +103,7 @@ const navGroupsCore = [
             { name: 'Financeiro', href: '/plataforma/financeiro', icon: Wallet, badgeKey: 'financeiro' },
             { name: 'Fiscal', href: '/plataforma/fiscal', icon: FileSpreadsheet },
             { name: 'Tesouraria', href: '/plataforma/tesouraria', icon: Landmark },
+            { name: 'Risco (BrasaShield)', href: '/plataforma/risco', icon: ShieldAlert },
         ],
     },
     {
