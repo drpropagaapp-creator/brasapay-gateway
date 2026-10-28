@@ -295,6 +295,11 @@ class HandleInertiaRequests extends Middleware
             'cloud_billing_renew_window_days' => (int) config('getfy.cloud.billing_renew_window_days', 7),
             'appSettings' => $appSettings,
             'public_branding' => $publicBranding,
+            // Recorte dos logos calculado no servidor (o canvas não lê imagens de storage sem CORS).
+            'logo_boxes' => fn () => \App\Support\LogoTrimBox::boxes(array_merge(
+                array_values(array_intersect_key((array) ($appSettings ?? []), array_flip(['app_logo', 'app_logo_dark', 'app_logo_icon', 'app_logo_icon_dark', 'pwa_nav_logo', 'pwa_nav_logo_dark']))),
+                array_values(array_intersect_key((array) $publicBranding, array_flip(['app_logo', 'app_logo_dark', 'app_logo_icon', 'app_logo_icon_dark']))),
+            )),
             'settings_plugin_tabs' => $settingsPluginTabs,
             'pluginNavItems' => $pluginNavItems,
             'plugins' => $plugins,

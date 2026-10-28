@@ -1,5 +1,6 @@
 <script setup>
 import { computed, ref, watch } from 'vue';
+import { usePage } from '@inertiajs/vue3';
 
 /**
  * Logo enviado no admin, recortado da margem transparente: muitos logos chegam como
@@ -16,8 +17,11 @@ const props = defineProps({
     maxAspect: { type: Number, default: 0 },
 });
 
+const page = usePage();
 const cache = (globalThis.__pnLogoBoxes ??= new Map());
-const box = ref(cache.get(props.src) ?? null);
+/** Recorte calculado no servidor (funciona com storage remoto sem CORS, ex.: R2). */
+const serverBox = () => page.props.logo_boxes?.[props.src] ?? null;
+const box = ref(serverBox() ?? cache.get(props.src) ?? null);
 const failed = ref(false);
 
 function measure(img) {
@@ -53,6 +57,11 @@ function measure(img) {
 }
 
 function load() {
+    const fromServer = serverBox();
+    if (fromServer) {
+        box.value = fromServer;
+        return;
+    }
     if (cache.has(props.src)) {
         box.value = cache.get(props.src);
         return;
