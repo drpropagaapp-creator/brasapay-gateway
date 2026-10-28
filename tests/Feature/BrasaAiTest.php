@@ -162,7 +162,7 @@ class BrasaAiTest extends TestCase
         $this->assertSame('default', $first['fallbacks']);
         $this->assertSame('medium', $first['output_config']['effort']);
         $this->assertStringContainsString('server-side-fallback-2026-07-01', $sent[0]['request']->getHeaderLine('anthropic-beta'));
-        $this->assertSame('sk-ant-teste-0000000000', $sent[0]['request']->getHeaderLine('x-api-key'));
+        $this->assertSame('Bearer sk-ant-teste-0000000000', $sent[0]['request']->getHeaderLine('Authorization'));
 
         $second = json_decode((string) $sent[1]['request']->getBody(), true);
         $toolResult = end($second['messages'])['content'][0];
