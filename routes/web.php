@@ -975,6 +975,14 @@ Route::middleware(['auth', 'admin.tenant', 'seller.panel', 'stacker.license', 'r
             Route::post('/frete/lojas/{store}/regras/reorder', [\App\Http\Controllers\ShippingController::class, 'reorderRules'])->name('frete.rules.reorder');
         });
         Route::get('/produtos', [\App\Http\Controllers\ProdutosController::class, 'index'])->name('produtos.index');
+        Route::get('/produtos/importar', [\App\Http\Controllers\ProductPortabilityController::class, 'create'])->name('produtos.import.create');
+        Route::post('/produtos/importar', [\App\Http\Controllers\ProductPortabilityController::class, 'upload'])->middleware('throttle:10,1')->name('produtos.import.upload');
+        Route::get('/produtos/importar/{import}', [\App\Http\Controllers\ProductPortabilityController::class, 'show'])->name('produtos.import.show');
+        Route::get('/produtos/importar/{import}/status', [\App\Http\Controllers\ProductPortabilityController::class, 'status'])->name('produtos.import.status');
+        Route::post('/produtos/importar/{import}/confirmar', [\App\Http\Controllers\ProductPortabilityController::class, 'confirm'])->middleware('throttle:10,1')->name('produtos.import.confirm');
+        Route::post('/produtos/importar/{import}/cancelar', [\App\Http\Controllers\ProductPortabilityController::class, 'cancel'])->name('produtos.import.cancel');
+        Route::get('/produtos/{produto}/exportar/opcoes', [\App\Http\Controllers\ProductPortabilityController::class, 'exportOptions'])->name('produtos.export.options');
+        Route::post('/produtos/{produto}/exportar', [\App\Http\Controllers\ProductPortabilityController::class, 'export'])->middleware('throttle:10,1')->name('produtos.export');
         Route::get('/produtos/afiliados', [\App\Http\Controllers\AffiliateProductPanelController::class, 'index'])->name('produtos.afiliados.index');
         Route::get('/produtos/afiliados/dashboard', \App\Http\Controllers\AffiliateDashboardController::class)->name('produtos.afiliados.dashboard');
         Route::get('/produtos/afiliados/vendas', [\App\Http\Controllers\AffiliateSalesController::class, 'index'])->name('produtos.afiliados.vendas');
