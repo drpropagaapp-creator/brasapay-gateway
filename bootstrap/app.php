@@ -239,6 +239,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $schedule->command('developers:prune --days=30 --sandbox-days=90')->dailyAt('04:20');
         $schedule->command('enterprise:verify-domains')->dailyAt('05:10')->withoutOverlapping(60);
         $schedule->command('ai:prune --days=180')->dailyAt('04:30');
+        $schedule->command('ops:evaluate-alerts')->everyFiveMinutes()->withoutOverlapping(10);
         $schedule->command('recovery:process-email')->everyFiveMinutes()->withoutOverlapping(10);
         // BrasaShield em observação: janela de 30 min a cada 10 (sobreposição proposital; avaliação é idempotente).
         $schedule->command('shield:scan --minutes=30')->everyTenMinutes()->withoutOverlapping(15);

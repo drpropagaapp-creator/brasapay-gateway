@@ -510,6 +510,14 @@ Route::prefix('plataforma')->name('plataforma.')->group(function () {
         Route::put('/risco/{assessment}', [\App\Http\Controllers\Platform\RiskController::class, 'review'])
             ->middleware('throttle:60,1')->name('risk.review');
         Route::get('/central', [\App\Http\Controllers\Platform\CommandCenterController::class, 'index'])->name('command-center');
+        Route::post('/central/alertas/{alert}/reconhecer', [\App\Http\Controllers\Platform\CommandCenterController::class, 'acknowledge'])
+            ->middleware('throttle:60,1')->whereNumber('alert')->name('command-center.alerts.ack');
+        Route::post('/central/jobs/{uuid}/reprocessar', [\App\Http\Controllers\Platform\CommandCenterController::class, 'retryJob'])
+            ->middleware('throttle:30,1')->where('uuid', '[0-9a-fA-F-]{36}')->name('command-center.jobs.retry');
+        Route::post('/central/webhooks/{delivery}/reenviar', [\App\Http\Controllers\Platform\CommandCenterController::class, 'retryDelivery'])
+            ->middleware('throttle:30,1')->name('command-center.webhooks.retry');
+        Route::get('/central/busca', [\App\Http\Controllers\Platform\CommandCenterController::class, 'search'])
+            ->middleware('throttle:60,1')->name('command-center.search');
         Route::get('/biblioteca', [\App\Http\Controllers\Platform\TemplateLibraryAdminController::class, 'index'])->name('library.index');
         Route::get('/assistente-ia', [\App\Http\Controllers\Platform\AiSettingsController::class, 'index'])->name('ai.index');
         Route::put('/assistente-ia', [\App\Http\Controllers\Platform\AiSettingsController::class, 'update'])->middleware('throttle:20,1')->name('ai.update');

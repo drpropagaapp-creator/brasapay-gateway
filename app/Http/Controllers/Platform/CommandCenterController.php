@@ -3,179 +3,153 @@
 namespace App\Http\Controllers\Platform;
 
 use App\Http\Controllers\Controller;
+use App\Models\ApiWebhookDelivery;
+use App\Models\OpsAlert;
 use App\Models\Order;
-use App\Models\RiskAssessment;
-use App\Models\TreasuryDiscrepancy;
 use App\Models\User;
-use App\Models\Withdrawal;
-use App\Services\Payments\AcquirerHealthService;
-use App\Services\Platform\PlatformRevenueKpis;
-use App\Support\SqlDialect;
-use Illuminate\Support\Carbon;
+use App\Services\Api\ApiWebhookDeliveryService;
+use App\Services\PlatformAuditService;
+use App\Services\Platform\CommandCenterService;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Str;
 use Inertia\Inertia;
 use Inertia\Response;
 
 /**
- * Brasa Command Center v1 — visão única de operação (somente leitura). Só dados reais:
- * quando uma fonte não existe ou falha, o bloco aparece como indisponível, nunca inventado.
+ * Brasa Command Center — visão única de operação, central de alertas e ações administrativas seguras.
+ * Ações que mexem com dinheiro (cobrança, saque, reembolso, conciliação) não são reprocessadas daqui:
+ * ficam nas telas próprias, com as travas delas.
  */
 class CommandCenterController extends Controller
 {
-    private const QUEUES = ['payments', 'default', 'payouts', 'webhooks', 'webhooks-outbound', 'webhooks-inbound', 'meta-tracking', 'utmify-tracking', 'uazapi', 'integrax-sms'];
+    /** Jobs que podem ser reprocessados daqui: notificações e rastreamento, sem efeito financeiro. */
+    private const RETRYABLE_JOBS = [
+        \App\Jobs\DeliverApiWebhookJob::class,
+        \App\Jobs\DispatchWebhookJob::class,
+        \App\Jobs\SendApiApplicationWebhookJob::class,
+        \App\Jobs\MetaConversionsSendPurchaseJob::class,
+        \App\Jobs\UtmifySendOrderJob::class,
+        \App\Jobs\EnrichMetricsEventGeoJob::class,
+        \App\Jobs\AggregateMetricsDailyStatsJob::class,
+        \App\Jobs\NotifySalesAchievementEarnedJob::class,
+        \App\Jobs\NotifySalesAchievementRewardStatusJob::class,
+        \App\Jobs\SendProductApprovedMailJob::class,
+        \App\Jobs\SendProductRejectedMailJob::class,
+        \App\Jobs\SendAffiliateEnrollmentApprovedMailJob::class,
+    ];
 
-    public function index(AcquirerHealthService $health): Response
+    public function __construct(private CommandCenterService $center) {}
+
+    public function index(): Response
     {
-        $data = Cache::remember('command_center:v1', 60, fn () => $this->build($health));
+        $data = Cache::remember('command_center:v2', 60, fn () => $this->center->snapshot());
 
-        return Inertia::render('Platform/CommandCenter', $data + ['generated_at' => now()->toIso8601String()]);
+        return Inertia::render('Platform/CommandCenter', $data + [
+            'generated_at' => now()->toIso8601String(),
+            'alert_center' => [
+                'active' => OpsAlert::query()->whereIn('status', ['open', 'acknowledged'])->get()
+                    ->sortBy(fn ($a) => OpsAlert::SEVERITY_RANK[$a->severity] ?? 9)->values()->map(fn ($a) => $this->presentAlert($a)),
+                'resolved' => OpsAlert::query()->where('status', 'resolved')->where('resolved_at', '>=', now()->subDays(7))
+                    ->latest('resolved_at')->limit(30)->get()->map(fn ($a) => $this->presentAlert($a)),
+            ],
+            'failed_jobs' => $this->failedJobs(),
+            'failed_deliveries' => ApiWebhookDelivery::query()->where('status', ApiWebhookDelivery::STATUS_FAILED)
+                ->where('updated_at', '>=', now()->subDays(3))->latest('updated_at')->limit(30)
+                ->get(['id', 'tenant_id', 'event', 'url', 'last_status_code', 'attempt', 'updated_at'])
+                ->map(fn ($d) => ['id' => $d->id, 'tenant_id' => $d->tenant_id, 'event' => $d->event, 'host' => parse_url((string) $d->url, PHP_URL_HOST),
+                    'code' => $d->last_status_code, 'attempt' => $d->attempt, 'at' => $d->updated_at?->toIso8601String()]),
+        ]);
     }
 
-    /** @return array<string, mixed> */
-    private function build(AcquirerHealthService $health): array
+    public function acknowledge(Request $request, OpsAlert $alert): RedirectResponse
     {
-        $today = now()->startOfDay();
-        $week = now()->subDays(7);
-        $alerts = [];
+        $v = $request->validate(['note' => ['required', 'string', 'min:5', 'max:500']]);
+        abort_unless(in_array($alert->status, ['open', 'acknowledged'], true), 422, 'Alerta já resolvido.');
+        $alert->update(['status' => 'acknowledged', 'acknowledged_by' => $request->user()->id, 'acknowledged_at' => now(), 'ack_note' => $v['note']]);
+        PlatformAuditService::log('ops.alert.acknowledged', ['alert_id' => $alert->id, 'key' => $alert->key, 'note' => $v['note']]);
 
-        $executive = $this->safe(function () use ($today, $week) {
-            $completed = fn ($since) => Order::query()->where('status', 'completed')->where('created_at', '>=', $since);
-            $kToday = PlatformRevenueKpis::compute($today->toDateTimeString(), now()->toDateTimeString());
-            $kWeek = PlatformRevenueKpis::compute($week->toDateTimeString(), now()->toDateTimeString());
-
-            return [
-                'volume_today' => round((float) $completed($today)->sum('amount'), 2),
-                'orders_today' => $completed($today)->count(),
-                'volume_7d' => round((float) $completed($week)->sum('amount'), 2),
-                'orders_7d' => $completed($week)->count(),
-                'pending_24h' => Order::query()->where('status', 'pending')->where('created_at', '>=', now()->subDay())->count(),
-                'fees_today' => $kToday['faturamento_taxas_cobradas'],
-                'net_today' => $kToday['faturamento_liquido'],
-                'fees_7d' => $kWeek['faturamento_taxas_cobradas'],
-                'net_7d' => $kWeek['faturamento_liquido'],
-                'disputed_open' => Order::query()->where('status', 'disputed')->count(),
-                'refunds_7d' => Order::query()->where('status', 'refunded')->where('updated_at', '>=', $week)->count(),
-            ];
-        });
-
-        $sellers = $this->safe(fn () => [
-            'active' => User::query()->where('role', User::ROLE_INFOPRODUTOR)->where('kyc_status', User::KYC_APPROVED)
-                ->where(fn ($q) => $q->where('account_status', 'approved')->orWhereNull('account_status'))->count(),
-            'suspended' => User::query()->where('role', User::ROLE_INFOPRODUTOR)->whereIn('account_status', ['suspended', 'blocked'])->count(),
-            'kyc_review' => User::query()->where('role', User::ROLE_INFOPRODUTOR)->where('kyc_status', User::KYC_PENDING_REVIEW)->count(),
-            'new_7d' => User::query()->where('role', User::ROLE_INFOPRODUTOR)->where('created_at', '>=', $week)->count(),
-        ]);
-
-        $withdrawals = $this->safe(fn () => [
-            'awaiting' => Withdrawal::query()->where('status', 'pending')->count(),
-            'paid_7d' => Withdrawal::query()->where('status', 'paid')->where('updated_at', '>=', $week)->count(),
-            'paid_amount_7d' => round((float) Withdrawal::query()->where('status', 'paid')->where('updated_at', '>=', $week)->sum('amount'), 2),
-            'investigating' => Withdrawal::query()->whereIn('status', ['pending', 'processing'])
-                ->whereRaw('NOT '.SqlDialect::jsonKeyMissingOrEmpty('payout_meta', 'reconcile_exhausted'))->count(),
-        ]);
-
-        $treasury = $this->safe(function () {
-            if (! Schema::hasTable('treasury_discrepancies')) {
-                return null;
-            }
-            $active = TreasuryDiscrepancy::query()->whereIn('status', ['open', 'investigating']);
-
-            return [
-                'critical' => (clone $active)->where('severity', 'critical')->count(),
-                'high' => (clone $active)->where('severity', 'high')->count(),
-                'total' => (clone $active)->count(),
-                'last_run' => DB::table('treasury_runs')->latest('id')->value('finished_at'),
-            ];
-        });
-
-        $risk = $this->safe(fn () => Schema::hasTable('risk_assessments') ? [
-            'high_open' => RiskAssessment::query()->where('level', 'high')->where('status', 'open')->count(),
-            'medium_open' => RiskAssessment::query()->where('level', 'medium')->where('status', 'open')->count(),
-        ] : null);
-
-        $acquirers = $this->safe(function () use ($health) {
-            $out = [];
-            foreach ($health->stats(1, 10) as $method => $slugs) {
-                foreach ($slugs as $slug => $m) {
-                    $out[] = ['method' => $method, 'slug' => $slug] + array_intersect_key($m, array_flip(['attempts', 'success_rate', 'technical_error_rate', 'timeout_rate', 'latency_p95_ms', 'sufficient_sample']));
-                }
-            }
-
-            return $out;
-        });
-
-        $infra = $this->safe(function () {
-            $queues = [];
-            foreach (self::QUEUES as $q) {
-                try {
-                    $queues[$q] = Queue::size($q);
-                } catch (\Throwable) {
-                    $queues[$q] = null;
-                }
-            }
-            $ago = fn ($iso) => $iso ? (int) Carbon::parse($iso)->diffInMinutes(now()) : null;
-
-            return [
-                'scheduler_minutes_ago' => $ago(Cache::get('schedule_heartbeat')),
-                'queue_minutes_ago' => $ago(Cache::get('queue_heartbeat')),
-                'failed_jobs_24h' => Schema::hasTable('failed_jobs') ? DB::table('failed_jobs')->where('failed_at', '>=', now()->subDay())->count() : null,
-                'queues' => $queues,
-                'web_server' => PHP_SAPI,
-            ];
-        });
-
-        // Alertas derivados só de números reais acima.
-        if (($treasury['critical'] ?? 0) > 0) {
-            $alerts[] = ['severity' => 'critical', 'text' => "{$treasury['critical']} divergência(s) financeira(s) crítica(s) na tesouraria", 'href' => '/plataforma/tesouraria'];
-        }
-        if (($withdrawals['investigating'] ?? 0) > 0) {
-            $alerts[] = ['severity' => 'high', 'text' => "{$withdrawals['investigating']} saque(s) sem confirmação da adquirente", 'href' => '/plataforma/tesouraria?kind=withdrawal_reconcile_exhausted'];
-        }
-        if (($risk['high_open'] ?? 0) > 0) {
-            $alerts[] = ['severity' => 'high', 'text' => "{$risk['high_open']} análise(s) de risco alto em aberto", 'href' => '/plataforma/risco'];
-        }
-        foreach ($acquirers ?? [] as $a) {
-            if (! empty($a['sufficient_sample']) && ($a['technical_error_rate'] > 0.1 || $a['timeout_rate'] > 0.05)) {
-                $alerts[] = ['severity' => 'high', 'text' => sprintf('%s (%s): %.0f%% de erro técnico e %.0f%% de timeout na última hora', $a['slug'], $a['method'], $a['technical_error_rate'] * 100, $a['timeout_rate'] * 100), 'href' => '/plataforma/ops/adquirentes?horas=1'];
-            }
-        }
-        if ($infra !== null) {
-            if ($infra['scheduler_minutes_ago'] === null || $infra['scheduler_minutes_ago'] > 5) {
-                $alerts[] = ['severity' => 'critical', 'text' => 'Agendador sem sinal há mais de 5 minutos (liberações, conciliações e cobranças param)', 'href' => '/plataforma/ops/saude-pagamentos'];
-            }
-            if (($infra['failed_jobs_24h'] ?? 0) > 0) {
-                $alerts[] = ['severity' => 'attention', 'text' => "{$infra['failed_jobs_24h']} job(s) falharam nas últimas 24 h", 'href' => null];
-            }
-            foreach ($infra['queues'] as $q => $size) {
-                if ($size !== null && $size > 500) {
-                    $alerts[] = ['severity' => 'attention', 'text' => "Fila {$q} com {$size} jobs aguardando", 'href' => null];
-                }
-            }
-            if ($infra['web_server'] === 'cli-server') {
-                $alerts[] = ['severity' => 'attention', 'text' => 'Site servido pelo servidor embutido do PHP (php artisan serve): limita requisições simultâneas', 'href' => null];
-            }
-        }
-        if (($executive['disputed_open'] ?? 0) > 0) {
-            $alerts[] = ['severity' => 'attention', 'text' => "{$executive['disputed_open']} pedido(s) em MED", 'href' => '/plataforma/disputas'];
-        }
-
-        $rank = ['critical' => 0, 'high' => 1, 'attention' => 2, 'info' => 3];
-        usort($alerts, fn ($a, $b) => $rank[$a['severity']] <=> $rank[$b['severity']]);
-
-        return compact('executive', 'sellers', 'withdrawals', 'treasury', 'risk', 'acquirers', 'infra', 'alerts');
+        return back()->with('success', 'Alerta reconhecido. Ele some sozinho quando a condição deixar de existir.');
     }
 
-    private function safe(callable $fn): mixed
+    public function retryJob(Request $request, string $uuid): RedirectResponse
     {
-        try {
-            return $fn();
-        } catch (\Throwable $e) {
-            report($e);
+        abort_unless(Schema::hasTable('failed_jobs'), 404);
+        $job = DB::table('failed_jobs')->where('uuid', $uuid)->first();
+        abort_if($job === null, 404);
+        $class = $this->jobClass((string) $job->payload);
+        abort_unless(in_array($class, self::RETRYABLE_JOBS, true), 422, 'Este job mexe com pagamento, saque ou conciliação e não é reprocessado daqui.');
 
-            return null;
+        Artisan::call('queue:retry', ['id' => [$uuid]]);
+        PlatformAuditService::log('ops.job.retried', ['uuid' => $uuid, 'job' => $class]);
+
+        return back()->with('success', 'Job devolvido para a fila.');
+    }
+
+    public function retryDelivery(ApiWebhookDelivery $delivery, ApiWebhookDeliveryService $deliveries): RedirectResponse
+    {
+        abort_unless($delivery->status === ApiWebhookDelivery::STATUS_FAILED, 422, 'Só entregas que falharam podem ser reenviadas.');
+        $deliveries->retryNow($delivery);
+        PlatformAuditService::log('ops.webhook.retried', ['delivery_id' => $delivery->id, 'tenant_id' => $delivery->tenant_id, 'event' => $delivery->event]);
+
+        return back()->with('success', 'Reenvio agendado.');
+    }
+
+    /** Busca rápida: pedido (#id), seller (e-mail ou id). Só devolve links para as telas que já existem. */
+    public function search(Request $request): JsonResponse
+    {
+        $q = trim((string) $request->validate(['q' => ['required', 'string', 'min:2', 'max:190']])['q']);
+        $results = [];
+        if (ctype_digit(ltrim($q, '#'))) {
+            $id = (int) ltrim($q, '#');
+            if ($order = Order::query()->find($id, ['id', 'tenant_id', 'status', 'amount'])) {
+                $results[] = ['type' => 'Pedido', 'label' => "#{$order->id} · {$order->status} · R$ ".number_format((float) $order->amount, 2, ',', '.'), 'href' => '/plataforma/transacoes?q='.$order->id];
+            }
+            if ($user = User::query()->where('role', User::ROLE_INFOPRODUTOR)->find($id, ['id', 'name', 'email'])) {
+                $results[] = ['type' => 'Seller', 'label' => "{$user->name} ({$user->email})", 'href' => "/plataforma/usuarios/{$user->id}"];
+            }
+        } elseif (str_contains($q, '@')) {
+            foreach (User::query()->where('role', User::ROLE_INFOPRODUTOR)->whereRaw('LOWER(email) = ?', [mb_strtolower($q)])->limit(5)->get(['id', 'name', 'email']) as $user) {
+                $results[] = ['type' => 'Seller', 'label' => "{$user->name} ({$user->email})", 'href' => "/plataforma/usuarios/{$user->id}"];
+            }
         }
+
+        return response()->json(['results' => $results]);
+    }
+
+    /** @return list<array<string, mixed>> */
+    private function failedJobs(): array
+    {
+        if (! Schema::hasTable('failed_jobs')) {
+            return [];
+        }
+
+        return DB::table('failed_jobs')->latest('failed_at')->limit(30)->get(['uuid', 'queue', 'payload', 'exception', 'failed_at'])
+            ->map(function ($j) {
+                $class = $this->jobClass((string) $j->payload);
+
+                return ['uuid' => $j->uuid, 'queue' => $j->queue, 'job' => class_basename($class ?: 'desconhecido'),
+                    'error' => Str::limit(strtok((string) $j->exception, "\n") ?: '', 200), 'at' => (string) $j->failed_at,
+                    'retryable' => in_array($class, self::RETRYABLE_JOBS, true)];
+            })->all();
+    }
+
+    private function jobClass(string $payload): ?string
+    {
+        $data = json_decode($payload, true);
+
+        return is_array($data) ? ($data['displayName'] ?? ($data['data']['commandName'] ?? null)) : null;
+    }
+
+    private function presentAlert(OpsAlert $a): array
+    {
+        return ['id' => $a->id, 'key' => $a->key, 'severity' => $a->severity, 'area' => $a->area, 'title' => $a->title, 'hint' => $a->hint,
+            'href' => $a->href, 'status' => $a->status, 'first_seen_at' => $a->first_seen_at?->toIso8601String(),
+            'last_seen_at' => $a->last_seen_at?->toIso8601String(), 'resolved_at' => $a->resolved_at?->toIso8601String(), 'ack_note' => $a->ack_note];
     }
 }
