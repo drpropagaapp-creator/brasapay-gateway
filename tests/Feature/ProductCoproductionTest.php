@@ -20,7 +20,7 @@ class ProductCoproductionTest extends TestCase
             $this->markTestSkipped('product_coproducers table');
         }
 
-        $seller = User::factory()->create(['role' => User::ROLE_INFOPRODUTOR]);
+        $seller = User::factory()->create(['role' => User::ROLE_INFOPRODUTOR, 'kyc_status' => User::KYC_APPROVED]);
         $seller->forceFill(['tenant_id' => $seller->id])->save();
 
         $product = $this->createTestProduct(['tenant_id' => $seller->id]);
@@ -54,10 +54,10 @@ class ProductCoproductionTest extends TestCase
             $this->markTestSkipped('wallet or coproducers');
         }
 
-        $seller = User::factory()->create(['role' => User::ROLE_INFOPRODUTOR]);
+        $seller = User::factory()->create(['role' => User::ROLE_INFOPRODUTOR, 'kyc_status' => User::KYC_APPROVED]);
         $seller->forceFill(['tenant_id' => $seller->id])->save();
 
-        $coproducer = User::factory()->create(['role' => User::ROLE_INFOPRODUTOR]);
+        $coproducer = User::factory()->create(['role' => User::ROLE_INFOPRODUTOR, 'kyc_status' => User::KYC_APPROVED]);
         $coproducer->forceFill(['tenant_id' => $coproducer->id])->save();
 
         $product = $this->createTestProduct(['tenant_id' => $seller->id]);
@@ -237,10 +237,10 @@ class ProductCoproductionTest extends TestCase
      */
     private function createActiveCoproductionFixture(): array
     {
-        $seller = User::factory()->create(['role' => User::ROLE_INFOPRODUTOR]);
+        $seller = User::factory()->create(['role' => User::ROLE_INFOPRODUTOR, 'kyc_status' => User::KYC_APPROVED]);
         $seller->forceFill(['tenant_id' => $seller->id])->save();
 
-        $coproducer = User::factory()->create(['role' => User::ROLE_INFOPRODUTOR]);
+        $coproducer = User::factory()->create(['role' => User::ROLE_INFOPRODUTOR, 'kyc_status' => User::KYC_APPROVED]);
         $coproducer->forceFill(['tenant_id' => $coproducer->id])->save();
 
         $product = $this->createTestProduct(['tenant_id' => $seller->id, 'name' => 'Curso Co-prod']);
@@ -270,10 +270,10 @@ class ProductCoproductionTest extends TestCase
             $this->markTestSkipped('product_coproducers table');
         }
 
-        $seller = User::factory()->create(['role' => User::ROLE_INFOPRODUTOR]);
+        $seller = User::factory()->create(['role' => User::ROLE_INFOPRODUTOR, 'kyc_status' => User::KYC_APPROVED]);
         $seller->forceFill(['tenant_id' => $seller->id])->save();
 
-        $coproducer = User::factory()->create(['role' => User::ROLE_INFOPRODUTOR]);
+        $coproducer = User::factory()->create(['role' => User::ROLE_INFOPRODUTOR, 'kyc_status' => User::KYC_APPROVED]);
         $coproducer->forceFill(['tenant_id' => $coproducer->id])->save();
 
         $product = $this->createTestProduct(['tenant_id' => $seller->id, 'name' => 'Curso Expirado']);
@@ -318,10 +318,10 @@ class ProductCoproductionTest extends TestCase
             $this->markTestSkipped('wallet or coproducers');
         }
 
-        $seller = User::factory()->create(['role' => User::ROLE_INFOPRODUTOR]);
+        $seller = User::factory()->create(['role' => User::ROLE_INFOPRODUTOR, 'kyc_status' => User::KYC_APPROVED]);
         $seller->forceFill(['tenant_id' => $seller->id])->save();
 
-        $oldCoproducer = User::factory()->create(['role' => User::ROLE_INFOPRODUTOR]);
+        $oldCoproducer = User::factory()->create(['role' => User::ROLE_INFOPRODUTOR, 'kyc_status' => User::KYC_APPROVED]);
         $oldCoproducer->forceFill(['tenant_id' => $oldCoproducer->id])->save();
 
         $product = $this->createTestProduct(['tenant_id' => $seller->id]);
