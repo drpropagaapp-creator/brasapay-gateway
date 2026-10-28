@@ -8,6 +8,7 @@ import FeePercentInput from '@/components/ui/FeePercentInput.vue';
 import MerchantAdminNotesPanel from '@/components/platform/MerchantAdminNotesPanel.vue';
 import PlatformStepUpModal from '@/components/platform/PlatformStepUpModal.vue';
 import SellerAcquirerPolicyPanel from '@/components/platform/SellerAcquirerPolicyPanel.vue';
+import SellerProductPortabilityPanel from '@/components/platform/SellerProductPortabilityPanel.vue';
 import { ArrowLeft, List } from 'lucide-vue-next';
 import { formatPercentForInput, normalizeMerchantFeeOverridesForSubmit, normalizeMerchantSettlementOverridesForSubmit } from '@/lib/percentDecimal';
 
@@ -487,6 +488,7 @@ function submit() {
             </section>
 
             <SellerAcquirerPolicyPanel v-if="merchant.is_infoprodutor" :merchant-id="merchant.id" />
+            <SellerProductPortabilityPanel v-if="merchant.is_infoprodutor" :merchant-id="merchant.id" />
 
             <section class="rounded-2xl border border-amber-200 bg-amber-50/40 p-6 dark:border-amber-900/50 dark:bg-amber-950/20">
                 <h2 class="mb-3 font-semibold">Observações internas</h2><MerchantAdminNotesPanel :merchant-user-id="merchant.id" compact :initial-count="merchant.admin_notes_count || 0" />

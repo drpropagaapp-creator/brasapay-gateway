@@ -430,6 +430,18 @@ Route::prefix('plataforma')->name('plataforma.')->group(function () {
             Route::put('/{user}/adquirentes', [\App\Http\Controllers\Platform\SellerAcquirerPolicyController::class, 'update'])
                 ->middleware('throttle:30,1')
                 ->name('acquirer-policy.update');
+            Route::get('/{user}/portabilidade', [\App\Http\Controllers\Platform\SellerProductPortabilityController::class, 'index'])->name('portability.index');
+            Route::post('/{user}/portabilidade/produtos/{produto}/exportar', [\App\Http\Controllers\Platform\SellerProductPortabilityController::class, 'export'])
+                ->middleware('throttle:10,1')
+                ->name('portability.export');
+            Route::post('/{user}/portabilidade/importacoes', [\App\Http\Controllers\Platform\SellerProductPortabilityController::class, 'upload'])
+                ->middleware('throttle:10,1')
+                ->name('portability.upload');
+            Route::get('/{user}/portabilidade/importacoes/{import}', [\App\Http\Controllers\Platform\SellerProductPortabilityController::class, 'status'])->name('portability.status');
+            Route::post('/{user}/portabilidade/importacoes/{import}/confirmar', [\App\Http\Controllers\Platform\SellerProductPortabilityController::class, 'confirm'])
+                ->middleware('throttle:10,1')
+                ->name('portability.confirm');
+            Route::post('/{user}/portabilidade/importacoes/{import}/cancelar', [\App\Http\Controllers\Platform\SellerProductPortabilityController::class, 'cancel'])->name('portability.cancel');
             Route::get('/{user}/observacoes', [\App\Http\Controllers\Platform\MerchantAdminNotesController::class, 'index'])->name('notes.index');
             Route::post('/{user}/observacoes', [\App\Http\Controllers\Platform\MerchantAdminNotesController::class, 'store'])->name('notes.store');
             Route::post('/{user}/gerente-conta', [\App\Http\Controllers\Platform\UsersController::class, 'assignAccountManager'])
