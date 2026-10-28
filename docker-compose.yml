@@ -26,6 +26,8 @@ services:
       # Processos do servidor web (php artisan serve --no-reload): sem isso é 1 requisição por vez
       # e uma cobrança lenta na adquirente trava o site inteiro.
       PHP_CLI_SERVER_WORKERS: ${GETFY_PHP_WORKERS:-8}
+      # Servidor web: fpm (nginx + PHP-FPM) ou artisan (volta ao php artisan serve sem rebuild).
+      GETFY_WEB_SERVER: ${GETFY_WEB_SERVER:-fpm}
       APP_INSTALLED: ${GETFY_APP_INSTALLED:-true}
       APP_AUTO_MIGRATE: ${GETFY_APP_AUTO_MIGRATE:-false}
       DB_CONNECTION: ${GETFY_DB_CONNECTION:-pgsql}
