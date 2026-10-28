@@ -31,6 +31,7 @@ import {
     Lightbulb,
     Terminal,
     LibraryBig,
+    Globe,
     Repeat,
     FlaskConical,
 } from 'lucide-vue-next';
@@ -202,7 +203,15 @@ export function useAppSidebarNav() {
             items.push({ pwaInstall: true });
         }
 
-        return items;
+        if (page.props.enterprise?.active) {
+            const at = items.findIndex((i) => i.separator);
+            const entry = { name: t('sidebar.enterprise', 'Marca e domínio'), href: '/marca-e-dominio', icon: Globe };
+            if (at >= 0) items.splice(at, 0, entry); else items.push(entry);
+        }
+
+        // Brasa Enterprise: o admin pode esconder módulos do menu desta conta.
+        const hidden = Array.isArray(page.props.enterprise?.hidden_nav) ? page.props.enterprise.hidden_nav : [];
+        return hidden.length ? items.filter((i) => !i.href || !hidden.includes(i.href)) : items;
     });
 
     function isActive(href) {

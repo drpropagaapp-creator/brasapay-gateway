@@ -325,6 +325,15 @@ class HandleInertiaRequests extends Middleware
             'api_pix_enabled_effective' => $user && $user->canAccessSellerPanel()
                 ? ApiPixAccess::effectiveForTenant($tenantId)
                 : false,
+            // Brasa Enterprise: itens do menu que o admin escondeu para esta conta white-label.
+            'enterprise' => function () use ($user, $tenantId) {
+                if (! $user || ! $user->canAccessSellerPanel() || ! $tenantId || ! \Illuminate\Support\Facades\Schema::hasTable('enterprise_accounts')) {
+                    return ['active' => false, 'hidden_nav' => []];
+                }
+                $account = \App\Models\EnterpriseAccount::activeFor((int) $tenantId);
+
+                return ['active' => $account !== null, 'hidden_nav' => $account?->hiddenNav() ?? []];
+            },
             'platform_minimum_charge_brl' => $user && $user->canAccessSellerPanel()
                 ? app(MinimumChargeService::class)->platformMinimumBrlForTenant($tenantId)
                 : 0,

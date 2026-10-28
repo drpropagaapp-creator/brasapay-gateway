@@ -37,6 +37,7 @@ import {
     Webhook,
     Store,
     LibraryBig,
+    Building2,
 } from 'lucide-vue-next';
 import { useSidebar } from '@/composables/useSidebar';
 
@@ -82,6 +83,7 @@ const navGroupsCore = [
             { name: 'Gerentes de Conta', href: '/plataforma/gerentes-conta', icon: ContactRound },
             { name: 'Clientes', href: '/plataforma/clientes', icon: UserCircle2 },
             { name: 'Verificações KYC', href: '/plataforma/verificacoes-kyc', icon: BadgeCheck, badgeKey: 'kyc' },
+            { name: 'White-label (Enterprise)', href: '/plataforma/enterprise', icon: Building2 },
         ],
     },
     {

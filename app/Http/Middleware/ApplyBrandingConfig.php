@@ -95,11 +95,13 @@ class ApplyBrandingConfig
         $global = BrandingSetting::query()->whereNull('tenant_id')->first();
         $globalData = is_array($global?->data) ? $global->data : [];
         $user = $request->user();
-        if ($user === null) {
+        // Domínio white-label (Brasa Enterprise): o checkout usa a marca da conta dona do domínio.
+        $tenantId = $request->attributes->get('whitelabel_tenant_id') ?? $user?->tenant_id;
+        if ($tenantId === null) {
             return $globalData;
         }
 
-        $tenant = BrandingSetting::query()->where('tenant_id', $user->tenant_id)->first();
+        $tenant = BrandingSetting::query()->where('tenant_id', $tenantId)->first();
         $tenantData = is_array($tenant?->data) ? $tenant->data : [];
 
         return self::mergeLayers($globalData, $tenantData);

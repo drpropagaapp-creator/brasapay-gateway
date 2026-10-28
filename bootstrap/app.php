@@ -56,6 +56,7 @@ return Application::configure(basePath: dirname(__DIR__))
             \App\Http\Middleware\EnsureDockerSetup::class,
             \App\Http\Middleware\EnsureInstalled::class,
             \App\Http\Middleware\ConfigureCheckoutIframeSession::class,
+            \App\Http\Middleware\ResolveWhiteLabelHost::class,
             \App\Http\Middleware\ApplyBrandingConfig::class,
         ], append: [
             \App\Http\Middleware\RestrictCustomerImpersonation::class,
@@ -235,6 +236,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $schedule->command('treasury:reconcile')->hourlyAt(17)->withoutOverlapping(30);
         $schedule->command('acquirer:prune-attempts --days=30')->dailyAt('04:10');
         $schedule->command('developers:prune --days=30 --sandbox-days=90')->dailyAt('04:20');
+        $schedule->command('enterprise:verify-domains')->dailyAt('05:10')->withoutOverlapping(60);
         $schedule->command('recovery:process-email')->everyFiveMinutes()->withoutOverlapping(10);
         // BrasaShield em observação: janela de 30 min a cada 10 (sobreposição proposital; avaliação é idempotente).
         $schedule->command('shield:scan --minutes=30')->everyTenMinutes()->withoutOverlapping(15);

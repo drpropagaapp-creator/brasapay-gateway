@@ -509,6 +509,14 @@ Route::prefix('plataforma')->name('plataforma.')->group(function () {
             ->middleware('throttle:60,1')->name('risk.review');
         Route::get('/central', [\App\Http\Controllers\Platform\CommandCenterController::class, 'index'])->name('command-center');
         Route::get('/biblioteca', [\App\Http\Controllers\Platform\TemplateLibraryAdminController::class, 'index'])->name('library.index');
+        Route::get('/enterprise', [\App\Http\Controllers\Platform\EnterpriseController::class, 'index'])->name('enterprise.index');
+        Route::post('/enterprise', [\App\Http\Controllers\Platform\EnterpriseController::class, 'enable'])->middleware('throttle:30,1')->name('enterprise.enable');
+        Route::put('/enterprise/{account}', [\App\Http\Controllers\Platform\EnterpriseController::class, 'update'])
+            ->middleware('throttle:30,1')->whereNumber('account')->name('enterprise.update');
+        Route::post('/enterprise/{account}/status', [\App\Http\Controllers\Platform\EnterpriseController::class, 'status'])
+            ->middleware('throttle:30,1')->whereNumber('account')->name('enterprise.status');
+        Route::delete('/enterprise/dominios/{domain}', [\App\Http\Controllers\Platform\EnterpriseController::class, 'removeDomain'])
+            ->middleware('throttle:30,1')->whereNumber('domain')->name('enterprise.domains.remove');
         Route::get('/biblioteca/versoes/{version}/pacote', [\App\Http\Controllers\Platform\TemplateLibraryAdminController::class, 'downloadPackage'])
             ->middleware('throttle:30,1')->whereNumber('version')->name('library.download');
         Route::post('/biblioteca/versoes/{version}/revisar', [\App\Http\Controllers\Platform\TemplateLibraryAdminController::class, 'review'])
@@ -1179,6 +1187,14 @@ Route::middleware(['auth', 'admin.tenant', 'seller.panel', 'stacker.license', 'r
         ->middleware(['team.permission:vendas.view', 'throttle:60,1'])->where('key', '[A-Za-z0-9_-]{4,300}')->name('crm.update');
     Route::get('/biblioteca', [\App\Http\Controllers\TemplateLibraryController::class, 'index'])
         ->middleware('team.permission:produtos.view')->name('library.index');
+    Route::get('/marca-e-dominio', [\App\Http\Controllers\EnterpriseSellerController::class, 'show'])
+        ->middleware('team.permission:configuracoes.view')->name('enterprise.seller.show');
+    Route::post('/marca-e-dominio/dominios', [\App\Http\Controllers\EnterpriseSellerController::class, 'store'])
+        ->middleware(['team.permission:configuracoes.view', 'throttle:10,1'])->name('enterprise.seller.domains.store');
+    Route::post('/marca-e-dominio/dominios/{domain}/verificar', [\App\Http\Controllers\EnterpriseSellerController::class, 'verify'])
+        ->middleware(['team.permission:configuracoes.view', 'throttle:10,1'])->whereNumber('domain')->name('enterprise.seller.domains.verify');
+    Route::delete('/marca-e-dominio/dominios/{domain}', [\App\Http\Controllers\EnterpriseSellerController::class, 'destroy'])
+        ->middleware(['team.permission:configuracoes.view', 'throttle:10,1'])->whereNumber('domain')->name('enterprise.seller.domains.destroy');
     Route::post('/biblioteca/enviar', [\App\Http\Controllers\TemplateLibraryController::class, 'submit'])
         ->middleware(['team.permission:produtos.view', 'throttle:5,1'])->name('library.submit');
     Route::get('/biblioteca/{slug}', [\App\Http\Controllers\TemplateLibraryController::class, 'show'])
