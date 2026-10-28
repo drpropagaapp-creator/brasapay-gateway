@@ -1,6 +1,6 @@
 # BrasaPay 4.0 — registro de progresso
 
-A Onda 1 está em produção desde 28/10/2026 (main). A Onda 2 está na branch `feat/brasapay-4-onda2`, ainda sem deploy.
+A Onda 1 está em produção desde 28/10/2026 (main). A Onda 2 também está em produção desde 28/10/2026.
 
 ## Onda 1 — confiabilidade financeira e operacional
 
@@ -42,15 +42,15 @@ A Onda 1 está em produção desde 28/10/2026 (main). A Onda 2 está na branch `
 
 ## Onda 2 — crescimento do seller
 
-Branch: `feat/brasapay-4-onda2`. Implementada e testada no sandbox; **sem deploy** (aguarda autorização).
+Branch: `feat/brasapay-4-onda2`, em produção desde 28/10/2026 (main 53c8357).
 
 | Item | Status | Onde |
 |---|---|---|
-| Brasa Recovery (e-mail) | Implementado e testado — **desligado por padrão** em cada conta | `BrasaRecoveryService`, `recovery:process-email` (5 min), `/recuperacao`, descadastro assinado |
-| Brasa CRM | Implementado e testado | `CrmService`, `/crm`, `/crm/contato/{key}` |
-| Brasa Subscriptions | Implementado e testado | `CustomerSubscriptionsController` (`/painel-cliente/assinaturas`), `SubscriptionMetricsService` |
-| Brasa Experiments (A/B da landing) | Implementado e testado | `ExperimentService`, `ExperimentsController`, `/experimentos` |
-| Brasa Intelligence | Implementado e testado | `IntelligenceService`, `IntelligenceController`, `/inteligencia` |
+| Brasa Recovery (e-mail) | Em produção — **desligado por padrão** em cada conta | `BrasaRecoveryService`, `recovery:process-email` (5 min), `/recuperacao`, descadastro assinado |
+| Brasa CRM | Em produção | `CrmService`, `/crm`, `/crm/contato/{key}` |
+| Brasa Subscriptions | Em produção | `CustomerSubscriptionsController` (`/painel-cliente/assinaturas`), `SubscriptionMetricsService` |
+| Brasa Experiments (A/B da landing) | Em produção | `ExperimentService`, `ExperimentsController`, `/experimentos` |
+| Brasa Intelligence | Em produção | `IntelligenceService`, `IntelligenceController`, `/inteligencia` |
 
 ### Migrations (tabelas novas + colunas anuláveis)
 - `2026_10_30_100000_create_recovery_tables` — `recovery_messages`, `recovery_opt_outs`
