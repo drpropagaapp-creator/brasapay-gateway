@@ -1,6 +1,6 @@
 # BrasaPay 4.0 — registro de progresso
 
-Branch: `feat/brasapay-4-onda1`. A Onda 1 está em produção desde 28/10/2026 (main).
+A Onda 1 está em produção desde 28/10/2026 (main). A Onda 2 está na branch `feat/brasapay-4-onda2`, ainda sem deploy.
 
 ## Onda 1 — confiabilidade financeira e operacional
 
@@ -40,5 +40,43 @@ Branch: `feat/brasapay-4-onda1`. A Onda 1 está em produção desde 28/10/2026 (
 - Smart Routing: só ligar depois de alguns dias de telemetria (amostra mínima por adquirente/método).
 - BrasaShield: calibrar pesos com os dados reais antes de qualquer ação automática.
 
-## Ondas 2 e 3
-Não iniciadas.
+## Onda 2 — crescimento do seller
+
+Branch: `feat/brasapay-4-onda2`. Implementada e testada no sandbox; **sem deploy** (aguarda autorização).
+
+| Item | Status | Onde |
+|---|---|---|
+| Brasa Recovery (e-mail) | Implementado e testado — **desligado por padrão** em cada conta | `BrasaRecoveryService`, `recovery:process-email` (5 min), `/recuperacao`, descadastro assinado |
+| Brasa CRM | Implementado e testado | `CrmService`, `/crm`, `/crm/contato/{key}` |
+| Brasa Subscriptions | Implementado e testado | `CustomerSubscriptionsController` (`/painel-cliente/assinaturas`), `SubscriptionMetricsService` |
+| Brasa Experiments (A/B da landing) | Implementado e testado | `ExperimentService`, `ExperimentsController`, `/experimentos` |
+| Brasa Intelligence | Implementado e testado | `IntelligenceService`, `IntelligenceController`, `/inteligencia` |
+
+### Migrations (tabelas novas + colunas anuláveis)
+- `2026_10_30_100000_create_recovery_tables` — `recovery_messages`, `recovery_opt_outs`
+- `2026_10_30_110000_create_crm_contact_meta_table` — `crm_contact_meta`
+- `2026_10_30_120000_add_self_service_cancel_to_subscriptions` — 4 colunas novas em `subscriptions` (padrão falso/nulo)
+- `2026_10_30_130000_create_experiments_tables` — `experiments`, `experiment_assignments`
+- `2026_10_30_140000_create_ad_spends_table` — `ad_spends`
+
+### Agendamentos novos
+- `recovery:process-email` — a cada 5 minutos (só age em contas que ligaram a recuperação)
+
+### Garantias
+- Recovery envia só pelo SMTP do próprio seller, respeita descadastro, horário de silêncio e limite diário, nunca repete a mesma etapa e só atribui recuperação a pedido pago depois do envio.
+- CRM deriva os contatos dos pedidos (sem segunda base) e respeita os produtos liberados para a equipe.
+- Cancelamento pelo assinante vale no fim do período já pago; renovação automática e lembretes param para essas assinaturas.
+- MRR normalizado pelo intervalo do plano (antes somava o preço cheio de qualquer plano).
+- Experiments: o visitante sempre vê a mesma variante; conversão = venda paga; vencedora só com amostra mínima (200 sessões por variante, 20 vendas pagas) e p < 0,05; aplicar vencedora exige esse critério; falha no experimento volta para a landing publicada.
+- Intelligence: receita só de pagamento confirmado; ROAS e CAC só onde o seller informou custo; alertas são regras com os números junto, sem ação automática; equipe não vê custo (vale para a conta inteira).
+
+### Testes
+`tests/Feature/{BrasaRecoveryTest,BrasaCrmTest,BrasaSubscriptionsTest,BrasaExperimentsTest,BrasaIntelligenceTest}.php` (19 testes). Suíte completa (1780 testes) sem falhas novas em relação à lista pré-existente.
+
+### Pendências da Onda 2
+- Recovery por WhatsApp/SMS (hoje só e-mail; já existe o relatório da Uazapi).
+- Intelligence: importar custo direto das contas de anúncio (hoje é cadastro manual).
+- Experiments: testar outros elementos além da landing (preço, order bump).
+
+## Onda 3
+Não iniciada.
