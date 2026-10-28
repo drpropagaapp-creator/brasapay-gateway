@@ -56,16 +56,32 @@ class AiToolbox
             ['name' => 'assinaturas', 'description' => 'Recorrência: MRR, assinaturas ativas, atrasadas, cancelamentos agendados, churn de 30 dias e renovações dos próximos 7 dias.', 'schema' => $none],
             ['name' => 'testes_ab', 'description' => 'Testes A/B da landing: status, resultados por variante e conclusão estatística.', 'schema' => $none],
             ['name' => 'recuperacao', 'description' => 'Recuperação de vendas por e-mail: se está ligada e o resultado dos últimos 30 dias.', 'schema' => $none],
+            ['name' => 'saldo', 'description' => 'Saldo disponível para saque por método e saldo pendente (só consulta).', 'schema' => $none],
         ];
-        if ($this->canSeeFinance()) {
-            $defs[] = ['name' => 'saldo', 'description' => 'Saldo disponível para saque por método e saldo pendente (só consulta).', 'schema' => $none];
-        }
 
-        return $defs;
+        // Cada ferramenta exige a mesma permissão da tela equivalente do painel.
+        return array_values(array_filter($defs, fn ($d) => $this->permitted($d['name'])));
+    }
+
+    /** Permissão de equipe que cada ferramenta exige (a mesma da tela correspondente). */
+    private const PERMISSIONS = [
+        'vendas_resumo' => 'relatorios.view', 'vendas_por_dia' => 'relatorios.view', 'produtos_desempenho' => 'relatorios.view',
+        'funil_checkout' => 'relatorios.view', 'campanhas' => 'relatorios.view', 'alertas' => 'relatorios.view',
+        'assinaturas' => 'vendas.view', 'testes_ab' => 'produtos.view', 'recuperacao' => 'integracoes.view', 'saldo' => 'financeiro.view',
+    ];
+
+    private function permitted(string $tool): bool
+    {
+        $perm = self::PERMISSIONS[$tool] ?? null;
+
+        return $perm !== null && (! $this->user->isTeam() || app(TeamAccessService::class)->can($this->user, $perm));
     }
 
     public function run(string $name, array $input): array
     {
+        if (! $this->permitted($name)) {
+            throw new \InvalidArgumentException('Ferramenta indisponível para este usuário.');
+        }
         [$start, $end, $days] = $this->window((string) ($input['periodo'] ?? '30d'));
 
         return match ($name) {
@@ -76,7 +92,7 @@ class AiToolbox
                 'reembolsos' => $p['refunded'], 'disputas' => $p['disputed'], 'taxa_perda' => $p['loss_rate'],
             ], array_slice($this->report($start, $end)['products'], 0, 15))],
             'funil_checkout' => $this->funnel($start, $end, $days),
-            'campanhas' => ['periodo_dias' => $days, 'custo_informado' => $this->canSeeFinance(), 'campanhas' => array_map(fn ($c) => [
+            'campanhas' => ['periodo_dias' => $days, 'custo_visivel' => ! $this->user->isTeam(), 'campanhas' => array_map(fn ($c) => [
                 'origem' => $c['source'], 'campanha' => $c['campaign'], 'vendas_pagas' => $c['paid_orders'], 'receita' => $this->brl($c['revenue_cents']),
                 'clientes_novos' => $c['new_customers'], 'custo' => $c['spend_cents'] === null ? null : $this->brl($c['spend_cents']),
                 'roas' => $c['roas'], 'cac' => $c['cac_cents'] === null ? null : $this->brl($c['cac_cents']),
@@ -90,10 +106,6 @@ class AiToolbox
         };
     }
 
-    private function canSeeFinance(): bool
-    {
-        return ! $this->user->isTeam() || app(TeamAccessService::class)->can($this->user, 'financeiro.view');
-    }
 
     /** @return array{0: CarbonInterface, 1: CarbonInterface, 2: int} */
     private function window(string $period): array
@@ -105,7 +117,8 @@ class AiToolbox
 
     private function report(CarbonInterface $start, CarbonInterface $end): array
     {
-        return app(IntelligenceService::class)->report($this->tenantId, $this->allowed, $start, $end, $this->canSeeFinance());
+        // Igual à tela Inteligência: custo de anúncio vale para a conta toda, então equipe não vê ROAS/CAC.
+        return app(IntelligenceService::class)->report($this->tenantId, $this->allowed, $start, $end, ! $this->user->isTeam());
     }
 
     private function salesSummary(CarbonInterface $start, CarbonInterface $end, int $days): array
@@ -167,7 +180,8 @@ class AiToolbox
     private function recovery(): array
     {
         $since = now()->subDays(30);
-        $q = RecoveryMessage::query()->where('tenant_id', $this->tenantId)->where('created_at', '>=', $since);
+        $q = RecoveryMessage::query()->where('tenant_id', $this->tenantId)->where('created_at', '>=', $since)
+            ->when($this->allowed !== null, fn ($w) => $w->whereIn('product_id', $this->allowed ?: ['__none__']));
 
         return [
             'ligada' => (bool) RecoveryEmailSettings::forTenant($this->tenantId)['enabled'],
@@ -179,7 +193,6 @@ class AiToolbox
 
     private function balance(): array
     {
-        abort_unless($this->canSeeFinance(), 403);
         $wallet = TenantWallet::query()->where('tenant_id', $this->tenantId)->first();
         if ($wallet === null) {
             return ['disponivel_total' => $this->brl(0), 'pendente' => $this->brl(0)];

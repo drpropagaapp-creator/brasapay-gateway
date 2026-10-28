@@ -18,14 +18,26 @@ class AnthropicProvider implements AiProvider
 
     public function run(string $systemPrompt, array $history, string $userText, array $tools, callable $runTool, array $options): AiRunResult
     {
-        $client = new Client(
-            apiKey: (string) AiAssistantSettings::apiKey(),
-            requestOptions: [
-                // O SDK não aplica timeout sozinho: quem aplica é o transporte HTTP.
-                'transporter' => $options['transporter'] ?? new GuzzleClient(['timeout' => (float) ($options['timeout'] ?? 45), 'connect_timeout' => 10]),
-                'maxRetries' => 1,
-            ],
-        );
+        // Prazo total rígido (inclui ferramentas): cada chamada usa só o tempo que resta, sem retentativas.
+        // As travas de concorrência do AiAssistantService duram mais que este prazo.
+        $deadline = microtime(true) + (float) ($options['budget_seconds'] ?? 90);
+        $client = function () use ($options, $deadline): ?Client {
+            $remaining = $deadline - microtime(true);
+            if ($remaining < 5) {
+                return null;
+            }
+
+            return new Client(
+                apiKey: (string) AiAssistantSettings::apiKey(),
+                requestOptions: [
+                    // O SDK não aplica timeout sozinho: quem aplica é o transporte HTTP.
+                    'transporter' => $options['transporter'] ?? new GuzzleClient([
+                        'timeout' => min((float) ($options['timeout'] ?? 45), $remaining), 'connect_timeout' => min(10, $remaining),
+                    ]),
+                    'maxRetries' => 0,
+                ],
+            );
+        };
 
         $messages = [];
         foreach ($history as $turn) {
@@ -44,10 +56,13 @@ class AnthropicProvider implements AiProvider
         $in = 0;
         $out = 0;
         $model = (string) $options['model'];
-        $deadline = microtime(true) + (float) ($options['budget_seconds'] ?? 90);
 
         for ($round = 0; $round < self::MAX_ROUNDS; $round++) {
-            $response = $client->beta->messages->create(
+            $api = $client();
+            if ($api === null) {
+                break;
+            }
+            $response = $api->beta->messages->create(
                 maxTokens: 4000,
                 messages: $messages,
                 model: (string) $options['model'],
@@ -85,10 +100,6 @@ class AnthropicProvider implements AiProvider
             // Histórico só cresce no fim (append-only): a resposta do modelo como veio, depois os resultados.
             $messages[] = ['role' => 'assistant', 'content' => $response->content];
             $messages[] = ['role' => 'user', 'content' => $results];
-
-            if (microtime(true) > $deadline) {
-                break;
-            }
         }
 
         return new AiRunResult('Não consegui concluir a análise a tempo. Tente uma pergunta mais específica.', $used, $model, $in, $out, 'incomplete');

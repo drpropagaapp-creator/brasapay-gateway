@@ -60,6 +60,7 @@ class AiAssistantService
             throw ValidationException::withMessages(['message' => 'O assistente está temporariamente indisponível. Tente mais tarde.']);
         }
 
+        // Travas duram mais que o prazo total da resposta (90 s), que o provedor respeita sem retentativas.
         $tenantLock = Cache::lock('ai-assistant:tenant:'.$user->tenant_id, 150);
         if (! $tenantLock->get()) {
             throw ValidationException::withMessages(['message' => 'Já existe uma pergunta sendo respondida nesta conta. Aguarde.']);

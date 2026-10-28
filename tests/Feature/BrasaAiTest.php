@@ -109,6 +109,27 @@ class BrasaAiTest extends TestCase
     public function test_equipe_sem_financeiro_nao_tem_ferramenta_de_saldo(): void
     {
         $owner = $this->seller();
+        $member = User::factory()->create(['role' => User::ROLE_TEAM]);
+        $member->forceFill(['tenant_id' => $owner->id])->save();
+        $team = \Mockery::mock(\App\Services\TeamAccessService::class);
+        $team->shouldReceive('allowedProductIdsFor')->andReturn([]);
+        $team->shouldReceive('can')->andReturnUsing(fn ($u, string $perm) => $perm === 'relatorios.view');
+        $this->app->instance(\App\Services\TeamAccessService::class, $team);
+        $memberTools = array_column((new AiToolbox($member))->definitions(), 'name');
+        $this->assertNotContains('saldo', $memberTools);
+        $this->assertNotContains('recuperacao', $memberTools);
+        $this->assertContains('vendas_resumo', $memberTools);
+        $this->expectExceptionMessage('indisponível');
+        try {
+            (new AiToolbox($member))->run('saldo', []);
+        } finally {
+            $this->app->forgetInstance(\App\Services\TeamAccessService::class);
+        }
+    }
+
+    public function test_dono_tem_todas_as_ferramentas_e_so_de_consulta(): void
+    {
+        $owner = $this->seller();
         $tools = array_column((new AiToolbox($owner))->definitions(), 'name');
         $this->assertContains('saldo', $tools);
         $this->assertNotContains('reembolsar', $tools);
