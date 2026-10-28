@@ -32,6 +32,7 @@ import {
     Terminal,
     LibraryBig,
     Globe,
+    Sparkles,
     Repeat,
     FlaskConical,
 } from 'lucide-vue-next';
@@ -121,6 +122,7 @@ export function useAppSidebarNav() {
         if (canView('relatorios.view')) {
             items.push({ name: t('sidebar.reports', 'Relatórios'), href: '/relatorios', icon: BarChart3 });
             items.push({ name: t('sidebar.intelligence', 'Inteligência'), href: '/inteligencia', icon: Lightbulb });
+            items.push({ name: t('sidebar.assistant', 'Assistente'), href: '/assistente', icon: Sparkles });
         }
 
         if (canView('integracoes.view')) {

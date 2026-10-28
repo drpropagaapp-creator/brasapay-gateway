@@ -511,6 +511,8 @@ Route::prefix('plataforma')->name('plataforma.')->group(function () {
             ->middleware('throttle:60,1')->name('risk.review');
         Route::get('/central', [\App\Http\Controllers\Platform\CommandCenterController::class, 'index'])->name('command-center');
         Route::get('/biblioteca', [\App\Http\Controllers\Platform\TemplateLibraryAdminController::class, 'index'])->name('library.index');
+        Route::get('/assistente-ia', [\App\Http\Controllers\Platform\AiSettingsController::class, 'index'])->name('ai.index');
+        Route::put('/assistente-ia', [\App\Http\Controllers\Platform\AiSettingsController::class, 'update'])->middleware('throttle:20,1')->name('ai.update');
         Route::get('/enterprise', [\App\Http\Controllers\Platform\EnterpriseController::class, 'index'])->name('enterprise.index');
         Route::post('/enterprise', [\App\Http\Controllers\Platform\EnterpriseController::class, 'enable'])->middleware('throttle:30,1')->name('enterprise.enable');
         Route::put('/enterprise/{account}', [\App\Http\Controllers\Platform\EnterpriseController::class, 'update'])
@@ -1189,6 +1191,10 @@ Route::middleware(['auth', 'admin.tenant', 'seller.panel', 'stacker.license', 'r
         ->middleware(['team.permission:vendas.view', 'throttle:60,1'])->where('key', '[A-Za-z0-9_-]{4,300}')->name('crm.update');
     Route::get('/biblioteca', [\App\Http\Controllers\TemplateLibraryController::class, 'index'])
         ->middleware('team.permission:produtos.view')->name('library.index');
+    Route::get('/assistente', [\App\Http\Controllers\AssistantController::class, 'index'])
+        ->middleware('team.permission:relatorios.view')->name('assistant.index');
+    Route::post('/assistente/mensagens', [\App\Http\Controllers\AssistantController::class, 'send'])
+        ->middleware(['team.permission:relatorios.view', 'throttle:10,1'])->name('assistant.send');
     Route::get('/marca-e-dominio', [\App\Http\Controllers\EnterpriseSellerController::class, 'show'])
         ->middleware('team.permission:configuracoes.view')->name('enterprise.seller.show');
     Route::post('/marca-e-dominio/dominios', [\App\Http\Controllers\EnterpriseSellerController::class, 'store'])

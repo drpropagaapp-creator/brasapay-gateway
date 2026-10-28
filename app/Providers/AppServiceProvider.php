@@ -57,6 +57,8 @@ class AppServiceProvider extends ServiceProvider
     public function register(): void
     {
         $this->app->scoped(\App\Services\Payments\AcquirerPolicyService::class);
+        // Brasa AI: provedor configurável (hoje, Anthropic).
+        $this->app->bind(\App\Services\Ai\AiProvider::class, \App\Services\Ai\AnthropicProvider::class);
 
         // O provider de e-mail do framework é adiado e regrava mail.manager.
         // Registrar primeiro e substituir em seguida mantém o histórico de envios.
