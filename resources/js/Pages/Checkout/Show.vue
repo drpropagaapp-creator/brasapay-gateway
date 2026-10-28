@@ -60,6 +60,7 @@ const props = defineProps({
     card_gateway_keys: { type: Object, default: () => ({}) },
     paypal_client_id: { type: String, default: '' },
     paypal_sandbox: { type: Boolean, default: false },
+    linaopenx_pix_auto: { type: Object, default: () => ({ participants: [] }) },
     subscription_plan: { type: Object, default: null },
     /** Definido no servidor quando a URL traz `?preview=1` (preview no iframe do Builder). */
     checkout_builder_preview: { type: Boolean, default: false },
@@ -476,6 +477,7 @@ function onConversionPixelsReady() {
                             :card-gateway-keys="card_gateway_keys || {}"
                             :paypal-client-id="paypal_client_id || ''"
                             :paypal-sandbox="paypal_sandbox"
+                            :linaopenx-pix-auto="linaopenx_pix_auto || { participants: [] }"
                             :checkout-locale="locale"
                             :checkout-total-brl="checkoutTotalBrl"
                             :conversion-pixels="conversion_pixels"

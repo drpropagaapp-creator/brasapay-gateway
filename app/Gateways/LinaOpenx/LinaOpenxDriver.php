@@ -89,12 +89,27 @@ class LinaOpenxDriver implements GatewayDriver
         }
 
         try {
-            $result = $this->client->getPaymentRequest($credentials, $transactionId);
-            $status = $result['status'] ?? 'pending';
+            $instant = $this->client->getPaymentRequest($credentials, $transactionId);
+            $status = $instant['status'] ?? 'pending';
+            if ($status === 'paid') {
+                return 'paid';
+            }
 
-            return in_array($status, ['paid', 'pending', 'cancelled', 'rejected'], true)
-                ? $status
-                : 'pending';
+            $automatic = $this->client->getAutomaticPaymentRequest($credentials, $transactionId);
+            $autoStatus = $automatic['status'] ?? 'pending';
+            if ($autoStatus === 'paid') {
+                return 'paid';
+            }
+
+            $recurring = $this->client->getRecurringPayment($credentials, $transactionId);
+            $recStatus = $recurring['status'] ?? 'pending';
+            foreach ([$autoStatus, $recStatus, $status] as $candidate) {
+                if (in_array($candidate, ['paid', 'cancelled', 'rejected'], true)) {
+                    return $candidate;
+                }
+            }
+
+            return 'pending';
         } catch (\Throwable) {
             return null;
         }

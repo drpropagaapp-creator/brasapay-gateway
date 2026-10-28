@@ -21,21 +21,37 @@ class LinaOpenxWebhookController extends Controller
         $paymentRequestId = $this->extractPaymentRequestId($payload);
         $paymentId = $this->extractPaymentId($payload);
 
-        if ($paymentRequestId === null || $paymentRequestId === '') {
+        $consentId = $this->extractConsentId($payload);
+        $recurringPaymentId = $this->extractRecurringPaymentId($payload);
+        if (($paymentRequestId === null || $paymentRequestId === '')
+            && ($consentId === null || $consentId === '')
+            && ($recurringPaymentId === null || $recurringPaymentId === '')) {
             Log::info('LinaOpenxWebhook: paymentRequestId ausente', [
                 'keys' => array_keys($payload),
             ]);
 
             return response()->json(['message' => 'paymentRequestId required'], 400);
         }
+        if ($paymentRequestId === null || $paymentRequestId === '') {
+            $paymentRequestId = $recurringPaymentId ?: $consentId;
+        }
 
         $order = Order::query()
             ->where('gateway', 'linaopenx')
-            ->where(function ($q) use ($paymentRequestId, $paymentId) {
+            ->where(function ($q) use ($paymentRequestId, $paymentId, $consentId, $recurringPaymentId) {
                 $q->where('gateway_id', $paymentRequestId)
                     ->orWhere('metadata->lina_payment_request_id', $paymentRequestId);
                 if ($paymentId !== null && $paymentId !== '') {
-                    $q->orWhere('gateway_id', $paymentId);
+                    $q->orWhere('gateway_id', $paymentId)
+                        ->orWhere('metadata->linaopenx_pix_auto_recurring_payment_id', $paymentId);
+                }
+                if ($consentId !== null && $consentId !== '') {
+                    $q->orWhere('metadata->linaopenx_pix_auto_consent_id', $consentId)
+                        ->orWhere('gateway_id', $consentId);
+                }
+                if ($recurringPaymentId !== null && $recurringPaymentId !== '') {
+                    $q->orWhere('gateway_id', $recurringPaymentId)
+                        ->orWhere('metadata->linaopenx_pix_auto_recurring_payment_id', $recurringPaymentId);
                 }
             })
             ->first();
@@ -141,6 +157,44 @@ class LinaOpenxWebhookController extends Controller
             if (is_string($v) && trim($v) !== '') {
                 return trim($v);
             }
+        }
+
+        return null;
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    private function extractConsentId(array $payload): ?string
+    {
+        foreach (['consentId', 'consent_id', 'recurringConsentId', 'recurring_consent_id'] as $key) {
+            $v = $payload[$key] ?? null;
+            if (is_string($v) && trim($v) !== '') {
+                return trim($v);
+            }
+        }
+        $data = $payload['data'] ?? null;
+        if (is_array($data)) {
+            return $this->extractConsentId($data);
+        }
+
+        return null;
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    private function extractRecurringPaymentId(array $payload): ?string
+    {
+        foreach (['recurringPaymentId', 'recurring_payment_id'] as $key) {
+            $v = $payload[$key] ?? null;
+            if (is_string($v) && trim($v) !== '') {
+                return trim($v);
+            }
+        }
+        $data = $payload['data'] ?? null;
+        if (is_array($data)) {
+            return $this->extractRecurringPaymentId($data);
         }
 
         return null;
