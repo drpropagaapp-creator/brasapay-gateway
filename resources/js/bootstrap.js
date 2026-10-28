@@ -8,6 +8,22 @@ window.axios.defaults.xsrfHeaderName = 'X-XSRF-TOKEN';
 // Axios 1.x: envia o cookie XSRF em requests same-origin com credentials.
 window.axios.defaults.withXSRFToken = true;
 
+// Checkout embutido no site de outra pessoa (iframe cross-site): avisa o servidor para usar
+// o cookie de sessão particionado. Fora disso (acesso direto, prévia do builder) a sessão usa
+// o cookie normal — duas cópias do cookie quebravam o login/2FA.
+(function markCrossSiteEmbed() {
+    if (typeof window === 'undefined' || window.top === window.self) return;
+    let crossSite = false;
+    try {
+        crossSite = window.top.location.origin !== window.location.origin;
+    } catch (_) {
+        crossSite = true;
+    }
+    if (crossSite) {
+        window.axios.defaults.headers.common['X-Checkout-Embed'] = '1';
+    }
+})();
+
 // CSRF: meta → X-CSRF-TOKEN. Não enviar o valor plain da meta em X-XSRF-TOKEN
 // (Laravel espera o cookie XSRF-TOKEN criptografado, decodificado pelo axios/cookie).
 function getCsrfToken() {
