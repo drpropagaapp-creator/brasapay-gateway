@@ -111,7 +111,7 @@ function defaultIntegrationModes() {
     const modes = {};
     for (const item of props.platform_integrations) modes[item.id] = 'inherit';
     if (!Object.keys(modes).length) {
-        for (const id of ['webhook', 'utmify', 'spedy', 'cademi']) modes[id] = 'inherit';
+        for (const id of ['webhook', 'utmify', 'spedy', 'cademi', 'uazapi', 'evolution', 'mcp']) modes[id] = 'inherit';
     }
     return modes;
 }

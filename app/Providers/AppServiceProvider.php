@@ -165,6 +165,13 @@ class AppServiceProvider extends ServiceProvider
             return Limit::perMinute($perMinute)->by($key);
         });
 
+        RateLimiter::for('mcp', function (Request $request) {
+            $token = (string) ($request->bearerToken() ?: $request->header('X-MCP-Token', ''));
+            $identity = $token !== '' ? 'token:'.hash('sha256', $token) : 'ip:'.$request->ip();
+
+            return Limit::perMinute(60)->by('mcp:'.$identity);
+        });
+
         $checkoutLimits = config('getfy.checkout_security.rate_limits', []);
 
         RateLimiter::for('checkout-pay', function (Request $request) use ($checkoutLimits) {

@@ -66,6 +66,7 @@ class DemoMode
             'plataforma.logout',
             'demo.login.admin',
             'demo.login.seller',
+            'mcp.handle',
         ];
     }
 
