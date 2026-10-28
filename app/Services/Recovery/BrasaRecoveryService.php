@@ -38,7 +38,7 @@ class BrasaRecoveryService
         $tenantIds = Setting::query()->where('key', RecoveryEmailSettings::KEY)->whereNotNull('tenant_id')->pluck('tenant_id');
         foreach ($tenantIds as $tenantId) {
             $cfg = RecoveryEmailSettings::forTenant((int) $tenantId);
-            if (! $cfg['enabled']) {
+            if (! $cfg['enabled'] || ! $this->tenantCanSend((int) $tenantId)) {
                 continue;
             }
             foreach ($this->candidates((int) $tenantId, $cfg) as $c) {
@@ -232,32 +232,25 @@ class BrasaRecoveryService
             .'<p style="margin-top:28px;font-size:12px;color:#71717a">Não quer mais receber estes lembretes? <a href="'.e($optOut).'">Descadastrar</a>.</p></div>';
     }
 
+    /**
+     * Só pelo e-mail de envio do PRÓPRIO seller. O texto é escrito pelo seller e vai para
+     * endereços digitados no checkout: cair no SMTP da plataforma permitiria usar a identidade
+     * da BrasaPay para mandar o que o seller quisesse (phishing).
+     */
     protected function send(int $tenantId, string $email, string $subject, string $html): void
     {
-        $attempts = [];
-        if ($this->mail->isEmailConfigured($tenantId)) {
-            $attempts[] = fn () => $this->mail->applyMailerConfigForTenant($tenantId, [], null);
+        if (! $this->mail->isEmailConfigured($tenantId)) {
+            throw new \RuntimeException('O seller não configurou o próprio e-mail de envio.');
         }
-        if ($this->mail->isEmailConfigured(null)) {
-            $attempts[] = fn () => $this->mail->applyPlatformGlobalMailerConfig();
-        }
-        if ($attempts === []) {
-            throw new \RuntimeException('Nenhum SMTP configurado.');
-        }
-        $last = null;
-        foreach ($attempts as $apply) {
-            try {
-                $apply();
-                $this->mail->assertSmtpHostIsConfigured();
-                Mail::purge('smtp');
-                Mail::mailer('smtp')->to($email)->send(new SubscriptionReminderMail($subject, $html));
+        $this->mail->applyMailerConfigForTenant($tenantId, [], null);
+        $this->mail->assertSmtpHostIsConfigured();
+        Mail::purge('smtp');
+        Mail::mailer('smtp')->to($email)->send(new SubscriptionReminderMail($subject, $html));
+    }
 
-                return;
-            } catch (\Throwable $e) {
-                $last = $e;
-            }
-        }
-        throw $last;
+    protected function tenantCanSend(int $tenantId): bool
+    {
+        return $this->mail->isEmailConfigured($tenantId);
     }
 
     /**

@@ -28,6 +28,11 @@ class BrasaRecoveryTest extends TestCase
         Carbon::setTestNow(Carbon::parse('2026-10-29 12:00:00', 'America/Sao_Paulo')->setTimezone(config('app.timezone')));
         $this->app->bind(BrasaRecoveryService::class, fn ($app) => new class($app->make(TenantMailConfigService::class)) extends BrasaRecoveryService
         {
+            protected function tenantCanSend(int $tenantId): bool
+            {
+                return true;
+            }
+
             protected function send(int $tenantId, string $email, string $subject, string $html): void
             {
                 BrasaRecoveryTest::$sent[] = compact('email', 'subject', 'html');
@@ -140,6 +145,17 @@ class BrasaRecoveryTest extends TestCase
         $msg = RecoveryMessage::query()->firstOrFail();
         $this->assertSame((string) $order->id, $msg->recovered_order_id);
         $this->assertSame(19700, $msg->recovered_amount_cents);
+    }
+
+    public function test_nunca_usa_o_smtp_da_plataforma_para_texto_do_seller(): void
+    {
+        AppModelsSetting::set('smtp_host', 'smtp.plataforma.test', null);
+        $this->abandoned($this->seller(), 'alvo@x.com', 40);
+
+        // Serviço real (sem o dublê do setUp): seller sem e-mail próprio não envia nada.
+        (new BrasaRecoveryService(app(TenantMailConfigService::class)))->run();
+
+        $this->assertSame(0, RecoveryMessage::query()->count());
     }
 
     public function test_link_de_descadastro_exige_assinatura(): void

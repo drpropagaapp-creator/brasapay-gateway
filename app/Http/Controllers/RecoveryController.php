@@ -27,8 +27,9 @@ class RecoveryController extends Controller
 
         return Inertia::render('Recovery/Index', [
             'settings' => RecoveryEmailSettings::forTenant($tenantId),
-            'smtp_ready' => app(TenantMailConfigService::class)->isEmailConfigured($tenantId)
-                || app(TenantMailConfigService::class)->isEmailConfigured(null),
+            // Recuperação só sai pelo e-mail do próprio seller (nunca pelo da plataforma).
+            'smtp_ready' => app(TenantMailConfigService::class)->isEmailConfigured($tenantId),
+            'can_edit' => ! $request->user()->isTeam(),
             'stats' => [
                 'sent' => (clone $base)->where('status', 'sent')->count(),
                 'failed' => (clone $base)->where('status', 'failed')->count(),
@@ -53,6 +54,8 @@ class RecoveryController extends Controller
 
     public function update(Request $request): RedirectResponse
     {
+        // Texto que sai em nome do seller: só o titular edita.
+        abort_if($request->user()->isTeam(), 403);
         $request->validate([
             'enabled' => ['required', 'boolean'],
             'quiet_start' => ['required', 'integer', 'min:0', 'max:23'],

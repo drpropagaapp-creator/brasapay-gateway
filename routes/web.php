@@ -1152,6 +1152,12 @@ Route::middleware(['auth', 'admin.tenant', 'seller.panel', 'stacker.license', 'r
     Route::get('/relatorios', [\App\Http\Controllers\RelatoriosController::class, 'index'])
         ->middleware('team.permission:relatorios.view')
         ->name('relatorios.index');
+    Route::get('/crm', [\App\Http\Controllers\CrmController::class, 'index'])
+        ->middleware('team.permission:vendas.view')->name('crm.index');
+    Route::get('/crm/contato/{key}', [\App\Http\Controllers\CrmController::class, 'show'])
+        ->middleware('team.permission:vendas.view')->where('key', '[A-Za-z0-9_-]{4,300}')->name('crm.show');
+    Route::put('/crm/contato/{key}', [\App\Http\Controllers\CrmController::class, 'update'])
+        ->middleware(['team.permission:vendas.view', 'throttle:60,1'])->where('key', '[A-Za-z0-9_-]{4,300}')->name('crm.update');
     Route::get('/recuperacao', [\App\Http\Controllers\RecoveryController::class, 'index'])
         ->middleware('team.permission:integracoes.view')
         ->name('recovery.index');

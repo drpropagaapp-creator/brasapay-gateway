@@ -14,6 +14,7 @@ defineOptions({ layout: LayoutInfoprodutor });
 const props = defineProps({
     settings: { type: Object, required: true },
     smtp_ready: { type: Boolean, default: false },
+    can_edit: { type: Boolean, default: true },
     stats: { type: Object, required: true },
     by_event: { type: [Object, Array], default: () => ({}) },
     recent: { type: Array, default: () => [] },
@@ -55,7 +56,7 @@ function save() {
         </div>
 
         <p v-if="!smtp_ready" class="rounded-2xl bg-amber-50 p-3 text-sm text-amber-800 dark:bg-amber-950/30 dark:text-amber-300">
-            Nenhum e-mail de envio configurado (nem o seu, nem o da plataforma). Configure em Integrações para os e-mails saírem.
+            Configure o seu e-mail de envio (Configurações → E-mail) para os lembretes saírem. Por segurança, a recuperação nunca usa o e-mail da plataforma.
         </p>
 
         <div class="grid grid-cols-2 gap-3 lg:grid-cols-4">
@@ -92,7 +93,8 @@ function save() {
                 </div>
                 <button v-if="form.events[key].steps.length < 3" type="button" class="mt-2 inline-flex items-center gap-1 text-sm text-[var(--color-primary)]" @click="addStep(key)"><Plus class="h-4 w-4" /> Adicionar passo</button>
             </div>
-            <Button type="button" :disabled="saving" @click="save">Salvar</Button>
+            <Button v-if="can_edit" type="button" :disabled="saving" @click="save">Salvar</Button>
+            <p v-else class="text-xs text-zinc-500">Só o titular da conta pode alterar os textos.</p>
         </section>
 
         <section class="rounded-2xl border border-zinc-200 bg-white p-5 dark:border-zinc-700 dark:bg-zinc-900/80">

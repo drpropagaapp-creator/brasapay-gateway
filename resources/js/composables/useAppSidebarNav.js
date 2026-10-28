@@ -27,6 +27,7 @@ import {
     Activity,
     Code2,
     MailCheck,
+    Contact,
 } from 'lucide-vue-next';
 import { useI18n } from '@/composables/useI18n';
 
@@ -100,6 +101,7 @@ export function useAppSidebarNav() {
                 href: '/vendas',
                 icon: CircleDollarSign,
             });
+            items.push({ name: t('sidebar.crm', 'Clientes (CRM)'), href: '/crm', icon: Contact });
             if (page.props.api_pix_enabled_effective) {
                 items.push({
                     name: t('sidebar.api_transactions', 'Transações API'),
