@@ -42,7 +42,7 @@ class TreasuryReconciliationTest extends TestCase
         ]);
     }
 
-    private function run(): array
+    private function reconcile(): array
     {
         return (new TreasuryReconciliationService)->run();
     }
@@ -51,8 +51,8 @@ class TreasuryReconciliationTest extends TestCase
     {
         $order = $this->order($this->seller());
 
-        $this->run();
-        $this->run();
+        $this->reconcile();
+        $this->reconcile();
 
         $rows = TreasuryDiscrepancy::query()->where('kind', 'order_paid_without_credit')->get();
         $this->assertCount(1, $rows, 'A mesma ocorrência não duplica entre execuções.');
@@ -60,7 +60,7 @@ class TreasuryReconciliationTest extends TestCase
         $this->assertSame(10000, $rows[0]->amount_cents);
 
         $this->credit($order, 100);
-        $this->run();
+        $this->reconcile();
 
         $row = $rows[0]->fresh();
         $this->assertSame(TreasuryDiscrepancy::STATUS_RESOLVED, $row->status);
@@ -75,7 +75,7 @@ class TreasuryReconciliationTest extends TestCase
         $this->credit($order, 150); // crédito acima do pedido
         $txBefore = WalletTransaction::query()->count();
 
-        $this->run();
+        $this->reconcile();
 
         $this->assertSame(1, TreasuryDiscrepancy::query()->where('kind', 'credit_above_order')->where('amount_cents', 5000)->count());
         $this->assertSame($txBefore, WalletTransaction::query()->count());
@@ -88,7 +88,7 @@ class TreasuryReconciliationTest extends TestCase
         $pending = $this->credit($order, 100, WalletTransaction::TYPE_CREDIT_SALE_PENDING, ['released_at' => now()->toIso8601String()]);
         $this->credit($order, 100, WalletTransaction::TYPE_CREDIT_SALE, ['from_pending_wallet_transaction_id' => $pending->id]);
 
-        $this->run();
+        $this->reconcile();
 
         $this->assertSame(0, TreasuryDiscrepancy::query()->where('kind', 'credit_above_order')->count());
     }
@@ -107,7 +107,7 @@ class TreasuryReconciliationTest extends TestCase
         ]);
         $paidNoDebit = $mk(['status' => 'paid', 'payout_provider' => 'woovi']);
 
-        $this->run();
+        $this->reconcile();
 
         $this->assertSame(TreasuryDiscrepancy::STATUS_INVESTIGATING, TreasuryDiscrepancy::query()->where('withdrawal_id', $exhausted->id)->value('status'));
         $this->assertSame('withdrawal_failed_without_refund', TreasuryDiscrepancy::query()->where('withdrawal_id', $failed->id)->value('kind'));
@@ -122,7 +122,7 @@ class TreasuryReconciliationTest extends TestCase
             'amount_gross' => 100, 'amount_fee' => 0, 'amount_net' => 90, 'meta' => ['held_net' => 90, 'hold_mode' => 'available_to_pending'],
         ]);
 
-        $this->run();
+        $this->reconcile();
 
         $this->assertSame(9000, (int) TreasuryDiscrepancy::query()->where('kind', 'med_hold_open_outside_dispute')->value('amount_cents'));
     }
@@ -130,7 +130,7 @@ class TreasuryReconciliationTest extends TestCase
     public function test_painel_so_para_admin_e_mudanca_de_status_exige_justificativa(): void
     {
         $this->order($this->seller());
-        $this->run();
+        $this->reconcile();
         $row = TreasuryDiscrepancy::query()->firstOrFail();
         $admin = User::factory()->create(['role' => User::ROLE_PLATFORM_ADMIN]);
         $seller = $this->seller();
@@ -147,7 +147,7 @@ class TreasuryReconciliationTest extends TestCase
         $this->assertSame(1, PlatformAuditLog::query()->where('action', 'platform.treasury.discrepancy_status')->count());
 
         // Ignorada continua ignorada mesmo que a ocorrência persista.
-        $this->run();
+        $this->reconcile();
         $this->assertSame(TreasuryDiscrepancy::STATUS_IGNORED, $row->fresh()->status);
     }
 }
