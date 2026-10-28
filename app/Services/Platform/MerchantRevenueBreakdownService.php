@@ -125,32 +125,16 @@ class MerchantRevenueBreakdownService
             return 0.0;
         }
 
-        $txs = WalletTransaction::query()
-            ->whereIn('order_id', $orderIds)
-            ->whereIn('type', [WalletTransaction::TYPE_CREDIT_SALE, WalletTransaction::TYPE_CREDIT_SALE_PENDING])
-            ->get(['order_id', 'type', 'amount_fee'])
-            ->groupBy('order_id');
-
-        $total = 0.0;
-        foreach ($orderIds as $oid) {
-            $group = $txs->get($oid, collect());
-            if ($group->isEmpty()) {
-                continue;
-            }
-            $hasReleasedSale = $group->contains(
-                fn (WalletTransaction $t) => $t->type === WalletTransaction::TYPE_CREDIT_SALE
-            );
-            if ($hasReleasedSale) {
-                $total += (float) $group
-                    ->where('type', WalletTransaction::TYPE_CREDIT_SALE)
-                    ->sum('amount_fee');
-            } else {
-                $total += (float) $group
-                    ->where('type', WalletTransaction::TYPE_CREDIT_SALE_PENDING)
-                    ->sum('amount_fee');
-            }
+        // Taxa de cada parte uma única vez (inclui reserva/parcelas ainda pendentes).
+        $total = '0';
+        foreach ($orderIds->chunk(1000) as $chunk) {
+            $sum = WalletTransaction::query()
+                ->whereIn('order_id', $chunk->all())
+                ->originalSaleFeeLines()
+                ->sum('amount_fee');
+            $total = bcadd($total, sprintf('%.2F', (float) $sum), 2);
         }
 
-        return $total;
+        return (float) $total;
     }
 }

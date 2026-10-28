@@ -6,6 +6,7 @@ use App\Models\Order;
 use App\Models\WalletTransaction;
 use App\Models\Withdrawal;
 use App\Services\Payout\GatewayPayoutEconomics;
+use App\Services\MerchantWithdrawalService;
 use App\Services\Payout\PlatformPayoutGateway;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
@@ -50,7 +51,8 @@ class PlatformRevenueKpis
 
         $custoSaques = 0.0;
         if (Schema::hasTable('withdrawals')) {
-            $wdQ = Withdrawal::query()->where('status', 'completed');
+            // Saque concluído é "paid" (não existe "completed" em withdrawals): antes o custo saía sempre 0.
+            $wdQ = Withdrawal::query()->where('status', MerchantWithdrawalService::STATUS_PAID);
             if ($start && $end) {
                 $wdQ->whereBetween('created_at', [$start, $end]);
             } elseif ($start) {
@@ -152,7 +154,12 @@ class PlatformRevenueKpis
     }
 
     /**
-     * Soma taxas sem duplicar: após liberação existem credit_sale_pending (com released_at) e credit_sale com o mesmo fee.
+     * Soma a taxa de cada parte da venda uma única vez (em centavos):
+     * - credit_sale_pending: toda parte que nasceu pendente (principal, reserva, parcela), liberada ou não;
+     * - credit_sale direto (D+0 sem reserva).
+     * O credit_sale criado na liberação (meta.from_pending_wallet_transaction_id) repete a taxa da
+     * parte pendente e fica de fora. Antes, havendo qualquer credit_sale, as partes ainda pendentes
+     * eram ignoradas e a receita de taxas saía menor.
      *
      * @param  Collection<int, int>  $orderIds
      */
@@ -162,32 +169,16 @@ class PlatformRevenueKpis
             return 0.0;
         }
 
-        $txs = WalletTransaction::query()
-            ->whereIn('order_id', $orderIds)
-            ->whereIn('type', [WalletTransaction::TYPE_CREDIT_SALE, WalletTransaction::TYPE_CREDIT_SALE_PENDING])
-            ->get(['order_id', 'type', 'amount_fee'])
-            ->groupBy('order_id');
-
-        $total = 0.0;
-        foreach ($orderIds as $oid) {
-            $group = $txs->get($oid, collect());
-            if ($group->isEmpty()) {
-                continue;
-            }
-            $hasReleasedSale = $group->contains(
-                fn (WalletTransaction $t) => $t->type === WalletTransaction::TYPE_CREDIT_SALE
-            );
-            if ($hasReleasedSale) {
-                $total += (float) $group
-                    ->where('type', WalletTransaction::TYPE_CREDIT_SALE)
-                    ->sum('amount_fee');
-            } else {
-                $total += (float) $group
-                    ->where('type', WalletTransaction::TYPE_CREDIT_SALE_PENDING)
-                    ->sum('amount_fee');
-            }
+        $total = '0';
+        foreach ($orderIds->chunk(1000) as $chunk) {
+            // SUM de decimal no banco; acumula como string decimal (bcmath) para não perder centavos.
+            $sum = WalletTransaction::query()
+                ->whereIn('order_id', $chunk->all())
+                ->originalSaleFeeLines()
+                ->sum('amount_fee');
+            $total = bcadd($total, sprintf('%.2F', (float) $sum), 2);
         }
 
-        return $total;
+        return (float) $total;
     }
 }

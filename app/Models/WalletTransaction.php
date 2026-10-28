@@ -78,6 +78,22 @@ class WalletTransaction extends Model
      * No PostgreSQL o operador JSON do Eloquent (meta->chave) falha com boolean/json;
      * o backfill de afiliados já usa ->> por isso.
      */
+    /**
+     * Linhas que carregam a taxa de venda uma única vez: toda parte que nasceu pendente
+     * (credit_sale_pending, liberada ou não) + credit_sale direto. O credit_sale criado na
+     * liberação (meta.from_pending_wallet_transaction_id) repete a taxa e fica de fora.
+     */
+    public function scopeOriginalSaleFeeLines(Builder $query): Builder
+    {
+        return $query->where(function (Builder $q) {
+            $q->where('type', self::TYPE_CREDIT_SALE_PENDING)
+                ->orWhere(function (Builder $inner) {
+                    $inner->where('type', self::TYPE_CREDIT_SALE)
+                        ->whereRaw(\App\Support\SqlDialect::jsonKeyMissingOrEmpty('meta', 'from_pending_wallet_transaction_id'));
+                });
+        });
+    }
+
     public function scopeCoproductionCommission(Builder $query): Builder
     {
         return $query->where(function (Builder $q) {
