@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Http\Controllers\Concerns\LogsSellerActivity;
 use App\Models\CademiIntegration;
+use App\Models\McpCredential;
 use App\Models\Product;
 use App\Models\SpedyIntegration;
 use App\Models\EvolutionInstance;
@@ -11,6 +12,7 @@ use App\Models\UazapiInstance;
 use App\Models\UtmifyIntegration;
 use App\Models\Webhook;
 use App\Plugins\PluginRegistry;
+use App\Services\Mcp\McpCredentialService;
 use App\Services\SellerActivityLogService;
 use App\Services\SellerIntegrationVisibility;
 use Illuminate\Http\RedirectResponse;
@@ -126,9 +128,25 @@ class IntegrationsController extends Controller
             'cademi_integrations' => in_array(SellerIntegrationVisibility::CADEMI, $visibleIds, true) ? $cademiIntegrations : [],
             'uazapi' => $uazapi,
             'evolution' => $evolution,
+            'mcp' => $this->mcpPayload($visibleIds, $tenantId !== null ? (int) $tenantId : null),
             'products' => $products,
             'visible_integrations' => $visibleIds,
         ]);
+    }
+
+    /**
+     * @param  list<string>  $visibleIds
+     * @return array<string, mixed>|null
+     */
+    private function mcpPayload(array $visibleIds, ?int $tenantId): ?array
+    {
+        if (! in_array(SellerIntegrationVisibility::MCP, $visibleIds, true) || $tenantId === null) {
+            return null;
+        }
+
+        $credential = McpCredential::query()->forTenant($tenantId)->first();
+
+        return app(McpCredentialService::class)->toPublicArray($credential, url('/mcp'));
     }
 
     public function enablePlugin(string $slug): RedirectResponse

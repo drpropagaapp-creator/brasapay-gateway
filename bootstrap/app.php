@@ -48,6 +48,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'checkout/pixel/events',
             'checkout/pixel/purchase-ack',
             'api/metrics/collect',
+            'mcp',
         ]);
 
         $middleware->web(prepend: [

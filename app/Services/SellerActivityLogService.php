@@ -243,6 +243,12 @@ class SellerActivityLogService
 
     public const INTEGRATION_EVOLUTION_UPDATED = 'integration.evolution.updated';
 
+    public const INTEGRATION_MCP_ACTIVATED = 'integration.mcp.activated';
+
+    public const INTEGRATION_MCP_ROTATED = 'integration.mcp.rotated';
+
+    public const INTEGRATION_MCP_REVOKED = 'integration.mcp.revoked';
+
     public const DISPUTE_DEFENSE_SUBMITTED = 'dispute.defense.submitted';
 
     public const DISPUTE_DOSSIER_GENERATED = 'dispute.dossier.generated';
@@ -356,6 +362,9 @@ class SellerActivityLogService
         self::INTEGRATION_EVOLUTION_CONNECTED => ['group' => self::GROUP_INTEGRATION, 'label' => 'Conectou Evolution API'],
         self::INTEGRATION_EVOLUTION_DISCONNECTED => ['group' => self::GROUP_INTEGRATION, 'label' => 'Desconectou Evolution API'],
         self::INTEGRATION_EVOLUTION_UPDATED => ['group' => self::GROUP_INTEGRATION, 'label' => 'Atualizou Evolution API'],
+        self::INTEGRATION_MCP_ACTIVATED => ['group' => self::GROUP_INTEGRATION, 'label' => 'Ativou MCP'],
+        self::INTEGRATION_MCP_ROTATED => ['group' => self::GROUP_INTEGRATION, 'label' => 'Rotacionou token MCP'],
+        self::INTEGRATION_MCP_REVOKED => ['group' => self::GROUP_INTEGRATION, 'label' => 'Revogou MCP'],
         self::DISPUTE_DEFENSE_SUBMITTED => ['group' => self::GROUP_DISPUTE, 'label' => 'Enviou defesa de disputa MED'],
         self::DISPUTE_DOSSIER_GENERATED => ['group' => self::GROUP_DISPUTE, 'label' => 'Gerou dossiê de disputa MED'],
         self::SUBSCRIPTION_CANCELLED => ['group' => self::GROUP_SUBSCRIPTION, 'label' => 'Cancelou assinatura'],
@@ -552,6 +561,7 @@ class SellerActivityLogService
             self::INTEGRATION_WEBHOOK_CREATED, self::INTEGRATION_WEBHOOK_UPDATED, self::INTEGRATION_WEBHOOK_DELETED,
             self::INTEGRATION_UAZAPI_CONNECTED, self::INTEGRATION_UAZAPI_DISCONNECTED, self::INTEGRATION_UAZAPI_UPDATED, self::INTEGRATION_UAZAPI_CAMPAIGN,
             self::INTEGRATION_EVOLUTION_CONNECTED, self::INTEGRATION_EVOLUTION_DISCONNECTED, self::INTEGRATION_EVOLUTION_UPDATED,
+            self::INTEGRATION_MCP_ACTIVATED, self::INTEGRATION_MCP_ROTATED, self::INTEGRATION_MCP_REVOKED,
             self::AFFILIATE_SETTINGS_UPDATED => $label.self::namedSuffix($metadata, 'name'),
             self::STUDENT_CREATED, self::STUDENT_UPDATED, self::STUDENT_DELETED => $label.self::namedSuffix($metadata, 'email'),
             self::COPRODUCTION_INVITED, self::COPRODUCTION_REMOVED, self::COPRODUCTION_ACCEPTED => $label.self::namedSuffix($metadata, 'email'),
@@ -625,6 +635,9 @@ class SellerActivityLogService
         $path = ltrim($request->path(), '/');
         if (str_starts_with($path, 'api/')) {
             return 'api';
+        }
+        if ($path === 'mcp' || str_starts_with($path, 'mcp/')) {
+            return 'mcp';
         }
 
         return 'panel';

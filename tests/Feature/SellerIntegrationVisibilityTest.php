@@ -242,7 +242,8 @@ class SellerIntegrationVisibilityTest extends TestCase
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->component('Settings/Index')
-                ->has('seller_integrations_catalog', 6)
+                ->has('seller_integrations_catalog', 7)
+                ->where('settings.integration_mcp_enabled', false)
                 ->where('settings.integration_webhook_enabled', true)
                 ->where('settings.integration_uazapi_enabled', true)
                 ->where('settings.integration_evolution_enabled', true)

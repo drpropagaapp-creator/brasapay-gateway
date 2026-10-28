@@ -26,6 +26,8 @@ class SellerIntegrationVisibility
 
     public const EVOLUTION = 'evolution';
 
+    public const MCP = 'mcp';
+
     /**
      * Catálogo das apps da aba Integrações do infoprodutor.
      * Novas integrações entram aqui; use default false para manter fora de uso até o teste.
@@ -70,6 +72,12 @@ class SellerIntegrationVisibility
                 'label' => 'Evolution API',
                 'description' => 'Recuperação de carrinho e PIX pendente pelo WhatsApp via Evolution API do infoprodutor.',
                 'default' => true,
+            ],
+            [
+                'id' => self::MCP,
+                'label' => 'MCP',
+                'description' => 'Conecte Claude, ChatGPT ou outro cliente MCP para montar produtos, cupons e funis. Fica oculto até o teste.',
+                'default' => false,
             ],
         ];
     }

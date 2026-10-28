@@ -220,6 +220,10 @@ Route::middleware(['throttle:60,1', \App\Http\Middleware\LogInboundGatewayWebhoo
         ->name('webhooks.gateway');
 });
 
+Route::match(['post', 'options'], '/mcp', [\App\Http\Controllers\Mcp\McpServerController::class, 'handle'])
+    ->middleware('throttle:mcp')
+    ->name('mcp.handle');
+
 // Assets de plugins (imagens, etc.): GET /plugins/{slug}/assets/{path} — arquivos em plugins/{slug}/assets/
 Route::get('/plugins/{slug}/assets/{path}', \App\Http\Controllers\PluginAssetController::class)
     ->where('path', '.+')
@@ -1216,6 +1220,18 @@ Route::middleware(['auth', 'admin.tenant', 'seller.panel', 'stacker.license', 'r
             Route::post('/integracoes/evolution/{instance}/disconnect', [\App\Http\Controllers\EvolutionIntegrationController::class, 'disconnect'])->name('integrations.evolution.instance.disconnect')->whereNumber('instance');
             Route::post('/integracoes/evolution/{instance}/default', [\App\Http\Controllers\EvolutionIntegrationController::class, 'setDefault'])->name('integrations.evolution.instance.default')->whereNumber('instance');
             Route::delete('/integracoes/evolution/{instance}', [\App\Http\Controllers\EvolutionIntegrationController::class, 'destroy'])->name('integrations.evolution.instance.destroy')->whereNumber('instance');
+        });
+
+        Route::middleware('seller.integration:mcp')->group(function () {
+            Route::post('/integracoes/mcp', [\App\Http\Controllers\McpIntegrationController::class, 'store'])
+                ->middleware('throttle:10,1')
+                ->name('integrations.mcp.store');
+            Route::post('/integracoes/mcp/rotate', [\App\Http\Controllers\McpIntegrationController::class, 'rotate'])
+                ->middleware('throttle:10,1')
+                ->name('integrations.mcp.rotate');
+            Route::delete('/integracoes/mcp', [\App\Http\Controllers\McpIntegrationController::class, 'destroy'])
+                ->middleware('throttle:10,1')
+                ->name('integrations.mcp.destroy');
         });
 
         Route::middleware('seller.integration:webhook')->group(function () {

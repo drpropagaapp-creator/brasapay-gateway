@@ -9,6 +9,7 @@ import WebhookSidebar from '@/components/integrations/WebhookSidebar.vue';
 import CademiSidebar from '@/components/integrations/CademiSidebar.vue';
 import UazapiSidebar from '@/components/integrations/UazapiSidebar.vue';
 import EvolutionSidebar from '@/components/integrations/EvolutionSidebar.vue';
+import McpSidebar from '@/components/integrations/McpSidebar.vue';
 import { Zap } from 'lucide-vue-next';
 import { useI18n } from '@/composables/useI18n';
 
@@ -52,6 +53,12 @@ const APPS_BASE = [
         description: t('integrations.evolution.description', 'Recupere carrinhos abandonados e PIX pendentes pelo WhatsApp via Evolution API.'),
         image: 'images/integrations/Evolution.svg',
     },
+    {
+        id: 'mcp',
+        name: 'MCP',
+        description: t('integrations.mcp.description', 'Conecte Claude, ChatGPT ou outro cliente MCP para montar produtos, cupons e funis.'),
+        image: 'images/integrations/mcp.svg',
+    },
 ];
 
 const props = defineProps({
@@ -62,6 +69,7 @@ const props = defineProps({
     cademi_integrations: { type: Array, default: () => [] },
     uazapi: { type: Object, default: null },
     evolution: { type: Object, default: null },
+    mcp: { type: Object, default: null },
     products: { type: Array, default: () => [] },
     visible_integrations: { type: Array, default: () => ['webhook', 'utmify', 'spedy', 'cademi', 'uazapi', 'evolution'] },
 });
@@ -108,6 +116,12 @@ const APPS = computed(() => {
                 status: props.evolution?.configured && props.evolution?.is_active ? 'active' : undefined,
             };
         }
+        if (app.id === 'mcp') {
+            return {
+                ...app,
+                status: props.mcp?.connected ? 'active' : undefined,
+            };
+        }
         return app;
     });
 });
@@ -118,6 +132,7 @@ const spedySidebarOpen = ref(false);
 const cademiSidebarOpen = ref(false);
 const uazapiSidebarOpen = ref(false);
 const evolutionSidebarOpen = ref(false);
+const mcpSidebarOpen = ref(false);
 
 function openWebhookSidebar() {
     webhookSidebarOpen.value = true;
@@ -169,6 +184,18 @@ function closeEvolutionSidebar() {
     router.reload({ only: ['evolution'] });
 }
 
+function openMcpSidebar() {
+    mcpSidebarOpen.value = true;
+}
+
+function closeMcpSidebar() {
+    mcpSidebarOpen.value = false;
+}
+
+function onMcpSaved() {
+    router.reload({ only: ['mcp'] });
+}
+
 function onWebhookSaved() {
     router.reload();
 }
@@ -198,6 +225,8 @@ function onAppClick(app) {
         openUazapiSidebar();
     } else if (app.id === 'evolution') {
         openEvolutionSidebar();
+    } else if (app.id === 'mcp') {
+        openMcpSidebar();
     }
 }
 </script>
@@ -265,6 +294,12 @@ function onAppClick(app) {
             :open="evolutionSidebarOpen"
             :products="products"
             @close="closeEvolutionSidebar"
+        />
+        <McpSidebar
+            :open="mcpSidebarOpen"
+            :mcp="mcp"
+            @close="closeMcpSidebar"
+            @saved="onMcpSaved"
         />
     </div>
 </template>
