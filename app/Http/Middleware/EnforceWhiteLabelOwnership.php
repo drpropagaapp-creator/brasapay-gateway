@@ -95,6 +95,10 @@ class EnforceWhiteLabelOwnership
         if ($request->filled('order_id') && $primary !== 'order_id' && ! $this->ownsOrder($request->input('order_id'), $tenantId)) {
             return false;
         }
+        if ($request->filled('checkout_session_token') && $primary !== 'checkout_session_token'
+            && ! CheckoutSession::query()->where('session_token', (string) $request->input('checkout_session_token'))->where('tenant_id', $tenantId)->exists()) {
+            return false;
+        }
         $bumps = $request->input('order_bump_ids');
         if ($bumps !== null) {
             if (! is_array($bumps) || count($bumps) > 20) {
