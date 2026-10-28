@@ -318,6 +318,44 @@ class PlatformAdminAlertsTest extends TestCase
         }
     }
 
+    public function test_refund_pending_keeps_transacoes_badge_after_visit(): void
+    {
+        $this->withoutMiddleware([
+            EnsureInstalled::class,
+            EnsureStackerLicense::class,
+            ValidateCsrfToken::class,
+        ]);
+
+        if (! Schema::hasTable('orders')) {
+            $this->markTestSkipped('orders table');
+        }
+
+        $admin = $this->platformAdmin('plat-badge-refund-pending@example.com');
+        $seller = $this->seller('seller-badge-refund-pending@example.com');
+        $customer = User::factory()->create(['role' => User::ROLE_CLIENTE]);
+        $product = $this->createTestProduct(['tenant_id' => $seller->id]);
+        Order::query()->create([
+            'tenant_id' => $seller->id,
+            'user_id' => $customer->id,
+            'product_id' => $product->id,
+            'email' => $customer->email,
+            'amount' => 80,
+            'status' => 'refund_pending',
+            'gateway' => 'cajupay',
+            'payment_method' => 'card',
+        ]);
+
+        $counts = app(PlatformAdminAlertCounts::class);
+        $this->assertSame(1, $counts->sidebarBadges($admin)['transacoes']);
+
+        $this->actingAs($admin)
+            ->get(route('plataforma.transacoes.index'))
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->where('platform_admin_sidebar_badges.transacoes', 1)
+                ->where('refund_requests_pending_count', 1));
+    }
+
     private function platformAdmin(string $email): User
     {
         return User::factory()->create([

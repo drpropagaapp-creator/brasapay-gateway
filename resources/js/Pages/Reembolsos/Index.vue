@@ -81,6 +81,15 @@ function statusLabel(s) {
     return map[s] ?? s ?? '—';
 }
 
+function isAwaitingCaju(rr) {
+    return rr?.gateway_refund_status === 'gateway_pending'
+        || rr?.order?.status === 'refund_pending';
+}
+
+function isRefundedOnGateway(rr) {
+    return rr?.order?.status === 'refunded' || rr?.gateway_refund_status === 'gateway_ok';
+}
+
 function statusClass(s) {
     if (s === 'pending') return 'bg-amber-100 text-amber-900 dark:bg-amber-900/40 dark:text-amber-100';
     if (s === 'approved') return 'bg-emerald-100 text-emerald-900 dark:bg-emerald-900/40 dark:text-emerald-100';
@@ -235,7 +244,19 @@ function submitReject() {
                             <span class="inline-flex rounded-full px-2 py-0.5 text-xs font-medium" :class="statusClass(rr.status)">
                                 {{ statusLabel(rr.status) }}
                             </span>
-                            <button
+                            <p
+                                v-if="isAwaitingCaju(rr)"
+                                class="mt-1 text-xs font-medium text-amber-700 dark:text-amber-300"
+                            >
+                                Aguardando efetivação na CajuPay
+                            </p>
+                            <p
+                                v-else-if="rr.status === 'approved' && isRefundedOnGateway(rr)"
+                                class="mt-1 text-xs font-medium text-emerald-700 dark:text-emerald-300"
+                            >
+                                Reembolsado
+                            </p>
+                            <button>
                                 v-if="rr.customer_reason"
                                 type="button"
                                 class="mt-1 block max-w-xs truncate text-left text-xs text-[var(--color-primary)] underline-offset-2 hover:underline"
@@ -329,6 +350,18 @@ function submitReject() {
                             >
                                 {{ statusLabel(detailRequest.status) }}
                             </span>
+                            <p
+                                v-if="isAwaitingCaju(detailRequest)"
+                                class="mt-2 text-xs font-medium text-amber-700 dark:text-amber-300"
+                            >
+                                Aguardando efetivação na CajuPay
+                            </p>
+                            <p
+                                v-else-if="detailRequest.status === 'approved' && isRefundedOnGateway(detailRequest)"
+                                class="mt-2 text-xs font-medium text-emerald-700 dark:text-emerald-300"
+                            >
+                                Reembolsado
+                            </p>
                         </div>
                         <button
                             type="button"
@@ -374,6 +407,21 @@ function submitReject() {
                             </dd>
                         </div>
                     </dl>
+
+                    <div
+                        v-if="detailRequest.gateway_refund_note"
+                        class="mt-5"
+                    >
+                        <h3 class="text-sm font-medium text-zinc-900 dark:text-white">Situação na CajuPay</h3>
+                        <p
+                            class="mt-2 whitespace-pre-wrap rounded-xl border px-3 py-3 text-sm"
+                            :class="isAwaitingCaju(detailRequest)
+                                ? 'border-amber-200 bg-amber-50 text-amber-950 dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-100'
+                                : 'border-zinc-200 bg-zinc-50 text-zinc-800 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200'"
+                        >
+                            {{ detailRequest.gateway_refund_note }}
+                        </p>
+                    </div>
 
                     <div class="mt-5">
                         <h3 class="text-sm font-medium text-zinc-900 dark:text-white">Mensagem do comprador</h3>

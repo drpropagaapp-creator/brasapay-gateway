@@ -80,18 +80,10 @@ class TransactionsController extends Controller
             PlatformTransactionsListing::applyStatusFilter($query, $status);
             PlatformTransactionsListing::applySearchFilter($query, $q);
 
-            if (
-                $status === PlatformTransactionsListing::STATUS_REFUND_REQUESTS
-                && Schema::hasTable('refund_requests')
-            ) {
-                $query->reorder()->orderByDesc(
-                    RefundRequest::query()
-                        ->select('created_at')
-                        ->whereColumn('refund_requests.order_id', 'orders.id')
-                        ->where('status', RefundRequest::STATUS_PENDING)
-                        ->orderByDesc('id')
-                        ->limit(1)
-                );
+            if ($status === PlatformTransactionsListing::STATUS_REFUND_REQUESTS) {
+                $query->reorder()
+                    ->orderByRaw("CASE WHEN orders.status = 'refund_pending' THEN 0 ELSE 1 END")
+                    ->orderByDesc('orders.updated_at');
             }
 
             $paginated = $query->paginate($perPage)->withQueryString();

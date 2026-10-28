@@ -50,14 +50,13 @@ final class PlatformTransactionsListing
         }
 
         if ($status === self::STATUS_REFUND_REQUESTS) {
-            if (! Schema::hasTable('refund_requests')) {
-                $query->whereRaw('1 = 0');
-
-                return;
-            }
-
-            $query->whereHas('refundRequests', function ($rr) {
-                $rr->where('status', \App\Models\RefundRequest::STATUS_PENDING);
+            $query->where(function ($w) {
+                $w->where('orders.status', 'refund_pending');
+                if (Schema::hasTable('refund_requests')) {
+                    $w->orWhereHas('refundRequests', function ($rr) {
+                        $rr->where('status', \App\Models\RefundRequest::STATUS_PENDING);
+                    });
+                }
             });
 
             return;

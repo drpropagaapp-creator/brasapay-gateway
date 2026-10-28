@@ -10,6 +10,7 @@ use App\Models\RefundRequest;
 use App\Models\TenantWallet;
 use App\Models\WalletTransaction;
 use App\Services\AffiliateCommissionRecorder;
+use App\Support\CajuPayPaymentId;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -101,7 +102,7 @@ class PlatformOrderAdminService
         ?array $manualRefundMeta = null,
         string $debitReason = 'platform_manual_refund',
     ): string {
-        if (strtolower(trim((string) $order->gateway)) === 'xflow' && $gatewayStatus === 'gateway_pending') {
+        if (self::shouldAwaitGatewayWebhook($order, $gatewayStatus)) {
             self::beginPendingGatewayRefund($order, $manualRefundMeta, $debitReason);
 
             return 'refund_pending';
@@ -110,6 +111,20 @@ class PlatformOrderAdminService
         self::refundPaidOrDisputed($order, $manualRefundMeta, $debitReason);
 
         return 'refunded';
+    }
+
+    private static function shouldAwaitGatewayWebhook(Order $order, string $gatewayStatus): bool
+    {
+        if ($gatewayStatus !== 'gateway_pending') {
+            return false;
+        }
+
+        $slug = strtolower(trim((string) $order->gateway));
+        if ($slug === 'xflow') {
+            return true;
+        }
+
+        return $slug === 'cajupay' && ! CajuPayPaymentId::isPixPaymentMethod($order->payment_method);
     }
 
     /**
@@ -627,7 +642,15 @@ class PlatformOrderAdminService
 
         if ($order->status === 'refund_pending') {
             DB::transaction(function () use ($order) {
-                $order->update(['status' => 'refunded']);
+                $meta = is_array($order->metadata) ? $order->metadata : [];
+                unset($meta['cajupay_card_refund_pending'], $meta['cajupay_pix_refund_pending']);
+                if (array_key_exists('cajupay_card_refund_status', $meta)) {
+                    $meta['cajupay_card_refund_status'] = 'refunded';
+                }
+                $order->update([
+                    'status' => 'refunded',
+                    'metadata' => $meta,
+                ]);
                 self::ensureApprovedRefundRequestForGateway($order->fresh());
             });
             event(new OrderRefunded($order->fresh()));
@@ -652,16 +675,26 @@ class PlatformOrderAdminService
             return;
         }
 
-        $exists = RefundRequest::query()->where('order_id', $order->id)->exists();
-        if ($exists) {
-            RefundRequest::query()
-                ->where('order_id', $order->id)
-                ->where('status', RefundRequest::STATUS_PENDING)
-                ->update([
-                    'status' => RefundRequest::STATUS_APPROVED,
-                    'resolved_at' => now(),
-                    'gateway_refund_status' => 'gateway_ok',
-                ]);
+        $existing = RefundRequest::query()
+            ->where('order_id', $order->id)
+            ->orderByDesc('id')
+            ->first();
+        if ($existing !== null) {
+            if ($existing->status === RefundRequest::STATUS_REJECTED) {
+                return;
+            }
+
+            $payload = [
+                'gateway_refund_status' => 'gateway_ok',
+            ];
+            if (strtolower(trim((string) $order->gateway)) === 'cajupay') {
+                $payload['gateway_refund_note'] = 'Estorno confirmado pela CajuPay.';
+            }
+            if ($existing->status === RefundRequest::STATUS_PENDING) {
+                $payload['status'] = RefundRequest::STATUS_APPROVED;
+                $payload['resolved_at'] = now();
+            }
+            $existing->update($payload);
 
             return;
         }

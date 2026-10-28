@@ -43,6 +43,7 @@ function syncPayerFromProps() {
         name: props.initialPayer?.name,
         email: props.initialPayer?.email,
         document: props.initialPayer?.document,
+        phone: props.initialPayer?.phone,
     });
 }
 
