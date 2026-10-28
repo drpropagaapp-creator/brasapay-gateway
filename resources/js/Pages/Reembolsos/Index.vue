@@ -256,7 +256,7 @@ function submitReject() {
                             >
                                 Reembolsado
                             </p>
-                            <button>
+                            <button
                                 v-if="rr.customer_reason"
                                 type="button"
                                 class="mt-1 block max-w-xs truncate text-left text-xs text-[var(--color-primary)] underline-offset-2 hover:underline"
