@@ -22,7 +22,7 @@ class AnthropicProvider implements AiProvider
             apiKey: (string) AiAssistantSettings::apiKey(),
             requestOptions: [
                 // O SDK não aplica timeout sozinho: quem aplica é o transporte HTTP.
-                'transporter' => new GuzzleClient(['timeout' => (float) ($options['timeout'] ?? 45), 'connect_timeout' => 10]),
+                'transporter' => $options['transporter'] ?? new GuzzleClient(['timeout' => (float) ($options['timeout'] ?? 45), 'connect_timeout' => 10]),
                 'maxRetries' => 1,
             ],
         );

@@ -124,6 +124,54 @@ class BrasaAiTest extends TestCase
         $this->assertStringStartsWith('<dados_da_plataforma ferramenta="campanhas">', $wrapped);
     }
 
+    /** Provedor real + SDK oficial com transporte HTTP simulado: laço tool_use → tool_result → texto. */
+    public function test_provedor_anthropic_monta_o_laco_de_ferramentas(): void
+    {
+        $this->configure();
+        $json = fn (array $body) => new \GuzzleHttp\Psr7\Response(200, ['Content-Type' => 'application/json'], json_encode($body));
+        $usage = ['input_tokens' => 50, 'output_tokens' => 10];
+        $mock = new \GuzzleHttp\Handler\MockHandler([
+            $json(['id' => 'msg_1', 'type' => 'message', 'role' => 'assistant', 'model' => 'claude-opus-5-5', 'stop_reason' => 'tool_use', 'stop_sequence' => null, 'usage' => $usage,
+                'content' => [['type' => 'tool_use', 'id' => 'toolu_1', 'name' => 'vendas_resumo', 'input' => ['periodo' => '7d']]]]),
+            $json(['id' => 'msg_2', 'type' => 'message', 'role' => 'assistant', 'model' => 'claude-opus-5-5', 'stop_reason' => 'end_turn', 'stop_sequence' => null, 'usage' => $usage,
+                'content' => [['type' => 'text', 'text' => 'Você vendeu R$ 10,00.']]]),
+        ]);
+        $sent = [];
+        $stack = \GuzzleHttp\HandlerStack::create($mock);
+        $stack->push(\GuzzleHttp\Middleware::history($sent));
+
+        $ran = [];
+        $result = (new AnthropicProvider)->run('sistema', [], 'Quanto vendi?', [[
+            'name' => 'vendas_resumo', 'description' => 'Vendas.',
+            'schema' => ['type' => 'object', 'properties' => ['periodo' => ['type' => 'string', 'enum' => ['7d']]], 'required' => ['periodo'], 'additionalProperties' => false],
+        ]], function (string $name, array $input) use (&$ran) {
+            $ran[] = [$name, $input];
+
+            return ['receita' => 'R$ 10,00'];
+        }, ['model' => 'claude-opus-5-5', 'effort' => 'medium', 'transporter' => new \GuzzleHttp\Client(['handler' => $stack])]);
+
+        $this->assertSame('Você vendeu R$ 10,00.', $result->text);
+        $this->assertSame([['vendas_resumo', ['periodo' => '7d']]], $ran);
+        $this->assertSame(100, $result->inputTokens);
+        $this->assertCount(2, $sent);
+
+        $first = json_decode((string) $sent[0]['request']->getBody(), true);
+        $this->assertSame('claude-opus-5-5', $first['model']);
+        $this->assertTrue($first['tools'][0]['strict']);
+        $this->assertArrayHasKey('input_schema', $first['tools'][0]);
+        $this->assertSame('default', $first['fallbacks']);
+        $this->assertSame('medium', $first['output_config']['effort']);
+        $this->assertStringContainsString('server-side-fallback-2026-07-01', $sent[0]['request']->getHeaderLine('anthropic-beta'));
+        $this->assertSame('sk-ant-teste-0000000000', $sent[0]['request']->getHeaderLine('x-api-key'));
+
+        $second = json_decode((string) $sent[1]['request']->getBody(), true);
+        $toolResult = end($second['messages'])['content'][0];
+        $this->assertSame('tool_result', $toolResult['type']);
+        $this->assertSame('toolu_1', $toolResult['tool_use_id']);
+        $this->assertStringContainsString('<dados_da_plataforma ferramenta="vendas_resumo">', $toolResult['content']);
+        $this->assertSame('tool_use', $second['messages'][1]['content'][0]['type'], 'A resposta do modelo volta como veio (append-only).');
+    }
+
     public function test_so_admin_configura_e_a_chave_nao_volta_para_a_tela(): void
     {
         $s = $this->seller();
