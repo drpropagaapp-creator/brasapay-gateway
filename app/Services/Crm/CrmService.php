@@ -30,26 +30,37 @@ class CrmService
 
     private const PAID = ['completed'];
 
+    /**
+     * Estágio do cliente no ciclo de vida (exclusivo, nesta ordem de prioridade):
+     * lead = nunca pagou; em_risco = pagou, mas não compra há 90+ dias; alto_valor = R$ 1.000+ pagos;
+     * recorrente = 2+ compras pagas; novo = 1 compra paga.
+     */
+    public const STAGES = [
+        'lead' => 'Lead',
+        'novo' => 'Primeira compra',
+        'recorrente' => 'Recorrente',
+        'alto_valor' => 'Alto valor',
+        'em_risco' => 'Em risco',
+    ];
+
+    private const STAGE_SQL = "CASE
+        WHEN SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) = 0 THEN 'lead'
+        WHEN MAX(CASE WHEN status = 'completed' THEN created_at END) < ? THEN 'em_risco'
+        WHEN SUM(CASE WHEN status = 'completed' THEN amount ELSE 0 END) >= 1000 THEN 'alto_valor'
+        WHEN SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) >= 2 THEN 'recorrente'
+        ELSE 'novo' END";
+
     /** @param  list<string>|null  $allowedProducts  null = sem restrição (titular) */
-    public function contacts(int $tenantId, ?array $allowedProducts, string $segment = 'all', ?string $search = null, ?string $productId = null, int $perPage = 30): LengthAwarePaginator
+    public function contacts(int $tenantId, ?array $allowedProducts, string $segment = 'all', ?string $search = null, ?string $productId = null, int $perPage = 30, ?string $stage = null): LengthAwarePaginator
     {
         if ($segment === 'abandoned') {
             return $this->abandoned($tenantId, $allowedProducts, $search, $perPage);
         }
 
-        $q = $this->ordersScope($tenantId, $allowedProducts)
-            ->whereNotNull('email')->where('email', '!=', '')
-            ->when($productId, fn ($w) => $w->where('product_id', $productId))
-            ->when($search, fn ($w) => $w->where(fn ($s) => $s->whereRaw('LOWER(email) LIKE ?', ['%'.mb_strtolower($search).'%'])))
-            ->groupByRaw('LOWER(email)')
-            ->selectRaw("LOWER(email) as email,
-                MAX(phone) as phone,
-                SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as paid_orders,
-                SUM(CASE WHEN status = 'completed' THEN amount ELSE 0 END) as total_paid,
-                SUM(CASE WHEN status IN ('refunded','disputed','refund_pending') THEN 1 ELSE 0 END) as refunds,
-                SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) as pending_orders,
-                MAX(CASE WHEN status = 'completed' THEN created_at END) as last_paid_at,
-                MIN(created_at) as first_seen_at");
+        $q = $this->aggregate($tenantId, $allowedProducts, $productId, $search);
+        if ($stage !== null && array_key_exists($stage, self::STAGES)) {
+            $q->havingRaw(self::STAGE_SQL.' = ?', [now()->subDays(90), $stage]);
+        }
 
         match ($segment) {
             'recent' => $q->havingRaw("MAX(CASE WHEN status = 'completed' THEN created_at END) >= ?", [now()->subDays(30)]),
@@ -118,6 +129,111 @@ class CrmService
         );
     }
 
+    /** Um contato por e-mail (minúsculo), com totais e estágio. Base de lista, funil e resumo. */
+    private function aggregate(int $tenantId, ?array $allowedProducts, ?string $productId = null, ?string $search = null): Builder
+    {
+        return $this->ordersScope($tenantId, $allowedProducts)
+            ->whereNotNull('email')->where('email', '!=', '')
+            ->when($productId, fn ($w) => $w->where('product_id', $productId))
+            ->when($search, fn ($w) => $w->where(fn ($s) => $s->whereRaw('LOWER(email) LIKE ?', ['%'.mb_strtolower($search).'%'])))
+            ->groupByRaw('LOWER(email)')
+            ->selectRaw("LOWER(email) as email,
+                MAX(phone) as phone,
+                SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as paid_orders,
+                SUM(CASE WHEN status = 'completed' THEN amount ELSE 0 END) as total_paid,
+                SUM(CASE WHEN status IN ('refunded','disputed','refund_pending') THEN 1 ELSE 0 END) as refunds,
+                SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) as pending_orders,
+                MAX(CASE WHEN status = 'completed' THEN created_at END) as last_paid_at,
+                MIN(created_at) as first_seen_at,
+                ".self::STAGE_SQL.' as stage', [now()->subDays(90)]);
+    }
+
+    /**
+     * Resumo do CRM: totais e, por estágio, quantas pessoas e quanto já pagaram.
+     *
+     * @return array{contacts: int, buyers: int, revenue: float, avg_ltv: float, repeat_rate: float|null, stages: array<string, array{count: int, revenue: float}>}
+     */
+    public function summary(int $tenantId, ?array $allowedProducts, ?string $productId = null): array
+    {
+        $rows = DB::query()->fromSub($this->aggregate($tenantId, $allowedProducts, $productId), 'c')
+            ->groupBy('stage')
+            ->selectRaw('stage, COUNT(*) as n, COALESCE(SUM(total_paid), 0) as revenue, SUM(CASE WHEN paid_orders >= 2 THEN 1 ELSE 0 END) as repeaters')
+            ->get()->keyBy('stage');
+
+        $stages = [];
+        foreach (array_keys(self::STAGES) as $s) {
+            $stages[$s] = ['count' => (int) ($rows[$s]->n ?? 0), 'revenue' => round((float) ($rows[$s]->revenue ?? 0), 2)];
+        }
+        $contacts = array_sum(array_column($stages, 'count'));
+        $buyers = $contacts - $stages['lead']['count'];
+        $revenue = round(array_sum(array_column($stages, 'revenue')), 2);
+        $repeaters = (int) $rows->sum('repeaters');
+
+        return [
+            'contacts' => $contacts,
+            'buyers' => $buyers,
+            'revenue' => $revenue,
+            'avg_ltv' => $buyers > 0 ? round($revenue / $buyers, 2) : 0.0,
+            'repeat_rate' => $buyers > 0 ? round($repeaters / $buyers, 4) : null,
+            'stages' => $stages,
+        ];
+    }
+
+    /** Funil: os contatos mais recentes de cada estágio. */
+    public function pipeline(int $tenantId, ?array $allowedProducts, ?string $productId = null, int $perStage = 12): array
+    {
+        $out = [];
+        foreach (array_keys(self::STAGES) as $stage) {
+            $out[$stage] = collect($this->contacts($tenantId, $allowedProducts, 'all', null, $productId, $perStage, $stage)->items())->values()->all();
+        }
+
+        return $out;
+    }
+
+    /**
+     * Trilha de compras: os últimos pedidos de cada e-mail (status, valor, data), do mais antigo ao mais novo.
+     *
+     * @param  list<string>  $emails
+     * @return array<string, list<array{s: string, v: float, d: string|null}>>
+     */
+    public function trails(int $tenantId, ?array $allowedProducts, array $emails, int $max = 12): array
+    {
+        if ($emails === []) {
+            return [];
+        }
+        $out = [];
+        $this->ordersScope($tenantId, $allowedProducts)->whereIn(DB::raw('LOWER(email)'), $emails)
+            ->orderBy('created_at', 'desc')->limit(count($emails) * 40)
+            ->get(['email', 'status', 'amount', 'created_at'])
+            ->each(function ($o) use (&$out, $max) {
+                $e = mb_strtolower((string) $o->email);
+                if (count($out[$e] ?? []) < $max) {
+                    $out[$e][] = ['s' => (string) $o->status, 'v' => (float) $o->amount, 'd' => $o->created_at?->toDateString()];
+                }
+            });
+
+        return array_map('array_reverse', $out);
+    }
+
+    /**
+     * E-mails gerados por integrações quando o comprador não informa um (ex.: Telegram, PixGo).
+     * Retorna o rótulo a exibir ou null quando é um e-mail de verdade.
+     */
+    public static function placeholderLabel(string $email): ?string
+    {
+        if (preg_match('/^tg(\d{5,})@sem-email\./i', $email, $m)) {
+            return 'Telegram '.$m[1];
+        }
+        if (str_ends_with($email, '@pixgo.local')) {
+            return 'PixGo';
+        }
+        if (preg_match('/@(sem-email\.[a-z0-9.-]+|[^@]+\.invalid)$/i', $email)) {
+            return 'Integração';
+        }
+
+        return null;
+    }
+
     private function ordersScope(int $tenantId, ?array $allowedProducts): Builder
     {
         return Order::query()->where('tenant_id', $tenantId)
@@ -165,6 +281,8 @@ class CrmService
                 'pending_orders' => (int) $row->pending_orders,
                 'last_paid_at' => $row->last_paid_at ? \Illuminate\Support\Carbon::parse($row->last_paid_at)->toIso8601String() : null,
                 'first_seen_at' => $row->first_seen_at ? \Illuminate\Support\Carbon::parse($row->first_seen_at)->toIso8601String() : null,
+                'stage' => $row->stage ?? 'lead',
+                'placeholder' => self::placeholderLabel((string) $row->email),
                 'tags' => $meta->get($row->email)?->tags ?? [],
             ];
         });

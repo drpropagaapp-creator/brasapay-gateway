@@ -85,4 +85,38 @@ class BrasaCrmTest extends TestCase
         $this->assertSame(['VIP', 'mentoria'], $meta->tags);
         $this->assertSame('Ligar na sexta', $meta->notes);
     }
+
+    public function test_estagios_resumo_funil_e_contato_sem_email(): void
+    {
+        $s = $this->seller();
+        $this->order($s, 'lead@x.com', 'pending', 97, 2);
+        $this->order($s, 'novo@x.com', 'completed', 97, 5);
+        $this->order($s, 'rec@x.com', 'completed', 50, 20);
+        $this->order($s, 'rec@x.com', 'completed', 50, 3);
+        $this->order($s, 'vip@x.com', 'completed', 1500, 10);
+        $this->order($s, 'sumiu@x.com', 'completed', 2000, 120);
+        $this->order($s, 'tg7158265228@sem-email.apextrack', 'completed', 6, 1);
+
+        $crm = app(CrmService::class);
+        $sum = $crm->summary($s->id, null);
+        $this->assertSame(1, $sum['stages']['lead']['count']);
+        $this->assertSame(2, $sum['stages']['novo']['count']);
+        $this->assertSame(1, $sum['stages']['recorrente']['count']);
+        $this->assertSame(1, $sum['stages']['alto_valor']['count']);
+        $this->assertSame(1, $sum['stages']['em_risco']['count'], 'Quem pagou muito mas sumiu há 90+ dias está em risco.');
+        $this->assertSame(6, $sum['buyers']);
+        $this->assertSame(3653.0, $sum['revenue']);
+
+        $risk = $crm->contacts($s->id, null, 'all', null, null, 30, 'em_risco')->items();
+        $this->assertSame(['sumiu@x.com'], array_column($risk, 'email'));
+        $this->assertSame(['lead', 'novo', 'recorrente', 'alto_valor', 'em_risco'], array_keys($crm->pipeline($s->id, null)));
+        $this->assertSame('Telegram 7158265228', CrmService::placeholderLabel('tg7158265228@sem-email.apextrack'));
+        $this->assertSame('PixGo', CrmService::placeholderLabel('pixgo+abc@pixgo.local'));
+        $this->assertNull(CrmService::placeholderLabel('maria@gmail.com'));
+
+        $trail = $crm->trails($s->id, null, ['rec@x.com']);
+        $this->assertCount(2, $trail['rec@x.com']);
+        $this->actingAs($s)->get('/crm?view=funil')->assertOk();
+        $this->actingAs($s)->get('/crm?stage=em_risco')->assertOk();
+    }
 }
