@@ -48,7 +48,7 @@ class PlatformDashboardRevenueTest extends TestCase
             'metadata' => [],
         ]);
 
-        WalletTransaction::query()->create([
+        $pendingLine = WalletTransaction::query()->create([
             'tenant_id' => $seller->id,
             'order_id' => $order->id,
             'bucket' => 'pix',
@@ -66,7 +66,8 @@ class PlatformDashboardRevenueTest extends TestCase
             'amount_gross' => 100,
             'amount_fee' => 10.00,
             'amount_net' => 90,
-            'meta' => [],
+            // Como o SettlementReleaseService grava ao liberar a parte pendente.
+            'meta' => ['from_pending_wallet_transaction_id' => $pendingLine->id],
         ]);
 
         $this->actingAs($admin)
