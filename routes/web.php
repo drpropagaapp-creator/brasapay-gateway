@@ -1322,6 +1322,11 @@ Route::middleware(['auth', 'customer.panel'])->group(function () {
     Route::get('/painel-cliente', [\App\Http\Controllers\CustomerPanelController::class, 'index'])->name('painel-cliente.index');
     Route::get('/painel-cliente/marketplace', [\App\Http\Controllers\CustomerMarketplaceController::class, 'index'])->name('painel-cliente.marketplace');
     Route::post('/painel-cliente/reembolso', [\App\Http\Controllers\CustomerPanelController::class, 'requestRefund'])->name('painel-cliente.refund')->middleware('throttle:20,1');
+    Route::get('/painel-cliente/assinaturas', [\App\Http\Controllers\CustomerSubscriptionsController::class, 'index'])->name('painel-cliente.subscriptions');
+    Route::post('/painel-cliente/assinaturas/{subscription}/cancelar', [\App\Http\Controllers\CustomerSubscriptionsController::class, 'cancel'])
+        ->whereNumber('subscription')->middleware('throttle:20,1')->name('painel-cliente.subscriptions.cancel');
+    Route::post('/painel-cliente/assinaturas/{subscription}/reativar', [\App\Http\Controllers\CustomerSubscriptionsController::class, 'reactivate'])
+        ->whereNumber('subscription')->middleware('throttle:20,1')->name('painel-cliente.subscriptions.reactivate');
 });
 
 Route::post('/painel/idioma', [\App\Http\Controllers\PanelLanguageController::class, 'switch'])

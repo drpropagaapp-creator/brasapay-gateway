@@ -32,6 +32,13 @@ class ExpireSubscriptionsCommand extends Command
         $reminders = app(SubscriptionReminderService::class);
         $today = Carbon::today();
         foreach ($toPastDue as $subscription) {
+            // Assinante pediu o cancelamento: no fim do período pago encerra, sem cobrança nem lembrete.
+            if ($subscription->cancel_at_period_end) {
+                $subscription->update(['status' => Subscription::STATUS_CANCELLED]);
+                event(new SubscriptionCancelled($subscription->fresh()));
+
+                continue;
+            }
             $subscription->update(['status' => Subscription::STATUS_PAST_DUE]);
             $fresh = $subscription->fresh();
             if (! $fresh) {

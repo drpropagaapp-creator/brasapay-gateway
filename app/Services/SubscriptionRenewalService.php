@@ -222,6 +222,8 @@ class SubscriptionRenewalService
             'status' => Subscription::STATUS_ACTIVE,
             'current_period_start' => $periodStart,
             'current_period_end' => $periodEnd,
+            // Pagou de novo: desfaz um pedido de cancelamento pendente.
+            'cancel_at_period_end' => false,
         ];
         if ((int) $subscription->subscription_plan_id !== (int) $plan->id) {
             $patch['subscription_plan_id'] = $plan->id;

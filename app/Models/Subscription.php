@@ -23,6 +23,10 @@ class Subscription extends Model
         'saved_payment_method_id',
         'gateway_subscription_id',
         'renewal_token',
+        'cancel_at_period_end',
+        'cancellation_requested_at',
+        'cancellation_reason',
+        'cancellation_note',
     ];
 
     protected function casts(): array
@@ -30,6 +34,8 @@ class Subscription extends Model
         return [
             'current_period_start' => 'date',
             'current_period_end' => 'date',
+            'cancel_at_period_end' => 'boolean',
+            'cancellation_requested_at' => 'datetime',
         ];
     }
 

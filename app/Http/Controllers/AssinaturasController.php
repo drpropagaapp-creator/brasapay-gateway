@@ -43,15 +43,12 @@ class AssinaturasController extends Controller
         $ativas = (clone $statsQuery)->where('status', Subscription::STATUS_ACTIVE)->count();
         $clientes = (clone $statsQuery)->where('status', Subscription::STATUS_ACTIVE)->distinct('user_id')->count('user_id');
 
-        $mrrQuery = Subscription::forTenant($tenantId)
-            ->where('status', Subscription::STATUS_ACTIVE)
-            ->join('subscription_plans', 'subscriptions.subscription_plan_id', '=', 'subscription_plans.id')
-            ->where('subscription_plans.interval', '!=', 'lifetime');
-        if (auth()->user()?->isTeam()) {
-            $allowed = app(TeamAccessService::class)->allowedProductIdsFor(auth()->user());
-            $mrrQuery->whereIn('subscriptions.product_id', $allowed ?: ['__none__']);
-        }
-        $mrr = round((float) $mrrQuery->sum('subscription_plans.price'), 2);
+        // MRR mensalizado por intervalo (antes somava o preço cheio: um plano anual contava 12× a mais).
+        $metrics = app(\App\Services\Subscriptions\SubscriptionMetricsService::class)->metrics(
+            (int) $tenantId,
+            auth()->user()?->isTeam() ? array_map('strval', app(TeamAccessService::class)->allowedProductIdsFor(auth()->user())) : null
+        );
+        $mrr = $metrics['mrr'];
 
         $listQuery = clone $baseQuery;
         if ($statusFilter !== 'all') {
@@ -81,6 +78,7 @@ class AssinaturasController extends Controller
                 'clientes' => $clientes,
                 'mrr' => $mrr,
             ],
+            'metrics' => $metrics + ['reason_labels' => \App\Http\Controllers\CustomerSubscriptionsController::REASONS],
             'assinaturas' => $assinaturas,
             'status_filter' => $statusFilter,
         ]);

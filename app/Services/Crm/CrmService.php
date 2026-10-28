@@ -59,7 +59,7 @@ class CrmService
                 ->havingRaw("MAX(CASE WHEN status = 'completed' THEN created_at END) < ?", [now()->subDays(90)]),
             'unpaid' => $q->havingRaw("SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) = 0")
                 ->havingRaw("SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) >= 1"),
-            'past_due' => $q->whereIn(DB::raw('LOWER(email)'), $this->pastDueEmails($tenantId)),
+            'past_due' => $q->whereIn(DB::raw('LOWER(email)'), $this->pastDueEmails($tenantId, $allowedProducts)),
             default => null,
         };
 
@@ -97,6 +97,8 @@ class CrmService
                 'utm_source' => is_array($o->metadata) ? ($o->metadata['utm_source'] ?? null) : null,
             ])->values(),
             'subscriptions' => Subscription::query()->where('tenant_id', $tenantId)
+                // Equipe: só assinaturas dos produtos que o membro pode ver.
+                ->when($allowedProducts !== null, fn ($q) => $q->whereIn('product_id', $allowedProducts ?: ['__none__']))
                 ->whereHas('user', fn ($u) => $u->whereRaw('LOWER(email) = ?', [$email]))
                 ->with('product:id,name')->get()
                 ->map(fn ($s) => ['product' => $s->product?->name, 'status' => $s->status, 'current_period_end' => $s->current_period_end?->toDateString()])->values(),
@@ -123,9 +125,10 @@ class CrmService
     }
 
     /** @return list<string> */
-    private function pastDueEmails(int $tenantId): array
+    private function pastDueEmails(int $tenantId, ?array $allowedProducts): array
     {
-        return Subscription::query()->where('tenant_id', $tenantId)->where('status', Subscription::STATUS_PAST_DUE)
+        return Subscription::query()->where('subscriptions.tenant_id', $tenantId)->where('subscriptions.status', Subscription::STATUS_PAST_DUE)
+            ->when($allowedProducts !== null, fn ($q) => $q->whereIn('subscriptions.product_id', $allowedProducts ?: ['__none__']))
             ->join('users', 'users.id', '=', 'subscriptions.user_id')
             ->pluck(DB::raw('LOWER(users.email)'))->filter()->unique()->values()->all();
     }

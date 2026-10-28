@@ -14,6 +14,7 @@ const props = defineProps({
     stats: { type: Object, default: () => ({ ativas: 0, clientes: 0, mrr: 0 }) },
     assinaturas: { type: [Array, Object], default: () => [] },
     status_filter: { type: String, default: 'active' },
+    metrics: { type: Object, default: null },
 });
 
 const assinaturasList = computed(() => props.assinaturas?.data ?? (Array.isArray(props.assinaturas) ? props.assinaturas : []));
@@ -93,6 +94,21 @@ function statusBadgeLabel(status) {
                     </div>
                 </div>
             </div>
+        </div>
+
+        <!-- Recorrência: MRR mensalizado por intervalo; churn e motivos de cancelamento -->
+        <div v-if="metrics" class="grid grid-cols-2 gap-3 lg:grid-cols-5">
+            <div class="rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-700 dark:bg-zinc-800"><p class="text-xs text-zinc-500">ARR</p><p class="mt-1 text-lg font-semibold">{{ formatBRL(metrics.arr) }}</p></div>
+            <div class="rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-700 dark:bg-zinc-800"><p class="text-xs text-zinc-500">MRR em risco</p><p class="mt-1 text-lg font-semibold">{{ formatBRL(metrics.mrr_at_risk) }}</p><p class="text-xs text-zinc-500">{{ metrics.cancel_requested }} pediram cancelamento</p></div>
+            <div class="rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-700 dark:bg-zinc-800"><p class="text-xs text-zinc-500">Churn 30 dias</p><p class="mt-1 text-lg font-semibold">{{ metrics.churn_30d === null ? '—' : `${(metrics.churn_30d * 100).toFixed(1)}%` }}</p></div>
+            <div class="rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-700 dark:bg-zinc-800"><p class="text-xs text-zinc-500">Pagamento pendente</p><p class="mt-1 text-lg font-semibold">{{ metrics.past_due }}</p></div>
+            <div class="rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-700 dark:bg-zinc-800"><p class="text-xs text-zinc-500">Renovam em 7 dias</p><p class="mt-1 text-lg font-semibold">{{ metrics.renewals_7d }}</p></div>
+        </div>
+        <div v-if="metrics && Object.keys(metrics.cancel_reasons_90d || {}).length" class="rounded-xl border border-zinc-200 bg-white p-4 text-sm dark:border-zinc-700 dark:bg-zinc-800">
+            <p class="font-medium">Motivos de cancelamento (90 dias)</p>
+            <ul class="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-zinc-600 dark:text-zinc-300">
+                <li v-for="(n, key) in metrics.cancel_reasons_90d" :key="key">{{ metrics.reason_labels?.[key] || key }}: <b>{{ n }}</b></li>
+            </ul>
         </div>
 
         <div class="rounded-xl border border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-800">

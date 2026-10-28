@@ -34,6 +34,7 @@ class SubscriptionReminderService
 
         $subscriptions = Subscription::with(['user', 'product', 'subscriptionPlan'])
             ->whereIn('status', [Subscription::STATUS_ACTIVE, Subscription::STATUS_PAST_DUE])
+            ->where(fn ($q) => $q->where('cancel_at_period_end', false)->orWhereNull('cancel_at_period_end'))
             ->whereNotNull('current_period_end')
             ->whereBetween('current_period_end', [$windowStart->toDateString(), $windowEnd->toDateString()])
             ->get();

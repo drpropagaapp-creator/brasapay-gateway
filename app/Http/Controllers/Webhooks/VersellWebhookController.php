@@ -322,7 +322,10 @@ class VersellWebhookController extends Controller
             1,
             VersellPixAutoLifecycleService::SKIP_REMOTE_CANCEL_TTL_SECONDS
         );
-        if ($toCancel !== null && in_array($toCancel->status, [Subscription::STATUS_ACTIVE, Subscription::STATUS_PAST_DUE], true)) {
+        // Se o próprio assinante pediu o cancelamento (autorização revogada por nós), o acesso
+        // segue até o fim do período pago; o subscriptions:expire-due encerra na data certa.
+        $cancelledBySubscriber = $toCancel !== null && $toCancel->status === Subscription::STATUS_ACTIVE && $toCancel->cancel_at_period_end;
+        if ($toCancel !== null && ! $cancelledBySubscriber && in_array($toCancel->status, [Subscription::STATUS_ACTIVE, Subscription::STATUS_PAST_DUE], true)) {
             $toCancel->update(['status' => Subscription::STATUS_CANCELLED]);
             event(new SubscriptionCancelled($toCancel->fresh()));
         }

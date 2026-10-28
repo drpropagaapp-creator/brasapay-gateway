@@ -28,6 +28,7 @@ import {
     Code2,
     MailCheck,
     Contact,
+    Repeat,
 } from 'lucide-vue-next';
 import { useI18n } from '@/composables/useI18n';
 
@@ -86,6 +87,7 @@ export function useAppSidebarNav() {
             return [
                 { name: t('customer.sidebar.purchases', 'Minhas compras'), href: '/painel-cliente', icon: Package },
                 { name: t('customer.sidebar.marketplace', 'Marketplace'), href: '/painel-cliente/marketplace', icon: Store },
+                { name: t('customer.sidebar.subscriptions', 'Minhas assinaturas'), href: '/painel-cliente/assinaturas', icon: Repeat },
             ];
         }
 

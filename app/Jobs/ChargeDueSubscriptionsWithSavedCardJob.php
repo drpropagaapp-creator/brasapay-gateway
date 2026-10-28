@@ -27,6 +27,8 @@ class ChargeDueSubscriptionsWithSavedCardJob
 
         $subscriptions = Subscription::query()
             ->where('status', Subscription::STATUS_ACTIVE)
+            // Assinante pediu para cancelar ao fim do período: não renova.
+            ->where(fn ($q) => $q->where('cancel_at_period_end', false)->orWhereNull('cancel_at_period_end'))
             ->whereNotNull('saved_payment_method_id')
             ->whereNotNull('current_period_end')
             ->whereDate('current_period_end', '=', $today->toDateString())
