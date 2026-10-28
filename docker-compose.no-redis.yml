@@ -23,6 +23,9 @@ services:
       GETFY_APP_URL: ${GETFY_APP_URL:-http://localhost}
       GETFY_WEBHOOK_PUBLIC_URL: ${GETFY_WEBHOOK_PUBLIC_URL:-}
       PORT: "80"
+      # Processos do servidor web (php artisan serve --no-reload): sem isso é 1 requisição por vez
+      # e uma cobrança lenta na adquirente trava o site inteiro.
+      PHP_CLI_SERVER_WORKERS: ${GETFY_PHP_WORKERS:-8}
       APP_INSTALLED: ${GETFY_APP_INSTALLED:-true}
       APP_AUTO_MIGRATE: ${GETFY_APP_AUTO_MIGRATE:-false}
       DB_CONNECTION: ${GETFY_DB_CONNECTION:-pgsql}
