@@ -293,7 +293,7 @@ onUnmounted(() => {
         />
 
         <AuroraPageSection>
-            <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <div class="grid grid-cols-2 gap-3 sm:grid-cols-2 lg:grid-cols-4">
                 <AuroraStatCard
                     :icon="Users"
                     :label="t('students.total', 'Total de alunos')"

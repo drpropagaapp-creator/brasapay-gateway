@@ -40,16 +40,16 @@ const { t } = useI18n();
         class="pn-topbar relative z-[40] w-full shrink-0 px-1 pb-2 pt-2 lg:pb-4 lg:pt-1"
         :class="isMobile && isMobileOpen ? 'pointer-events-none' : ''"
     >
+        <button
+            v-if="isMobile && !isMobileOpen"
+            type="button"
+            class="pn-iconbtn pn-keep-shape pn-topbar__menu shrink-0"
+            aria-label="Abrir menu"
+            @click="toggleSidebar"
+        >
+            <Menu class="h-5 w-5" />
+        </button>
         <div class="pn-topbar__title min-w-0 flex-1">
-            <button
-                v-if="isMobile && !isMobileOpen"
-                type="button"
-                class="pn-iconbtn pn-keep-shape shrink-0"
-                aria-label="Abrir menu"
-                @click="toggleSidebar"
-            >
-                <Menu class="h-5 w-5" />
-            </button>
             <div v-if="isDashboard && !customerPanel" class="min-w-0">
                 <h1 class="pn-page-title truncate">
                     Olá{{ firstName ? `, ${firstName}` : '' }}<span class="pn-dot">.</span>
@@ -97,12 +97,30 @@ const { t } = useI18n();
         letter-spacing: var(--tracking-heading);
     }
 }
+/* Celular: menu e ferramentas na primeira linha, título com a largura toda embaixo. */
 @media (max-width: 639px) {
     .pn-topbar {
         flex-wrap: wrap;
+        row-gap: 12px;
+    }
+    .pn-topbar__menu {
+        order: 1;
     }
     .pn-topbar__tools {
+        order: 2;
+        margin-left: auto;
         gap: 8px;
+    }
+    .pn-topbar__title {
+        order: 3;
+        flex-basis: 100%;
+    }
+    .pn-topbar__title p {
+        white-space: normal;
+    }
+    .pn-page-title {
+        font-size: 24px;
+        line-height: 30px;
     }
 }
 </style>

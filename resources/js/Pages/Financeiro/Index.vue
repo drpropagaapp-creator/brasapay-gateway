@@ -702,9 +702,9 @@ const inputClass =
 
         <!-- Grelha de saldos -->
         <section v-if="wallet" class="space-y-4">
-            <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <div class="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">
                 <div
-                    class="relative overflow-hidden rounded-2xl border-2 border-[var(--color-primary)]/35 bg-white p-5 shadow-sm dark:border-[var(--color-primary)]/40 dark:bg-zinc-900/80"
+                    class="relative overflow-hidden rounded-2xl border-2 border-[var(--color-primary)]/35 bg-white p-4 shadow-sm sm:p-5 dark:border-[var(--color-primary)]/40 dark:bg-zinc-900/80"
                 >
                     <div class="flex items-start justify-between gap-2">
                         <div class="flex h-10 w-10 items-center justify-center rounded-xl bg-[var(--color-primary)]/10 text-[var(--color-primary)]">
@@ -712,16 +712,16 @@ const inputClass =
                         </div>
                     </div>
                     <p class="mt-3 text-xs font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">{{ t('finance.available_balance', 'Saldo disponível') }}</p>
-                    <p class="mt-1 text-2xl font-bold tabular-nums text-zinc-900 dark:text-white">{{ formatBRL(wallet.available_total) }}</p>
+                    <p class="mt-1 text-xl font-bold tabular-nums sm:text-2xl text-zinc-900 dark:text-white">{{ formatBRL(wallet.available_total) }}</p>
                     <p class="mt-1 text-[11px] text-zinc-500 dark:text-zinc-400">{{ t('finance.ready_for_withdrawal', 'Pronto para saque') }}</p>
                 </div>
 
-                <div class="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-700 dark:bg-zinc-900/80">
+                <div class="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm sm:p-5 dark:border-zinc-700 dark:bg-zinc-900/80">
                     <div class="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-500/10 text-amber-700 dark:text-amber-400">
                         <Clock class="h-5 w-5" aria-hidden="true" />
                     </div>
                     <p class="mt-3 text-xs font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">{{ t('finance.pending_receive', 'A receber') }}</p>
-                    <p class="mt-1 text-2xl font-bold tabular-nums text-zinc-900 dark:text-white">{{ formatBRL(wallet.pending_total) }}</p>
+                    <p class="mt-1 text-xl font-bold tabular-nums sm:text-2xl text-zinc-900 dark:text-white">{{ formatBRL(wallet.pending_total) }}</p>
                     <p
                         v-if="!pendingReceiveByDate.length"
                         class="mt-1 text-[11px] text-zinc-500 dark:text-zinc-400"
@@ -754,20 +754,20 @@ const inputClass =
 
                 <div
                     v-if="hasReservePending"
-                    class="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-700 dark:bg-zinc-900/80"
+                    class="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm sm:p-5 dark:border-zinc-700 dark:bg-zinc-900/80"
                 >
                     <div class="flex h-10 w-10 items-center justify-center rounded-xl bg-violet-500/10 text-violet-700 dark:text-violet-300">
                         <Shield class="h-5 w-5" aria-hidden="true" />
                     </div>
                     <p class="mt-3 text-xs font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Reserva financeira</p>
-                    <p class="mt-1 text-2xl font-bold tabular-nums text-zinc-900 dark:text-white">
+                    <p class="mt-1 text-xl font-bold tabular-nums sm:text-2xl text-zinc-900 dark:text-white">
                         {{ formatBRL(wallet.reserve_pending_total) }}
                     </p>
                     <p class="mt-1 text-[11px] text-zinc-500 dark:text-zinc-400">Retida até liberar</p>
                 </div>
 
                 <div
-                    class="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-700 dark:bg-zinc-900/80 sm:col-span-2 xl:col-span-1"
+                    class="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm sm:p-5 dark:border-zinc-700 dark:bg-zinc-900/80 col-span-2 xl:col-span-1"
                 >
                     <div class="flex h-10 w-10 items-center justify-center rounded-xl bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
                         <Wallet class="h-5 w-5" aria-hidden="true" />
@@ -839,10 +839,10 @@ const inputClass =
 
         <!-- Abas -->
         <div class="rounded-2xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-700 dark:bg-zinc-900/60">
-            <div class="flex border-b border-zinc-200 dark:border-zinc-700">
+            <div class="flex overflow-x-auto border-b border-zinc-200 dark:border-zinc-700">
                 <button
                     type="button"
-                    class="flex items-center gap-2 border-b-2 px-5 py-3.5 text-sm font-medium transition-colors"
+                    class="flex shrink-0 items-center gap-2 whitespace-nowrap border-b-2 px-4 py-3.5 text-sm font-medium transition-colors sm:px-5"
                     :class="
                         activeTab === 'extrato'
                             ? 'border-[var(--color-primary)] text-[var(--color-primary)]'
@@ -855,7 +855,7 @@ const inputClass =
                 </button>
                 <button
                     type="button"
-                    class="flex items-center gap-2 border-b-2 px-5 py-3.5 text-sm font-medium transition-colors"
+                    class="flex shrink-0 items-center gap-2 whitespace-nowrap border-b-2 px-4 py-3.5 text-sm font-medium transition-colors sm:px-5"
                     :class="
                         activeTab === 'seus-dados'
                             ? 'border-[var(--color-primary)] text-[var(--color-primary)]'
@@ -868,7 +868,7 @@ const inputClass =
                 </button>
                 <button
                     type="button"
-                    class="flex items-center gap-2 border-b-2 px-5 py-3.5 text-sm font-medium transition-colors"
+                    class="flex shrink-0 items-center gap-2 whitespace-nowrap border-b-2 px-4 py-3.5 text-sm font-medium transition-colors sm:px-5"
                     :class="
                         activeTab === 'dados'
                             ? 'border-[var(--color-primary)] text-[var(--color-primary)]'

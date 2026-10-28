@@ -149,7 +149,7 @@ function onProductChange(e) {
                 </template>
             </MetricsNav>
 
-            <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5">
+            <div class="grid grid-cols-2 gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5">
                 <AuroraStatCard label="Visitantes únicos" :value="String(summary.unique_visitors || 0)" :icon="Users" />
                 <AuroraStatCard label="Sessões" :value="String(summary.sessions || 0)" :icon="MousePointerClick" />
                 <AuroraStatCard label="Cliques" :value="String(summary.clicks || 0)" :icon="MousePointerClick" />

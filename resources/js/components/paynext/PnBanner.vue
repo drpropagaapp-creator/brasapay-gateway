@@ -29,7 +29,7 @@ const emit = defineEmits(['dismiss']);
         <button
             v-if="dismissible"
             type="button"
-            class="pn-iconbtn pn-keep-shape shrink-0"
+            class="pn-iconbtn pn-keep-shape pn-banner__close shrink-0"
             style="width: 34px; height: 34px"
             aria-label="Fechar aviso"
             @click="emit('dismiss')"

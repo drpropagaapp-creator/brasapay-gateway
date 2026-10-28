@@ -219,7 +219,8 @@ html:not(.dark) :is(button, a).bg-zinc-900 {
 }
 
 /* ── Controles em pílula ──────────────────────────────────────────────── */
-:is(button, [role='button'], input[type='submit'], input[type='button']):is(.rounded, .rounded-md, .rounded-lg, .rounded-xl):not(.pn-keep-shape),
+/* Cards clicáveis (div/li com role=button) mantêm o canto do card; só botões viram pílula. */
+:is(button, [role='button']:not(div, li, tr, article, section), input[type='submit'], input[type='button']):is(.rounded, .rounded-md, .rounded-lg, .rounded-xl):not(.pn-keep-shape),
 a:is(.rounded, .rounded-md, .rounded-lg):is([class*='px-'], [class*=' py-']):not(.pn-keep-shape) {
     border-radius: var(--radius-full);
 }
@@ -550,4 +551,17 @@ html:not(.dark) :is(.text-sky-400, .text-sky-500, .text-cyan-400, .text-cyan-500
     border-radius: 20px;
     background: var(--bg-surface);
     color: var(--text-primary);
+}
+
+/* Celular: campo com fonte < 16px faz o iOS dar zoom na página ao tocar (e a tela "sai do lugar").
+   Também aumenta a área de toque das abas segmentadas. */
+@media (max-width: 639px) {
+    input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='color']):not([type='file']),
+    select,
+    textarea {
+        font-size: 16px !important;
+    }
+    .pn-seg .pn-tab {
+        height: 36px;
+    }
 }

@@ -242,7 +242,7 @@ function pluginActions(productId) {
                         <div class="relative shrink-0" :data-product-menu="p.id">
                             <button
                                 type="button"
-                                class="flex h-7 w-7 items-center justify-center rounded-lg text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-700 dark:hover:text-zinc-200"
+                                class="flex h-9 w-9 items-center sm:h-7 sm:w-7 justify-center rounded-lg text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-700 dark:hover:text-zinc-200"
                                 aria-label="Abrir menu"
                                 aria-expanded="openMenuId === p.id"
                                 @click="toggleMenu(p.id)"

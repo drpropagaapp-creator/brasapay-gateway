@@ -27,10 +27,12 @@ const hot = computed(() => (props.highlight == null ? props.data.length - 1 : pr
             />
         </div>
         <div v-if="labels" class="mt-2 flex gap-2">
+            <!-- Celular: com muitas barras, um rótulo sim e um não (o destaque sempre aparece), sem cortar o texto. -->
             <span
                 v-for="(l, k) in labels"
                 :key="k"
-                class="flex-1 truncate text-center text-[10.5px] font-light"
+                class="min-w-0 flex-1 whitespace-nowrap text-center text-[10.5px] font-light sm:truncate"
+                :class="labels.length > 7 && (hot - k) % 2 !== 0 ? 'max-sm:invisible' : ''"
                 :style="{ color: k === hot ? 'var(--text-primary)' : 'var(--text-tertiary)' }"
             >{{ l }}</span>
         </div>

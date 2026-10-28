@@ -38,4 +38,32 @@ const parts = computed(() => {
     font: 400 28px/34px var(--font-display);
     letter-spacing: var(--tracking-heading);
 }
+/* Celular: dois cards por linha, então tudo um pouco menor. */
+@media (max-width: 639px) {
+    .pn-stat-card {
+        padding: 14px 14px;
+        gap: 8px;
+    }
+    .pn-stat-card .pn-kpi__top {
+        align-items: flex-start;
+        gap: 6px;
+        font-size: 12px;
+        line-height: 16px;
+    }
+    .pn-stat-card .pn-kpi__top > span:first-child {
+        white-space: normal;
+    }
+    .pn-stat-card .pn-kpi__icon {
+        width: 30px;
+        height: 30px;
+    }
+    .pn-stat-card .pn-kpi__icon svg {
+        width: 16px;
+        height: 16px;
+    }
+    .pn-stat-card .pn-kpi__value {
+        font-size: 20px;
+        line-height: 26px;
+    }
+}
 </style>

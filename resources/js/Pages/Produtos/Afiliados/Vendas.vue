@@ -47,7 +47,7 @@ function openDetail(venda) {
             <p class="mt-1 text-sm text-zinc-500">Vendas originadas pelos seus links de afiliado.</p>
         </div>
         <AfiliadoTabs />
-        <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div class="grid grid-cols-2 gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <AuroraStatCard label="Receita aprovada" :value="formatBRL(stats.comissao_aprovada)" :icon="CircleDollarSign" />
             <AuroraStatCard label="Vendas" :value="String(stats.total_vendas ?? 0)" :icon="ShoppingCart" />
         </div>

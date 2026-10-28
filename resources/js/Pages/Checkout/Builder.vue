@@ -414,7 +414,7 @@ const inputClass =
 </script>
 
 <template>
-    <div class="flex min-h-0 flex-col gap-6 max-lg:h-[calc(100dvh-11rem)] lg:h-[calc(100dvh-4.5rem)]">
+    <div class="flex min-h-0 flex-col gap-6 lg:h-[calc(100dvh-4.5rem)]">
         <div class="shrink-0">
             <nav class="text-sm text-zinc-500 dark:text-zinc-400" aria-label="Breadcrumb">
                 <Link href="/produtos" class="hover:text-zinc-700 dark:hover:text-zinc-300">Produtos</Link>
@@ -430,7 +430,7 @@ const inputClass =
         <div class="flex min-h-0 flex-1 flex-col gap-6 lg:flex-row">
             <!-- Sidebar esquerda: rolagem apenas aqui -->
             <div
-                class="min-h-0 w-full flex-1 space-y-4 overflow-y-auto overscroll-y-contain [-webkit-overflow-scrolling:touch] lg:flex-none lg:shrink-0 lg:w-[380px]"
+                class="min-h-0 w-full flex-1 space-y-4 lg:w-[380px] lg:flex-none lg:shrink-0 lg:overflow-y-auto lg:overscroll-y-contain"
                 @input="schedulePreviewUpdate"
                 @change="schedulePreviewUpdate"
                 @click="schedulePreviewUpdate"
@@ -1245,7 +1245,7 @@ const inputClass =
                     </div>
                 </div>
 
-                <Button type="button" class="w-full" :disabled="form.processing" @click="submit">
+                <Button type="button" class="w-full max-lg:!sticky max-lg:bottom-24 max-lg:z-10 max-lg:shadow-lg" :disabled="form.processing" @click="submit">
                     <Save class="h-4 w-4" />
                     Salvar checkout
                 </Button>

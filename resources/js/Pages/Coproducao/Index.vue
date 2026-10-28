@@ -122,7 +122,7 @@ function openInvitePage(token) {
         <CoproducaoTabs :tab="activeTab" />
 
         <template v-if="activeTab === 'painel'">
-            <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <div class="grid grid-cols-2 gap-4 sm:grid-cols-2 lg:grid-cols-4">
                 <AuroraStatCard
                     :label="t('coproduction.stat_net', 'Comissão líquida')"
                     :value="formatBRL(stats.total_liquido)"

@@ -159,12 +159,36 @@ html.dark .pn-banner {
     font: 300 13px/19px var(--font-body);
     color: var(--text-secondary);
 }
+/* Celular: X fixo no canto, ícone menor e ações alinhadas ao texto (antes o X caía sozinho numa linha). */
 @media (max-width: 639px) {
     .pn-banner {
+        position: relative;
         flex-wrap: wrap;
+        align-items: flex-start;
+        gap: 12px;
+        padding: 12px 46px 12px 12px;
+    }
+    .pn-banner__icon {
+        width: 32px;
+        height: 32px;
+    }
+    .pn-banner__icon svg {
+        width: 16px;
+        height: 16px;
+    }
+    .pn-banner__text {
+        font-size: 12.5px;
+        line-height: 17px;
     }
     .pn-banner__actions {
         width: 100%;
-        padding-left: 56px;
+        padding-left: 44px;
+    }
+    .pn-banner__close {
+        position: absolute;
+        top: 10px;
+        right: 10px;
+        width: 30px !important;
+        height: 30px !important;
     }
 }

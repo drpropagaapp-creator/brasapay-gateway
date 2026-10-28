@@ -177,13 +177,13 @@ async function resendFailed(row) {
                 </p>
             </div>
 
-            <div class="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <div class="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-2 lg:grid-cols-4">
                 <AuroraStatCard :icon="Send" label="Enviadas" :value="String(metrics.sent ?? 0)" />
                 <AuroraStatCard :icon="Eye" label="Lidas" :value="String(metrics.read ?? 0)" />
                 <AuroraStatCard :icon="Reply" label="Respostas" :value="String(metrics.replied ?? 0)" />
                 <AuroraStatCard :icon="CircleDollarSign" label="Convertidas" :value="String(metrics.converted ?? 0)" />
             </div>
-            <div class="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <div class="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-2 lg:grid-cols-4">
                 <AuroraStatCard :icon="ShoppingCart" label="Carrinho enviadas" :value="String(metrics.cart_sent ?? 0)" />
                 <AuroraStatCard :icon="CreditCard" label="PIX enviadas" :value="String(metrics.pix_sent ?? 0)" />
                 <AuroraStatCard :icon="BadgeCheck" label="PIX pago enviadas" :value="String(metrics.order_paid_sent ?? 0)" />

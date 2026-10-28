@@ -25,7 +25,7 @@ function formatBRL(v) {
             <p class="mt-1 text-sm text-zinc-500">Acompanhe suas comissões e vendas geradas.</p>
         </div>
         <AfiliadoTabs />
-        <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div class="grid grid-cols-2 gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <AuroraStatCard label="Receita de comissão" :value="formatBRL(stats.receita_comissao)" :icon="CircleDollarSign" />
             <AuroraStatCard label="Total de vendas" :value="String(stats.total_vendas ?? 0)" :icon="ShoppingCart" />
             <AuroraStatCard label="Ticket médio" :value="formatBRL(stats.ticket_medio)" :icon="TrendingUp" />

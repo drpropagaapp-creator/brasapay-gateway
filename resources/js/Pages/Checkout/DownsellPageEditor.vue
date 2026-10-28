@@ -134,7 +134,7 @@ const inputClass =
 </script>
 
 <template>
-    <div class="flex h-[calc(100vh-4.5rem)] min-h-0 flex-col gap-6">
+    <div class="flex min-h-0 flex-col gap-6 lg:h-[calc(100vh-4.5rem)]">
         <div class="shrink-0">
             <nav class="text-sm text-zinc-500 dark:text-zinc-400" aria-label="Breadcrumb">
                 <Link href="/produtos" class="hover:text-zinc-700 dark:hover:text-zinc-300">Produtos</Link>
@@ -148,7 +148,7 @@ const inputClass =
         </div>
 
         <div class="flex min-h-0 flex-1 flex-col gap-6 lg:flex-row">
-            <div class="min-h-0 w-full flex-1 space-y-4 overflow-y-auto lg:flex-none lg:shrink-0 lg:w-[380px]">
+            <div class="min-h-0 w-full flex-1 space-y-4 lg:w-[380px] lg:flex-none lg:shrink-0 lg:overflow-y-auto">
                 <div class="rounded-2xl border border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-800">
                     <button
                         type="button"
@@ -273,7 +273,7 @@ const inputClass =
                 </Button>
             </div>
 
-            <div class="min-h-0 flex-1 overflow-auto rounded-2xl border border-zinc-200 bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-900">
+            <div class="min-h-0 flex-1 overflow-auto rounded-2xl border border-zinc-200 bg-zinc-100 max-lg:h-[75vh] dark:border-zinc-700 dark:bg-zinc-900">
                 <div class="p-6">
                     <p class="mb-4 text-sm font-medium text-zinc-600 dark:text-zinc-400">Preview (estático)</p>
                     <div

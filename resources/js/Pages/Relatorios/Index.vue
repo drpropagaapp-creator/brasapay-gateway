@@ -293,7 +293,7 @@ const chartOptionsFormas = computed(() => ({
             </button>
         </div>
 
-            <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+            <div class="grid grid-cols-2 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
                 <AuroraStatCard
                     :icon="CircleDollarSign"
                     :label="t('reports.total_revenue', 'Receita total')"

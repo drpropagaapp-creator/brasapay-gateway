@@ -67,13 +67,13 @@ const chartOptions = computed(() => ({
                 {{ opt.label }}
             </button>
         </div>
-        <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div class="grid grid-cols-2 gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <AuroraStatCard label="Receita de comissão" :value="formatBRL(stats.receita_comissao)" :icon="CircleDollarSign" />
             <AuroraStatCard label="Vendas" :value="String(stats.total_vendas ?? 0)" :icon="ShoppingCart" />
             <AuroraStatCard label="Ticket médio" :value="formatBRL(stats.ticket_medio)" :icon="TrendingUp" />
             <AuroraStatCard label="Produtos vendidos" :value="String(stats.produtos_vendidos ?? 0)" :icon="Package" />
         </div>
-        <div class="grid gap-4 sm:grid-cols-2">
+        <div class="grid grid-cols-2 gap-4 sm:grid-cols-2">
             <AuroraStatCard label="Pendente" :value="formatBRL(stats.comissao_pendente)" :icon="Clock" />
             <AuroraStatCard
                 label="Conversão"

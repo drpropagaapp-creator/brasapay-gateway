@@ -107,6 +107,18 @@ const areaOptions = computed(() => ({
     fill: { type: 'gradient', gradient: { shadeIntensity: 0, opacityFrom: 0.35, opacityTo: 0.02, stops: [0, 95] } },
     grid: { ...props.chartOptions.grid, strokeDashArray: 0, borderColor: 'rgba(138,146,150,.16)' },
     chart: { ...props.chartOptions.chart, animations: { enabled: true, speed: 1400 } },
+    // Celular: poucas marcações no eixo X, sem rotação, escondendo as que se sobrepõem.
+    responsive: [
+        {
+            breakpoint: 640,
+            options: {
+                xaxis: {
+                    tickAmount: 6,
+                    labels: { rotate: 0, hideOverlappingLabels: true, style: { colors: '#71717a', fontSize: '10px' } },
+                },
+            },
+        },
+    ],
 }));
 </script>
 

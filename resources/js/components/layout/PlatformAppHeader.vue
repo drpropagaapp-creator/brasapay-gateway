@@ -31,10 +31,10 @@ const quickLinks = [
         :class="isMobile && isMobileOpen ? 'pointer-events-none' : ''"
     >
         <div class="pn-topbar">
+            <button v-if="isMobile && !isMobileOpen" type="button" class="pn-iconbtn pn-keep-shape pn-topbar__menu shrink-0" aria-label="Abrir menu" @click="toggleSidebar">
+                <Menu class="h-5 w-5" />
+            </button>
             <div class="pn-topbar__title min-w-0 flex-1">
-                <button v-if="isMobile && !isMobileOpen" type="button" class="pn-iconbtn pn-keep-shape shrink-0" aria-label="Abrir menu" @click="toggleSidebar">
-                    <Menu class="h-5 w-5" />
-                </button>
                 <div v-if="pageTitle" class="min-w-0">
                     <h1 class="pn-page-title truncate">{{ pageTitle }}</h1>
                     <p v-if="pageSubtitle" class="truncate">{{ pageSubtitle }}</p>
@@ -45,7 +45,7 @@ const quickLinks = [
                 <UserMenu />
             </div>
         </div>
-        <nav v-if="isPlatformArea" class="pn-tabs self-start" aria-label="Atalhos da plataforma">
+        <nav v-if="isPlatformArea" class="pn-tabs max-w-full self-start overflow-x-auto" aria-label="Atalhos da plataforma">
             <Link
                 v-for="item in quickLinks"
                 :key="item.href"
@@ -68,6 +68,32 @@ const quickLinks = [
     .pn-page-title {
         font: var(--text-h2);
         letter-spacing: var(--tracking-heading);
+    }
+}
+/* Celular: menu e ferramentas na primeira linha, título com a largura toda embaixo. */
+@media (max-width: 639px) {
+    .pn-topbar {
+        flex-wrap: wrap;
+        row-gap: 12px;
+    }
+    .pn-topbar__menu {
+        order: 1;
+    }
+    .pn-topbar__tools {
+        order: 2;
+        margin-left: auto;
+        gap: 8px;
+    }
+    .pn-topbar__title {
+        order: 3;
+        flex-basis: 100%;
+    }
+    .pn-topbar__title p {
+        white-space: normal;
+    }
+    .pn-page-title {
+        font-size: 24px;
+        line-height: 30px;
     }
 }
 </style>

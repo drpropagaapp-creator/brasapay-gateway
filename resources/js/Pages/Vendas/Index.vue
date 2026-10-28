@@ -29,6 +29,7 @@ import {
     ChevronLeft,
     ChevronRight,
     RotateCcw,
+    SlidersHorizontal,
 } from 'lucide-vue-next';
 import Checkbox from '@/components/ui/Checkbox.vue';
 import { htmlToText } from '@/lib/sanitizeHtml';
@@ -286,6 +287,25 @@ function paginationItemClass(link, compact = false) {
 }
 
 const advancedFiltersOpen = ref(false);
+/** Celular: filtros recolhidos atrás de um botão, com a contagem dos que estão ativos. */
+const mobileFiltersOpen = ref(false);
+const activeFilterCount = computed(() => {
+    const f = filterForm.value;
+    return [
+        f.period !== 'all',
+        (f.product_ids || []).length > 0,
+        !!f.offer_id,
+        f.order_bump !== 'all',
+        f.payment_method !== 'all',
+        f.payment_status !== 'all',
+        !!f.utm_source,
+        !!f.utm_medium,
+        !!f.utm_campaign,
+        !!f.sale_channel,
+        !!f.producer_id,
+        f.commission_status !== 'all',
+    ].filter(Boolean).length;
+});
 const productFilterOpen = ref(false);
 const searchFieldFocused = ref(false);
 let searchTimer = null;
@@ -713,7 +733,7 @@ const exportJsonUrl = computed(() => `/vendas/export?${buildExportSearchParams('
                     <EyeOff v-else class="h-5 w-5" aria-hidden="true" />
                 </button>
             </div>
-            <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <div class="grid grid-cols-2 gap-3 sm:grid-cols-2 lg:grid-cols-4">
                 <AuroraStatCard
                     :icon="ShoppingCart"
                     :label="t('sales.metrics.found_sales', 'Vendas encontradas')"
@@ -809,9 +829,20 @@ const exportJsonUrl = computed(() => `/vendas/export?${buildExportSearchParams('
                 >
                     {{ t('sales.clear_filters', 'Limpar filtros') }}
                 </button>
+                <button
+                    type="button"
+                    class="sm:hidden"
+                    :class="btnSecondary"
+                    :aria-expanded="mobileFiltersOpen ? 'true' : 'false'"
+                    @click="mobileFiltersOpen = !mobileFiltersOpen"
+                >
+                    <SlidersHorizontal class="h-4 w-4" />
+                    {{ t('sales.filters', 'Filtros') }}
+                    <span v-if="activeFilterCount" class="pn-badge pn-badge--brand">{{ activeFilterCount }}</span>
+                </button>
             </div>
 
-            <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+            <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6" :class="mobileFiltersOpen ? '' : 'max-sm:hidden'">
                 <div>
                     <label class="mb-1 block text-xs font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">{{ t('dashboard.period', 'Período') }}</label>
                     <select
@@ -954,7 +985,7 @@ const exportJsonUrl = computed(() => `/vendas/export?${buildExportSearchParams('
                 </div>
             </div>
 
-            <div>
+            <div :class="mobileFiltersOpen ? '' : 'max-sm:hidden'">
                 <button
                     type="button"
                     class="text-sm font-medium text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-white"
