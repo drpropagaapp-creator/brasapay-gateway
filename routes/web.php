@@ -1166,6 +1166,12 @@ Route::middleware(['auth', 'admin.tenant', 'seller.panel', 'stacker.license', 'r
         ->middleware('team.permission:vendas.view')->where('key', '[A-Za-z0-9_-]{4,300}')->name('crm.show');
     Route::put('/crm/contato/{key}', [\App\Http\Controllers\CrmController::class, 'update'])
         ->middleware(['team.permission:vendas.view', 'throttle:60,1'])->where('key', '[A-Za-z0-9_-]{4,300}')->name('crm.update');
+    Route::get('/inteligencia', [\App\Http\Controllers\IntelligenceController::class, 'index'])
+        ->middleware('team.permission:vendas.view')->name('intelligence.index');
+    Route::post('/inteligencia/custos', [\App\Http\Controllers\IntelligenceController::class, 'storeSpend'])
+        ->middleware(['team.permission:vendas.view', 'throttle:60,1'])->name('intelligence.spend.store');
+    Route::delete('/inteligencia/custos/{spend}', [\App\Http\Controllers\IntelligenceController::class, 'destroySpend'])
+        ->middleware(['team.permission:vendas.view', 'throttle:60,1'])->whereNumber('spend')->name('intelligence.spend.destroy');
     Route::get('/recuperacao', [\App\Http\Controllers\RecoveryController::class, 'index'])
         ->middleware('team.permission:integracoes.view')
         ->name('recovery.index');

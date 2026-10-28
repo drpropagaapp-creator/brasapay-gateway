@@ -28,6 +28,7 @@ import {
     Code2,
     MailCheck,
     Contact,
+    Lightbulb,
     Repeat,
     FlaskConical,
 } from 'lucide-vue-next';
@@ -105,6 +106,7 @@ export function useAppSidebarNav() {
                 icon: CircleDollarSign,
             });
             items.push({ name: t('sidebar.crm', 'Clientes (CRM)'), href: '/crm', icon: Contact });
+            items.push({ name: t('sidebar.intelligence', 'Inteligência'), href: '/inteligencia', icon: Lightbulb });
             if (page.props.api_pix_enabled_effective) {
                 items.push({
                     name: t('sidebar.api_transactions', 'Transações API'),
