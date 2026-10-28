@@ -41,6 +41,8 @@ import {
     Sparkles,
 } from 'lucide-vue-next';
 import { useSidebar } from '@/composables/useSidebar';
+import { useNavGroups } from '@/composables/useNavGroups';
+import SidebarGroupHeader from '@/components/layout/sidebar/SidebarGroupHeader.vue';
 
 const page = usePage();
 const { isExpanded, isMobileOpen, toggleSidebar, isMobile, closeMobileSidebarIfOpen } = useSidebar();
@@ -57,6 +59,13 @@ const sidebarBadges = computed(() => page.props.platform_admin_sidebar_badges ??
 function badgeCount(key) {
     const n = Number(sidebarBadges.value?.[key] ?? 0);
     return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
+const groupState = useNavGroups('pn-nav-groups:platform');
+
+/** Soma das pendências dos itens do grupo (mostrada no título quando o grupo está fechado). */
+function groupPending(group) {
+    return group.items.reduce((sum, item) => sum + (item.badgeKey ? badgeCount(item.badgeKey) || 0 : 0), 0);
 }
 
 function badgeLabel(count) {
@@ -81,48 +90,64 @@ const navGroupsCore = [
         label: 'Pessoas',
         items: [
             { name: 'Infoprodutores', href: '/plataforma/usuarios', icon: Users },
-            { name: 'Gerentes de Conta', href: '/plataforma/gerentes-conta', icon: ContactRound },
-            { name: 'Clientes', href: '/plataforma/clientes', icon: UserCircle2 },
             { name: 'Verificações KYC', href: '/plataforma/verificacoes-kyc', icon: BadgeCheck, badgeKey: 'kyc' },
-            { name: 'White-label (Enterprise)', href: '/plataforma/enterprise', icon: Building2 },
+            { name: 'Clientes', href: '/plataforma/clientes', icon: UserCircle2 },
+            { name: 'Gerentes de conta', href: '/plataforma/gerentes-conta', icon: ContactRound },
+            { name: 'White-label', href: '/plataforma/enterprise', icon: Building2 },
         ],
     },
     {
         id: 'operacoes',
-        label: 'Operações',
+        label: 'Vendas e produtos',
         items: [
             { name: 'Transações', href: '/plataforma/transacoes', icon: ArrowLeftRight, badgeKey: 'transacoes' },
-            { name: 'Transações API', href: '/plataforma/transacoes-api', icon: Code2 },
             { name: 'Disputas MED', href: '/plataforma/disputas', icon: AlertTriangle, badgeKey: 'disputas' },
             { name: 'Produtos', href: '/plataforma/produtos?filter=pending', icon: Package, badgeKey: 'produtos' },
+            { name: 'Transações API', href: '/plataforma/transacoes-api', icon: Code2 },
             { name: 'Marketplace', href: '/plataforma/marketplace', icon: Store },
+            { name: 'Biblioteca de templates', href: '/plataforma/biblioteca', icon: LibraryBig },
         ],
     },
     {
         id: 'financeiro',
-        label: 'Financeiro',
+        label: 'Financeiro e risco',
         items: [
             { name: 'Saques', href: '/plataforma/saques', icon: Banknote, badgeKey: 'saques' },
-            { name: 'Saldo', href: '/plataforma/saldo', icon: CircleDollarSign },
             { name: 'Financeiro', href: '/plataforma/financeiro', icon: Wallet, badgeKey: 'financeiro' },
-            { name: 'Fiscal', href: '/plataforma/fiscal', icon: FileSpreadsheet },
+            { name: 'Saldo', href: '/plataforma/saldo', icon: CircleDollarSign },
             { name: 'Tesouraria', href: '/plataforma/tesouraria', icon: Landmark },
             { name: 'Risco (BrasaShield)', href: '/plataforma/risco', icon: ShieldAlert },
+            { name: 'Fiscal', href: '/plataforma/fiscal', icon: FileSpreadsheet },
         ],
     },
     {
-        id: 'crescimento',
-        label: 'Crescimento',
+        id: 'comunicacao',
+        label: 'Comunicação',
         items: [
-            { name: 'Métricas e Tracking', href: '/plataforma/metricas', icon: ChartNoAxesCombined },
-            { name: 'Biblioteca de templates', href: '/plataforma/biblioteca', icon: LibraryBig },
-            { name: 'Assistente IA', href: '/plataforma/assistente-ia', icon: Sparkles },
+            { name: 'Central de e-mails', href: '/plataforma/email-marketing', icon: Mail },
+            { name: 'WhatsApp', href: '/plataforma/uazapi', icon: MessageCircle },
+            { name: 'IntegraX SMS', href: '/plataforma/integrax', icon: MessageSquare },
+            { name: 'App', href: '/plataforma/app', icon: Smartphone },
             { name: 'Conquistas', href: '/plataforma/conquistas', icon: Trophy },
             { name: 'Indique e Ganhe', href: '/plataforma/indique-e-ganhe', icon: Gift },
-            { name: 'Central de e-mails', href: '/plataforma/email-marketing', icon: Mail },
-            { name: 'IntegraX SMS', href: '/plataforma/integrax', icon: MessageSquare },
-            { name: 'WhatsApp', href: '/plataforma/uazapi', icon: MessageCircle },
-            { name: 'App', href: '/plataforma/app', icon: Smartphone },
+        ],
+    },
+    {
+        id: 'dados',
+        label: 'Dados e IA',
+        items: [
+            { name: 'Métricas e Tracking', href: '/plataforma/metricas', icon: ChartNoAxesCombined },
+            { name: 'Assistente IA', href: '/plataforma/assistente-ia', icon: Sparkles },
+        ],
+    },
+    {
+        id: 'monitoramento',
+        label: 'Monitoramento',
+        items: [
+            { name: 'Adquirentes e roteamento', href: '/plataforma/ops/adquirentes', icon: Activity },
+            { name: 'Saúde de pagamentos', href: '/plataforma/ops/saude-pagamentos', icon: Activity },
+            { name: 'Saúde UTMify', href: '/plataforma/ops/saude-utmify', icon: Activity },
+            { name: 'Webhooks', href: '/plataforma/webhooks', icon: Webhook },
         ],
     },
     {
@@ -130,13 +155,9 @@ const navGroupsCore = [
         label: 'Sistema',
         items: [
             { name: 'Configurações', href: '/plataforma/configuracoes', icon: Settings },
-            { name: 'Saúde de Pagamentos', href: '/plataforma/ops/saude-pagamentos', icon: Activity },
-            { name: 'Adquirentes e roteamento', href: '/plataforma/ops/adquirentes', icon: Activity },
-            { name: 'Saúde UTMify', href: '/plataforma/ops/saude-utmify', icon: Activity },
-            { name: 'Webhooks', href: '/plataforma/webhooks', icon: Webhook },
-            { name: 'Log Infoprodutor', href: '/plataforma/log-infoprodutor', icon: ScrollText },
-            { name: 'Log sistema', href: '/plataforma/log-sistema', icon: Logs },
             { name: 'Plugins', href: '/plataforma/gerenciar-plugins', icon: Puzzle },
+            { name: 'Log do infoprodutor', href: '/plataforma/log-infoprodutor', icon: ScrollText },
+            { name: 'Log do sistema', href: '/plataforma/log-sistema', icon: Logs },
         ],
     },
 ];
@@ -315,9 +336,18 @@ import PnWordmark from '@/components/paynext/PnWordmark.vue';
 
         <nav class="no-scrollbar flex-1 overflow-y-auto px-3 pb-3" :class="showText() ? '' : 'lg:px-[18px]'">
             <div v-for="group in navGroups" :key="group.id">
-                <p v-if="group.label && showText()" class="pn-sidebar__sec">{{ group.label }}</p>
+                <SidebarGroupHeader
+                    v-if="group.label && showText()"
+                    :label="group.label"
+                    :open="groupState.isOpen(group, isNavItemActive)"
+                    :count="group.items.length"
+                    :pending="groupPending(group)"
+                    :has-active="groupState.hasActive(group, isNavItemActive)"
+                    :controls="`pnav-${group.id}`"
+                    @toggle="groupState.toggle(group, isNavItemActive)"
+                />
                 <div v-else-if="group.label" class="mx-auto my-3 h-px w-7" style="background: var(--border-default)" aria-hidden="true" />
-                <div class="flex flex-col gap-1">
+                <div v-show="!showText() || groupState.isOpen(group, isNavItemActive)" :id="`pnav-${group.id}`" class="flex flex-col gap-1">
                     <Link
                         v-for="item in group.items"
                         :key="item.href"

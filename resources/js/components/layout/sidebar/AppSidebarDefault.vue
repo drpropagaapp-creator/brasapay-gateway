@@ -5,11 +5,14 @@ import { PanelRightOpen, X } from 'lucide-vue-next';
 import { useSidebar } from '@/composables/useSidebar';
 import ConquistasWidget from '@/components/layout/ConquistasWidget.vue';
 import AppSidebarNavList from '@/components/layout/sidebar/AppSidebarNavList.vue';
+import SidebarGroupHeader from '@/components/layout/sidebar/SidebarGroupHeader.vue';
 import PnWordmark from '@/components/paynext/PnWordmark.vue';
 import { useAppSidebarNav, navPrefetch } from '@/composables/useAppSidebarNav';
+import { useNavGroups } from '@/composables/useNavGroups';
 
 const { isExpanded, isMobileOpen, toggleSidebar, isMobile, closeMobileSidebarIfOpen } = useSidebar();
-const { page, homeHref, navItems, isActive } = useAppSidebarNav();
+const { page, homeHref, navItems, navGroups, isActive } = useAppSidebarNav();
+const groupState = useNavGroups('pn-nav-groups:seller');
 
 const showText = () => isExpanded.value || isMobileOpen.value;
 
@@ -88,9 +91,28 @@ function onItemMouseLeave() {
         </div>
 
         <nav class="no-scrollbar flex-1 overflow-y-auto overflow-x-visible px-3 py-2" :class="showText() ? '' : 'lg:px-[18px]'">
+            <!-- Menu aberto: grupos com título, recolhíveis. Menu em ícones: lista plana. -->
+            <template v-if="showText()">
+                <section v-for="group in navGroups" :key="group.id" :class="group.label ? 'mt-1' : ''">
+                    <SidebarGroupHeader
+                        v-if="group.label"
+                        :label="group.label"
+                        :open="groupState.isOpen(group, isActive)"
+                        :count="group.items.length"
+                        :has-active="groupState.hasActive(group, isActive)"
+                        :controls="`nav-${group.id}`"
+                        @toggle="groupState.toggle(group, isActive)"
+                    />
+                    <div v-show="groupState.isOpen(group, isActive)" :id="`nav-${group.id}`">
+                        <AppSidebarNavList :items="group.items" :show-text="true" :is-active="isActive" :is-mobile="isMobile" />
+                    </div>
+                </section>
+                <AppSidebarNavList v-if="isMobile && !page.props.customer_panel" class="mt-2" :items="[{ pwaInstall: true }]" :show-text="true" :is-active="isActive" :is-mobile="isMobile" />
+            </template>
             <AppSidebarNavList
+                v-else
                 :items="navItems"
-                :show-text="showText()"
+                :show-text="false"
                 :is-active="isActive"
                 :is-mobile="isMobile"
                 @item-mouseenter="onItemMouseEnter"

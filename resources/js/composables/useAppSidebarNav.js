@@ -89,133 +89,85 @@ export function useAppSidebarNav() {
         return !!perms.value?.[key];
     };
 
-    const navItems = computed(() => {
+    /**
+     * Menu em grupos: no topo só o uso diário; o resto em grupos com título, recolhíveis.
+     * Cada item continua respeitando as permissões da equipe e os itens escondidos pelo white-label.
+     */
+    const navGroups = computed(() => {
         if (page.props.customer_panel) {
-            return [
+            return [{ id: 'cliente', label: null, items: [
                 { name: t('customer.sidebar.purchases', 'Minhas compras'), href: '/painel-cliente', icon: Package },
                 { name: t('customer.sidebar.marketplace', 'Marketplace'), href: '/painel-cliente/marketplace', icon: Store },
                 { name: t('customer.sidebar.subscriptions', 'Minhas assinaturas'), href: '/painel-cliente/assinaturas', icon: Repeat },
-            ];
+            ] }];
         }
+        const role = page.props.auth?.user?.role;
+        const owner = role === 'admin' || role === 'infoprodutor';
+        const api = canView('api_pagamentos.view') && page.props.api_pix_enabled_effective;
+        const item = (name, href, icon, extra = {}) => ({ name, href, icon, ...extra });
 
-        const items = [];
-
-        if (canView('dashboard.view')) {
-            items.push({ name: t('sidebar.dashboard', 'Dashboard'), href: '/dashboard', icon: LayoutDashboard });
-        }
-
-        if (canView('vendas.view')) {
-            items.push({
-                name: t('sidebar.sales', 'Vendas'),
-                href: '/vendas',
-                icon: CircleDollarSign,
-            });
-            items.push({ name: t('sidebar.crm', 'Clientes (CRM)'), href: '/crm', icon: Contact });
-            if (page.props.api_pix_enabled_effective) {
-                items.push({
-                    name: t('sidebar.api_transactions', 'Transações API'),
-                    href: '/transacoes-api',
-                    icon: Code2,
-                });
-            }
-        }
-
-        if (canView('relatorios.view')) {
-            items.push({ name: t('sidebar.reports', 'Relatórios'), href: '/relatorios', icon: BarChart3 });
-            items.push({ name: t('sidebar.intelligence', 'Inteligência'), href: '/inteligencia', icon: Lightbulb });
-            items.push({ name: t('sidebar.assistant', 'Assistente'), href: '/assistente', icon: Sparkles });
-        }
-
-        if (canView('integracoes.view')) {
-            items.push({ name: t('sidebar.recovery', 'Recuperação de vendas'), href: '/recuperacao', icon: MailCheck });
-        }
-
-        if (canView('metrics.view')) {
-            items.push({
-                name: t('sidebar.metrics', 'Métricas e Tracking'),
-                href: '/metricas',
-                icon: Activity,
-            });
-        }
-
-        items.push({ separator: true });
-
-        if (canView('produtos.view')) {
-            items.push({ name: t('sidebar.products', 'Produtos'), href: '/produtos', icon: Package });
-            items.push({ name: t('sidebar.member_areas', 'Áreas de membros'), href: '/areas-de-membros', icon: MonitorPlay });
-            items.push({ name: t('sidebar.experiments', 'Testes A/B'), href: '/experimentos', icon: FlaskConical });
-            items.push({ name: t('sidebar.library', 'Biblioteca de templates'), href: '/biblioteca', icon: LibraryBig });
-            if (page.props.pixgo_enabled_effective && canView('pixgo.view')) {
-                items.push({
-                    name: page.props.pixgo_sidebar_label || 'PixGO',
-                    href: '/pixgo',
-                    icon: Zap,
-                });
-            }
-            items.push({
-                name: t('sidebar.affiliate_showcase', 'Vitrine'),
-                href: '/produtos/vitrine-afiliacao',
-                icon: Store,
-            });
-            if (page.props.physical_products_enabled_effective) {
-                items.push({ name: t('sidebar.shipping', 'Taxas e frete'), href: '/frete', icon: Truck });
-            }
-            items.push({ name: t('sidebar.coupons', 'Cupons'), href: '/produtos/cupons', icon: TicketPercent });
-            items.push({ name: t('sidebar.students', 'Alunos'), href: '/produtos/alunos', icon: GraduationCap });
-            items.push({ name: t('sidebar.affiliates_menu', 'Afiliados'), href: '/afiliados', icon: UserPlus });
-            items.push({ name: t('sidebar.coproduction', 'Co-produção'), href: '/coproducao', icon: Handshake });
-        }
-
-        items.push({ separator: true });
-
-        if (canView('integracoes.view') && page.props.seller_integrations_any_visible !== false) {
-            items.push({ name: t('sidebar.integrations', 'Integrações'), href: '/integracoes', icon: Cable });
-        }
-
-        if ((page.props.auth?.user?.role === 'admin' || page.props.auth?.user?.role === 'infoprodutor') && pluginNavItems.value.length) {
-            items.push(...pluginNavItems.value);
-        }
-
-        if (page.props.auth?.user?.role === 'infoprodutor' || canView('equipe.manage')) {
-            items.push({ name: t('sidebar.team', 'Equipe'), href: '/usuarios/equipe', icon: Users });
-        }
-
-        if (canView('api_pagamentos.view') && page.props.api_pix_enabled_effective) {
-            items.push({
-                name: 'API PIX',
-                href: '/aplicacoes-api',
-                icon: CodeXml,
-                badge: 'pix-in-out',
-            });
-            items.push({ name: t('sidebar.developers', 'Desenvolvedores'), href: '/desenvolvedores', icon: Terminal });
-        }
-
-        if (canView('financeiro.view')) {
-            items.push({ name: t('sidebar.finance', 'Financeiro'), href: '/financeiro', icon: Wallet });
-        }
-
-        if (page.props.referral_program?.enabled) {
-            items.push({
-                name: t('sidebar.referral', 'Indique e Ganhe'),
-                href: '/indique-e-ganhe',
-                icon: Gift,
-            });
-        }
-
-        if (!page.props.customer_panel) {
-            items.push({ separator: true });
-            items.push({ pwaInstall: true });
-        }
-
-        if (page.props.enterprise?.active) {
-            const at = items.findIndex((i) => i.separator);
-            const entry = { name: t('sidebar.enterprise', 'Marca e domínio'), href: '/marca-e-dominio', icon: Globe };
-            if (at >= 0) items.splice(at, 0, entry); else items.push(entry);
-        }
+        const groups = [
+            { id: 'principal', label: null, items: [
+                canView('dashboard.view') && item(t('sidebar.dashboard', 'Dashboard'), '/dashboard', LayoutDashboard),
+                canView('vendas.view') && item(t('sidebar.sales', 'Vendas'), '/vendas', CircleDollarSign),
+                canView('vendas.view') && item(t('sidebar.crm', 'Clientes'), '/crm', Contact),
+                canView('financeiro.view') && item(t('sidebar.finance', 'Financeiro'), '/financeiro', Wallet),
+            ] },
+            { id: 'produtos', label: t('sidebar.group_products', 'Produtos'), items: canView('produtos.view') ? [
+                item(t('sidebar.products', 'Meus produtos'), '/produtos', Package),
+                item(t('sidebar.member_areas', 'Áreas de membros'), '/areas-de-membros', MonitorPlay),
+                item(t('sidebar.students', 'Alunos'), '/produtos/alunos', GraduationCap),
+                item(t('sidebar.coupons', 'Cupons'), '/produtos/cupons', TicketPercent),
+                item(t('sidebar.affiliate_showcase', 'Vitrine'), '/produtos/vitrine-afiliacao', Store),
+                page.props.physical_products_enabled_effective && item(t('sidebar.shipping', 'Taxas e frete'), '/frete', Truck),
+                page.props.pixgo_enabled_effective && canView('pixgo.view') && item(page.props.pixgo_sidebar_label || 'PixGO', '/pixgo', Zap),
+            ] : [] },
+            { id: 'marketing', label: t('sidebar.group_marketing', 'Vender mais'), items: [
+                canView('integracoes.view') && item(t('sidebar.recovery', 'Recuperação de vendas'), '/recuperacao', MailCheck),
+                canView('produtos.view') && item(t('sidebar.experiments', 'Testes A/B'), '/experimentos', FlaskConical),
+                canView('produtos.view') && item(t('sidebar.affiliates_menu', 'Afiliados'), '/afiliados', UserPlus),
+                canView('produtos.view') && item(t('sidebar.coproduction', 'Co-produção'), '/coproducao', Handshake),
+                canView('produtos.view') && item(t('sidebar.library', 'Biblioteca de templates'), '/biblioteca', LibraryBig),
+                page.props.referral_program?.enabled && item(t('sidebar.referral', 'Indique e Ganhe'), '/indique-e-ganhe', Gift),
+            ] },
+            { id: 'analises', label: t('sidebar.group_insights', 'Análises'), items: [
+                canView('relatorios.view') && item(t('sidebar.reports', 'Relatórios'), '/relatorios', BarChart3),
+                canView('relatorios.view') && item(t('sidebar.intelligence', 'Inteligência'), '/inteligencia', Lightbulb),
+                canView('metrics.view') && item(t('sidebar.metrics', 'Métricas e Tracking'), '/metricas', Activity),
+                canView('relatorios.view') && item(t('sidebar.assistant', 'Assistente'), '/assistente', Sparkles),
+            ] },
+            { id: 'integracoes', label: t('sidebar.group_integrations', 'Integrações e API'), items: [
+                canView('integracoes.view') && page.props.seller_integrations_any_visible !== false && item(t('sidebar.integrations', 'Integrações'), '/integracoes', Cable),
+                ...(owner ? pluginNavItems.value : []),
+                api && item('API PIX', '/aplicacoes-api', CodeXml, { badge: 'pix-in-out' }),
+                api && item(t('sidebar.developers', 'Desenvolvedores'), '/desenvolvedores', Terminal),
+                canView('vendas.view') && page.props.api_pix_enabled_effective && item(t('sidebar.api_transactions', 'Transações API'), '/transacoes-api', Code2),
+            ] },
+            { id: 'conta', label: t('sidebar.group_account', 'Conta'), items: [
+                (role === 'infoprodutor' || canView('equipe.manage')) && item(t('sidebar.team', 'Equipe'), '/usuarios/equipe', Users),
+                page.props.enterprise?.active && item(t('sidebar.enterprise', 'Marca e domínio'), '/marca-e-dominio', Globe),
+            ] },
+        ];
 
         // Brasa Enterprise: o admin pode esconder módulos do menu desta conta.
         const hidden = Array.isArray(page.props.enterprise?.hidden_nav) ? page.props.enterprise.hidden_nav : [];
-        return hidden.length ? items.filter((i) => !i.href || !hidden.includes(i.href)) : items;
+        return groups
+            .map((g) => ({ ...g, items: g.items.filter((i) => i && (!i.href || !hidden.includes(i.href))) }))
+            .filter((g) => g.items.length);
+    });
+
+    /** Lista plana (menu recolhido em ícones): grupos separados por linha + instalar app no mobile. */
+    const navItems = computed(() => {
+        const items = [];
+        navGroups.value.forEach((g, i) => {
+            if (i > 0) items.push({ separator: true });
+            items.push(...g.items);
+        });
+        if (!page.props.customer_panel) {
+            items.push({ separator: true }, { pwaInstall: true });
+        }
+
+        return items;
     });
 
     function isActive(href) {
@@ -274,6 +226,7 @@ export function useAppSidebarNav() {
         hasLogoFull,
         hasLogoIcon,
         navItems,
+        navGroups,
         isActive,
     };
 }
