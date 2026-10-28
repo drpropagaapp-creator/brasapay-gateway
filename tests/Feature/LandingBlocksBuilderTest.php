@@ -98,8 +98,8 @@ class LandingBlocksBuilderTest extends TestCase
         $this->get('/c/'.$product->fresh()->checkout_slug)
             ->assertOk()
             ->assertInertia(fn ($page) => $page
-                ->where('checkout_config.landing.mode', 'blocks')
-                ->where('checkout_config.landing.blocks.0.props.title', 'Página publicada'));
+                ->where('config.landing.mode', 'blocks')
+                ->where('config.landing.blocks.0.props.title', 'Página publicada'));
     }
 
     public function test_produto_antigo_sem_modo_continua_em_secoes(): void
