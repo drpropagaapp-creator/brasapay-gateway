@@ -1,6 +1,6 @@
 # BrasaPay 4.0 — registro de progresso
 
-Branch: `feat/brasapay-4-onda1`. Nada desta branch está em produção até autorização explícita.
+Branch: `feat/brasapay-4-onda1`. A Onda 1 está em produção desde 28/10/2026 (main).
 
 ## Onda 1 — confiabilidade financeira e operacional
 
@@ -14,7 +14,7 @@ Branch: `feat/brasapay-4-onda1`. Nada desta branch está em produção até auto
 | Brasa Smart Routing | Implementado e testado — **desligado por padrão** | `SmartRoutingService`, `PaymentService::getGatewayOrderForMethod` |
 | BrasaShield (modo observação) | Implementado e testado | `BrasaShieldService`, `shield:scan` (10 min), `/plataforma/risco` |
 | Command Center v1 | Implementado e testado | `CommandCenterController`, `/plataforma/central` |
-| Infraestrutura: trocar `php artisan serve` por servidor de produção | Não iniciado — exige plano de deploy próprio | `Dockerfile` (CMD) |
+| Infraestrutura: servidor web de produção | Em produção (28/10): nginx + PHP-FPM (pool fixo de 12); `GETFY_WEB_SERVER=artisan` volta ao artisan serve sem rebuild | `Dockerfile`, `docker/start-web.sh`, `docker/nginx/default.conf`, `docker/php-fpm/zz-getfy.conf` |
 
 ### Migrations (só tabelas novas)
 - `2026_10_29_100000_create_treasury_tables` — `treasury_discrepancies`, `treasury_runs`
@@ -36,7 +36,6 @@ Branch: `feat/brasapay-4-onda1`. Nada desta branch está em produção até auto
 `tests/Feature/{PlatformRevenueKpisTest,TreasuryReconciliationTest,SmartRoutingTest,BrasaShieldAndCommandCenterTest}.php` (19 testes). Suíte completa sem regressões em relação à lista de falhas pré-existentes.
 
 ### Pendências da Onda 1
-- Servidor web de produção (php-fpm/nginx, FrankenPHP ou Octane) — plano e janela de manutenção.
 - Treasury v2: confronto com extratos das adquirentes (depende das APIs de cada uma) e "saldo da carteira × lançamentos".
 - Smart Routing: só ligar depois de alguns dias de telemetria (amostra mínima por adquirente/método).
 - BrasaShield: calibrar pesos com os dados reais antes de qualquer ação automática.
