@@ -13,7 +13,7 @@ use Tests\TestCase;
 /** BrasaPay 4.0 / Onda 2 — Brasa Experiments. */
 class BrasaExperimentsTest extends TestCase
 {
-    private function setup2(): array
+    private function makeExperiment(): array
     {
         $seller = User::factory()->create(['role' => User::ROLE_INFOPRODUTOR, 'kyc_status' => User::KYC_APPROVED]);
         $seller->forceFill(['tenant_id' => $seller->id])->save();
@@ -29,7 +29,7 @@ class BrasaExperimentsTest extends TestCase
         return [$seller, $product, $exp];
     }
 
-    private function session($product): CheckoutSession
+    private function newSession($product): CheckoutSession
     {
         return CheckoutSession::query()->create(['tenant_id' => $product->tenant_id, 'product_id' => $product->id, 'checkout_slug' => $product->checkout_slug,
             'session_token' => bin2hex(random_bytes(8)), 'step' => CheckoutSession::STEP_VISIT]);
@@ -37,8 +37,8 @@ class BrasaExperimentsTest extends TestCase
 
     public function test_atribuicao_estavel_e_variante_b_troca_a_landing(): void
     {
-        [, $product, $exp] = $this->setup2();
-        $session = $this->session($product);
+        [, $product, $exp] = $this->makeExperiment();
+        $session = $this->newSession($product);
         $svc = app(ExperimentService::class);
 
         $first = $svc->apply(Request::create('/c/abteste1'), $product, 'abteste1', $session, ['template' => 'original']);
@@ -55,7 +55,7 @@ class BrasaExperimentsTest extends TestCase
         }
 
         // Cookie de uma visita anterior mantém a mesma variante numa sessão nova.
-        $s2 = $this->session($product);
+        $s2 = $this->newSession($product);
         $svc->apply(Request::create('/c/abteste1', 'GET', [], ['bp_exp_'.$exp->id => 'B']), $product, 'abteste1', $s2, []);
         $this->assertSame('B', DB::table('experiment_assignments')->where('checkout_session_id', $s2->id)->value('variant_key'));
     }
@@ -76,7 +76,7 @@ class BrasaExperimentsTest extends TestCase
 
     public function test_aplicar_vencedora_exige_significancia_e_outro_seller_nao_acessa(): void
     {
-        [$seller, , $exp] = $this->setup2();
+        [$seller, , $exp] = $this->makeExperiment();
         $other = User::factory()->create(['role' => User::ROLE_INFOPRODUTOR, 'kyc_status' => User::KYC_APPROVED]);
         $other->forceFill(['tenant_id' => $other->id])->save();
 
