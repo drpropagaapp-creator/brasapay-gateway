@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\Storage;
 
 class ProductImport extends Model
 {
@@ -38,6 +39,6 @@ class ProductImport extends Model
     /** Pacotes ficam no disco local privado (nunca no storage público). */
     public function absolutePackagePath(): ?string
     {
-        return $this->package_path ? storage_path('app/'.$this->package_path) : null;
+        return $this->package_path ? Storage::disk('local')->path($this->package_path) : null;
     }
 }

@@ -61,7 +61,7 @@ class ProductPortabilityTest extends TestCase
 
         ProductOffer::query()->create(['product_id' => $product->id, 'name' => 'Oferta 297', 'price' => 297, 'checkout_slug' => ProductOffer::generateUniqueCheckoutSlug(), 'checkout_config' => [], 'position' => 0]);
         SubscriptionPlan::query()->create(['product_id' => $product->id, 'name' => 'Mensal', 'price' => 49.9, 'interval' => 'monthly', 'checkout_slug' => SubscriptionPlan::generateUniqueCheckoutSlug(), 'checkout_config' => [], 'position' => 0, 'gateway_plan_id' => 'price_secreto']);
-        ProductOrderBump::query()->create(['product_id' => $product->id, 'target_product_id' => $bumpTarget->id, 'title' => 'Leve a planilha', 'position' => 0]);
+        ProductOrderBump::query()->create(['product_id' => $product->id, 'target_product_id' => $bumpTarget->id, 'title' => 'Leve a planilha', 'cta_title' => 'Sim, quero', 'position' => 0]);
         ProductCoproducer::query()->create([
             'product_id' => $product->id, 'inviter_user_id' => $seller->id, 'email' => 'co@x.com',
             'status' => ProductCoproducer::STATUS_PENDING, 'token' => str_repeat('z', 48), 'commission_percent' => 20,
@@ -197,6 +197,13 @@ class ProductPortabilityTest extends TestCase
 
         $this->assertSame(ProductImport::STATUS_COMPLETED, $import->fresh()->status);
         $this->assertSame(1, Product::query()->where('tenant_id', $b->id)->where('name', 'Curso Escala')->count());
+    }
+
+    public function test_pagina_de_importacao_abre_para_o_titular(): void
+    {
+        $this->actingAs($this->seller())->get('/produtos/importar')
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page->component('Produtos/Importar'));
     }
 
     public function test_importacao_de_outro_tenant_e_invisivel(): void

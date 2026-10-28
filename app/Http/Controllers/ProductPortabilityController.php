@@ -89,7 +89,7 @@ class ProductPortabilityController extends Controller
             'user_id' => $request->user()->id,
             'status' => ProductImport::STATUS_VALIDATING,
             'package_path' => $relative,
-            'package_sha256' => hash_file('sha256', storage_path('app/'.$relative)),
+            'package_sha256' => hash_file('sha256', \Illuminate\Support\Facades\Storage::disk('local')->path($relative)),
             'original_name' => mb_substr((string) $file->getClientOriginalName(), 0, 255),
         ]);
 

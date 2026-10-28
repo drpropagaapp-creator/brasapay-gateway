@@ -16,7 +16,10 @@ import {
     Trash2,
     Package,
     ExternalLink,
+    Download,
+    Upload,
 } from 'lucide-vue-next';
+import ProductExportModal from '@/components/produtos/ProductExportModal.vue';
 import { htmlToText } from '@/lib/sanitizeHtml';
 
 defineOptions({ layout: LayoutInfoprodutor });
@@ -87,6 +90,12 @@ function duplicate(p) {
     closeMenu();
 }
 
+const exportingProduct = ref(null);
+function openExport(p) {
+    exportingProduct.value = p;
+    closeMenu();
+}
+
 function resubmit(p) {
     if (!confirm(`Reenviar "${p.name}" para análise?`)) return;
     router.post(`/produtos/${p.id}/reenviar-analise`, {}, { preserveScroll: true });
@@ -124,7 +133,10 @@ function pluginActions(productId) {
         <ProdutosTabs />
 
         <AuroraPageSection>
-            <div class="flex justify-end">
+            <div class="flex justify-end gap-2">
+                <Link href="/produtos/importar" class="inline-flex items-center gap-2 rounded-lg border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-600 dark:text-zinc-200 dark:hover:bg-zinc-800">
+                    <Upload class="h-4 w-4" /> Importar produto
+                </Link>
                 <Button @click="openSidebar">
                     Novo produto
                 </Button>
@@ -259,6 +271,15 @@ function pluginActions(productId) {
                                     Duplicar
                                 </button>
                                 <button
+                                    v-if="!p.is_coproduction"
+                                    type="button"
+                                    class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                                    @click="openExport(p)"
+                                >
+                                    <Download class="h-4 w-4 shrink-0" />
+                                    Exportar produto
+                                </button>
+                                <button
                                     v-if="p.approval?.can_resubmit && !p.is_coproduction"
                                     type="button"
                                     class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-amber-800 hover:bg-amber-50 dark:text-amber-200 dark:hover:bg-amber-950/30"
@@ -390,6 +411,7 @@ function pluginActions(productId) {
         </div>
     </Teleport>
 
+    <ProductExportModal :product="exportingProduct" @close="exportingProduct = null" />
     <ProdutoCreateSidebar
         :open="sidebarOpen"
         :product-types="productTypes"

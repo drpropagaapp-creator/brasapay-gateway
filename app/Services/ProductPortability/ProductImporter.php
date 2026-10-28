@@ -280,6 +280,11 @@ class ProductImporter
         $attrs = array_merge($attrs, app(ProductApprovalService::class)->attributesForNewProduct(false));
         $product = new Product;
         $product->forceFill(array_filter($attrs, fn ($k) => \Illuminate\Support\Facades\Schema::hasColumn('products', $k), ARRAY_FILTER_USE_KEY));
+        // products.id é UUID (Postgres/MySQL, gerado no `creating` do model); no SQLite segue
+        // inteiro e o model não incrementa sozinho ($incrementing = false).
+        if ($product->getConnection()->getDriverName() === 'sqlite') {
+            $product->id = (string) ((int) Product::withTrashed()->max('id') + 1);
+        }
         $product->save();
 
         return $product;
