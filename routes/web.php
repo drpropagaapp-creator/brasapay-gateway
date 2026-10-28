@@ -228,6 +228,11 @@ Route::get('/plugins/{slug}/assets/{path}', \App\Http\Controllers\PluginAssetCon
     ->name('plugins.asset');
 
 Route::get('/renovar/{token}', [\App\Http\Controllers\RenewalController::class, 'show'])->name('renewal.show')->where('token', '[a-zA-Z0-9]{32,64}');
+// Brasa Recovery: descadastro do comprador (link assinado no rodapé do e-mail).
+Route::get('/recuperacao/descadastrar/{tenant}/{email}', [\App\Http\Controllers\RecoveryController::class, 'optOut'])
+    ->whereNumber('tenant')
+    ->middleware(['signed', 'throttle:30,1'])
+    ->name('recovery.optout');
 Route::post('/renovar', [\App\Http\Controllers\RenewalController::class, 'process'])
     ->name('renewal.process')
     ->middleware(['throttle:checkout-pay', 'throttle:checkout-pix', 'throttle:checkout-pix-email', 'throttle:checkout-card']);
@@ -1147,6 +1152,12 @@ Route::middleware(['auth', 'admin.tenant', 'seller.panel', 'stacker.license', 'r
     Route::get('/relatorios', [\App\Http\Controllers\RelatoriosController::class, 'index'])
         ->middleware('team.permission:relatorios.view')
         ->name('relatorios.index');
+    Route::get('/recuperacao', [\App\Http\Controllers\RecoveryController::class, 'index'])
+        ->middleware('team.permission:integracoes.view')
+        ->name('recovery.index');
+    Route::put('/recuperacao', [\App\Http\Controllers\RecoveryController::class, 'update'])
+        ->middleware(['team.permission:integracoes.view', 'throttle:30,1'])
+        ->name('recovery.update');
     Route::get('/relatorios/whatsapp', [\App\Http\Controllers\UazapiRecoveryReportController::class, 'index'])
         ->middleware(['team.permission:relatorios.view', 'seller.integration:uazapi,evolution'])
         ->name('relatorios.whatsapp');

@@ -233,6 +233,7 @@ return Application::configure(basePath: dirname(__DIR__))
         // Brasa Treasury: conciliação em modo observação (só registra divergências).
         $schedule->command('treasury:reconcile')->hourlyAt(17)->withoutOverlapping(30);
         $schedule->command('acquirer:prune-attempts --days=30')->dailyAt('04:10');
+        $schedule->command('recovery:process-email')->everyFiveMinutes()->withoutOverlapping(10);
         // BrasaShield em observação: janela de 30 min a cada 10 (sobreposição proposital; avaliação é idempotente).
         $schedule->command('shield:scan --minutes=30')->everyTenMinutes()->withoutOverlapping(15);
         $schedule->command('schedule:heartbeat')->everyMinute();
