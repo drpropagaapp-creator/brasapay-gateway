@@ -7,6 +7,7 @@ import FeeFixedInput from '@/components/ui/FeeFixedInput.vue';
 import FeePercentInput from '@/components/ui/FeePercentInput.vue';
 import MerchantAdminNotesPanel from '@/components/platform/MerchantAdminNotesPanel.vue';
 import PlatformStepUpModal from '@/components/platform/PlatformStepUpModal.vue';
+import SellerAcquirerPolicyPanel from '@/components/platform/SellerAcquirerPolicyPanel.vue';
 import { ArrowLeft, List } from 'lucide-vue-next';
 import { formatPercentForInput, normalizeMerchantFeeOverridesForSubmit, normalizeMerchantSettlementOverridesForSubmit } from '@/lib/percentDecimal';
 
@@ -484,6 +485,8 @@ function submit() {
                 <h2 class="font-semibold">Ordem de adquirentes</h2><p class="mt-1 text-xs text-zinc-500">Selecione o principal ou herde a ordem da plataforma.</p>
                 <div class="mt-4 grid gap-3 sm:grid-cols-2"><template v-for="row in gatewayRows" :key="row.key"><label v-if="row.key !== 'pix_auto' || showPixAuto" class="text-sm"><span class="font-medium">{{ row.label }}</span><select v-model="gatewayPrimary[row.key]" class="mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 dark:border-zinc-600 dark:bg-zinc-800"><option value="">Padrão da plataforma</option><option v-for="gateway in gatewaysFor(row.key)" :key="gateway.slug" :value="gateway.slug">{{ gateway.name }}{{ gateway.is_connected ? '' : ' (não conectado)' }}</option></select></label></template></div>
             </section>
+
+            <SellerAcquirerPolicyPanel v-if="merchant.is_infoprodutor" :merchant-id="merchant.id" />
 
             <section class="rounded-2xl border border-amber-200 bg-amber-50/40 p-6 dark:border-amber-900/50 dark:bg-amber-950/20">
                 <h2 class="mb-3 font-semibold">Observações internas</h2><MerchantAdminNotesPanel :merchant-user-id="merchant.id" compact :initial-count="merchant.admin_notes_count || 0" />

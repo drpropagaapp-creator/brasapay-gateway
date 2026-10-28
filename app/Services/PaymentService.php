@@ -7,6 +7,7 @@ use App\Models\GatewayCredential;
 use App\Models\Order;
 use App\Models\Product;
 use App\Services\CajuPay\CajuPayAccountResolver;
+use App\Services\Payments\AcquirerPolicyService;
 use App\Models\Setting;
 use App\Models\User;
 use App\Models\Subscription;
@@ -161,10 +162,20 @@ class PaymentService
      * @param  array<string, mixed>|null  $gatewayConfigOverride  When set (e.g. from API application), used instead of product's payment_gateways.
      * @return array{transaction_id: string, gateway: string, status?: string}
      */
-    public function createCardPayment(Order $order, ?Product $product, array $consumer, array $card, ?array $gatewayConfigOverride = null): array
+    /**
+     * @param  list<string>|null  $onlyGateways  Restringe às adquirentes informadas, sem fallback para outras
+     *                                           (ex.: token de cartão salvo que só vale no Stripe).
+     */
+    public function createCardPayment(Order $order, ?Product $product, array $consumer, array $card, ?array $gatewayConfigOverride = null, ?array $onlyGateways = null): array
     {
         $tenantId = $order->tenant_id;
         $orderSlugs = $this->getGatewayOrderForMethod($tenantId, 'card', $product, $gatewayConfigOverride);
+        if ($onlyGateways !== null) {
+            $orderSlugs = array_values(array_filter($orderSlugs, fn ($slug) => in_array($slug, $onlyGateways, true)));
+            if ($orderSlugs === []) {
+                throw new \RuntimeException('Nenhuma adquirente autorizada pode cobrar este cartão salvo.');
+            }
+        }
         $lastException = null;
         $deadline = microtime(true) + self::PAYMENT_TOTAL_TIMEOUT_SECONDS;
 
@@ -249,6 +260,10 @@ class PaymentService
      */
     public function createStripeWalletPayment(Order $order, array $consumer, array $card): array
     {
+        if (! app(AcquirerPolicyService::class)->isAllowed($order->tenant_id, 'wallet', 'stripe')) {
+            throw new \RuntimeException('Apple Pay e Google Pay não estão disponíveis para esta conta.');
+        }
+
         $resolved = $this->resolveGatewayPaymentContext($order->tenant_id, 'stripe', 'card');
         if ($resolved === null || empty($resolved['credentials'])) {
             throw new \RuntimeException('Stripe não está disponível para Apple Pay ou Google Pay.');
@@ -455,11 +470,17 @@ class PaymentService
      */
     public function getFirstAvailableWalletGateway(?int $tenantId, ?Product $product = null): ?string
     {
-        $slugs = $this->getGatewayOrderForMethod($tenantId, 'wallet', $product);
+        $policy = app(AcquirerPolicyService::class);
         $allowed = ['cajupay', 'stripe'];
+        $slugs = $this->getGatewayOrderForMethod($tenantId, 'wallet', $product);
         $slugs = array_values(array_filter($slugs, fn ($slug) => in_array($slug, $allowed, true)));
-        if ($slugs === []) {
-            $slugs = $allowed;
+        // Sem ordem salva para carteira, cai nas duas — mas só se a política do
+        // seller não desligou nem restringiu a carteira.
+        if ($slugs === [] && $policy->ruleFor($tenantId, 'wallet')['mode'] === \App\Models\SellerAcquirerPolicy::MODE_INHERIT) {
+            $platformOrder = $this->normalizedGatewayOrder($tenantId)['wallet'] ?? null;
+            if (! (is_array($platformOrder) && $platformOrder === [])) {
+                $slugs = $allowed;
+            }
         }
 
         foreach ($slugs as $slug) {
@@ -493,7 +514,33 @@ class PaymentService
         };
     }
 
+    /**
+     * Ordem de adquirentes para uma NOVA cobrança: a preferência de roteamento
+     * (produto, app de API, seller, plataforma) filtrada pela autorização do
+     * seller e pelo desligamento explícito do método na plataforma — que
+     * nenhuma preferência consegue contornar.
+     *
+     * @return list<string>
+     */
     public function getGatewayOrderForMethod(?int $tenantId, string $method, ?Product $product = null, ?array $gatewayConfigOverride = null): array
+    {
+        $platformOrder = $this->normalizedGatewayOrder($tenantId)[$method] ?? null;
+        $platformDisabled = is_array($platformOrder) && $platformOrder === [];
+
+        return app(AcquirerPolicyService::class)->filter(
+            $tenantId,
+            $method,
+            $this->routingGatewayOrderForMethod($tenantId, $method, $product, $gatewayConfigOverride),
+            $platformDisabled
+        );
+    }
+
+    /**
+     * Preferência de roteamento, sem a política do seller. Use getGatewayOrderForMethod().
+     *
+     * @return list<string>
+     */
+    private function routingGatewayOrderForMethod(?int $tenantId, string $method, ?Product $product = null, ?array $gatewayConfigOverride = null): array
     {
         $order = $this->normalizedGatewayOrder($tenantId);
         $globalOrder = $order[$method] ?? [];

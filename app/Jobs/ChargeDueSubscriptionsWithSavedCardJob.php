@@ -105,7 +105,8 @@ class ChargeDueSubscriptionsWithSavedCardJob
                     'card_mask' => $method->last_four ? '**** '.$method->last_four : '',
                     'currency' => $currency,
                 ];
-                $cardResult = $paymentService->createCardPayment($order, $product, $consumer, $card);
+                // O token salvo é do Stripe: nunca tentar outra adquirente com ele.
+                $cardResult = $paymentService->createCardPayment($order, $product, $consumer, $card, null, ['stripe']);
                 $status = $cardResult['status'] ?? null;
                 if (in_array($status, ['paid', 'settled', 'approved', 'completed'], true)) {
                     $renewalService->applySuccessfulRenewal($order->fresh(), $subscription->fresh(), $plan);

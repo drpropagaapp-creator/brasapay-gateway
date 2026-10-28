@@ -318,6 +318,7 @@ class UsersController extends Controller
             'merchant_fees' => $user->merchant_fees ?? [],
             'merchant_settlement_overrides' => $user->merchant_settlement_overrides ?? [],
             'merchant_gateway_order' => $user->merchant_gateway_order ?? [],
+            'is_infoprodutor' => $user->isInfoprodutor(),
             'cajupay_account_id' => $user->cajupay_account_id,
             'api_pix_mode' => $tenantId > 0 ? ApiPixAccess::tenantMode($tenantId) : ApiPixAccess::MODE_INHERIT,
             'integration_modes' => $tenantId > 0 ? SellerIntegrationVisibility::tenantModes($tenantId) : SellerIntegrationVisibility::tenantModes(null),

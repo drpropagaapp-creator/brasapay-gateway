@@ -473,6 +473,9 @@ class ApiCheckoutController extends Controller
             try {
                 event(new OrderPending($order));
                 $gatewaySlug = (string) ($pg['pix_auto'] ?? '');
+                if ($gatewaySlug !== '' && ! app(\App\Services\Payments\AcquirerPolicyService::class)->isAllowed($tenantId, 'pix_auto', $gatewaySlug)) {
+                    throw new \RuntimeException('PIX automático não está disponível para esta conta.');
+                }
 
                 if ($gatewaySlug === 'pushinpay') {
                     $credential = GatewayCredential::resolveForPayment($tenantId, 'pushinpay');

@@ -34,6 +34,7 @@ import {
 } from 'lucide-vue-next';
 import axios from 'axios';
 import EmailTemplatePreview from '@/components/produtos/EmailTemplatePreview.vue';
+import CoproductionSplitSimulator from '@/components/coproducao/CoproductionSplitSimulator.vue';
 import { useI18n } from '@/composables/useI18n';
 import {
     mergeConversionPixels,
@@ -3261,6 +3262,11 @@ function submit() {
                 <div v-else class="rounded-xl border border-dashed border-zinc-200 bg-zinc-50/80 p-6 text-center text-sm text-zinc-500 dark:border-zinc-700 dark:bg-zinc-900/40">
                     Nenhum co-produtor ainda.
                 </div>
+
+                <CoproductionSplitSimulator
+                    :product-id="produto.id"
+                    :revision="coproducersList.map((c) => `${c.id}:${c.status}:${c.commission_percent}`).join('|')"
+                />
             </div>
         </template>
 

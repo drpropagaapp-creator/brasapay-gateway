@@ -2315,6 +2315,10 @@ class CheckoutController extends Controller
         if (! in_array($validated['payment_method'], $allowedPaymentIds, true)) {
             return response()->json(['message' => 'Método de pagamento não disponível para este produto.'], 422);
         }
+        // Este fluxo usa a CajuPay direto: só segue se a CajuPay estiver autorizada para o seller nesse método.
+        if (! app(\App\Services\Payments\AcquirerPolicyService::class)->isAllowed((int) $product->tenant_id, (string) $validated['payment_method'], 'cajupay')) {
+            return response()->json(['message' => 'Método de pagamento não disponível para este produto.'], 422);
+        }
 
         $sessionEmail = strtolower(trim((string) $request->input('email', '')));
         if ($sessionEmail === '') {

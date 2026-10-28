@@ -426,6 +426,10 @@ Route::prefix('plataforma')->name('plataforma.')->group(function () {
             Route::get('/{user}/edit', [\App\Http\Controllers\Platform\UsersController::class, 'edit'])->name('edit');
             Route::get('/{user}', [\App\Http\Controllers\Platform\UsersController::class, 'show'])->name('show');
             Route::get('/{user}/taxas-efetivas', [\App\Http\Controllers\Platform\UsersController::class, 'effectiveFees'])->name('effective-fees');
+            Route::get('/{user}/adquirentes', [\App\Http\Controllers\Platform\SellerAcquirerPolicyController::class, 'show'])->name('acquirer-policy.show');
+            Route::put('/{user}/adquirentes', [\App\Http\Controllers\Platform\SellerAcquirerPolicyController::class, 'update'])
+                ->middleware('throttle:30,1')
+                ->name('acquirer-policy.update');
             Route::get('/{user}/observacoes', [\App\Http\Controllers\Platform\MerchantAdminNotesController::class, 'index'])->name('notes.index');
             Route::post('/{user}/observacoes', [\App\Http\Controllers\Platform\MerchantAdminNotesController::class, 'store'])->name('notes.store');
             Route::post('/{user}/gerente-conta', [\App\Http\Controllers\Platform\UsersController::class, 'assignAccountManager'])
@@ -1000,6 +1004,7 @@ Route::middleware(['auth', 'admin.tenant', 'seller.panel', 'stacker.license', 'r
         Route::put('/produtos/{produto}/checkout-config', [\App\Http\Controllers\CheckoutConfigController::class, 'update'])->name('checkout.config.update');
         Route::post('/produtos/{produto}/checkout-upload', [\App\Http\Controllers\CheckoutConfigController::class, 'uploadImage'])->name('checkout.upload');
         Route::post('/produtos/{produto}/coproducers', [\App\Http\Controllers\ProductCoproductionController::class, 'store'])->name('produtos.coproducers.store')->middleware('throttle:30,1');
+        Route::get('/produtos/{produto}/coproducers/simulacao', [\App\Http\Controllers\ProductCoproductionController::class, 'simulate'])->name('produtos.coproducers.simulate')->middleware('throttle:120,1');
         Route::delete('/produtos/{produto}/coproducers/{coproducer}', [\App\Http\Controllers\ProductCoproductionController::class, 'destroy'])->name('produtos.coproducers.destroy');
         Route::put('/produtos/{produto}/affiliate-settings', [\App\Http\Controllers\ProductAffiliateController::class, 'updateSettings'])->name('produtos.affiliate-settings.update');
         Route::post('/produtos/{produto}/affiliate-invite-token/regenerate', [\App\Http\Controllers\ProductAffiliateController::class, 'regenerateInviteToken'])->name('produtos.affiliate-invite-token.regenerate');

@@ -56,6 +56,8 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
+        $this->app->scoped(\App\Services\Payments\AcquirerPolicyService::class);
+
         // O provider de e-mail do framework é adiado e regrava mail.manager.
         // Registrar primeiro e substituir em seguida mantém o histórico de envios.
         $this->app->register(\Illuminate\Mail\MailServiceProvider::class);

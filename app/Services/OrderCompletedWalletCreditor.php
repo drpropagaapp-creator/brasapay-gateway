@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\Order;
+use App\Models\OrderSplitSnapshot;
 use App\Models\ProductCoproducer;
 use App\Models\TenantWallet;
 use App\Models\WalletTransaction;
@@ -52,10 +53,16 @@ class OrderCompletedWalletCreditor
 
     private static function creditWithinLock(Order $order): void
     {
-        if (WalletTransaction::query()
+        $alreadyCredited = WalletTransaction::query()
             ->where('order_id', $order->id)
             ->whereIn('type', [WalletTransaction::TYPE_CREDIT_SALE, WalletTransaction::TYPE_CREDIT_SALE_PENDING])
-            ->exists()) {
+            ->exists();
+
+        $useSnapshot = OrderSplitSnapshot::available();
+        $hasSnapshot = $useSnapshot && OrderSplitSnapshot::query()->where('order_id', $order->id)->exists();
+
+        // Pedido creditado antes do snapshot existir: não recalcula com a regra atual.
+        if ($alreadyCredited && ! $hasSnapshot) {
             return;
         }
 
@@ -88,7 +95,17 @@ class OrderCompletedWalletCreditor
         }
 
         $isAffiliate = $order->isAffiliateSale();
-        $slices = ProductCoproducer::buildGrossSlicesForOrder($order, $grossTotal, $isAffiliate);
+        if ($useSnapshot) {
+            // A divisão fica registrada antes do primeiro crédito: um reprocessamento
+            // (webhook repetido, falha no meio) usa exatamente a mesma divisão.
+            $snapshot = OrderSplitSnapshot::remember(
+                $order,
+                fn () => ProductCoproducer::computeSplitForOrder($order, $grossTotal, $isAffiliate)
+            );
+            $slices = ProductCoproducer::slicesToLegacyShape($snapshot->slices);
+        } else {
+            $slices = ProductCoproducer::buildGrossSlicesForOrder($order, $grossTotal, $isAffiliate);
+        }
 
         $createdPendingIds = [];
 
@@ -96,6 +113,15 @@ class OrderCompletedWalletCreditor
             $tenantId = (int) $slice['tenant_id'];
             $grossSlice = (float) $slice['gross'];
             if ($tenantId < 1 || $grossSlice <= 0) {
+                continue;
+            }
+
+            // Idempotência por participante: completa quem faltou, nunca credita duas vezes.
+            if (WalletTransaction::query()
+                ->where('order_id', $order->id)
+                ->where('tenant_id', $tenantId)
+                ->whereIn('type', [WalletTransaction::TYPE_CREDIT_SALE, WalletTransaction::TYPE_CREDIT_SALE_PENDING])
+                ->exists()) {
                 continue;
             }
 

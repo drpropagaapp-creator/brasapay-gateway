@@ -31,6 +31,10 @@ class LinaOpenxCheckoutService
     {
         GatewayPluginRequirement::assertUnlocked(self::GATEWAY_SLUG);
 
+        if (! app(\App\Services\Payments\AcquirerPolicyService::class)->isAllowed($order->tenant_id, 'open_finance', self::GATEWAY_SLUG)) {
+            throw new \RuntimeException('Open Finance não está disponível para esta conta.');
+        }
+
         $credentials = $this->credentialsForOrder($order);
         if ($credentials === null) {
             throw new \RuntimeException('Lina OpenX não configurada. Conecte o adquirente no painel.');

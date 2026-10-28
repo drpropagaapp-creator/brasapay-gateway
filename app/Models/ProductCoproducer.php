@@ -2,9 +2,11 @@
 
 namespace App\Models;
 
+use App\Services\Coproduction\RevenueSplitCalculator;
+use App\Support\MoneyDecimal;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 
 class ProductCoproducer extends Model
@@ -238,26 +240,139 @@ class ProductCoproducer extends Model
     }
 
     /**
-     * @return array<int, array{tenant_id: int, gross: float, product_coproducer_id: int|null, role: string}>
+     * Fatias do bruto no formato consumido pela carteira (valores em reais).
+     *
+     * @return array<int, array{tenant_id: int, gross: float, gross_cents: int, product_coproducer_id: int|null, role: string}>
      */
     public static function buildGrossSlicesForOrder(Order $order, float $grossTotal, bool $isAffiliateSale): array
     {
+        return self::slicesToLegacyShape(self::computeSplitForOrder($order, $grossTotal, $isAffiliateSale)['slices']);
+    }
+
+    /**
+     * Divisão completa (centavos, versão da regra e problemas encontrados) —
+     * é o que vai para o snapshot imutável do pedido.
+     *
+     * @return array{version: int, total_cents: int, slices: list<array<string, mixed>>, issues: list<array<string, mixed>>}
+     */
+    public static function computeSplitForOrder(Order $order, float $grossTotal, bool $isAffiliateSale): array
+    {
         $sellerTenantId = (int) $order->tenant_id;
-        if ($sellerTenantId < 1 || $grossTotal <= 0) {
-            return [['tenant_id' => $sellerTenantId, 'gross' => $grossTotal, 'product_coproducer_id' => null, 'role' => 'seller']];
+        $totalCents = MoneyDecimal::toCents($grossTotal);
+
+        if ($sellerTenantId < 1 || $totalCents <= 0 || $order->product_id === null || $order->product_id === '') {
+            return RevenueSplitCalculator::split($sellerTenantId, [
+                ['product_id' => null, 'cents' => max(0, $totalCents), 'coproducers' => []],
+            ]);
         }
 
         static::expireOverdue();
 
-        $productId = $order->product_id;
-        if ($productId === null || $productId === '') {
-            return [['tenant_id' => $sellerTenantId, 'gross' => $grossTotal, 'product_coproducer_id' => null, 'role' => 'seller']];
+        $bases = [];
+        foreach (self::revenueBasesForOrder($order, $totalCents) as $productId => $cents) {
+            $bases[] = [
+                'product_id' => $productId,
+                'cents' => $cents,
+                'coproducers' => self::eligibleCoproducersForBase($order, $productId, $isAffiliateSale),
+            ];
         }
 
-        $productIdStr = (string) $productId;
+        $affiliate = null;
+        if ($isAffiliateSale) {
+            $affSlice = self::affiliateGrossSliceFromOrder($order, $grossTotal);
+            if ($affSlice !== null) {
+                $affiliate = [
+                    'tenant_id' => (int) $affSlice['tenant_id'],
+                    'cents' => (int) $affSlice['gross_cents'],
+                    'product_affiliate_enrollment_id' => (int) $affSlice['product_affiliate_enrollment_id'],
+                    'basis_points' => (int) $affSlice['basis_points'],
+                ];
+            }
+        }
+
+        $result = RevenueSplitCalculator::split($sellerTenantId, $bases, $affiliate);
+
+        if ($result['issues'] !== []) {
+            Log::warning('ProductCoproducer: split com ressalvas', [
+                'order_id' => $order->id,
+                'issues' => $result['issues'],
+            ]);
+        }
+
+        return $result;
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $slices
+     * @return array<int, array<string, mixed>>
+     */
+    public static function slicesToLegacyShape(array $slices): array
+    {
+        return array_map(function (array $s) {
+            $bp = (int) ($s['basis_points'] ?? 0);
+
+            return [
+                'tenant_id' => (int) $s['tenant_id'],
+                'gross' => MoneyDecimal::fromCents((int) $s['gross_cents']),
+                'gross_cents' => (int) $s['gross_cents'],
+                'product_coproducer_id' => $s['product_coproducer_id'] ?? null,
+                'product_coproducer_ids' => $s['product_coproducer_ids'] ?? [],
+                'role' => (string) $s['role'],
+                'product_affiliate_enrollment_id' => $s['product_affiliate_enrollment_id'] ?? null,
+                'commission_percent' => $bp > 0 ? $bp / 100 : null,
+            ];
+        }, $slices);
+    }
+
+    /**
+     * Receita do pedido por produto, em centavos. A base do principal recebe o
+     * que não for identificável por item; pedidos antigos sem itens (ou cujos
+     * itens não fecham com o total) ficam inteiros no produto principal.
+     *
+     * @return array<string, int>
+     */
+    private static function revenueBasesForOrder(Order $order, int $totalCents): array
+    {
+        $mainId = (string) $order->product_id;
+        $order->loadMissing('orderItems');
+
+        $bases = [];
+        foreach ($order->orderItems as $item) {
+            $pid = $item->product_id !== null && $item->product_id !== '' ? (string) $item->product_id : $mainId;
+            $bases[$pid] = ($bases[$pid] ?? 0) + MoneyDecimal::toCents($item->amount ?? 0);
+        }
+
+        if ($bases === [] || array_sum($bases) !== $totalCents) {
+            return [$mainId => $totalCents];
+        }
+
+        // Itens de produto de outro tenant não carregam co-produtores deste pedido.
+        $foreign = [];
+        foreach (array_keys($bases) as $pid) {
+            if ($pid === $mainId) {
+                continue;
+            }
+            $productTenant = Product::query()->whereKey($pid)->value('tenant_id');
+            if ($productTenant === null || (int) $productTenant !== (int) $order->tenant_id) {
+                $foreign[] = $pid;
+            }
+        }
+        foreach ($foreign as $pid) {
+            $bases[$mainId] = ($bases[$mainId] ?? 0) + $bases[$pid];
+            unset($bases[$pid]);
+        }
+
+        return $bases;
+    }
+
+    /**
+     * @return list<array{tenant_id: int, basis_points: int, product_coproducer_id: int}>
+     */
+    private static function eligibleCoproducersForBase(Order $order, string $productId, bool $isAffiliateSale): array
+    {
         $rows = static::query()
             ->with(['coProducer:id,tenant_id'])
-            ->where('product_id', $productIdStr)
+            ->where('product_id', $productId)
             ->where('status', self::STATUS_ACTIVE)
             ->whereNotNull('co_producer_user_id')
             ->where(function ($q) {
@@ -266,101 +381,21 @@ class ProductCoproducer extends Model
             ->where(function ($q) {
                 $q->whereNull('ends_at')->orWhere('ends_at', '>', now());
             })
+            ->orderBy('id')
             ->get()
-            ->filter(fn (self $row) => (string) $row->product_id === $productIdStr)
-            ->values();
+            ->filter(fn (self $row) => (string) $row->product_id === $productId)
+            ->filter(fn (self $row) => $isAffiliateSale ? (bool) $row->commission_on_affiliate_sales : (bool) $row->commission_on_direct_sales);
 
-        $eligible = $rows->filter(function (ProductCoproducer $row) use ($isAffiliateSale) {
-            if ($isAffiliateSale) {
-                return $row->commission_on_affiliate_sales;
-            }
-
-            return $row->commission_on_direct_sales;
-        });
-
-        if ($eligible->isEmpty()) {
-            $slices = [[
-                'tenant_id' => $sellerTenantId,
-                'gross' => $grossTotal,
-                'product_coproducer_id' => null,
-                'role' => 'seller',
-                'product_affiliate_enrollment_id' => null,
-            ]];
-            if ($isAffiliateSale) {
-                $affSlice = self::affiliateGrossSliceFromOrder($order, $grossTotal);
-                if ($affSlice !== null && (float) $affSlice['gross'] > 0.0001) {
-                    $affGross = (float) $affSlice['gross'];
-                    $slices[0]['gross'] = round(max(0, (float) $slices[0]['gross'] - $affGross), 2);
-                    $slices[] = $affSlice;
-                }
-            }
-
-            return $slices;
+        $out = [];
+        foreach ($rows as $row) {
+            $out[] = [
+                'tenant_id' => self::walletTenantIdFor($row),
+                'basis_points' => MoneyDecimal::percentToBasisPoints($row->commission_percent),
+                'product_coproducer_id' => (int) $row->id,
+            ];
         }
 
-        $sumPct = round((float) $eligible->sum('commission_percent'), 2);
-        if ($sumPct > 100.01) {
-            return [['tenant_id' => $sellerTenantId, 'gross' => $grossTotal, 'product_coproducer_id' => null, 'role' => 'seller']];
-        }
-
-        /** @var Collection<int, ProductCoproducer> $list */
-        $list = $eligible->values();
-        $coproducerSlices = [];
-        $remaining = $grossTotal;
-        $n = $list->count();
-
-        foreach ($list as $idx => $row) {
-            $pct = (float) $row->commission_percent;
-            if ($pct <= 0) {
-                continue;
-            }
-            $isLast = $idx === $n - 1;
-            if ($n === 1) {
-                $sliceGross = round($grossTotal * $pct / 100.0, 2);
-            } else {
-                $sliceGross = $isLast
-                    ? round(max(0, $remaining), 2)
-                    : round($grossTotal * $pct / 100.0, 2);
-                if (! $isLast) {
-                    $remaining = round($remaining - $sliceGross, 2);
-                }
-            }
-            $coproducerTenant = self::walletTenantIdFor($row);
-            if ($coproducerTenant > 0 && $sliceGross > 0.0001) {
-                $coproducerSlices[] = [
-                    'tenant_id' => $coproducerTenant,
-                    'gross' => $sliceGross,
-                    'product_coproducer_id' => (int) $row->id,
-                    'role' => 'coproducer',
-                    'product_affiliate_enrollment_id' => null,
-                    'commission_percent' => $pct,
-                ];
-            }
-        }
-
-        $coproducerGrossTotal = round(array_sum(array_column($coproducerSlices, 'gross')), 2);
-        $sellerGross = round(max(0, $grossTotal - $coproducerGrossTotal), 2);
-
-        $slices = array_merge([
-            [
-                'tenant_id' => $sellerTenantId,
-                'gross' => $sellerGross,
-                'product_coproducer_id' => null,
-                'role' => 'seller',
-                'product_affiliate_enrollment_id' => null,
-            ],
-        ], $coproducerSlices);
-
-        if ($isAffiliateSale) {
-            $affSlice = self::affiliateGrossSliceFromOrder($order, $grossTotal);
-            if ($affSlice !== null && (float) $affSlice['gross'] > 0.0001) {
-                $affGross = (float) $affSlice['gross'];
-                $slices[0]['gross'] = round(max(0, (float) $slices[0]['gross'] - $affGross), 2);
-                $slices[] = $affSlice;
-            }
-        }
-
-        return $slices;
+        return $out;
     }
 
     /**
@@ -411,14 +446,18 @@ class ProductCoproducer extends Model
             return null;
         }
 
-        $gross = round($grossTotal * $pct / 100.0, 2);
-        if ($gross <= 0) {
+        // Inteiros com arredondamento half-up nos centavos (mesma regra do round(…, 2) antigo, sem float).
+        $bp = MoneyDecimal::percentToBasisPoints($pct);
+        $cents = intdiv(MoneyDecimal::toCents($grossTotal) * $bp + 5000, 10000);
+        if ($cents <= 0) {
             return null;
         }
 
         return [
             'tenant_id' => $affiliateTenantId,
-            'gross' => $gross,
+            'gross' => MoneyDecimal::fromCents($cents),
+            'gross_cents' => $cents,
+            'basis_points' => $bp,
             'product_coproducer_id' => null,
             'role' => 'affiliate',
             'product_affiliate_enrollment_id' => (int) $enrollment->id,

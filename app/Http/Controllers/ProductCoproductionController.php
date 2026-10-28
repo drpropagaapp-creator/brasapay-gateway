@@ -7,9 +7,14 @@ use App\Mail\CoproductionInvitationMail;
 use App\Models\Product;
 use App\Models\ProductCoproducer;
 use App\Models\User;
+use App\Services\Coproduction\RevenueSplitCalculator;
+use App\Services\EffectiveMerchantFees;
+use App\Services\EffectiveSettlementRules;
 use App\Services\PlatformTransactionalMailService;
 use App\Services\SellerActivityLogService;
 use App\Services\TeamAccessService;
+use App\Support\MoneyDecimal;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
@@ -150,6 +155,84 @@ class ProductCoproductionController extends Controller
         ]);
 
         return back()->with('success', 'Co-produção revogada.');
+    }
+
+    /**
+     * Simulação da divisão de uma venda direta com a mesma regra, taxas e prazos
+     * que valem ao creditar a carteira. Convites pendentes entram como
+     * estimativa (taxa do seller), pois a conta do co-produtor ainda não existe.
+     */
+    public function simulate(Request $request, Product $produto): JsonResponse
+    {
+        $this->authorizeProduct($produto);
+
+        $validated = $request->validate([
+            'amount' => ['required', 'numeric', 'min:0.01', 'max:1000000'],
+            'method' => ['nullable', 'string', Rule::in(['pix', 'card', 'boleto'])],
+        ]);
+        $method = $validated['method'] ?? 'pix';
+        $sellerTenantId = (int) $produto->tenant_id;
+        $grossCents = MoneyDecimal::toCents($validated['amount']);
+
+        ProductCoproducer::expireOverdue();
+        $rows = ProductCoproducer::query()
+            ->with('coProducer:id,tenant_id,name')
+            ->where('product_id', $produto->id)
+            ->whereIn('status', [ProductCoproducer::STATUS_ACTIVE, ProductCoproducer::STATUS_PENDING])
+            ->where('commission_on_direct_sales', true)
+            ->orderBy('id')
+            ->get();
+
+        $coproducers = [];
+        $labels = [];
+        foreach ($rows as $row) {
+            $pending = $row->status !== ProductCoproducer::STATUS_ACTIVE || ! $row->co_producer_user_id;
+            // Pendente ainda não tem carteira: um id fictício único só separa a fatia na simulação.
+            $tenant = $pending ? PHP_INT_MAX - (int) $row->id : ProductCoproducer::walletTenantIdFor($row);
+            $coproducers[] = [
+                'tenant_id' => $tenant,
+                'basis_points' => MoneyDecimal::percentToBasisPoints($row->commission_percent),
+                'product_coproducer_id' => (int) $row->id,
+            ];
+            $labels[(int) $row->id] = [
+                'name' => $row->coProducer?->name ?: $row->email,
+                'pending' => $pending,
+                'fee_tenant_id' => $pending ? $sellerTenantId : $tenant,
+            ];
+        }
+
+        $split = RevenueSplitCalculator::split($sellerTenantId, [
+            ['product_id' => (string) $produto->id, 'cents' => $grossCents, 'coproducers' => $coproducers],
+        ]);
+
+        $participants = [];
+        foreach ($split['slices'] as $slice) {
+            $isSeller = $slice['role'] === 'seller';
+            $copId = $isSeller ? null : (int) ($slice['product_coproducer_id'] ?? 0);
+            $feeTenant = $isSeller ? $sellerTenantId : ($labels[$copId]['fee_tenant_id'] ?? $sellerTenantId);
+            $gross = MoneyDecimal::fromCents((int) $slice['gross_cents']);
+            $fee = $gross > 0 ? EffectiveMerchantFees::calculateSaleFee($feeTenant, $method, $gross) : ['fee' => 0.0, 'net' => 0.0];
+            $rules = EffectiveSettlementRules::forTenantMethod($feeTenant, $method);
+
+            $participants[] = [
+                'role' => $slice['role'],
+                'name' => $isSeller ? 'Você (produtor)' : ($labels[$copId]['name'] ?? 'Co-produtor'),
+                'pending_invite' => $isSeller ? false : (bool) ($labels[$copId]['pending'] ?? false),
+                'percent' => round((int) $slice['gross_cents'] * 100 / max(1, $grossCents), 2),
+                'gross' => $gross,
+                'fee' => round((float) $fee['fee'], 2),
+                'net' => round((float) $fee['net'], 2),
+                'reserve_percent' => (float) ($rules['reserve_percent'] ?? 0),
+                'days_to_available' => (int) ($rules['days_to_available'] ?? 0),
+            ];
+        }
+
+        return response()->json([
+            'amount' => MoneyDecimal::fromCents($grossCents),
+            'method' => $method,
+            'participants' => $participants,
+            'issues' => $split['issues'],
+        ]);
     }
 
     private function authorizeProduct(Product $produto): void
