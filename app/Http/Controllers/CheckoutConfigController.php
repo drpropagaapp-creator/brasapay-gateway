@@ -128,6 +128,16 @@ class CheckoutConfigController extends Controller
             'plan_id' => $planId,
         ]);
 
+        $scope = $offerId ? 'offer' : ($planId ? 'plan' : 'product');
+        \App\Models\LandingPageVersion::recordIfChanged(
+            $produto,
+            $scope,
+            $offerId ? (int) $offerId : ($planId ? (int) $planId : null),
+            is_array($stored['landing'] ?? null) ? $stored['landing'] : null,
+            is_array($merged['landing'] ?? null) ? $merged['landing'] : null,
+            $request->user()?->id
+        );
+
         if ($offerId) {
             $offer->update(['checkout_config' => $merged]);
             return $request->expectsJson()
@@ -145,6 +155,53 @@ class CheckoutConfigController extends Controller
         return $request->expectsJson()
             ? response()->json(['success' => true, 'message' => 'Checkout atualizado.'])
             : back()->with('success', 'Checkout atualizado.');
+    }
+
+    /** Versões publicadas da landing (produto, oferta ou plano), mais recentes primeiro. */
+    public function landingVersions(Request $request, Product $produto): JsonResponse
+    {
+        $this->authorizeProduct($produto);
+        [$scope, $scopeId] = $this->landingScopeFromRequest($request);
+
+        $versions = \App\Models\LandingPageVersion::query()
+            ->where('product_id', (string) $produto->id)
+            ->where('scope', $scope)
+            ->where('scope_id', $scopeId)
+            ->orderByDesc('id')
+            ->limit(\App\Models\LandingPageVersion::KEEP)
+            ->get(['id', 'landing', 'created_by_user_id', 'created_at'])
+            ->map(fn ($v) => [
+                'id' => $v->id,
+                'created_at' => $v->created_at?->toIso8601String(),
+                'mode' => ($v->landing['mode'] ?? 'sections') === 'blocks' ? 'blocks' : 'sections',
+                'blocks_count' => is_array($v->landing['blocks'] ?? null) ? count($v->landing['blocks']) : 0,
+            ]);
+
+        return response()->json(['versions' => $versions]);
+    }
+
+    public function landingVersion(Product $produto, int $version): JsonResponse
+    {
+        $this->authorizeProduct($produto);
+        $row = \App\Models\LandingPageVersion::query()
+            ->where('product_id', (string) $produto->id)
+            ->whereKey($version)
+            ->firstOrFail();
+
+        return response()->json(['landing' => $row->landing]);
+    }
+
+    /** @return array{0: string, 1: int|null} */
+    private function landingScopeFromRequest(Request $request): array
+    {
+        if ($request->filled('offer_id')) {
+            return ['offer', (int) $request->input('offer_id')];
+        }
+        if ($request->filled('plan_id')) {
+            return ['plan', (int) $request->input('plan_id')];
+        }
+
+        return ['product', null];
     }
 
     public function uploadImage(Request $request, Product $produto): JsonResponse
@@ -192,7 +249,7 @@ class CheckoutConfigController extends Controller
             if (! isset($merged['landing']) || ! is_array($merged['landing'])) {
                 $merged['landing'] = [];
             }
-            foreach (['images', 'sections'] as $listKey) {
+            foreach (['images', 'sections', 'blocks'] as $listKey) {
                 if (array_key_exists($listKey, $requestConfig['landing'])) {
                     $merged['landing'][$listKey] = is_array($requestConfig['landing'][$listKey])
                         ? array_values($requestConfig['landing'][$listKey])

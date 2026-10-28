@@ -7,6 +7,8 @@ import { useI18n } from '@/composables/useI18n';
 import Button from '@/components/ui/Button.vue';
 import Toggle from '@/components/ui/Toggle.vue';
 import ImageUpload from '@/components/checkout/ImageUpload.vue';
+import LandingBlocksEditor from '@/components/checkout/landing/LandingBlocksEditor.vue';
+import LandingVersionsPanel from '@/components/checkout/landing/LandingVersionsPanel.vue';
 import {
     ChevronDown,
     ChevronRight,
@@ -145,6 +147,8 @@ const configForm = reactive({
         benefits: props.config?.landing?.benefits ?? '',
         show_reviews: props.config?.landing?.show_reviews !== false,
         sections: normalizeLandingSections(props.config?.landing?.sections),
+        mode: props.config?.landing?.mode === 'blocks' ? 'blocks' : 'sections',
+        blocks: Array.isArray(props.config?.landing?.blocks) ? JSON.parse(JSON.stringify(props.config.landing.blocks)) : [],
     },
     youtube_url: props.config?.youtube_url ?? null,
     vturb_embed: props.config?.vturb_embed ?? '',
@@ -384,6 +388,19 @@ onUnmounted(() => {
 
 const previewViewMode = ref('desktop');
 const uploadUrl = computed(() => `/produtos/${props.produto?.id}/checkout-upload`);
+
+/** Carrega uma versão publicada no editor (só vai ao ar ao salvar). */
+function restoreLandingVersion(landing) {
+    if (!landing || typeof landing !== 'object') return;
+    const copy = JSON.parse(JSON.stringify(landing));
+    Object.assign(configForm.landing, {
+        ...copy,
+        images: Array.isArray(copy.images) ? copy.images : [],
+        sections: normalizeLandingSections(copy.sections),
+        mode: copy.mode === 'blocks' ? 'blocks' : 'sections',
+        blocks: Array.isArray(copy.blocks) ? copy.blocks : [],
+    });
+}
 
 /** Templates de checkout disponíveis. Pode ser estendido por plugins (registro de templates). */
 const availableCheckoutTemplates = [
@@ -1016,7 +1033,27 @@ const inputClass =
                         class="rounded-2xl border border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-800"
                     >
                         <div class="px-4 py-3 font-semibold text-zinc-900 dark:text-white">Conteúdo da landing page</div>
-                        <div class="space-y-4 border-t border-zinc-200 px-4 py-4 dark:border-zinc-700">
+                        <div class="flex gap-1 border-t border-zinc-200 px-4 pt-3 dark:border-zinc-700" role="tablist" aria-label="Modo de edição da landing">
+                            <button
+                                v-for="m in [{ id: 'sections', label: 'Seções simples' }, { id: 'blocks', label: 'Editor por blocos' }]"
+                                :key="m.id"
+                                type="button"
+                                role="tab"
+                                :aria-selected="configForm.landing.mode === m.id"
+                                :class="['rounded-lg px-3 py-1.5 text-xs font-medium', configForm.landing.mode === m.id ? 'bg-[var(--color-primary)] text-white' : 'bg-zinc-100 text-zinc-700 dark:bg-zinc-700 dark:text-zinc-200']"
+                                @click="configForm.landing.mode = m.id"
+                            >
+                                {{ m.label }}
+                            </button>
+                        </div>
+                        <div v-if="configForm.landing.mode === 'blocks'" class="space-y-3 px-4 py-4">
+                            <p class="text-sm text-zinc-600 dark:text-zinc-400">
+                                Monte a página com blocos. O preview ao lado mostra o resultado; use o seletor de dispositivo para conferir o mobile.
+                            </p>
+                            <LandingBlocksEditor v-model="configForm.landing.blocks" :upload-url="uploadUrl" />
+                            <LandingVersionsPanel :product-id="produto.id" :scope="checkout_scope || {}" @restore="restoreLandingVersion" />
+                        </div>
+                        <div v-else class="space-y-4 px-4 py-4">
                             <p class="text-sm text-zinc-600 dark:text-zinc-400">
                                 A página abre com esta seção de vendas e o formulário de pagamento fica no final. O botão de chamada rola até o checkout.
                             </p>

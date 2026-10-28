@@ -1003,6 +1003,8 @@ Route::middleware(['auth', 'admin.tenant', 'seller.panel', 'stacker.license', 'r
         Route::delete('/produtos/{produto}/checkout/remove-slug', [\App\Http\Controllers\ProdutosController::class, 'removeCheckoutSlug'])->name('produtos.checkout.remove-slug');
         Route::put('/produtos/{produto}/checkout-config', [\App\Http\Controllers\CheckoutConfigController::class, 'update'])->name('checkout.config.update');
         Route::post('/produtos/{produto}/checkout-upload', [\App\Http\Controllers\CheckoutConfigController::class, 'uploadImage'])->name('checkout.upload');
+        Route::get('/produtos/{produto}/landing/versoes', [\App\Http\Controllers\CheckoutConfigController::class, 'landingVersions'])->name('checkout.landing.versions');
+        Route::get('/produtos/{produto}/landing/versoes/{version}', [\App\Http\Controllers\CheckoutConfigController::class, 'landingVersion'])->whereNumber('version')->name('checkout.landing.version');
         Route::post('/produtos/{produto}/coproducers', [\App\Http\Controllers\ProductCoproductionController::class, 'store'])->name('produtos.coproducers.store')->middleware('throttle:30,1');
         Route::get('/produtos/{produto}/coproducers/simulacao', [\App\Http\Controllers\ProductCoproductionController::class, 'simulate'])->name('produtos.coproducers.simulate')->middleware('throttle:120,1');
         Route::delete('/produtos/{produto}/coproducers/{coproducer}', [\App\Http\Controllers\ProductCoproductionController::class, 'destroy'])->name('produtos.coproducers.destroy');

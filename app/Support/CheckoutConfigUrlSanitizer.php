@@ -70,6 +70,10 @@ final class CheckoutConfigUrlSanitizer
             if (isset($config['landing']['benefits']) && is_string($config['landing']['benefits'])) {
                 $config['landing']['benefits'] = HtmlSanitizer::plainTextMultiline($config['landing']['benefits'], 4000);
             }
+            $config['landing']['mode'] = ($config['landing']['mode'] ?? 'sections') === 'blocks' ? 'blocks' : 'sections';
+            if (array_key_exists('blocks', $config['landing'])) {
+                $config['landing']['blocks'] = \App\Support\Landing\LandingBlockSchema::sanitize($config['landing']['blocks']);
+            }
             $config['landing']['sections'] = self::normalizeLandingSections(
                 $config['landing']['sections'] ?? null
             );

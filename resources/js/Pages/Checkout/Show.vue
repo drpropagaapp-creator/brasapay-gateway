@@ -9,6 +9,7 @@ import CheckoutTimer from '@/components/checkout/CheckoutTimer.vue';
 import CheckoutBanners from '@/components/checkout/CheckoutBanners.vue';
 import CheckoutYoutube from '@/components/checkout/CheckoutYoutube.vue';
 import CheckoutVturb from '@/components/checkout/CheckoutVturb.vue';
+import LandingBlocks from '@/components/checkout/landing/LandingBlocks.vue';
 import CheckoutSummary from '@/components/checkout/CheckoutSummary.vue';
 import CheckoutForm from '@/components/checkout/CheckoutForm.vue';
 import CheckoutSidebar from '@/components/checkout/CheckoutSidebar.vue';
@@ -111,9 +112,10 @@ function announcePreviewReady() {
 
 function onPreviewMessage(event) {
     if (!isBuilderPreview.value) return;
-    const fromParent = event.source === window.parent;
-    const sameOrigin = event.origin === window.location.origin;
-    if (!fromParent && !sameOrigin) return;
+    // O checkout pode ser embutido por qualquer site (frame-ancestors *): aceitar a
+    // janela pai de outra origem deixaria um site terceiro injetar HTML na prévia.
+    // O Builder sempre abre a prévia na mesma origem.
+    if (event.origin !== window.location.origin || event.source !== window.parent) return;
     if (event?.data?.type !== PREVIEW_MESSAGE_TYPE || event.data.config == null) return;
     applyPreviewConfig(event.data.config);
 }
@@ -311,6 +313,17 @@ function landingSectionHasContent(id) {
         default: return false;
     }
 }
+
+/** Landing por blocos: o bloco "checkout" marca onde entra o formulário oficial. */
+const landingBlocksMode = computed(
+    () => isLandingTemplate.value && landingConfig.value?.mode === 'blocks' && Array.isArray(landingConfig.value?.blocks)
+);
+const landingBlocksSplit = computed(() => {
+    const blocks = landingBlocksMode.value ? landingConfig.value.blocks : [];
+    const anchor = blocks.findIndex((b) => b?.type === 'checkout');
+    if (anchor === -1) return { before: blocks, after: [] };
+    return { before: blocks.slice(0, anchor), after: blocks.slice(anchor + 1) };
+});
 
 /** Ids visíveis e com conteúdo, na ordem escolhida — é o que a landing renderiza. */
 const landingVisibleSections = computed(() =>
@@ -528,8 +541,16 @@ function onConversionPixelsReady() {
 
             <!-- Template Landing Page: seção de vendas antes do checkout -->
             <!-- Landing: elementos na ordem configurada no Builder (com mostrar/ocultar por elemento) -->
+            <LandingBlocks
+                v-if="landingBlocksMode && landingBlocksSplit.before.length"
+                :blocks="landingBlocksSplit.before"
+                :vturb-embed="vturbEmbed"
+                :product-name="product?.name || ''"
+                class="mb-10"
+                data-checkout="landing-blocks-before"
+            />
             <section
-                v-if="isLandingTemplate && landingVisibleSections.length"
+                v-if="isLandingTemplate && !landingBlocksMode && landingVisibleSections.length"
                 class="mb-12 space-y-8"
                 data-checkout="landing-hero"
             >
@@ -762,6 +783,15 @@ function onConversionPixelsReady() {
                     />
                 </div>
             </div>
+
+            <LandingBlocks
+                v-if="landingBlocksMode && landingBlocksSplit.after.length"
+                :blocks="landingBlocksSplit.after"
+                :vturb-embed="vturbEmbed"
+                :product-name="product?.name || ''"
+                class="mt-10"
+                data-checkout="landing-blocks-after"
+            />
 
             <!-- Banners laterais: no mobile aparecem no final da página -->
             <div
