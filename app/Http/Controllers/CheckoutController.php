@@ -45,6 +45,7 @@ use App\Services\StorageService;
 use App\Services\Checkout\CheckoutAbuseGuard;
 use App\Services\CouponCheckoutService;
 use App\Services\LinaOpenx\LinaOpenxCheckoutService;
+use App\Services\LinaOpenx\LinaOpenxPixAutoService;
 use Illuminate\Support\Facades\Schema;
 use App\Support\CajuPayBrowserSdk;
 use App\Support\CardInstallments;
@@ -330,6 +331,16 @@ class CheckoutController extends Controller
                 $payload['card_gateway_keys'][$slug]['sop_configured'] = trim((string) ($creds['sop_client_id'] ?? '')) !== ''
                     || ! empty($creds['sandbox']);
             }
+        }
+        $payload['linaopenx_pix_auto'] = ['participants' => []];
+        foreach ($payload['available_payment_methods'] as $m) {
+            if (($m['id'] ?? '') !== 'pix_auto' || ($m['gateway_slug'] ?? '') !== 'linaopenx') {
+                continue;
+            }
+            $payload['linaopenx_pix_auto'] = [
+                'participants' => app(LinaOpenxPixAutoService::class)->participantsForTenant($product->tenant_id),
+            ];
+            break;
         }
         $payload['paypal_client_id'] = '';
         $payload['paypal_sandbox'] = false;
@@ -651,9 +662,13 @@ class CheckoutController extends Controller
                 ? $walletGatewayForRules
                 : $paymentService->getFirstAvailableGatewayForMethod($product->tenant_id, 'card', $product))
             : null;
+        $firstPixAutoGateway = $paymentMethodForRules === 'pix_auto'
+            ? $paymentService->getFirstAvailableGatewayForMethod($product->tenant_id, 'pix_auto', $product)
+            : null;
         $requireCpf = (($customerFields['cpf'] ?? false) && $displayCurrency === 'BRL')
             || ($firstCardGatewayForRules === 'pagarme' && $displayCurrency === 'BRL')
             || $paymentMethodForRules === 'open_finance'
+            || $firstPixAutoGateway === 'linaopenx'
             || ($paymentMethodForRules === 'pix' && $firstPixGateway === 'stripe');
         $phoneRequiredForCheckout = ($customerFields['phone'] ?? false)
             || ($paymentMethodForRules === 'pix' && $firstPixGateway === 'pagarme');
@@ -665,6 +680,8 @@ class CheckoutController extends Controller
             'order_bump_ids' => ['nullable', 'array'],
             'order_bump_ids.*' => ['integer', 'exists:product_order_bumps,id'],
             'payment_method' => ['required', 'string', 'in:pix,card,boleto,pix_auto,apple_pay,google_pay,open_finance'],
+            'lina_organisation_id' => ['nullable', 'string', 'max:64'],
+            'lina_authorisation_server_id' => ['nullable', 'string', 'max:64'],
             'checkout_session_token' => ['required', 'string', 'max:64'],
             'idempotency_key' => ['nullable', 'string', 'max:128'],
             'website' => ['nullable', 'string', 'max:255'],
@@ -1594,6 +1611,73 @@ class CheckoutController extends Controller
                 }
             }
 
+            if ($gatewaySlug === 'linaopenx') {
+                $order = $createOrderAndItems(array_merge($orderPayload, [
+                    'status' => 'pending',
+                    'gateway' => null,
+                    'gateway_id' => null,
+                    'payment_method' => 'pix_auto',
+                    'metadata' => array_merge($orderMetadata, ['checkout_payment_method' => 'pix_auto']),
+                ]));
+                $order->load('orderItems');
+                event(new OrderPending($order));
+                try {
+                    $pixAuto = app(LinaOpenxPixAutoService::class);
+                    $linaResult = $pixAuto->startConsentForOrder(
+                        $order,
+                        $validated,
+                        (string) ($product->name ?? ('Pedido #'.$order->id))
+                    );
+                    $updateCheckoutSession($order->fresh() ?? $order);
+                    $afterPurchase = $product->checkout_config['redirect_after_purchase'] ?? null;
+                    $afterPurchase = ! empty($afterPurchase) && is_string($afterPurchase) ? $afterPurchase : null;
+                    $waitToken = Str::random(32);
+                    session()->put('lina_display.'.$waitToken, [
+                        'order_id' => $order->id,
+                        'checkout_session_token' => $validated['checkout_session_token'] ?? null,
+                        'amount' => $totalAmount,
+                        'product_name' => $product->name,
+                        'checkout_slug' => $checkoutSlug,
+                        'redirect_after_purchase' => $afterPurchase,
+                        'customer_name' => $validated['name'] ?? null,
+                        'customer_email' => $validated['email'] ?? null,
+                        'customer_phone' => $validated['phone'] ?? null,
+                        'created_at' => time(),
+                        'transaction_id' => $linaResult['transaction_id'] ?? null,
+                    ]);
+                    $portalUrl = $linaResult['redirect_url'];
+
+                    if ($request->expectsJson()) {
+                        return $this->idempotencyReturn($idempotencyKey, response()->json([
+                            'success' => true,
+                            'payment_method' => 'pix_auto',
+                            'order_id' => $order->id,
+                            'transaction_id' => $linaResult['transaction_id'] ?? null,
+                            'redirect_url' => $portalUrl,
+                            'wait_token' => $waitToken,
+                            'external_redirect' => true,
+                        ]));
+                    }
+
+                    return $this->idempotencyReturn($idempotencyKey, redirect()->away($portalUrl));
+                } catch (\Throwable $e) {
+                    $this->rollbackFailedOrder($order, $e);
+                    $msg = $e->getMessage() ?: 'Não foi possível iniciar o PIX automático. Tente novamente.';
+                    $msg = str_ireplace(['Lina OpenX', 'LinaOpenX', 'Lina'], 'PIX automático', $msg);
+                    if ($request->expectsJson()) {
+                        return response()->json([
+                            'success' => false,
+                            'message' => $msg,
+                        ], 422);
+                    }
+                    if ($request->header('X-Inertia')) {
+                        return back()->withErrors(['payment_method' => $msg])->withInput();
+                    }
+
+                    return back()->with('error', $msg);
+                }
+            }
+
             if ($request->expectsJson()) {
                 return response()->json(['message' => 'Gateway PIX automático não suportado.'], 422);
             }
@@ -2112,6 +2196,12 @@ class CheckoutController extends Controller
             'paymentId',
             'payment_id',
             'id',
+            'consentId',
+            'consent_id',
+            'recurringConsentId',
+            'recurring_consent_id',
+            'recurringPaymentId',
+            'recurring_payment_id',
             'error',
             'error_description',
             'state',

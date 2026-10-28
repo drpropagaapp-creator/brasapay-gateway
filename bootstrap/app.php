@@ -230,6 +230,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $schedule->command('withdrawals:reconcile-xpag --limit=80 --min-age-minutes=0')->everyMinute();
         $schedule->command('versell:reconcile-infractions --hours=72')->everyFiveMinutes()->withoutOverlapping(10);
         $schedule->command('versell:reconcile-pix-auto --limit=80')->everyFiveMinutes()->withoutOverlapping(10);
+        $schedule->command('linaopenx:reconcile-pix-auto --limit=80')->everyFiveMinutes()->withoutOverlapping(10);
         $schedule->command('settlement:release')->everyFiveMinutes();
         $schedule->command('schedule:heartbeat')->everyMinute();
         $schedule->command('push:process-schedule')->everyMinute();

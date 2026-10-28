@@ -11,6 +11,7 @@ use App\Events\OrderRejected;
 use App\Events\PixGenerated;
 use App\Events\SubscriptionCancelled;
 use App\Listeners\CademiEventSubscriber;
+use App\Listeners\CancelLinaOpenxPixAutoOnSubscriptionCancelled;
 use App\Listeners\CancelVersellPixAutoOnSubscriptionCancelled;
 use App\Listeners\CreditTenantWalletOnOrderCompleted;
 use App\Listeners\ForgetInertiaSharedCacheOnOrderCompleted;
@@ -271,6 +272,7 @@ class AppServiceProvider extends ServiceProvider
         Event::listen(PixGenerated::class, SendPanelPushOnPixGenerated::class);
         Event::listen(BoletoGenerated::class, SendPanelPushOnBoletoGenerated::class);
         Event::listen(SubscriptionCancelled::class, CancelVersellPixAutoOnSubscriptionCancelled::class);
+        Event::listen(SubscriptionCancelled::class, CancelLinaOpenxPixAutoOnSubscriptionCancelled::class);
         Event::subscribe(WebhookEventSubscriber::class);
         Event::subscribe(SendApiApplicationWebhookListener::class);
         // Métricas antes de UTMify/Meta: falha sync em integração não pode impedir payment_approved.

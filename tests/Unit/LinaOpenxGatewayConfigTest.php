@@ -15,6 +15,7 @@ class LinaOpenxGatewayConfigTest extends TestCase
         $def = GatewayRegistry::get('linaopenx');
         $this->assertNotNull($def);
         $this->assertContains('open_finance', $def['methods'] ?? []);
+        $this->assertContains('pix_auto', $def['methods'] ?? []);
         $driver = GatewayRegistry::driver('linaopenx');
         $this->assertInstanceOf(LinaOpenxDriver::class, $driver);
     }
@@ -29,6 +30,13 @@ class LinaOpenxGatewayConfigTest extends TestCase
     public function test_default_order_includes_open_finance(): void
     {
         $order = config('gateways.default_order.open_finance');
+        $this->assertIsArray($order);
+        $this->assertContains('linaopenx', $order);
+    }
+
+    public function test_default_order_pix_auto_includes_linaopenx(): void
+    {
+        $order = config('gateways.default_order.pix_auto');
         $this->assertIsArray($order);
         $this->assertContains('linaopenx', $order);
     }

@@ -307,7 +307,7 @@ return [
             'image' => 'images/gateways/lina.jpg',
             /** Sem o plugin `linaopenx` instalado/ativo: card no Financeiro + modal; config e checkout bloqueados. */
             'requires_plugin' => 'linaopenx',
-            'methods' => ['open_finance'],
+            'methods' => ['open_finance', 'pix_auto'],
             'scope' => 'national',
             'country' => 'br',
             'country_name' => 'Brasil',
@@ -540,7 +540,7 @@ return [
         'pix' => ['cajupay', /* 'spacepag', */ 'woovi', /* 'bspay', */ 'onlyup', 'efi', 'mercadopago', 'pagarme', 'pushinpay', 'asaas', 'versell', 'cielo', 'xflow', 'okto', 'xpag', 'stripe'],
         'card' => ['cajupay', 'efi', 'stripe', 'mercadopago', 'pagarme', 'asaas', 'cielo'],
         'boleto' => ['efi', 'mercadopago', 'pagarme', 'asaas'],
-        'pix_auto' => ['efi', 'pushinpay', 'versell'],
+        'pix_auto' => ['efi', 'pushinpay', 'versell', 'linaopenx'],
         'open_finance' => ['linaopenx'],
         'paypal' => ['paypal'],
         'wallet' => ['cajupay', 'stripe'],

@@ -215,6 +215,367 @@ class LinaOpenxClient
     }
 
     /**
+     * Instituições habilitadas para Automatic Payments (GET /open-integration/participants/registered).
+     *
+     * @param  array<string, mixed>  $credentials
+     * @return list<array{organisation_id: string, authorisation_server_id: string, name: string}>
+     */
+    public function listRegisteredParticipants(array $credentials): array
+    {
+        $response = $this->authenticatedGet($credentials, '/api/v1/open-integration/participants/registered');
+        if (! $response->successful()) {
+            Log::info('LinaOpenxClient: listRegisteredParticipants failed', [
+                'status' => $response->status(),
+            ]);
+
+            return [];
+        }
+
+        return $this->parseRegisteredParticipants($response->json());
+    }
+
+    /**
+     * POST /automatic-payments/recurring-consents
+     *
+     * @param  array<string, mixed>  $credentials
+     * @param  array<string, mixed>  $body
+     * @return array{consent_id: string, redirect_url: string, payment_request_id: string, raw: array<string, mixed>}
+     */
+    public function createRecurringConsent(array $credentials, array $body): array
+    {
+        $response = $this->authenticatedPost($credentials, '/api/v1/automatic-payments/recurring-consents', $body);
+        if (! $response->successful()) {
+            $message = $this->extractErrorMessage($response);
+            Log::warning('LinaOpenxClient: createRecurringConsent failed', [
+                'status' => $response->status(),
+                'message' => $message,
+                'body' => Str::limit(trim((string) $response->body()), 800),
+            ]);
+            throw new \RuntimeException('Lina OpenX: '.$message);
+        }
+
+        $data = $this->unwrapData($response->json());
+        $nested = is_array($data['data'] ?? null) ? $data['data'] : [];
+        $consentId = $this->firstString($data, ['consentId', 'recurringConsentId', 'recurring_consent_id']);
+        if ($consentId === '') {
+            $consentId = $this->firstString($nested, ['consentId', 'recurringConsentId', 'recurring_consent_id']);
+        }
+        $redirectUrl = $this->firstString($data, ['redirectUrl', 'redirect_url', 'url']);
+        if ($redirectUrl === '') {
+            $redirectUrl = $this->firstString($nested, ['redirectUrl', 'redirect_url', 'url']);
+        }
+        $paymentRequestId = $this->firstString($data, [
+            'paymentRequestId',
+            'payment_request_id',
+            'paymentLinkId',
+            'payment_link_id',
+            'id',
+        ]);
+        if ($paymentRequestId === '') {
+            $paymentRequestId = $this->firstString($nested, [
+                'paymentRequestId',
+                'payment_request_id',
+                'paymentLinkId',
+                'payment_link_id',
+                'id',
+            ]);
+        }
+        if ($consentId === '' || $redirectUrl === '') {
+            throw new \RuntimeException('Lina OpenX: resposta sem consentId ou redirectUrl.');
+        }
+        if (! filter_var($redirectUrl, FILTER_VALIDATE_URL)) {
+            throw new \RuntimeException('Lina OpenX: redirectUrl inválida retornada pela API.');
+        }
+
+        return [
+            'consent_id' => $consentId,
+            'redirect_url' => $redirectUrl,
+            'payment_request_id' => $paymentRequestId !== '' ? $paymentRequestId : $consentId,
+            'raw' => is_array($data) ? $data : [],
+        ];
+    }
+
+    /**
+     * GET /automatic-payments/request/{id}
+     *
+     * @param  array<string, mixed>  $credentials
+     * @return array{
+     *     status: string,
+     *     consent_id: ?string,
+     *     consent_status: ?string,
+     *     payment_status: ?string,
+     *     payments: list<array<string, mixed>>,
+     *     raw: array<string, mixed>
+     * }
+     */
+    public function getAutomaticPaymentRequest(array $credentials, string $paymentRequestId): array
+    {
+        $paymentRequestId = trim($paymentRequestId);
+        if ($paymentRequestId === '') {
+            return [
+                'status' => 'pending',
+                'consent_id' => null,
+                'consent_status' => null,
+                'payment_status' => null,
+                'payments' => [],
+                'raw' => [],
+            ];
+        }
+
+        $path = '/api/v1/automatic-payments/request/'.rawurlencode($paymentRequestId);
+        $response = $this->authenticatedGet($credentials, $path);
+        if (! $response->successful()) {
+            Log::info('LinaOpenxClient: getAutomaticPaymentRequest not successful', [
+                'status' => $response->status(),
+                'payment_request_id' => $paymentRequestId,
+            ]);
+
+            return [
+                'status' => 'pending',
+                'consent_id' => null,
+                'consent_status' => null,
+                'payment_status' => null,
+                'payments' => [],
+                'raw' => [],
+            ];
+        }
+
+        $data = $this->unwrapData($response->json());
+        $consentStatus = $this->firstString($data, ['consentStatus', 'consent_status', 'status']);
+        $consentId = $this->firstString($data, ['consentId', 'recurringConsentId', 'recurring_consent_id']);
+        $payments = $this->extractPaymentsList($data);
+        $paymentStatus = $this->pickPaymentStatus($payments);
+
+        return [
+            'status' => $this->normalizeAutomaticStatuses($consentStatus, $paymentStatus),
+            'consent_id' => $consentId !== '' ? $consentId : null,
+            'consent_status' => $consentStatus !== '' ? $consentStatus : null,
+            'payment_status' => $paymentStatus !== '' ? $paymentStatus : null,
+            'payments' => $payments,
+            'raw' => is_array($data) ? $data : [],
+        ];
+    }
+
+    /**
+     * POST /automatic-payments/recurring-payments
+     *
+     * @param  array<string, mixed>  $credentials
+     * @param  array<string, mixed>  $body
+     * @return array{recurring_payment_id: string, raw: array<string, mixed>}
+     */
+    public function createRecurringPayment(array $credentials, array $body): array
+    {
+        $response = $this->authenticatedPost($credentials, '/api/v1/automatic-payments/recurring-payments', $body);
+        if (! $response->successful()) {
+            $message = $this->extractErrorMessage($response);
+            Log::warning('LinaOpenxClient: createRecurringPayment failed', [
+                'status' => $response->status(),
+                'message' => $message,
+                'body' => Str::limit(trim((string) $response->body()), 800),
+            ]);
+            throw new \RuntimeException('Lina OpenX: '.$message);
+        }
+
+        $data = $this->unwrapData($response->json());
+        $nested = is_array($data['data'] ?? null) ? $data['data'] : [];
+        $paymentId = $this->firstString($data, ['recurringPaymentId', 'recurring_payment_id', 'paymentId', 'id']);
+        if ($paymentId === '') {
+            $paymentId = $this->firstString($nested, ['recurringPaymentId', 'recurring_payment_id', 'paymentId', 'id']);
+        }
+        if ($paymentId === '') {
+            throw new \RuntimeException('Lina OpenX: resposta sem recurringPaymentId.');
+        }
+
+        return [
+            'recurring_payment_id' => $paymentId,
+            'raw' => is_array($data) ? $data : [],
+        ];
+    }
+
+    /**
+     * GET /automatic-payments/recurring-payments/{id}
+     *
+     * @param  array<string, mixed>  $credentials
+     * @return array{status: string, payment_status: ?string, raw: array<string, mixed>}
+     */
+    public function getRecurringPayment(array $credentials, string $recurringPaymentId): array
+    {
+        $recurringPaymentId = trim($recurringPaymentId);
+        if ($recurringPaymentId === '') {
+            return ['status' => 'pending', 'payment_status' => null, 'raw' => []];
+        }
+
+        $path = '/api/v1/automatic-payments/recurring-payments/'.rawurlencode($recurringPaymentId);
+        $response = $this->authenticatedGet($credentials, $path);
+        if (! $response->successful()) {
+            return ['status' => 'pending', 'payment_status' => null, 'raw' => []];
+        }
+
+        $data = $this->unwrapData($response->json());
+        $paymentStatus = $this->firstString($data, ['status', 'paymentStatus', 'payment_status']);
+        $nested = is_array($data['data'] ?? null) ? $data['data'] : [];
+        if ($paymentStatus === '') {
+            $paymentStatus = $this->firstString($nested, ['status', 'paymentStatus', 'payment_status']);
+        }
+
+        return [
+            'status' => $this->normalizeAutomaticStatuses(null, $paymentStatus),
+            'payment_status' => $paymentStatus !== '' ? $paymentStatus : null,
+            'raw' => is_array($data) ? $data : [],
+        ];
+    }
+
+    /**
+     * PATCH /automatic-payments/recurring-consents/{id} — status REVOKED.
+     *
+     * @param  array<string, mixed>  $credentials
+     * @param  array<string, mixed>  $body
+     */
+    public function revokeRecurringConsent(array $credentials, string $consentId, array $body = []): void
+    {
+        $consentId = trim($consentId);
+        if ($consentId === '') {
+            return;
+        }
+        if ($body === []) {
+            $body = [
+                'status' => 'REVOKED',
+                'revocation' => [
+                    'revokedBy' => 'INICIADORA',
+                    'revokedFrom' => 'DETENTORA',
+                    'reason' => [
+                        'code' => 'REVOGADO_RECEBEDOR',
+                        'detail' => 'NAO_INFORMADO',
+                    ],
+                ],
+            ];
+        }
+
+        $path = '/api/v1/automatic-payments/recurring-consents/'.rawurlencode($consentId);
+        $response = $this->authenticatedPatch($credentials, $path, $body);
+        if (! $response->successful() && $response->status() !== 404) {
+            $message = $this->extractErrorMessage($response);
+            Log::warning('LinaOpenxClient: revokeRecurringConsent failed', [
+                'status' => $response->status(),
+                'consent_id' => $consentId,
+                'message' => $message,
+            ]);
+            throw new \RuntimeException('Lina OpenX: '.$message);
+        }
+    }
+
+    /**
+     * PATCH /automatic-payments/recurring-payments/{id}
+     *
+     * @param  array<string, mixed>  $credentials
+     * @param  array<string, mixed>  $body
+     */
+    public function cancelRecurringPayment(array $credentials, string $recurringPaymentId, array $body): void
+    {
+        $recurringPaymentId = trim($recurringPaymentId);
+        if ($recurringPaymentId === '') {
+            return;
+        }
+
+        $path = '/api/v1/automatic-payments/recurring-payments/'.rawurlencode($recurringPaymentId);
+        $response = $this->authenticatedPatch($credentials, $path, $body);
+        if (! $response->successful() && $response->status() !== 404) {
+            $message = $this->extractErrorMessage($response);
+            Log::warning('LinaOpenxClient: cancelRecurringPayment failed', [
+                'status' => $response->status(),
+                'recurring_payment_id' => $recurringPaymentId,
+                'message' => $message,
+            ]);
+            throw new \RuntimeException('Lina OpenX: '.$message);
+        }
+    }
+
+    /**
+     * POST /automatic-payments/recurring-payments/{id}/retry
+     *
+     * @param  array<string, mixed>  $credentials
+     * @param  array<string, mixed>  $body
+     * @return array{recurring_payment_id: ?string, raw: array<string, mixed>}
+     */
+    public function retryRecurringPayment(array $credentials, string $originalRecurringPaymentId, array $body): array
+    {
+        $originalRecurringPaymentId = trim($originalRecurringPaymentId);
+        if ($originalRecurringPaymentId === '') {
+            throw new \RuntimeException('Lina OpenX: recurringPaymentId ausente para retentativa.');
+        }
+
+        $path = '/api/v1/automatic-payments/recurring-payments/'.rawurlencode($originalRecurringPaymentId).'/retry';
+        $response = $this->authenticatedPost($credentials, $path, $body);
+        if (! $response->successful()) {
+            $message = $this->extractErrorMessage($response);
+            Log::warning('LinaOpenxClient: retryRecurringPayment failed', [
+                'status' => $response->status(),
+                'recurring_payment_id' => $originalRecurringPaymentId,
+                'message' => $message,
+            ]);
+            throw new \RuntimeException('Lina OpenX: '.$message);
+        }
+
+        $data = $this->unwrapData($response->json());
+        $nested = is_array($data['data'] ?? null) ? $data['data'] : [];
+        $paymentId = $this->firstString($data, ['recurringPaymentId', 'paymentRequestId', 'id']);
+        if ($paymentId === '') {
+            $paymentId = $this->firstString($nested, ['recurringPaymentId', 'paymentRequestId', 'id']);
+        }
+
+        return [
+            'recurring_payment_id' => $paymentId !== '' ? $paymentId : null,
+            'raw' => is_array($data) ? $data : [],
+        ];
+    }
+
+    /**
+     * Credor (recebedor) a partir das credenciais do adquirente.
+     *
+     * @param  array<string, mixed>  $credentials
+     * @return array{
+     *     name: string,
+     *     cpfCnpj: string,
+     *     personType: string,
+     *     accountIspb: string,
+     *     accountIssuer: string,
+     *     accountNumber: string,
+     *     accountType: string
+     * }|null
+     */
+    public function creditorPayload(array $credentials, array $options = []): ?array
+    {
+        return $this->buildCreditorPayload($credentials, $options);
+    }
+
+    /**
+     * AUTHORISED no consentimento ainda não é liquidação — só ACSC/PAGO.
+     */
+    public function normalizeAutomaticStatuses(?string $consentStatus, ?string $paymentStatus): string
+    {
+        $req = strtoupper(trim((string) $consentStatus));
+        $pay = strtoupper(trim((string) $paymentStatus));
+
+        if (in_array($pay, ['PAGO', 'PAID', 'ACSC', 'ACSP', 'SETTLED', 'COMPLETED'], true)) {
+            return 'paid';
+        }
+        if (in_array($pay, ['REJEITADO', 'REJECTED', 'RJCT', 'FAILED'], true)
+            || in_array($req, ['REJECTED', 'REJEITADO', 'RJCT'], true)) {
+            return 'rejected';
+        }
+        if (in_array($pay, ['CANCELADO', 'CANCELLED', 'CANCELED', 'CANC'], true)
+            || in_array($req, ['REVOKED', 'CANCELADO', 'CANCELLED', 'CANCELED'], true)) {
+            return 'cancelled';
+        }
+        if (in_array($pay, ['EXPIRADO', 'EXPIRED'], true)
+            || in_array($req, ['EXPIRED', 'EXPIRADO'], true)) {
+            return 'cancelled';
+        }
+
+        return 'pending';
+    }
+
+    /**
      * Mapeia status Lina → paid|pending|cancelled|rejected.
      */
     public function normalizeStatuses(?string $requestStatus, ?string $paymentStatus): string
@@ -336,6 +697,15 @@ class LinaOpenxClient
 
     /**
      * @param  array<string, mixed>  $credentials
+     * @param  array<string, mixed>  $body
+     */
+    private function authenticatedPatch(array $credentials, string $path, array $body): Response
+    {
+        return $this->request($credentials, 'PATCH', $path, $body);
+    }
+
+    /**
+     * @param  array<string, mixed>  $credentials
      * @param  array<string, mixed>|null  $body
      */
     private function request(array $credentials, string $method, string $path, ?array $body = null): Response
@@ -367,6 +737,7 @@ class LinaOpenxClient
 
         return match (strtoupper($method)) {
             'POST' => $pending->post($url, $body ?? []),
+            'PATCH' => $pending->patch($url, $body ?? []),
             default => $pending->get($url),
         };
     }
@@ -554,6 +925,149 @@ class LinaOpenxClient
             'accountNumber' => $number,
             'accountType' => $accountType,
         ];
+    }
+
+    /**
+     * @param  mixed  $json
+     * @return list<array{organisation_id: string, authorisation_server_id: string, name: string}>
+     */
+    private function parseRegisteredParticipants(mixed $json): array
+    {
+        $rows = $this->participantRowsFromJson($json);
+        $out = [];
+        $seen = [];
+        foreach ($rows as $row) {
+            if (! is_array($row)) {
+                continue;
+            }
+            $expanded = $this->expandParticipantRow($row);
+            foreach ($expanded as $item) {
+                $key = $item['organisation_id'].'|'.$item['authorisation_server_id'];
+                if (isset($seen[$key])) {
+                    continue;
+                }
+                $seen[$key] = true;
+                $out[] = $item;
+            }
+        }
+
+        return $out;
+    }
+
+    /**
+     * @return list<mixed>
+     */
+    private function participantRowsFromJson(mixed $json): array
+    {
+        if (! is_array($json)) {
+            return [];
+        }
+        foreach (['data', 'content', 'participants', 'items'] as $key) {
+            if (isset($json[$key]) && is_array($json[$key]) && array_is_list($json[$key])) {
+                return $json[$key];
+            }
+        }
+        if (array_is_list($json)) {
+            return $json;
+        }
+
+        return [];
+    }
+
+    /**
+     * @param  array<string, mixed>  $row
+     * @return list<array{organisation_id: string, authorisation_server_id: string, name: string}>
+     */
+    private function expandParticipantRow(array $row): array
+    {
+        $orgId = $this->firstString($row, ['organisationId', 'organisation_id', 'orgId', 'org_id']);
+        if ($orgId === '' && is_array($row['organisation'] ?? null)) {
+            $orgId = $this->firstString($row['organisation'], ['organisationId', 'id', 'orgId']);
+        }
+
+        $servers = $row['authorisationServers'] ?? $row['authorisation_servers'] ?? null;
+        if (is_array($servers) && $servers !== []) {
+            $items = [];
+            foreach ($servers as $server) {
+                if (! is_array($server)) {
+                    continue;
+                }
+                $asId = $this->firstString($server, ['authorisationServerId', 'authorisation_server_id', 'asId', 'id']);
+                if ($orgId === '' || $asId === '') {
+                    continue;
+                }
+                $name = $this->firstString($server, ['customerFriendlyName', 'customer_friendly_name', 'name']);
+                if ($name === '') {
+                    $name = $this->firstString($row, ['customerFriendlyName', 'organisationName', 'organisation_name', 'name', 'tradeName']);
+                }
+                $items[] = [
+                    'organisation_id' => $orgId,
+                    'authorisation_server_id' => $asId,
+                    'name' => $name !== '' ? $name : $orgId,
+                ];
+            }
+
+            return $items;
+        }
+
+        $asId = $this->firstString($row, ['authorisationServerId', 'authorisation_server_id', 'asId', 'as_id']);
+        if ($asId === '' && is_array($row['authorisationServer'] ?? null)) {
+            $asId = $this->firstString($row['authorisationServer'], ['authorisationServerId', 'id', 'asId']);
+        }
+        if ($orgId === '' || $asId === '') {
+            return [];
+        }
+        $name = $this->firstString($row, [
+            'customerFriendlyName',
+            'customer_friendly_name',
+            'organisationName',
+            'organisation_name',
+            'name',
+            'tradeName',
+        ]);
+
+        return [[
+            'organisation_id' => $orgId,
+            'authorisation_server_id' => $asId,
+            'name' => $name !== '' ? $name : $orgId,
+        ]];
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     * @return list<array<string, mixed>>
+     */
+    private function extractPaymentsList(array $data): array
+    {
+        foreach (['payments', 'recurringPayments', 'recurring_payments'] as $key) {
+            $raw = $data[$key] ?? null;
+            if (is_array($raw) && $raw !== []) {
+                return array_values(array_filter($raw, 'is_array'));
+            }
+        }
+
+        return [];
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $payments
+     */
+    private function pickPaymentStatus(array $payments): string
+    {
+        $last = '';
+        foreach ($payments as $row) {
+            $s = $this->firstString($row, ['status', 'paymentStatus', 'payment_status']);
+            if ($s === '') {
+                continue;
+            }
+            $last = $s;
+            $upper = strtoupper($s);
+            if (in_array($upper, ['PAGO', 'PAID', 'ACSC', 'ACSP', 'SETTLED', 'COMPLETED'], true)) {
+                return $s;
+            }
+        }
+
+        return $last;
     }
 
     private function extractErrorMessage(Response $response): string
