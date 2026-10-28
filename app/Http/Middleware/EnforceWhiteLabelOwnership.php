@@ -6,6 +6,7 @@ use App\Models\CheckoutSession;
 use App\Models\Order;
 use App\Models\Product;
 use App\Models\ProductOffer;
+use App\Models\ProductOrderBump;
 use App\Models\SubscriptionPlan;
 use Closure;
 use Illuminate\Http\Request;
@@ -13,64 +14,131 @@ use Illuminate\Support\Facades\Cache;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
- * Brasa Enterprise: no domínio white-label, toda rota /checkout/* precisa referenciar algo do próprio
- * seller (produto, oferta, plano, pedido, sessão de checkout ou token de pós-compra) e nada de outro.
+ * Brasa Enterprise: no domínio white-label, cada rota /checkout/* tem um campo que identifica o recurso
+ * em que ela age, e esse recurso precisa ser do dono do domínio. Rota fora do mapa = 404 (negado por padrão).
+ * Toda referência extra (oferta, plano, bump, pedido) também precisa ser do mesmo seller.
  * Roda depois da sessão (os tokens de Pix/boleto ficam nela). Fora de domínio white-label não faz nada.
  */
 class EnforceWhiteLabelOwnership
 {
-    /** Rotas de checkout que não carregam produto/pedido (helpers de tokenização de cartão). */
-    private const NO_DATA = ['checkout/pagarme-tokenize-sink', 'checkout/cielo-sop-token'];
+    /** caminho (método:path) => campo obrigatório que identifica o recurso */
+    private const ROUTES = [
+        'POST:checkout' => 'product_id',
+        'POST:checkout/validate-coupon' => 'product_id',
+        'POST:checkout/shipping-quote' => 'product_id',
+        'GET:checkout/pix' => 'pix_token',
+        'GET:checkout/boleto' => 'pix_token',
+        'GET:checkout/order-status' => 'pix_token',
+        'GET:checkout/obrigado' => 'upsell_token',
+        'GET:checkout/upsell' => 'upsell_token',
+        'GET:checkout/downsell' => 'upsell_token',
+        'POST:checkout/upsell/accept' => 'upsell_token',
+        'POST:checkout/upsell/decline' => 'upsell_token',
+        'POST:checkout/downsell/accept' => 'upsell_token',
+        'POST:checkout/downsell/decline' => 'upsell_token',
+        'POST:checkout/pixel/events' => 'checkout_session_token',
+        'POST:checkout/pixel/purchase-ack' => 'order_id',
+        // Helpers de tokenização de cartão: não recebem produto nem pedido.
+        'POST:checkout/pagarme-tokenize-sink' => null,
+        'POST:checkout/cielo-sop-token' => null,
+    ];
 
     public function handle(Request $request, Closure $next): Response
     {
         $tenantId = $request->attributes->get('whitelabel_tenant_id');
         $path = trim($request->path(), '/');
-        if ($tenantId !== null && str_starts_with($path, 'checkout') && ! in_array($path, self::NO_DATA, true)) {
-            abort_unless($this->belongsTo($request, (int) $tenantId), 404);
+        if ($tenantId !== null && str_starts_with($path, 'checkout')) {
+            $key = strtoupper($request->method()).':'.$path;
+            abort_unless(array_key_exists($key, self::ROUTES) && $this->allowed($request, (int) $tenantId, self::ROUTES[$key]), 404);
         }
 
         return $next($request);
     }
 
-    private function belongsTo(Request $request, int $tenantId): bool
+    private function allowed(Request $request, int $tenantId, ?string $primary): bool
     {
-        $checks = [];
         $owned = Product::query()->where('tenant_id', $tenantId)->select('id');
 
-        $product = $request->input('product_id');
-        if (is_scalar($product) && $product !== '') {
-            $checks[] = Product::query()->whereKey((string) $product)->where('tenant_id', $tenantId)->exists();
-        }
-        $offer = $request->input('product_offer_id');
-        if (is_scalar($offer) && $offer !== '') {
-            $checks[] = ProductOffer::query()->whereKey((int) $offer)->whereIn('product_id', $owned)->exists();
-        }
-        $plan = $request->input('subscription_plan_id');
-        if (is_scalar($plan) && $plan !== '') {
-            $checks[] = SubscriptionPlan::query()->whereKey((int) $plan)->whereIn('product_id', $owned)->exists();
-        }
-        foreach (['order_id', 'order'] as $key) {
-            $order = $request->input($key) ?? $request->route($key);
-            if (is_scalar($order) && $order !== '') {
-                $checks[] = ctype_digit((string) $order) && Order::query()->whereKey((int) $order)->where('tenant_id', $tenantId)->exists();
-            }
-        }
-        $session = $request->input('checkout_session_token');
-        if (is_string($session) && $session !== '') {
-            $checks[] = CheckoutSession::query()->where('session_token', $session)->where('tenant_id', $tenantId)->exists();
-        }
-        $token = $request->input('token');
-        if (is_string($token) && $token !== '') {
-            // Upsell/obrigado: token no cache aponta o pedido. Pix/boleto: token na sessão (presa a este host).
-            $upsell = Cache::get('upsell_token.'.$token);
-            $pix = $request->hasSession() ? $request->session()->get('pix_display.'.$token) : null;
-            $orderId = is_array($upsell) ? ($upsell['order_id'] ?? null) : (is_array($pix) ? ($pix['order_id'] ?? null) : null);
-            $checks[] = $orderId !== null
-                ? Order::query()->whereKey((int) $orderId)->where('tenant_id', $tenantId)->exists()
-                : is_array($pix);
+        // 1) O recurso em que a rota age.
+        $ok = match ($primary) {
+            null => true,
+            'product_id' => $this->scalar($request->input('product_id'))
+                && Product::query()->whereKey((string) $request->input('product_id'))->where('tenant_id', $tenantId)->exists(),
+            'order_id' => $this->ownsOrder($request->input('order_id'), $tenantId),
+            'checkout_session_token' => $this->scalar($request->input('checkout_session_token'))
+                && CheckoutSession::query()->where('session_token', (string) $request->input('checkout_session_token'))->where('tenant_id', $tenantId)->exists(),
+            'pix_token' => $this->ownsPixToken($request, $tenantId),
+            'upsell_token' => $this->ownsUpsellToken($request->input('token'), $tenantId),
+            default => false,
+        };
+        if (! $ok) {
+            return false;
         }
 
-        return $checks !== [] && ! in_array(false, $checks, true);
+        // 2) Referências adicionais: se vierem, precisam ser escalares e do mesmo seller.
+        foreach (['product_id', 'product_offer_id', 'subscription_plan_id', 'order_id', 'checkout_session_token', 'token'] as $field) {
+            $v = $request->input($field);
+            if ($v !== null && $v !== '' && ! $this->scalar($v)) {
+                return false;
+            }
+        }
+        if ($request->filled('product_id') && $primary !== 'product_id'
+            && ! Product::query()->whereKey((string) $request->input('product_id'))->where('tenant_id', $tenantId)->exists()) {
+            return false;
+        }
+        if ($request->filled('product_offer_id') && ! ProductOffer::query()->whereKey((int) $request->input('product_offer_id'))->whereIn('product_id', $owned)->exists()) {
+            return false;
+        }
+        if ($request->filled('subscription_plan_id') && ! SubscriptionPlan::query()->whereKey((int) $request->input('subscription_plan_id'))->whereIn('product_id', $owned)->exists()) {
+            return false;
+        }
+        if ($request->filled('order_id') && $primary !== 'order_id' && ! $this->ownsOrder($request->input('order_id'), $tenantId)) {
+            return false;
+        }
+        $bumps = $request->input('order_bump_ids');
+        if ($bumps !== null) {
+            if (! is_array($bumps) || count($bumps) > 20) {
+                return false;
+            }
+            $ids = array_values(array_filter($bumps, fn ($b) => is_scalar($b) && ctype_digit((string) $b)));
+            if (count($ids) !== count($bumps) || ($ids !== [] && ProductOrderBump::query()->whereIn('id', $ids)->whereIn('product_id', $owned)->count() !== count(array_unique($ids)))) {
+                return false;
+            }
+        }
+        // Não há rota de checkout mapeada que aceite listas de itens; qualquer "items" é recusado.
+        return ! $request->has('items');
+    }
+
+    private function scalar(mixed $v): bool
+    {
+        return is_string($v) || is_int($v);
+    }
+
+    private function ownsOrder(mixed $id, int $tenantId): bool
+    {
+        return $this->scalar($id) && ctype_digit((string) $id) && Order::query()->whereKey((int) $id)->where('tenant_id', $tenantId)->exists();
+    }
+
+    /** Pix/boleto: o token vive na sessão (presa a este host) e aponta o pedido. */
+    private function ownsPixToken(Request $request, int $tenantId): bool
+    {
+        $token = $request->input('token');
+        if (! is_string($token) || $token === '' || ! $request->hasSession()) {
+            return false;
+        }
+        $pix = $request->session()->get('pix_display.'.$token);
+
+        return is_array($pix) && $this->ownsOrder($pix['order_id'] ?? null, $tenantId);
+    }
+
+    /** Upsell/downsell/obrigado: o token fica no cache e aponta o pedido. */
+    private function ownsUpsellToken(mixed $token, int $tenantId): bool
+    {
+        if (! is_string($token) || $token === '') {
+            return false;
+        }
+        $data = Cache::get('upsell_token.'.$token);
+
+        return is_array($data) && $this->ownsOrder($data['order_id'] ?? null, $tenantId);
     }
 }

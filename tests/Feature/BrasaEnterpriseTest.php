@@ -114,6 +114,11 @@ class BrasaEnterpriseTest extends TestCase
         $this->assertNotSame(404, $this->post($base.'/checkout/validate-coupon', ['product_id' => (string) $own->id, 'coupon_code' => 'X'])->status());
         $this->get($base.'/checkout/obrigado?token=inexistente')->assertNotFound();
         $this->get($base.'/checkout/order-status')->assertNotFound();
+        // Rota fora do mapa é negada mesmo com produto próprio; referência extra de outro seller também.
+        $this->post($base.'/checkout/paypal/create-order', ['product_id' => (string) $own->id])->assertNotFound();
+        $otherBump = \App\Models\ProductOrderBump::query()->create(['product_id' => $other->id, 'target_product_id' => $other->id, 'title' => 'B', 'cta_title' => 'Sim', 'position' => 0]);
+        $this->post($base.'/checkout/shipping-quote', ['product_id' => (string) $own->id, 'order_bump_ids' => [$otherBump->id]])->assertNotFound();
+        $this->post($base.'/checkout/validate-coupon', ['product_id' => [(string) $own->id], 'coupon_code' => 'X'])->assertNotFound();
     }
 
     public function test_dominio_pendente_suspenso_ou_que_perdeu_dns_nao_serve_nada(): void

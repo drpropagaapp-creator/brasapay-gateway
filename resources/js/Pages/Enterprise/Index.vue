@@ -64,7 +64,7 @@ function copy(text) {
                     <Button :disabled="form.processing || !form.host" @click="add">Adicionar</Button>
                 </div>
                 <p v-if="form.errors.host" class="mt-1 text-sm text-red-600">{{ form.errors.host }}</p>
-                <p class="mt-1 text-xs text-zinc-500">Limite: {{ account.max_domains }} domínio(s).</p>
+                <p class="mt-1 text-xs text-zinc-500">Limite: {{ account.max_domains }} domínio(s). No domínio próprio funcionam Pix, boleto e cartão pelo checkout padrão; fluxos que redirecionam para PayPal, CajuPay SDK ou Lina continuam no domínio da plataforma.</p>
 
                 <div v-for="d in domains" :key="d.id" class="mt-4 rounded-xl border border-zinc-100 p-4 dark:border-zinc-800">
                     <div class="flex flex-wrap items-center justify-between gap-2">
