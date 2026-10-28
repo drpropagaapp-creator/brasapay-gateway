@@ -468,6 +468,13 @@ function formatEnrolledAt(iso) {
                                     >
                                         Ver Acessos
                                     </button>
+                                    <a
+                                        v-if="o.contestacao_url"
+                                        :href="o.contestacao_url"
+                                        class="text-left text-[var(--color-primary)] hover:underline"
+                                    >
+                                        Emitir contestação
+                                    </a>
                                 </div>
                             </td>
                         </tr>
