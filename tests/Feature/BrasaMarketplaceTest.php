@@ -91,6 +91,8 @@ class BrasaMarketplaceTest extends TestCase
         $this->actingAs($buyer)->get("/biblioteca/{$template->slug}")->assertNotFound();
         $this->actingAs($buyer)->post("/biblioteca/{$template->slug}/instalar")->assertNotFound();
 
+        $this->actingAs($this->admin())->get('/plataforma/biblioteca')->assertOk(); // revisão com pacote (sem textos) abre
+        $this->assertSame([], \App\Services\Marketplace\TemplateLibraryService::extractLinks(null));
         $this->actingAs($this->admin())->post("/plataforma/biblioteca/versoes/{$version->id}/revisar", ['decision' => 'approve']);
         $this->actingAs($buyer)->get("/biblioteca/{$template->slug}")->assertOk();
     }

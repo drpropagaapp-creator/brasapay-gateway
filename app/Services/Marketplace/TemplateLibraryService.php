@@ -222,6 +222,12 @@ class TemplateLibraryService
     /** @return list<string> URLs presentes nos textos (para a revisão e para quem vai instalar) */
     public static function extractLinks(mixed $content): array
     {
+        if (is_string($content)) {
+            $content = [$content];
+        }
+        if (! is_array($content)) {
+            return [];
+        }
         $texts = [];
         array_walk_recursive($content, function ($v) use (&$texts) {
             if (is_string($v)) {
