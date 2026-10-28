@@ -33,6 +33,7 @@ import {
     LibraryBig,
     Globe,
     Sparkles,
+    MonitorPlay,
     Repeat,
     FlaskConical,
 } from 'lucide-vue-next';
@@ -141,6 +142,7 @@ export function useAppSidebarNav() {
 
         if (canView('produtos.view')) {
             items.push({ name: t('sidebar.products', 'Produtos'), href: '/produtos', icon: Package });
+            items.push({ name: t('sidebar.member_areas', 'Áreas de membros'), href: '/areas-de-membros', icon: MonitorPlay });
             items.push({ name: t('sidebar.experiments', 'Testes A/B'), href: '/experimentos', icon: FlaskConical });
             items.push({ name: t('sidebar.library', 'Biblioteca de templates'), href: '/biblioteca', icon: LibraryBig });
             if (page.props.pixgo_enabled_effective && canView('pixgo.view')) {

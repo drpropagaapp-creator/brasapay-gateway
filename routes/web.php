@@ -1197,6 +1197,8 @@ Route::middleware(['auth', 'admin.tenant', 'seller.panel', 'stacker.license', 'r
         ->middleware('team.permission:vendas.view')->where('key', '[A-Za-z0-9_-]{4,300}')->name('crm.show');
     Route::put('/crm/contato/{key}', [\App\Http\Controllers\CrmController::class, 'update'])
         ->middleware(['team.permission:vendas.view', 'throttle:60,1'])->where('key', '[A-Za-z0-9_-]{4,300}')->name('crm.update');
+    Route::get('/areas-de-membros', [\App\Http\Controllers\MemberAreasHubController::class, 'index'])
+        ->middleware('team.permission:produtos.view')->name('member-areas.hub');
     Route::get('/biblioteca', [\App\Http\Controllers\TemplateLibraryController::class, 'index'])
         ->middleware('team.permission:produtos.view')->name('library.index');
     Route::get('/assistente', [\App\Http\Controllers\AssistantController::class, 'index'])
