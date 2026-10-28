@@ -36,6 +36,7 @@ import {
     ChartNoAxesCombined,
     Webhook,
     Store,
+    LibraryBig,
 } from 'lucide-vue-next';
 import { useSidebar } from '@/composables/useSidebar';
 
@@ -111,6 +112,7 @@ const navGroupsCore = [
         label: 'Crescimento',
         items: [
             { name: 'Métricas e Tracking', href: '/plataforma/metricas', icon: ChartNoAxesCombined },
+            { name: 'Biblioteca de templates', href: '/plataforma/biblioteca', icon: LibraryBig },
             { name: 'Conquistas', href: '/plataforma/conquistas', icon: Trophy },
             { name: 'Indique e Ganhe', href: '/plataforma/indique-e-ganhe', icon: Gift },
             { name: 'Central de e-mails', href: '/plataforma/email-marketing', icon: Mail },

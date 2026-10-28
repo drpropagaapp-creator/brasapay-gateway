@@ -508,6 +508,15 @@ Route::prefix('plataforma')->name('plataforma.')->group(function () {
         Route::put('/risco/{assessment}', [\App\Http\Controllers\Platform\RiskController::class, 'review'])
             ->middleware('throttle:60,1')->name('risk.review');
         Route::get('/central', [\App\Http\Controllers\Platform\CommandCenterController::class, 'index'])->name('command-center');
+        Route::get('/biblioteca', [\App\Http\Controllers\Platform\TemplateLibraryAdminController::class, 'index'])->name('library.index');
+        Route::post('/biblioteca/versoes/{version}/revisar', [\App\Http\Controllers\Platform\TemplateLibraryAdminController::class, 'review'])
+            ->middleware('throttle:60,1')->whereNumber('version')->name('library.review');
+        Route::post('/biblioteca/templates/{template}/publicacao', [\App\Http\Controllers\Platform\TemplateLibraryAdminController::class, 'publication'])
+            ->middleware('throttle:30,1')->whereNumber('template')->name('library.publication');
+        Route::post('/biblioteca/oficial', [\App\Http\Controllers\Platform\TemplateLibraryAdminController::class, 'storeOfficial'])
+            ->middleware('throttle:10,1')->name('library.official');
+        Route::post('/biblioteca/avaliacoes/{review}', [\App\Http\Controllers\Platform\TemplateLibraryAdminController::class, 'moderateReview'])
+            ->middleware('throttle:60,1')->whereNumber('review')->name('library.reviews.moderate');
         Route::get('/tesouraria', [\App\Http\Controllers\Platform\TreasuryController::class, 'index'])->name('treasury.index');
         Route::post('/tesouraria/executar', [\App\Http\Controllers\Platform\TreasuryController::class, 'run'])
             ->middleware('throttle:3,1')
@@ -1166,6 +1175,16 @@ Route::middleware(['auth', 'admin.tenant', 'seller.panel', 'stacker.license', 'r
         ->middleware('team.permission:vendas.view')->where('key', '[A-Za-z0-9_-]{4,300}')->name('crm.show');
     Route::put('/crm/contato/{key}', [\App\Http\Controllers\CrmController::class, 'update'])
         ->middleware(['team.permission:vendas.view', 'throttle:60,1'])->where('key', '[A-Za-z0-9_-]{4,300}')->name('crm.update');
+    Route::get('/biblioteca', [\App\Http\Controllers\TemplateLibraryController::class, 'index'])
+        ->middleware('team.permission:produtos.view')->name('library.index');
+    Route::post('/biblioteca/enviar', [\App\Http\Controllers\TemplateLibraryController::class, 'submit'])
+        ->middleware(['team.permission:produtos.view', 'throttle:5,1'])->name('library.submit');
+    Route::get('/biblioteca/{slug}', [\App\Http\Controllers\TemplateLibraryController::class, 'show'])
+        ->middleware('team.permission:produtos.view')->where('slug', '[a-z0-9-]{3,140}')->name('library.show');
+    Route::post('/biblioteca/{slug}/instalar', [\App\Http\Controllers\TemplateLibraryController::class, 'install'])
+        ->middleware(['team.permission:produtos.view', 'throttle:10,1'])->where('slug', '[a-z0-9-]{3,140}')->name('library.install');
+    Route::post('/biblioteca/{slug}/avaliar', [\App\Http\Controllers\TemplateLibraryController::class, 'review'])
+        ->middleware(['team.permission:produtos.view', 'throttle:10,1'])->where('slug', '[a-z0-9-]{3,140}')->name('library.review');
     Route::get('/inteligencia', [\App\Http\Controllers\IntelligenceController::class, 'index'])
         ->middleware('team.permission:relatorios.view')->name('intelligence.index');
     Route::post('/inteligencia/custos', [\App\Http\Controllers\IntelligenceController::class, 'storeSpend'])

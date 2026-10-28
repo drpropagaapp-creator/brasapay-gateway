@@ -23,6 +23,10 @@ use ZipArchive;
  */
 class ProductExporter
 {
+    private bool $withMemberContent = true;
+
+    private bool $withCoproduction = true;
+
     /** Colunas comerciais/visuais do produto que viajam no pacote. */
     private const PRODUCT_FIELDS = [
         'name', 'notification_name', 'description', 'category', 'type', 'billing_type', 'price', 'currency',
@@ -57,10 +61,14 @@ class ProductExporter
 
     /**
      * @param  list<string>  $dependencyIds  dependências escolhidas (validadas contra o tenant)
+     * @param  array{member_content?: bool, coproduction?: bool}  $options  templates do Marketplace exportam sem
+     *                                                                     aulas/comunidade e sem modelo de coprodução
      * @return string caminho do .zip temporário
      */
-    public function export(Product $root, array $dependencyIds = []): string
+    public function export(Product $root, array $dependencyIds = [], array $options = []): string
     {
+        $this->withMemberContent = (bool) ($options['member_content'] ?? true);
+        $this->withCoproduction = (bool) ($options['coproduction'] ?? true);
         $tenantId = (int) $root->tenant_id;
         $allowedDeps = array_column($this->dependencyCandidates($root), 'id');
         $dependencyIds = array_values(array_intersect(array_map('strval', $dependencyIds), $allowedDeps));
@@ -199,11 +207,11 @@ class ProductExporter
                 ])->values()->all(),
             'member_area' => [
                 'config' => $assets->rewriteTree($member),
-                'sections' => $this->exportMemberTree($p, $ref, $assets),
-                'internal_products' => MemberInternalProduct::query()->where('product_id', $p->id)->orderBy('position')->get()
+                'sections' => $this->withMemberContent ? $this->exportMemberTree($p, $ref, $assets) : [],
+                'internal_products' => ! $this->withMemberContent ? [] : MemberInternalProduct::query()->where('product_id', $p->id)->orderBy('position')->get()
                     ->map(fn ($ip) => ['related_product' => $ref((string) $ip->related_product_id, 'member_internal_product'), 'position' => (int) $ip->position])
                     ->values()->all(),
-                'community_pages' => MemberCommunityPage::query()->where('product_id', $p->id)->orderBy('position')->get()
+                'community_pages' => ! $this->withMemberContent ? [] : MemberCommunityPage::query()->where('product_id', $p->id)->orderBy('position')->get()
                     ->map(fn ($cp) => [
                         'title' => $cp->title, 'icon' => $cp->icon, 'position' => (int) $cp->position,
                         'banner' => $this->mediaOrExternal($assets, $cp->getRawOriginal('banner')),
@@ -211,7 +219,7 @@ class ProductExporter
                     ])->values()->all(),
             ],
             // Só o modelo comercial: convites, aceites e contas nunca viajam.
-            'coproduction_template' => ProductCoproducer::query()->where('product_id', $p->id)
+            'coproduction_template' => ! $this->withCoproduction ? [] : ProductCoproducer::query()->where('product_id', $p->id)
                 ->whereIn('status', [ProductCoproducer::STATUS_ACTIVE, ProductCoproducer::STATUS_PENDING])
                 ->get()
                 ->map(fn ($c) => [
