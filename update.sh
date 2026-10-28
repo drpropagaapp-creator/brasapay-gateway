@@ -330,7 +330,7 @@ if [ "$STACKER_MANAGED" = "1" ]; then
   run_host_log_harden_only
   $SUDO env $DB_U_FLAGS \
     GETFY_COMPOSE_FILES="$COMPOSE_FILES" GETFY_APP_ENV=production GETFY_APP_DEBUG=false \
-    GETFY_PHP_BASE_IMAGE="${GETFY_PHP_BASE_IMAGE:-php:8.3.36-cli-alpine}" \
+    GETFY_PHP_BASE_IMAGE="${GETFY_PHP_BASE_IMAGE:-php:8.3.36-fpm-alpine}" \
     GETFY_PHP_FROM_RUNNING="${GETFY_PHP_FROM_RUNNING:-1}" \
     GETFY_SKIP_MIGRATE=1 \
     GETFY_SKIP_DOCKER_PRUNE=1 \
@@ -406,7 +406,7 @@ run_host_log_harden_only
 $SUDO chmod +x docker/write-compose-env.sh 2>/dev/null || true
 $SUDO env $DB_U_FLAGS \
   GETFY_COMPOSE_FILES="$COMPOSE_FILES" GETFY_APP_ENV=production GETFY_APP_DEBUG=false \
-  GETFY_PHP_BASE_IMAGE="${GETFY_PHP_BASE_IMAGE:-php:8.3.36-cli-alpine}" \
+  GETFY_PHP_BASE_IMAGE="${GETFY_PHP_BASE_IMAGE:-php:8.3.36-fpm-alpine}" \
   sh docker/up.sh
 
 echo ""

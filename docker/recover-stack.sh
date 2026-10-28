@@ -197,7 +197,7 @@ HINT
   exit 1
 fi
 
-GETFY_PHP_BASE_IMAGE="${GETFY_PHP_BASE_IMAGE:-php:8.3.36-cli-alpine}"
+GETFY_PHP_BASE_IMAGE="${GETFY_PHP_BASE_IMAGE:-php:8.3.36-fpm-alpine}"
 export GETFY_PHP_BASE_IMAGE
 
 echo "=== 6) Rebuild app (limites PHP na imagem) + subir stack ==="

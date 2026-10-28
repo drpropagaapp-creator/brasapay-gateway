@@ -361,7 +361,7 @@ unset_db_shell_env
 
 echo "=== Rebuild imagem app ==="
 echo "Build context: $COMPOSE_WORK_DIR"
-PHP_BASE_IMAGE="${GETFY_PHP_BASE_IMAGE:-php:8.3.36-cli-alpine}"
+PHP_BASE_IMAGE="${GETFY_PHP_BASE_IMAGE:-php:8.3.36-fpm-alpine}"
 BUILD_OPTS="--pull --build-arg PHP_BASE_IMAGE=${PHP_BASE_IMAGE}"
 if [ "${GETFY_DOCKER_NO_CACHE:-0}" = "1" ]; then
   BUILD_OPTS="$BUILD_OPTS --no-cache"

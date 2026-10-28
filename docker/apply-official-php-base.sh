@@ -12,7 +12,7 @@ set -eu
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT_DIR"
 
-PHP_BASE_IMAGE="${GETFY_PHP_BASE_IMAGE:-php:8.3.36-cli-alpine}"
+PHP_BASE_IMAGE="${GETFY_PHP_BASE_IMAGE:-php:8.3.36-fpm-alpine}"
 REQUIRED_PHP="${GETFY_PHP_REQUIRED_VERSION:-8.3.36}"
 
 if ! command -v docker >/dev/null 2>&1; then

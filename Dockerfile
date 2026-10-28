@@ -1,7 +1,9 @@
-ARG PHP_BASE_IMAGE=php:8.3.36-cli-alpine
+# FPM: a imagem também traz o php CLI (workers e scheduler continuam com php artisan).
+ARG PHP_BASE_IMAGE=php:8.3.36-fpm-alpine
 FROM ${PHP_BASE_IMAGE} AS php_base
 
 RUN apk add --no-cache \
+    nginx \
     git unzip libzip-dev libpng-dev libjpeg-turbo-dev freetype-dev oniguruma-dev \
     postgresql-client postgresql-dev icu-dev libxml2-dev $PHPIZE_DEPS
 
@@ -30,12 +32,15 @@ FROM php_base AS app
 # Evita composer install no build: em alguns VPS o BuildKit não alcança api.github.com.
 COPY . .
 COPY docker/entrypoint.sh /usr/local/bin/getfy-entrypoint
+COPY docker/start-web.sh /usr/local/bin/getfy-start-web
+COPY docker/nginx/default.conf /etc/nginx/http.d/default.conf
+COPY docker/php-fpm/zz-getfy.conf /usr/local/etc/php-fpm.d/zz-getfy.conf
 
 RUN if [ ! -f vendor/autoload.php ]; then \
       echo "ERRO: vendor/ ausente. Rode na VPS: sh docker/install-composer-deps.sh" >&2; \
       exit 1; \
     fi \
-    && chmod +x /usr/local/bin/getfy-entrypoint \
+    && chmod +x /usr/local/bin/getfy-entrypoint /usr/local/bin/getfy-start-web \
     && rm -f bootstrap/cache/config.php bootstrap/cache/routes.php bootstrap/cache/routes-v7.php bootstrap/cache/events.php \
     && mkdir -p storage/framework/cache/data storage/framework/sessions storage/framework/views bootstrap/cache .docker \
     && chmod -R 777 storage bootstrap/cache .docker
@@ -43,4 +48,5 @@ RUN if [ ! -f vendor/autoload.php ]; then \
 EXPOSE 80
 
 ENTRYPOINT ["/usr/local/bin/getfy-entrypoint"]
-CMD ["sh", "-lc", "php artisan serve --host=0.0.0.0 --port=${PORT:-80} --no-reload"]
+# nginx + PHP-FPM; GETFY_WEB_SERVER=artisan volta ao php artisan serve sem rebuild.
+CMD ["/usr/local/bin/getfy-start-web"]

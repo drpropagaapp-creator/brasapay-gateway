@@ -23,7 +23,7 @@ fi
 
 COMPOSER_IMAGE="${GETFY_COMPOSER_IMAGE:-getfy/composer-php83:local}"
 COMPOSER_DOCKERFILE="$ROOT_DIR/docker/composer.Dockerfile"
-PHP_BASE_IMAGE="${GETFY_PHP_BASE_IMAGE:-php:8.3.36-cli-alpine}"
+PHP_BASE_IMAGE="${GETFY_PHP_BASE_IMAGE:-php:8.3.36-fpm-alpine}"
 
 if [ -z "${GETFY_COMPOSER_IMAGE:-}" ]; then
   BUILD_OPTS="--pull --build-arg PHP_BASE_IMAGE=${PHP_BASE_IMAGE}"

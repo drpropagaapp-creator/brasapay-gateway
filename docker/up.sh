@@ -236,7 +236,7 @@ done
 IFS="$OLD_IFS"
 
 # NUNCA usa "down -v". Volumes (postgres/redis/storage) são preservados.
-GETFY_PHP_BASE_IMAGE="${GETFY_PHP_BASE_IMAGE:-php:8.3.36-cli-alpine}"
+GETFY_PHP_BASE_IMAGE="${GETFY_PHP_BASE_IMAGE:-php:8.3.36-fpm-alpine}"
 export GETFY_PHP_BASE_IMAGE
 
 COMPOSE_ENV_FILE="$ENV_FILE"
