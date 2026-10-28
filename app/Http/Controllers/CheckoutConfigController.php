@@ -157,6 +157,77 @@ class CheckoutConfigController extends Controller
             : back()->with('success', 'Checkout atualizado.');
     }
 
+    /** Biblioteca de mídia do produto: imagens já enviadas para o checkout/landing. */
+    public function mediaLibrary(Product $produto): JsonResponse
+    {
+        $this->authorizeProduct($produto);
+        $storage = new StorageService((int) $produto->tenant_id);
+        $disk = $storage->disk();
+        $dir = 'checkout/'.$produto->id;
+
+        try {
+            $files = $disk->allFiles($dir);
+        } catch (\Throwable) {
+            $files = [];
+        }
+
+        $items = [];
+        foreach ($files as $path) {
+            if (! preg_match('/\.(jpe?g|png|webp|gif)$/i', $path)) {
+                continue;
+            }
+            try {
+                $modified = $disk->lastModified($path);
+                $size = $disk->size($path);
+            } catch (\Throwable) {
+                $modified = 0;
+                $size = null;
+            }
+            $items[] = [
+                'path' => $path,
+                'url' => $storage->url($path),
+                'name' => basename($path),
+                'size' => $size,
+                'modified' => $modified,
+            ];
+        }
+        usort($items, fn ($a, $b) => $b['modified'] <=> $a['modified']);
+
+        return response()->json(['items' => array_slice($items, 0, 300)]);
+    }
+
+    /** Remove uma imagem da biblioteca — recusa se ainda estiver em uso no produto. */
+    public function deleteMedia(Request $request, Product $produto): JsonResponse
+    {
+        $this->authorizeProduct($produto);
+        $validated = $request->validate(['path' => ['required', 'string', 'max:500']]);
+        $path = $validated['path'];
+
+        if (str_contains($path, '..') || ! str_starts_with($path, 'checkout/'.$produto->id.'/')) {
+            abort(403);
+        }
+
+        $storage = new StorageService((int) $produto->tenant_id);
+        $url = $storage->url($path);
+        $haystacks = array_merge(
+            [json_encode($produto->checkout_config), json_encode($produto->member_area_config), (string) $produto->image],
+            ProductOffer::query()->where('product_id', $produto->id)->pluck('checkout_config')->map(fn ($c) => json_encode($c))->all(),
+            SubscriptionPlan::query()->where('product_id', $produto->id)->pluck('checkout_config')->map(fn ($c) => json_encode($c))->all(),
+        );
+        $needles = [$url, str_replace('/', '\/', $url), basename($path)];
+        foreach ($haystacks as $h) {
+            foreach ($needles as $n) {
+                if ($h !== false && $h !== null && $n !== '' && str_contains((string) $h, $n)) {
+                    return response()->json(['message' => 'Esta imagem está em uso no checkout, numa oferta, num plano ou na área de membros. Remova-a de lá antes de apagar.'], 422);
+                }
+            }
+        }
+
+        $storage->disk()->delete($path);
+
+        return response()->json(['deleted' => true]);
+    }
+
     /** Versões publicadas da landing (produto, oferta ou plano), mais recentes primeiro. */
     public function landingVersions(Request $request, Product $produto): JsonResponse
     {
