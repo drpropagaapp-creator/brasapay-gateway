@@ -28,10 +28,15 @@ class ProductPortabilityController extends Controller
     public function exportOptions(Product $produto, ProductExporter $exporter): JsonResponse
     {
         $this->authorizeExport($produto);
+        $allowed = $this->teamAllowedProductIds();
+        $candidates = array_values(array_filter(
+            $exporter->dependencyCandidates($produto),
+            fn (array $d) => $allowed === null || in_array($d['id'], $allowed, true)
+        ));
 
         return response()->json([
             'product' => ['id' => (string) $produto->id, 'name' => $produto->name],
-            'dependencies' => $exporter->dependencyCandidates($produto),
+            'dependencies' => $candidates,
         ]);
     }
 
@@ -43,8 +48,15 @@ class ProductPortabilityController extends Controller
             'dependencies.*' => ['string', 'max:64'],
         ]);
 
+        $dependencies = array_map('strval', $validated['dependencies'] ?? []);
+        // Equipe: só leva junto produtos que o membro pode acessar.
+        $allowed = $this->teamAllowedProductIds();
+        if ($allowed !== null) {
+            $dependencies = array_values(array_intersect($dependencies, $allowed));
+        }
+
         try {
-            $path = $exporter->export($produto, $validated['dependencies'] ?? []);
+            $path = $exporter->export($produto, $dependencies);
         } catch (PackageException $e) {
             return back()->with('error', $e->getMessage());
         }
@@ -53,7 +65,7 @@ class ProductPortabilityController extends Controller
             'tenant_id' => $produto->tenant_id,
             'user_id' => $request->user()->id,
             'product_id' => $produto->id,
-            'dependencies' => $validated['dependencies'] ?? [],
+            'dependencies' => $dependencies,
         ]);
 
         $name = (Str::slug($produto->name) ?: 'produto').'.brasapay.zip';
@@ -190,6 +202,17 @@ class ProductPortabilityController extends Controller
                 abort(403);
             }
         }
+    }
+
+    /** @return list<string>|null null = titular (sem restrição por produto) */
+    private function teamAllowedProductIds(): ?array
+    {
+        $user = auth()->user();
+        if (! $user->isTeam()) {
+            return null;
+        }
+
+        return array_map('strval', app(TeamAccessService::class)->allowedProductIdsFor($user));
     }
 
     private function authorizeImport(): int
