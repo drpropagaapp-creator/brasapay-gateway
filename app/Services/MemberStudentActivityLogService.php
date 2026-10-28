@@ -9,6 +9,7 @@ use App\Models\Product;
 use App\Models\User;
 use App\Support\Csv;
 use App\Support\MemberAreaAdminPreview;
+use App\Support\PlatformCompanySettings;
 use FPDF;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -240,6 +241,7 @@ class MemberStudentActivityLogService
 
         Csv::writeBom($handle);
         Csv::writeRow($handle, ['Campo', 'Valor']);
+        Csv::writeRow($handle, ['Empresa', PlatformCompanySettings::documentCompanyName()]);
         Csv::writeRow($handle, ['Aluno', $dossier['student']['name'] ?? '']);
         Csv::writeRow($handle, ['E-mail', $dossier['student']['email'] ?? '']);
         Csv::writeRow($handle, ['Produto', $dossier['product']['name'] ?? '']);
@@ -285,15 +287,18 @@ class MemberStudentActivityLogService
     public function renderDossierPdf(User $student, Product $product): string
     {
         $dossier = $this->dossierFor($student, $product);
-        $appName = (string) config('app.name', 'Stacker');
+        $company = PlatformCompanySettings::documentCompanyName();
 
         $pdf = new FPDF;
+        $pdf->SetCompression(false);
         $pdf->SetAutoPageBreak(true, 18);
         $pdf->AddPage();
         $pdf->SetTitle($this->pdfLatin1('Dossiê de acesso do aluno'));
 
         $pdf->SetFont('Arial', 'B', 16);
         $pdf->Cell(0, 10, $this->pdfLatin1('Dossiê de acesso do aluno'), 0, 1);
+        $pdf->SetFont('Arial', 'B', 11);
+        $pdf->MultiCell(0, 6, $this->pdfLatin1($company));
         $pdf->SetFont('Arial', 'I', 9);
         $pdf->MultiCell(0, 5, $this->pdfLatin1(
             'Prova de acesso à área de membros. Documento para anexar em contestação MED.'
@@ -353,7 +358,7 @@ class MemberStudentActivityLogService
         $pdf->SetFont('Arial', 'I', 8);
         $this->pdfLine(
             $pdf,
-            'Gerado em '.$this->csvDate(now()->toIso8601String()).' — '.$appName
+            'Gerado em '.$this->csvDate(now()->toIso8601String()).' — '.$company
             .'. Os IPs e horários refletem os registros da área de membros.'
         );
 

@@ -12,6 +12,7 @@ use App\Services\CajuPay\CajuPayPayoutService;
 use App\Services\Payout\PayoutUserSettings;
 use App\Support\BrandingAssetUrls;
 use App\Support\BrazilianDocumentDigits;
+use App\Support\PlatformCompanySettings;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
@@ -175,7 +176,7 @@ class WithdrawalPixReceiptService
                 $receipt['provider'] ?? null,
                 $acquirer['name'] !== '' ? $acquirer['name'] : null,
                 $cajupayAccountName,
-                config('app.name', 'Getfy')
+                PlatformCompanySettings::documentCompanyName()
             );
             $payerDocument = $this->formatDocument($receipt['payer_document'] ?? null);
             $payerInstitution = $this->firstNonEmpty(
@@ -229,7 +230,7 @@ class WithdrawalPixReceiptService
         $logoStored = trim((string) ($brandingData['app_logo'] ?? ''));
 
         return [
-            'app_name' => (string) ($brandingData['app_name'] ?? config('app.name', 'Getfy')),
+            'app_name' => $this->receiptCompanyName($brandingData),
             'app_logo' => $logoStored !== '' ? BrandingAssetUrls::resolve($logoStored) : '',
             'theme_primary' => (string) ($brandingData['theme_primary'] ?? '#22c55e'),
             'amount_formatted' => 'R$ '.number_format($amount, 2, ',', '.'),
@@ -555,6 +556,19 @@ class WithdrawalPixReceiptService
         }
 
         return $digits;
+    }
+
+    /**
+     * @param  array<string, mixed>  $brandingData
+     */
+    private function receiptCompanyName(array $brandingData): string
+    {
+        $brand = trim((string) ($brandingData['app_name'] ?? ''));
+        if ($brand !== '' && ! preg_match('/getfy|gatefy/i', $brand)) {
+            return $brand;
+        }
+
+        return PlatformCompanySettings::documentCompanyName();
     }
 
     private function firstNonEmpty(mixed ...$values): string
