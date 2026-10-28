@@ -142,6 +142,23 @@ class BrasaDevelopersTest extends TestCase
         $this->assertSame(ApiWebhookDelivery::STATUS_FAILED, $orphan->fresh()->status);
     }
 
+    public function test_endpoint_de_sandbox_tem_secret_proprio_e_nao_vira_url_de_producao(): void
+    {
+        $s = $this->seller();
+        $a = $this->app($s->id);
+        $this->actingAs($s)->post("/aplicacoes-api/{$a['app']->id}/webhooks", ['webhook_url' => 'https://1.1.1.1/sbx', 'environment' => 'sandbox'])->assertRedirect();
+
+        $endpoint = ApiApplicationWebhook::query()->where('api_application_id', $a['app']->id)->firstOrFail();
+        $this->assertSame(ApiKey::ENV_SANDBOX, $endpoint->environment);
+        $this->assertNotSame('whsec_teste', $endpoint->secret, 'Sandbox não herda o secret de produção.');
+        $app = $a['app']->fresh();
+        $this->assertSame('https://8.8.8.8/hook', $app->webhook_url, 'URL de produção da aplicação não muda.');
+        $this->assertSame('whsec_teste', $app->webhook_secret);
+
+        $this->actingAs($s)->post("/aplicacoes-api/{$a['app']->id}/webhooks", ['webhook_url' => 'https://1.1.1.2/sbx', 'environment' => 'sandbox', 'webhook_secret' => 'whsec_teste']);
+        $this->assertSame(1, ApiApplicationWebhook::query()->where('api_application_id', $a['app']->id)->count(), 'Secret de produção recusado no sandbox.');
+    }
+
     public function test_registra_chamadas_sem_corpo(): void
     {
         $a = $this->app($this->seller()->id);

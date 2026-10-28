@@ -4,6 +4,7 @@ namespace App\Services\Api;
 
 use App\Models\ApiApplication;
 use App\Models\ApiApplicationWebhook;
+use App\Models\ApiKey;
 use App\Support\ApiWebhookEvents;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
@@ -31,9 +32,13 @@ class ApiWebhookConfigService
         array $productIds = [],
         bool $syncProducts = false,
         bool $forceCreate = false,
+        ?string $environment = null,
     ): WebhookProvisionResult {
         $target = $forceCreate ? null : ($endpoint ?? $this->primaryEndpoint($app));
         $creating = $target === null;
+        $sandbox = $creating
+            ? $environment === ApiKey::ENV_SANDBOX
+            : $target->environmentName() === ApiKey::ENV_SANDBOX;
 
         if ($creating && ( ! is_string($url) || trim($url) === '')) {
             $app->update([
@@ -47,10 +52,15 @@ class ApiWebhookConfigService
             $this->assertCanCreate($app);
         }
 
-        $currentSecret = $target?->secret ?? $app->webhook_secret;
+        // Endpoint de sandbox nunca herda o secret de produção da aplicação (senão um evento de teste
+        // sairia com assinatura válida de produção).
+        $currentSecret = $target?->secret ?? ($sandbox ? null : $app->webhook_secret);
         $secret = strlen((string) $providedSecret) > 0
             ? $providedSecret
             : $currentSecret;
+        if ($sandbox && strlen((string) $providedSecret) > 0 && $this->isLiveSecret($app, (string) $providedSecret)) {
+            throw new InvalidArgumentException('Use um signing secret diferente do de produção no endpoint de sandbox.');
+        }
 
         $newSecretGenerated = false;
         if (is_string($url) && $url !== '' && ! $secret) {
@@ -81,6 +91,9 @@ class ApiWebhookConfigService
         if ($creating && ($payload['name'] ?? null) === null) {
             $payload['name'] = $this->nextDefaultName($app);
         }
+        if ($creating && $sandbox) {
+            $payload['environment'] = ApiKey::ENV_SANDBOX;
+        }
 
         if ($creating) {
             $target = ApiApplicationWebhook::create($payload);
@@ -92,7 +105,10 @@ class ApiWebhookConfigService
             $target->products()->sync($productIds);
         }
 
-        $this->syncPrimary($app);
+        // Endpoint de sandbox não mexe nos campos legados (URL/secret de produção da aplicação).
+        if (! $sandbox) {
+            $this->syncPrimary($app);
+        }
 
         $revealed = null;
         if ($newSecretGenerated || (strlen((string) $providedSecret) > 0 && ! $hadSecret)) {
@@ -129,6 +145,7 @@ class ApiWebhookConfigService
             $data['product_ids'] ?? [],
             true,
             true,
+            $data['environment'] ?? null,
         );
     }
 
@@ -165,9 +182,12 @@ class ApiWebhookConfigService
     public function deleteEndpoint(ApiApplicationWebhook $endpoint): void
     {
         $app = $endpoint->application;
+        $wasSandbox = $endpoint->environmentName() === ApiKey::ENV_SANDBOX;
         $endpoint->products()->detach();
         $endpoint->delete();
-        $this->syncPrimary($app);
+        if (! $wasSandbox) {
+            $this->syncPrimary($app);
+        }
     }
 
     public function clearWebhook(ApiApplication $app): void
@@ -328,12 +348,26 @@ class ApiWebhookConfigService
         ];
     }
 
+    /** Endpoint principal de produção (espelhado nos campos legados da aplicação). Sandbox nunca é principal. */
     public function primaryEndpoint(ApiApplication $app): ?ApiApplicationWebhook
     {
         return ApiApplicationWebhook::query()
             ->where('api_application_id', $app->id)
+            ->when(Schema::hasColumn('api_application_webhooks', 'environment'), fn ($q) => $q->where(
+                fn ($w) => $w->where('environment', '!=', ApiKey::ENV_SANDBOX)->orWhereNull('environment')
+            ))
             ->orderBy('id')
             ->first();
+    }
+
+    private function isLiveSecret(ApiApplication $app, string $secret): bool
+    {
+        if (is_string($app->webhook_secret) && $app->webhook_secret !== '' && hash_equals($app->webhook_secret, $secret)) {
+            return true;
+        }
+
+        return ApiApplicationWebhook::query()->where('api_application_id', $app->id)->get()
+            ->contains(fn (ApiApplicationWebhook $e) => $e->environmentName() === ApiKey::ENV_LIVE && is_string($e->secret) && $e->secret !== '' && hash_equals($e->secret, $secret));
     }
 
     public function syncPrimary(ApiApplication $app): void

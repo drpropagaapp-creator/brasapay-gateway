@@ -59,6 +59,14 @@ class DeliverApiWebhookJob implements ShouldQueue
 
                 return;
             }
+        } elseif ($delivery->api_application_webhook_id) {
+            // E o inverso: evento real nunca vai para um endpoint de sandbox.
+            $endpoint = \App\Models\ApiApplicationWebhook::query()->find($delivery->api_application_webhook_id);
+            if ($endpoint !== null && $endpoint->environmentName() === \App\Models\ApiKey::ENV_SANDBOX) {
+                $delivery->update(['status' => ApiWebhookDelivery::STATUS_FAILED]);
+
+                return;
+            }
         }
 
         $payload = $delivery->payload;
