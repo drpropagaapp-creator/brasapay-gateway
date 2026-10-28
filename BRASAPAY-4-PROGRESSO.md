@@ -1,6 +1,6 @@
 # BrasaPay 4.0 — registro de progresso
 
-A Onda 1 está em produção desde 28/10/2026 (main). A Onda 2 também está em produção desde 28/10/2026. A Onda 3 está na branch `feat/brasapay-4-onda3`, ainda sem deploy.
+A Onda 1 está em produção desde 28/10/2026 (main). A Onda 2 também está em produção desde 28/10/2026. A Onda 3 também está em produção desde 28/10/2026.
 
 ## Onda 1 — confiabilidade financeira e operacional
 
@@ -80,15 +80,15 @@ Branch: `feat/brasapay-4-onda2`, em produção desde 28/10/2026 (main 53c8357).
 
 ## Onda 3 — plataforma e expansão
 
-Branch: `feat/brasapay-4-onda3`. Implementada e testada no sandbox; **sem deploy** (aguarda autorização).
+Branch: `feat/brasapay-4-onda3`, em produção desde 28/10/2026 (main 6d87869).
 
 | Item | Status | Onde |
 |---|---|---|
-| Brasa Developers | Implementado e testado | Sandbox `/api/sandbox/v1` (chaves `gpk_test_`/`gsk_test_`), `LogApiRequest`, portal `/desenvolvedores`, `OpenApiSpec` (`/docs/api-pagamentos/openapi.json`) |
-| Biblioteca de templates (Brasa Marketplace) | Implementado e testado | `TemplateLibraryService`, `/biblioteca`, admin `/plataforma/biblioteca` |
-| Brasa Enterprise (white-label) | Implementado e testado | `EnterpriseService`, `ResolveWhiteLabelHost` + `EnforceWhiteLabelOwnership`, `/marca-e-dominio`, admin `/plataforma/enterprise` |
-| Brasa AI | Implementado e testado — **desligado até o admin configurar a chave** | `AiAssistantService`, `AiToolbox`, `AnthropicProvider` (SDK oficial `anthropic-ai/sdk`), `/assistente`, admin `/plataforma/assistente-ia` |
-| Command Center (recursos avançados) | Implementado e testado | `CommandCenterService`, `ops:evaluate-alerts`, `/plataforma/central` |
+| Brasa Developers | Em produção | Sandbox `/api/sandbox/v1` (chaves `gpk_test_`/`gsk_test_`), `LogApiRequest`, portal `/desenvolvedores`, `OpenApiSpec` (`/docs/api-pagamentos/openapi.json`) |
+| Biblioteca de templates (Brasa Marketplace) | Em produção | `TemplateLibraryService`, `/biblioteca`, admin `/plataforma/biblioteca` |
+| Brasa Enterprise (white-label) | Em produção | `EnterpriseService`, `ResolveWhiteLabelHost` + `EnforceWhiteLabelOwnership`, `/marca-e-dominio`, admin `/plataforma/enterprise` |
+| Brasa AI | Em produção — **desligado até o admin configurar a chave** | `AiAssistantService`, `AiToolbox`, `AnthropicProvider` (SDK oficial `anthropic-ai/sdk`), `/assistente`, admin `/plataforma/assistente-ia` |
+| Command Center (recursos avançados) | Em produção | `CommandCenterService`, `ops:evaluate-alerts`, `/plataforma/central` |
 
 ### Migrations
 - `2026_11_01_100000_brasa_developers` — colunas novas com padrão: `api_keys.environment` (`live`), `api_webhook_deliveries.duration_ms`/`livemode`, `api_application_webhooks.environment` (`live`); tabelas `api_request_logs`, `sandbox_transactions`
