@@ -67,9 +67,12 @@ class CajuPaySdkCheckoutService
         );
 
         $allowedMethods = $wallet === 'card' ? ['card'] : [$wallet, 'card'];
+        $order->loadMissing('user');
         $consumer = array_filter([
+            'name' => trim((string) ($order->user?->name ?? '')),
             'email' => trim((string) ($order->email ?? '')),
             'document' => preg_replace('/\D/', '', (string) ($order->cpf ?? '')) ?: null,
+            'phone' => trim((string) ($order->phone ?? '')),
         ]);
 
         return app(CajuPayDriver::class)->createSdkCheckoutSession(

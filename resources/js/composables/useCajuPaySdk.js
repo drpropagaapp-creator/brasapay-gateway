@@ -123,12 +123,28 @@ export function setCajuPayPayer(controller, payer) {
         if (typeof payer.document === 'string' && payer.document.trim() !== '') {
             cleaned.document = payer.document.replace(/\D/g, '');
         }
+        if (typeof payer.phone === 'string' && payer.phone.trim() !== '') {
+            const phoneDigits = payer.phone.replace(/\D/g, '');
+            if (phoneDigits.length >= 10) cleaned.phone = phoneDigits;
+        }
     }
     try {
         controller.setPayer(cleaned);
 
         return true;
     } catch (_) {
+        if (cleaned.phone) {
+            const withoutPhone = { ...cleaned };
+            delete withoutPhone.phone;
+            try {
+                controller.setPayer(withoutPhone);
+
+                return true;
+            } catch {
+                return false;
+            }
+        }
+
         return false;
     }
 }

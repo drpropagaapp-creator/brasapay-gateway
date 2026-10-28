@@ -741,18 +741,10 @@ class CajuPayDriver implements GatewayDriver
             $body['partner_checkout_url'] = $partnerCheckoutUrl;
         }
 
-        $rawName = trim((string) ($consumer['name'] ?? ''));
-        $email = $this->sanitizeEmail((string) ($consumer['email'] ?? ''));
-        $document = $this->normalizeDocument((string) ($consumer['document'] ?? ''));
-
-        $payer = array_filter([
-            'name' => $rawName !== '' ? $this->sanitizeName($rawName) : null,
-            'email' => $email !== '' ? $email : null,
-            'document' => $document !== '' && $document !== '00000000000' ? $document : null,
-        ], static fn ($v) => $v !== null && $v !== '');
-
-        if (! empty($payer)) {
+        $payer = $this->sdkPayerFromConsumer($consumer);
+        if ($payer !== []) {
             $body['initial_payer'] = $payer;
+            $body['consumer'] = $payer;
         }
 
         if ($defaultMethod !== '') {
@@ -1368,5 +1360,34 @@ class CajuPayDriver implements GatewayDriver
         $email = trim($email);
 
         return filter_var($email, FILTER_VALIDATE_EMAIL) ? $email : '';
+    }
+
+    /**
+     * @param  array<string, mixed>  $consumer
+     * @return array<string, string>
+     */
+    private function sdkPayerFromConsumer(array $consumer): array
+    {
+        $rawName = trim((string) ($consumer['name'] ?? ''));
+        $email = $this->sanitizeEmail((string) ($consumer['email'] ?? ''));
+        if (str_ends_with(strtolower($email), '@checkout.invalid')) {
+            $email = '';
+        }
+        $document = $this->normalizeDocument((string) ($consumer['document'] ?? ''));
+        $phone = $this->normalizePhone((string) ($consumer['phone'] ?? ''));
+
+        return array_filter([
+            'name' => $rawName !== '' ? $this->sanitizeName($rawName) : null,
+            'email' => $email !== '' ? $email : null,
+            'document' => $document !== '' && $document !== '00000000000' ? $document : null,
+            'phone' => $phone !== '' ? $phone : null,
+        ], static fn ($v) => $v !== null && $v !== '');
+    }
+
+    private function normalizePhone(string $phone): string
+    {
+        $digits = preg_replace('/\D/', '', $phone) ?? '';
+
+        return strlen($digits) >= 10 ? $digits : '';
     }
 }

@@ -1401,11 +1401,22 @@ watch(
     }
 );
 
+const cajuPayPayer = computed(() => ({
+    name: form.name || '',
+    email: form.email || '',
+    document: (form.cpf || '').replace(/\D/g, ''),
+    phone: showPhone.value ? `${form.country_code || ''}${phoneDigits.value || ''}` : '',
+}));
+
 function buildCajuPaySessionPayload() {
     const payload = {
         product_id: form.product_id,
         payment_method: form.payment_method,
         coupon_code: (form.coupon_code || '').trim() || null,
+        email: form.email || '',
+        name: form.name || '',
+        cpf: (form.cpf || '').replace(/\D/g, '') || '',
+        phone: showPhone.value ? `${form.country_code || ''}${phoneDigits.value || ''}` : '',
     };
     if (props.productOfferId) payload.product_offer_id = props.productOfferId;
     if (props.subscriptionPlanId) payload.subscription_plan_id = props.subscriptionPlanId;
@@ -1716,11 +1727,7 @@ async function submitCajuPaySdkFlow(paymentMethod) {
             throw e;
         }
 
-        cajupayMountRef.value?.setPayer?.({
-            name: form.name,
-            email: form.email,
-            document: (form.cpf || '').replace(/\D/g, ''),
-        });
+        cajupayMountRef.value?.setPayer?.(cajuPayPayer.value);
 
         await cajupayMountRef.value.confirm();
         if (!cajupayPolling.value) {
@@ -3481,7 +3488,7 @@ function submit() {
                             :payment-method="form.payment_method"
                             :session-token="cajupaySessionToken"
                             :api-base-url="cajupaySdkBaseUrl"
-                            :initial-payer="{ name: form.name, email: form.email, document: (form.cpf || '').replace(/\D/g, '') }"
+                            :initial-payer="cajuPayPayer"
                             :locale="(checkoutLocale || '').replace('_', '-')"
                             :before-wallet-prime="beforeCajuPayWalletPrime"
                             container-id="cajupay-method"

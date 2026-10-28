@@ -6,6 +6,7 @@ use App\Models\Order;
 use App\Models\RefundRequest;
 use App\Models\User;
 use App\Services\CajuPay\CajuPayPixRefundConfirmationService;
+use App\Support\CajuPayPaymentId;
 use App\Support\OrderManualRefund;
 use Illuminate\Support\Facades\Schema;
 use InvalidArgumentException;
@@ -215,9 +216,14 @@ class ManualOrderRefundService
 
         $customerReason = trim((string) ($reason ?? ''));
         if ($customerReason === '') {
-            $customerReason = $pendingGateway
-                ? 'Reembolso iniciado pelo vendedor/plataforma (aguardando confirmação no gateway).'
-                : 'Reembolso iniciado pelo vendedor/plataforma.';
+            $awaitingCajuCard = $pendingGateway
+                && strtolower(trim((string) $order->gateway)) === 'cajupay'
+                && ! CajuPayPaymentId::isPixPaymentMethod($order->payment_method);
+            $customerReason = $awaitingCajuCard
+                ? 'Reembolso autorizado. Aguardando efetivação na CajuPay.'
+                : ($pendingGateway
+                    ? 'Reembolso iniciado pelo vendedor/plataforma (aguardando confirmação no gateway).'
+                    : 'Reembolso iniciado pelo vendedor/plataforma.');
         }
 
         $existing = RefundRequest::query()

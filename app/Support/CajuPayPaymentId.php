@@ -48,6 +48,11 @@ final class CajuPayPaymentId
         return in_array($method, ['pix', 'pix_auto'], true);
     }
 
+    public static function isCardOrWalletPaymentMethod(?string $method): bool
+    {
+        return in_array($method, ['card', 'apple_pay', 'google_pay'], true);
+    }
+
     public static function looksLikeUuid(string $value): bool
     {
         return (bool) preg_match('/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i', $value);

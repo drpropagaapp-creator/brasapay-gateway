@@ -2291,6 +2291,10 @@ class CheckoutController extends Controller
             'display_currency' => ['nullable', 'string', 'in:BRL,USD,EUR'],
             'coupon_code' => ['nullable', 'string', 'max:64'],
             'checkout_locale' => ['nullable', 'string', 'max:16'],
+            'email' => ['nullable', 'email'],
+            'name' => ['nullable', 'string', 'max:255'],
+            'cpf' => ['nullable', 'string', 'max:14'],
+            'phone' => ['nullable', 'string', 'max:24'],
         ];
         foreach (CheckoutSession::TRACKING_FIELD_KEYS as $trackingKey) {
             $rules[$trackingKey] = ['nullable', 'string', 'max:2048'];
@@ -2392,7 +2396,7 @@ class CheckoutController extends Controller
                 (int) round($totalAmount * 100),
                 $product->name.' (draft '.substr($externalRef, 0, 8).')',
                 $externalRef,
-                [],
+                $this->cajuPaySessionConsumerFromRequest($request),
                 $allowedMethods,
                 $defaultMethodMap[$method] ?? 'card',
                 $sessionOptions
@@ -2442,6 +2446,29 @@ class CheckoutController extends Controller
             'method_supported' => $availableMethods === [] ? null : in_array($method, $availableMethods, true),
             'sdk_base_url' => CajuPayBrowserSdk::apiBaseUrlForBrowser($request),
         ]);
+    }
+
+    /**
+     * Dados reais do pagador quando já preenchidos no checkout. Não inventa e-mail.
+     *
+     * @return array<string, string>
+     */
+    private function cajuPaySessionConsumerFromRequest(Request $request): array
+    {
+        $name = trim((string) $request->input('name', ''));
+        $email = strtolower(trim((string) $request->input('email', '')));
+        if (str_ends_with($email, '@checkout.invalid')) {
+            $email = '';
+        }
+        $document = preg_replace('/\D/', '', (string) $request->input('cpf', '')) ?? '';
+        $phone = trim((string) $request->input('phone', ''));
+
+        return array_filter([
+            'name' => $name !== '' ? $name : null,
+            'email' => $email !== '' ? $email : null,
+            'document' => $document !== '' ? $document : null,
+            'phone' => $phone !== '' ? $phone : null,
+        ], static fn ($v) => $v !== null && $v !== '');
     }
 
     /**

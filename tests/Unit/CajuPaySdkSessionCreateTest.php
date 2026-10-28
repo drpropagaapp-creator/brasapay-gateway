@@ -208,4 +208,66 @@ class CajuPaySdkSessionCreateTest extends TestCase
             ]
         );
     }
+
+    public function test_create_sdk_session_sends_consumer_and_initial_payer(): void
+    {
+        Http::fake([
+            'https://api.cajupay.com.br/api/sdk/v1/checkout/sessions' => function ($request) {
+                $body = $request->data();
+                $this->assertSame('Ana Silva', $body['initial_payer']['name'] ?? null);
+                $this->assertSame('ana@example.com', $body['initial_payer']['email'] ?? null);
+                $this->assertSame('52998224725', $body['initial_payer']['document'] ?? null);
+                $this->assertSame('5511999999999', $body['initial_payer']['phone'] ?? null);
+                $this->assertSame($body['initial_payer'], $body['consumer'] ?? null);
+
+                return Http::response([
+                    'token' => 'tok_payer',
+                    'checkout_session_id' => 'sess-payer',
+                ], 201);
+            },
+        ]);
+
+        $driver = new CajuPayDriver;
+        $driver->createSdkCheckoutSession(
+            ['public_key' => 'pk_test', 'secret_key' => 'sk_test'],
+            9900,
+            'Pedido #1',
+            'ext-payer',
+            [
+                'name' => 'Ana Silva',
+                'email' => 'ana@example.com',
+                'document' => '529.982.247-25',
+                'phone' => '+55 11 99999-9999',
+            ],
+            ['card'],
+            'card'
+        );
+    }
+
+    public function test_create_sdk_session_omits_placeholder_checkout_email(): void
+    {
+        Http::fake([
+            'https://api.cajupay.com.br/api/sdk/v1/checkout/sessions' => function ($request) {
+                $body = $request->data();
+                $this->assertArrayNotHasKey('initial_payer', $body);
+                $this->assertArrayNotHasKey('consumer', $body);
+
+                return Http::response([
+                    'token' => 'tok_empty',
+                    'checkout_session_id' => 'sess-empty',
+                ], 201);
+            },
+        ]);
+
+        $driver = new CajuPayDriver;
+        $driver->createSdkCheckoutSession(
+            ['public_key' => 'pk_test', 'secret_key' => 'sk_test'],
+            9900,
+            'Pedido #1',
+            'ext-empty',
+            ['email' => 'cajupay.abc123@checkout.invalid'],
+            ['card'],
+            'card'
+        );
+    }
 }
