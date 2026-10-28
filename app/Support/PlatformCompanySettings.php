@@ -69,6 +69,20 @@ TXT;
         return trim((string) Setting::get(self::KEY_LEGAL_NAME, '', null));
     }
 
+    /**
+     * Nome da empresa em documentos (contestação, dossiê, comprovantes).
+     * Usa a razão social cadastrada; nunca o nome de produto (Getfy/Gatefy).
+     */
+    public static function documentCompanyName(): string
+    {
+        $legal = self::legalName();
+        if ($legal !== '') {
+            return $legal;
+        }
+
+        return 'Empresa';
+    }
+
     public static function cnpjDigits(): string
     {
         return BrazilianDocuments::digits((string) Setting::get(self::KEY_CNPJ, '', null));

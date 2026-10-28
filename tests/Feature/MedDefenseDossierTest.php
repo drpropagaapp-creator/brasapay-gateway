@@ -13,6 +13,7 @@ class MedDefenseDossierTest extends TestCase
 {
     public function test_generates_pdf_and_stores_path(): void
     {
+        config(['app.name' => 'Getfy', 'getfy.app_name' => 'Getfy']);
         $seller = User::factory()->create(['role' => User::ROLE_INFOPRODUTOR]);
         $seller->forceFill(['tenant_id' => $seller->id])->save();
         $product = $this->createTestProduct(['tenant_id' => (int) $seller->id]);
@@ -50,6 +51,10 @@ class MedDefenseDossierTest extends TestCase
         $downloadPath = $service->downloadPath($dispute);
         $this->assertNotNull($downloadPath);
         $this->assertFileExists($downloadPath);
+        $pdfText = @iconv('ISO-8859-1', 'UTF-8//IGNORE', (string) file_get_contents($downloadPath)) ?: (string) file_get_contents($downloadPath);
+        $this->assertStringContainsString('Empresa', $pdfText);
+        $this->assertStringNotContainsString('Getfy', $pdfText);
+        $this->assertStringNotContainsString('Gatefy', $pdfText);
     }
 
     public function test_platform_can_download_generated_dossier(): void

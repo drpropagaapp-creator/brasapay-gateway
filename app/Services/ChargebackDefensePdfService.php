@@ -37,9 +37,7 @@ class ChargebackDefensePdfService
         $order->loadMissing(['product', 'user', 'tenantOwner', 'orderItems.product']);
 
         $legalConfigured = PlatformCompanySettings::legalName();
-        $legalName = $legalConfigured !== ''
-            ? $legalConfigured
-            : trim((string) config('app.name', 'Plataforma'));
+        $legalName = PlatformCompanySettings::documentCompanyName();
         $cnpj = PlatformCompanySettings::cnpjFormatted();
 
         $customer = $order->user;
@@ -113,7 +111,7 @@ class ChargebackDefensePdfService
         }
         if (empty($doc['company']['legal_name_configured'])) {
             $pdf->SetFont('Arial', 'I', 8);
-            $this->line($pdf, 'Razão social não cadastrada em Configurações → Dados da plataforma. Este documento usa o nome da aplicação.');
+            $this->line($pdf, 'Razão social não cadastrada em Configurações → Dados da plataforma.');
         }
 
         $pdf->Ln(2);

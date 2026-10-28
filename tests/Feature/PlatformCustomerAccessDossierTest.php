@@ -24,6 +24,7 @@ class PlatformCustomerAccessDossierTest extends TestCase
             EnsureStackerLicense::class,
             ValidateCsrfToken::class,
         ]);
+        config(['app.name' => 'Getfy', 'getfy.app_name' => 'Getfy']);
     }
 
     private function platformAdmin(): User
@@ -158,6 +159,9 @@ class PlatformCustomerAccessDossierTest extends TestCase
         $this->assertStringContainsString($customer->email, $body);
         $this->assertStringContainsString('Data;Evento;IP', $body);
         $this->assertStringContainsString('203.0.113.88', $body);
+        $this->assertStringContainsString('Empresa', $body);
+        $this->assertStringNotContainsString('Getfy', $body);
+        $this->assertStringNotContainsString('Gatefy', $body);
 
         $pdf = $this->actingAs($admin)->get(route('plataforma.clientes.acessos.dossie.export-pdf', [
             'user' => $customer->id,
@@ -166,6 +170,10 @@ class PlatformCustomerAccessDossierTest extends TestCase
         $pdf->assertOk();
         $pdf->assertHeader('content-type', 'application/pdf');
         $this->assertStringStartsWith('%PDF', $pdf->getContent());
+        $pdfText = @iconv('ISO-8859-1', 'UTF-8//IGNORE', $pdf->getContent()) ?: $pdf->getContent();
+        $this->assertStringContainsString('Empresa', $pdfText);
+        $this->assertStringNotContainsString('Getfy', $pdfText);
+        $this->assertStringNotContainsString('Gatefy', $pdfText);
     }
 
     public function test_admin_can_open_dossier_after_enrollment_revoked_if_order_exists(): void

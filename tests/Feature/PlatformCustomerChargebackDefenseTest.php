@@ -156,6 +156,8 @@ class PlatformCustomerChargebackDefenseTest extends TestCase
         $this->assertStringContainsString('203.0.113.88', $text);
         $this->assertStringNotContainsString('WhatsApp', $text);
         $this->assertStringNotContainsString('estorno administrativo', $text);
+        $this->assertStringNotContainsString('Getfy', $text);
+        $this->assertStringNotContainsString('Gatefy', $text);
 
         if (Schema::hasTable('platform_audit_logs')) {
             $this->assertDatabaseHas('platform_audit_logs', [
@@ -207,6 +209,23 @@ class PlatformCustomerChargebackDefenseTest extends TestCase
         $payment = collect($doc['identification'])->firstWhere('label', 'Forma de pagamento');
         $this->assertIsArray($payment);
         $this->assertStringNotContainsString('final', (string) $payment['value']);
+    }
+
+    public function test_document_uses_empresa_not_getfy_when_legal_name_is_missing(): void
+    {
+        Setting::set(PlatformCompanySettings::KEY_LEGAL_NAME, '', null);
+        config(['app.name' => 'Getfy', 'getfy.app_name' => 'Getfy']);
+        ['order' => $order] = $this->customerWithMemberAccess();
+
+        $doc = app(ChargebackDefensePdfService::class)->buildDocument($order->fresh());
+        $this->assertSame('Empresa', $doc['company']['legal_name']);
+        $this->assertStringNotContainsString('Getfy', $doc['intro']);
+        $this->assertStringNotContainsString('Getfy', implode(' ', $doc['closing']));
+
+        $text = $this->pdfText(app(ChargebackDefensePdfService::class)->renderPdf($order->fresh()));
+        $this->assertStringContainsString('Empresa', $text);
+        $this->assertStringNotContainsString('Getfy', $text);
+        $this->assertStringNotContainsString('Gatefy', $text);
     }
 
     public function test_admin_cannot_export_order_of_another_customer(): void
