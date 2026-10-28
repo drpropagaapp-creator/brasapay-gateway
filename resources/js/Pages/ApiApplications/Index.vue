@@ -320,6 +320,7 @@ function onWebhookSecretRotated(secret) {
                             <td class="px-5 py-4">
                                 <div class="flex items-center gap-2">
                                     <code class="font-mono text-xs text-zinc-700 dark:text-zinc-300">{{ keyRow.public_key_masked }}</code>
+                                    <span v-if="keyRow.environment === 'sandbox'" class="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-amber-800 dark:bg-amber-900/40 dark:text-amber-200">Sandbox</span>
                                     <button type="button" class="rounded p-1 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800" @click="copyText(`pub-${keyRow.id}`, keyRow.public_key)">
                                         <Check v-if="copyDone[`pub-${keyRow.id}`]" class="h-3.5 w-3.5 text-emerald-600" />
                                         <Copy v-else class="h-3.5 w-3.5" />

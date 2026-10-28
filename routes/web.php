@@ -1210,6 +1210,10 @@ Route::middleware(['auth', 'admin.tenant', 'seller.panel', 'stacker.license', 'r
 
     // API de pagamentos – aplicações
     Route::middleware('team.permission:api_pagamentos.view')->group(function () {
+        Route::get('/desenvolvedores', [\App\Http\Controllers\DevelopersController::class, 'index'])->name('developers.index');
+        Route::get('/desenvolvedores/entregas/{delivery}', [\App\Http\Controllers\DevelopersController::class, 'delivery'])->name('developers.delivery');
+        Route::post('/desenvolvedores/{apiApplication}/webhook-teste', [\App\Http\Controllers\DevelopersController::class, 'testWebhook'])
+            ->middleware('throttle:20,1')->whereNumber('apiApplication')->name('developers.webhook-test');
         Route::get('/aplicacoes-api', [\App\Http\Controllers\ApiApplicationsController::class, 'index'])->name('api-applications.index');
         Route::get('/aplicacoes-api/create', [\App\Http\Controllers\ApiApplicationsController::class, 'create'])->name('api-applications.create');
         Route::post('/aplicacoes-api', [\App\Http\Controllers\ApiApplicationsController::class, 'store'])->name('api-applications.store');
@@ -1314,6 +1318,8 @@ Route::get('/docs/api-pagamentos/ia', [\App\Http\Controllers\ApiDocsController::
 Route::get('/docs/api-pagamentos/llm/download', [\App\Http\Controllers\ApiDocsController::class, 'llmBundle'])->name('api-docs.pagamentos.llm');
 Route::get('/docs/api-pagamentos/llm/full.md', [\App\Http\Controllers\ApiDocsController::class, 'llmBundle']);
 Route::get('/docs/api-pagamentos/testar', [\App\Http\Controllers\ApiDocsController::class, 'testar'])->name('api-docs.pagamentos.testar');
+Route::get('/docs/api-pagamentos/openapi.json', [\App\Http\Controllers\ApiDocsController::class, 'openapi'])
+    ->middleware('throttle:60,1')->name('api-docs.pagamentos.openapi');
 
 // URLs antigas do painel do vendedor → painel da plataforma (operador)
 Route::middleware(['auth'])->group(function () {

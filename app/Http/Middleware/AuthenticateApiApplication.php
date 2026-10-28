@@ -11,7 +11,10 @@ use Symfony\Component\HttpFoundation\Response;
 
 class AuthenticateApiApplication
 {
-    public function handle(Request $request, Closure $next): Response
+    /**
+     * @param  string  $environment  'live' (padrão, /api/v1) ou 'sandbox' (/api/sandbox/v1)
+     */
+    public function handle(Request $request, Closure $next, string $environment = ApiKey::ENV_LIVE): Response
     {
         $credentials = $this->resolveCredentials($request);
         if ($credentials === null) {
@@ -34,6 +37,18 @@ class AuthenticateApiApplication
         if ($apiKey !== null && ! $apiKey->is_active) {
             return response()->json(['message' => 'API key is disabled.'], 403);
         }
+
+        // Credenciais separadas por ambiente: chave de sandbox nunca chega aos endpoints reais e vice-versa.
+        // Chaves antigas (sem ApiKey ou sem ambiente) são de produção.
+        $keyEnvironment = $apiKey?->environment ?: ApiKey::ENV_LIVE;
+        if ($keyEnvironment !== $environment) {
+            return response()->json([
+                'message' => $environment === ApiKey::ENV_SANDBOX
+                    ? 'This endpoint requires a sandbox API key.'
+                    : 'Sandbox API keys only work on /api/sandbox/v1 endpoints.',
+            ], 403);
+        }
+        $request->attributes->set('api_environment', $environment);
 
         $ip = $request->ip();
         if ($apiKey !== null) {

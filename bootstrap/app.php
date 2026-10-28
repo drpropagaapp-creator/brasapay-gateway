@@ -77,6 +77,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'api.application' => \App\Http\Middleware\AuthenticateApiApplication::class,
             'api.scope' => \App\Http\Middleware\RequireApiScope::class,
             'api.request-id' => \App\Http\Middleware\AddApiRequestId::class,
+            'api.request-log' => \App\Http\Middleware\LogApiRequest::class,
             'member.area.resolve' => \App\Http\Middleware\ResolveMemberAreaProduct::class,
             'member.area.resolve.by.host' => \App\Http\Middleware\ResolveMemberAreaByHost::class,
             'member.area.access' => \App\Http\Middleware\EnsureMemberAreaAccess::class,
@@ -233,6 +234,7 @@ return Application::configure(basePath: dirname(__DIR__))
         // Brasa Treasury: conciliação em modo observação (só registra divergências).
         $schedule->command('treasury:reconcile')->hourlyAt(17)->withoutOverlapping(30);
         $schedule->command('acquirer:prune-attempts --days=30')->dailyAt('04:10');
+        $schedule->command('developers:prune --days=30 --sandbox-days=90')->dailyAt('04:20');
         $schedule->command('recovery:process-email')->everyFiveMinutes()->withoutOverlapping(10);
         // BrasaShield em observação: janela de 30 min a cada 10 (sobreposição proposital; avaliação é idempotente).
         $schedule->command('shield:scan --minutes=30')->everyTenMinutes()->withoutOverlapping(15);

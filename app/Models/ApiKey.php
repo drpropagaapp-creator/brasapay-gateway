@@ -26,7 +26,12 @@ class ApiKey extends Model
         'is_active',
         'last_used_at',
         'expires_at',
+        'environment',
     ];
+
+    public const ENV_LIVE = 'live';
+
+    public const ENV_SANDBOX = 'sandbox';
 
     /** @var list<string> */
     protected $hidden = [
@@ -76,18 +81,24 @@ class ApiKey extends Model
         return password_hash($plainKey, PASSWORD_DEFAULT);
     }
 
-    public static function generatePublicKey(): string
+    public function isSandbox(): bool
+    {
+        return $this->environment === self::ENV_SANDBOX;
+    }
+
+    /** Chaves de sandbox têm prefixo próprio (gpk_test_ / gsk_test_) para não serem confundidas com as de produção. */
+    public static function generatePublicKey(bool $sandbox = false): string
     {
         do {
-            $key = 'gpk_' . Str::lower(Str::random(40));
+            $key = ($sandbox ? 'gpk_test_' : 'gpk_') . Str::lower(Str::random(40));
         } while (static::query()->where('public_key', $key)->exists());
 
         return $key;
     }
 
-    public static function generateSecretKey(): string
+    public static function generateSecretKey(bool $sandbox = false): string
     {
-        return 'gsk_' . Str::random(12) . '_' . Str::random(32);
+        return ($sandbox ? 'gsk_test_' : 'gsk_') . Str::random(12) . '_' . Str::random(32);
     }
 
     public static function encryptSecretForStorage(string $plainSecret): string

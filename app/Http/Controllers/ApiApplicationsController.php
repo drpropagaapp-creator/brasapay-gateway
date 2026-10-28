@@ -170,11 +170,13 @@ class ApiApplicationsController extends Controller
             'name' => ['required', 'string', 'max:120'],
             'scopes' => ['required', 'array', 'min:1'],
             'scopes.*' => ['string', 'in:'.implode(',', ApiScopes::all())],
+            'environment' => ['nullable', 'in:live,sandbox'],
         ]);
+        $sandbox = ($validated['environment'] ?? 'live') === ApiKey::ENV_SANDBOX;
 
-        $secret = ApiKey::generateSecretKey();
+        $secret = ApiKey::generateSecretKey($sandbox);
         $keyReveal = [
-            'public_key' => ApiKey::generatePublicKey(),
+            'public_key' => ApiKey::generatePublicKey($sandbox),
             'secret_key' => $secret,
         ];
 
@@ -191,6 +193,9 @@ class ApiApplicationsController extends Controller
             'rate_limit_tier' => 'standard',
             'is_active' => true,
         ];
+        if (Schema::hasColumn((new ApiKey)->getTable(), 'environment')) {
+            $row['environment'] = $sandbox ? ApiKey::ENV_SANDBOX : ApiKey::ENV_LIVE;
+        }
         if (Schema::hasColumn((new ApiKey)->getTable(), 'secret_encrypted')) {
             $row['secret_encrypted'] = ApiKey::encryptSecretForStorage($secret);
         }
@@ -199,6 +204,7 @@ class ApiApplicationsController extends Controller
 
         $this->logActivity(SellerActivityLogService::API_KEY_CREATED, $apiApplication, [
             'name' => $validated['name'],
+            'environment' => $sandbox ? ApiKey::ENV_SANDBOX : ApiKey::ENV_LIVE,
             'public_key_masked' => self::maskPublicKey($keyReveal['public_key']),
             'scopes' => array_values(array_unique($validated['scopes'])),
         ]);
@@ -242,8 +248,9 @@ class ApiApplicationsController extends Controller
         $this->authorizeTenant($apiApplication);
         $this->assertApiKeyBelongsToApplication($apiApplication, $apiKey);
 
-        $secret = ApiKey::generateSecretKey();
-        $publicKey = ApiKey::generatePublicKey();
+        // Regenerar mantém o ambiente da chave (sandbox continua com prefixo de teste).
+        $secret = ApiKey::generateSecretKey($apiKey->isSandbox());
+        $publicKey = ApiKey::generatePublicKey($apiKey->isSandbox());
         $payload = [
             'public_key' => $publicKey,
             'secret_key_hash' => ApiKey::hashSecretKey($secret),
@@ -574,6 +581,7 @@ class ApiApplicationsController extends Controller
                 'public_key' => $app->public_key,
                 'public_key_masked' => self::maskPublicKey($app->public_key),
                 'scopes' => [ApiScopes::WILDCARD],
+                'environment' => ApiKey::ENV_LIVE,
                 'is_active' => (bool) $app->is_active,
                 'can_reveal_secret' => self::apiApplicationCanRevealSecret($app),
                 'can_delete' => false,
@@ -587,6 +595,7 @@ class ApiApplicationsController extends Controller
             'public_key' => $k->public_key,
             'public_key_masked' => self::maskPublicKey($k->public_key),
             'scopes' => $k->scopes ?? [],
+            'environment' => $k->environment ?: ApiKey::ENV_LIVE,
             'is_active' => (bool) $k->is_active,
             'can_reveal_secret' => $k->canRevealSecret(),
             'can_delete' => true,

@@ -29,6 +29,7 @@ import {
     MailCheck,
     Contact,
     Lightbulb,
+    Terminal,
     Repeat,
     FlaskConical,
 } from 'lucide-vue-next';
@@ -179,6 +180,7 @@ export function useAppSidebarNav() {
                 icon: CodeXml,
                 badge: 'pix-in-out',
             });
+            items.push({ name: t('sidebar.developers', 'Desenvolvedores'), href: '/desenvolvedores', icon: Terminal });
         }
 
         if (canView('financeiro.view')) {

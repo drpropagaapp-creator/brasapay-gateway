@@ -32,6 +32,7 @@ const form = useForm({
     name: '',
     scopes: ['payments:read', 'payments:write'],
     is_active: true,
+    environment: 'live',
 });
 
 watch(
@@ -126,6 +127,20 @@ function submit() {
                                 placeholder="Ex.: produção, staging"
                             />
                             <p v-if="form.errors.name" class="mt-1 text-sm text-red-600">{{ form.errors.name }}</p>
+                        </div>
+
+                        <div v-if="!editingKey">
+                            <p class="text-sm font-medium text-zinc-700 dark:text-zinc-300">Ambiente</p>
+                            <div class="mt-2 grid grid-cols-2 gap-2">
+                                <label v-for="env in [{ id: 'live', label: 'Produção', hint: 'Cobranças reais' }, { id: 'sandbox', label: 'Sandbox', hint: 'Só testes, sem dinheiro' }]" :key="env.id"
+                                    class="cursor-pointer rounded-lg border px-3 py-2 text-sm dark:border-zinc-700"
+                                    :class="form.environment === env.id ? 'border-[var(--color-primary)]/50 bg-[var(--color-primary)]/5' : 'border-zinc-200'">
+                                    <input v-model="form.environment" type="radio" :value="env.id" class="sr-only" />
+                                    <span class="block font-medium">{{ env.label }}</span>
+                                    <span class="block text-xs text-zinc-500">{{ env.hint }}</span>
+                                </label>
+                            </div>
+                            <p v-if="form.environment === 'sandbox'" class="mt-2 text-xs text-zinc-500">Chave de sandbox funciona só em /api/sandbox/v1.</p>
                         </div>
 
                         <div v-if="isLegacy" class="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-100">

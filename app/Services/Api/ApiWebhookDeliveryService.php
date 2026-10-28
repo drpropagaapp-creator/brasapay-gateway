@@ -22,9 +22,10 @@ class ApiWebhookDeliveryService
         array $payload,
         ?int $apiKeyId = null,
         mixed $productId = null,
+        bool $livemode = true,
     ): ?ApiWebhookDelivery {
         $first = null;
-        foreach ($this->createDeliveryRecords($app, $event, $payload, $apiKeyId, $productId) as $delivery) {
+        foreach ($this->createDeliveryRecords($app, $event, $payload, $apiKeyId, $productId, $livemode) as $delivery) {
             $first ??= $delivery;
             DeliverApiWebhookJob::dispatch($delivery->id);
         }
@@ -57,6 +58,7 @@ class ApiWebhookDeliveryService
         array $payload,
         ?int $apiKeyId,
         mixed $productId,
+        bool $livemode = true,
     ): array {
         if (! $app->is_active) {
             return [];
@@ -72,7 +74,7 @@ class ApiWebhookDeliveryService
         if ($endpoints->isNotEmpty()) {
             $deliveries = [];
             foreach ($endpoints as $endpoint) {
-                $delivery = $this->createForEndpoint($app, $endpoint, $event, $payload, $apiKeyId, $productId);
+                $delivery = $this->createForEndpoint($app, $endpoint, $event, $payload, $apiKeyId, $productId, $livemode);
                 if ($delivery !== null) {
                     $deliveries[] = $delivery;
                 }
@@ -81,7 +83,7 @@ class ApiWebhookDeliveryService
             return $deliveries;
         }
 
-        $legacy = $this->createLegacyRecord($app, $event, $payload, $apiKeyId);
+        $legacy = $this->createLegacyRecord($app, $event, $payload, $apiKeyId, $livemode);
 
         return $legacy !== null ? [$legacy] : [];
     }
@@ -96,12 +98,13 @@ class ApiWebhookDeliveryService
         array $payload,
         ?int $apiKeyId,
         mixed $productId,
+        bool $livemode = true,
     ): ?ApiWebhookDelivery {
         if (! $endpoint->isSubscribedTo($event) || ! $endpoint->appliesToProduct($productId)) {
             return null;
         }
 
-        return $this->persistDelivery($app, $event, $payload, $apiKeyId, $endpoint->url, $endpoint->id);
+        return $this->persistDelivery($app, $event, $payload, $apiKeyId, $endpoint->url, $endpoint->id, $livemode);
     }
 
     /**
@@ -112,6 +115,7 @@ class ApiWebhookDeliveryService
         string $event,
         array $payload,
         ?int $apiKeyId,
+        bool $livemode = true,
     ): ?ApiWebhookDelivery {
         if (! $app->webhook_url) {
             return null;
@@ -126,7 +130,7 @@ class ApiWebhookDeliveryService
             return null;
         }
 
-        return $this->persistDelivery($app, $event, $payload, $apiKeyId, (string) $app->webhook_url, null);
+        return $this->persistDelivery($app, $event, $payload, $apiKeyId, (string) $app->webhook_url, null, $livemode);
     }
 
     /**
@@ -139,6 +143,7 @@ class ApiWebhookDeliveryService
         ?int $apiKeyId,
         string $url,
         ?int $endpointId,
+        bool $livemode = true,
     ): ?ApiWebhookDelivery {
         try {
             WebhookUrlValidator::assertAllowed($url);
@@ -157,6 +162,10 @@ class ApiWebhookDeliveryService
             'event' => $event,
             'created_at' => now()->toIso8601String(),
         ], $payload);
+        if (! $livemode) {
+            // Só o sandbox marca o payload; os campos dos eventos reais continuam congelados.
+            $enriched['livemode'] = false;
+        }
 
         return ApiWebhookDelivery::create([
             'tenant_id' => (int) $app->tenant_id,
@@ -168,7 +177,7 @@ class ApiWebhookDeliveryService
             'url' => $url,
             'status' => ApiWebhookDelivery::STATUS_PENDING,
             'next_retry_at' => now(),
-        ]);
+        ] + (Schema::hasColumn('api_webhook_deliveries', 'livemode') ? ['livemode' => $livemode] : []));
     }
 
     /**

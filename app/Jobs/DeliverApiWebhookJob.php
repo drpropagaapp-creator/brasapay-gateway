@@ -64,6 +64,7 @@ class DeliverApiWebhookJob implements ShouldQueue
 
         $attempt = (int) $delivery->attempt + 1;
 
+        $started = microtime(true);
         try {
             $response = Http::timeout(15)
                 ->withOptions(['allow_redirects' => false])
@@ -75,7 +76,7 @@ class DeliverApiWebhookJob implements ShouldQueue
                 'attempt' => $attempt,
                 'last_status_code' => $response->status(),
                 'last_response_body' => Str::limit($response->body(), 2000),
-            ]);
+            ] + (self::hasDurationColumn() ? ['duration_ms' => (int) round((microtime(true) - $started) * 1000)] : []));
 
             if ($response->successful()) {
                 $delivery->update([
@@ -103,5 +104,13 @@ class DeliverApiWebhookJob implements ShouldQueue
         }
 
         $deliveryService->scheduleRetry($delivery->fresh());
+    }
+
+    private static ?bool $hasDuration = null;
+
+    /** Entrega de webhook não pode falhar se a coluna nova ainda não existir. */
+    private static function hasDurationColumn(): bool
+    {
+        return self::$hasDuration ??= \Illuminate\Support\Facades\Schema::hasColumn('api_webhook_deliveries', 'duration_ms');
     }
 }

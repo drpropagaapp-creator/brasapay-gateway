@@ -80,4 +80,10 @@ class ApiDocsController extends Controller
             'publicMode' => true,
         ]);
     }
+
+    /** OpenAPI 3.1 — só endpoints que existem (conferido por teste). */
+    public function openapi(): \Illuminate\Http\JsonResponse
+    {
+        return response()->json(\App\Support\OpenApiSpec::build(url('/')), 200, [], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+    }
 }

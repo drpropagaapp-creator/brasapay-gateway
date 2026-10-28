@@ -13,7 +13,7 @@ use Illuminate\Support\Facades\Route;
 |
 */
 
-Route::middleware(['api.application', 'api.request-id', 'throttle:api'])->prefix('v1')->group(function () {
+Route::middleware(['api.application', 'api.request-id', 'throttle:api', 'api.request-log'])->prefix('v1')->group(function () {
     Route::get('payments', [\App\Http\Controllers\Api\V1\PaymentStatusController::class, 'index'])
         ->middleware('api.scope:payments:read')
         ->name('api.v1.payments.index');
@@ -70,4 +70,25 @@ Route::middleware(['api.application', 'api.request-id', 'throttle:api'])->prefix
     Route::post('webhooks/deliveries/{deliveryId}/retry', [\App\Http\Controllers\Api\V1\WebhookDeliveriesController::class, 'retry'])
         ->middleware('api.scope:payments:read')
         ->name('api.v1.webhooks.deliveries.retry');
+});
+
+/*
+| Sandbox (Brasa Developers) – só chaves de sandbox (gpk_test_/gsk_test_). Mesmos formatos de resposta
+| e de webhook da API real, sem pedido, adquirente, carteira ou saque real. Webhooks com "livemode": false.
+*/
+Route::middleware(['api.application:sandbox', 'api.request-id', 'throttle:api', 'api.request-log'])->prefix('sandbox/v1')->group(function () {
+    $c = \App\Http\Controllers\Api\Sandbox\SandboxController::class;
+    Route::get('payments', [$c, 'index'])->middleware('api.scope:payments:read')->name('api.sandbox.payments.index');
+    Route::post('payments/pix', [$c, 'createPix'])->middleware('api.scope:payments:write')->name('api.sandbox.payments.pix');
+    Route::post('payments/card', [$c, 'createCard'])->middleware('api.scope:payments:write')->name('api.sandbox.payments.card');
+    Route::post('payments/boleto', [$c, 'createBoleto'])->middleware('api.scope:payments:write')->name('api.sandbox.payments.boleto');
+    Route::get('payments/{id}', [$c, 'show'])->middleware('api.scope:payments:read')->whereUuid('id')->name('api.sandbox.payments.show');
+    Route::post('simulate/payments/{id}/{action}', [$c, 'simulatePayment'])->middleware('api.scope:payments:write')
+        ->whereUuid('id')->whereIn('action', ['approve', 'expire', 'refund'])->name('api.sandbox.simulate.payment');
+    Route::get('balance', [$c, 'balance'])->middleware('api.scope:withdrawals:read')->name('api.sandbox.balance');
+    Route::post('withdrawals', [$c, 'createWithdrawal'])->middleware('api.scope:withdrawals:write')->name('api.sandbox.withdrawals.store');
+    Route::get('withdrawals/{id}', [$c, 'showWithdrawal'])->middleware('api.scope:withdrawals:read')->whereUuid('id')->name('api.sandbox.withdrawals.show');
+    Route::post('simulate/withdrawals/{id}/{action}', [$c, 'simulateWithdrawal'])->middleware('api.scope:withdrawals:write')
+        ->whereUuid('id')->whereIn('action', ['process', 'pay', 'fail'])->name('api.sandbox.simulate.withdrawal');
+    Route::post('webhooks/test', [$c, 'testWebhook'])->middleware('api.scope:webhooks:write')->name('api.sandbox.webhooks.test');
 });

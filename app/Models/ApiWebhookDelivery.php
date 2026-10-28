@@ -33,6 +33,8 @@ class ApiWebhookDelivery extends Model
         'last_response_body',
         'next_retry_at',
         'delivered_at',
+        'duration_ms',
+        'livemode',
     ];
 
     protected function casts(): array
@@ -41,6 +43,7 @@ class ApiWebhookDelivery extends Model
             'payload' => 'array',
             'next_retry_at' => 'datetime',
             'delivered_at' => 'datetime',
+            'livemode' => 'boolean',
         ];
     }
 
