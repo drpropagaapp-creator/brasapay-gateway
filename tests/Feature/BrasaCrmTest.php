@@ -104,8 +104,9 @@ class BrasaCrmTest extends TestCase
         $this->assertSame(1, $sum['stages']['recorrente']['count']);
         $this->assertSame(1, $sum['stages']['alto_valor']['count']);
         $this->assertSame(1, $sum['stages']['em_risco']['count'], 'Quem pagou muito mas sumiu há 90+ dias está em risco.');
-        $this->assertSame(6, $sum['buyers']);
-        $this->assertSame(3653.0, $sum['revenue']);
+        $this->assertSame(6, $sum['contacts']);
+        $this->assertSame(5, $sum['buyers']);
+        $this->assertSame(3703.0, $sum['revenue']);
 
         $risk = $crm->contacts($s->id, null, 'all', null, null, 30, 'em_risco')->items();
         $this->assertSame(['sumiu@x.com'], array_column($risk, 'email'));
