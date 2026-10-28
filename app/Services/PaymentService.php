@@ -7,7 +7,10 @@ use App\Models\GatewayCredential;
 use App\Models\Order;
 use App\Models\Product;
 use App\Services\CajuPay\CajuPayAccountResolver;
+use App\Exceptions\AmbiguousCardChargeException;
+use App\Services\Payments\AcquirerAttemptRecorder;
 use App\Services\Payments\AcquirerPolicyService;
+use App\Services\Payments\SmartRoutingService;
 use App\Models\Setting;
 use App\Models\User;
 use App\Models\Subscription;
@@ -23,6 +26,12 @@ class PaymentService
 {
     private const PAYMENT_TOTAL_TIMEOUT_SECONDS = 25;
 
+    /** Estratégia do Smart Routing usada na última ordem calculada (registrada nas tentativas). */
+    private ?string $lastRoutingStrategy = null;
+
+    /** Produto/aplicação de API fixou a adquirente: o Smart Routing não reordena. */
+    private bool $routingOverrideActive = false;
+
     /**
      * Create a PIX payment for the order. Tries gateways in redundancy order until one succeeds.
      *
@@ -34,8 +43,10 @@ class PaymentService
     {
         $tenantId = $order->tenant_id;
         $orderSlugs = $this->getGatewayOrderForMethod($tenantId, 'pix', $product, $gatewayConfigOverride);
+        $strategy = $this->lastRoutingStrategy;
         $lastException = null;
         $deadline = microtime(true) + self::PAYMENT_TOTAL_TIMEOUT_SECONDS;
+        $position = 0;
 
         foreach ($orderSlugs as $gatewaySlug) {
             if (microtime(true) > $deadline) {
@@ -71,8 +82,9 @@ class PaymentService
             if (! $driver) {
                 continue;
             }
+            $startedAt = microtime(true);
+            $position++;
             try {
-                $startedAt = microtime(true);
                 $postbackUrl = $this->webhookUrlForGateway($gatewaySlug);
                 $pixOptions = [];
                 $meta = is_array($order->metadata) ? $order->metadata : [];
@@ -123,6 +135,8 @@ class PaymentService
                         ->applyPendingForOrder($order->fresh());
                 }
 
+                AcquirerAttemptRecorder::record($gatewaySlug, 'pix', $tenantId, $order->id, AcquirerAttemptRecorder::SUCCESS, $startedAt, $position, $strategy);
+
                 return [
                     'transaction_id' => $result['transaction_id'] ?? '',
                     'gateway' => $gatewaySlug,
@@ -130,6 +144,7 @@ class PaymentService
                     'copy_paste' => $copyPaste,
                 ];
             } catch (\Throwable $e) {
+                AcquirerAttemptRecorder::record($gatewaySlug, 'pix', $tenantId, $order->id, AcquirerAttemptRecorder::classifyException($e), $startedAt, $position, $strategy, $e);
                 $log = $gatewaySlug === 'okto' ? 'error' : 'warning';
                 Log::{$log}('PaymentService: PIX gateway failed.', [
                     'gateway' => $gatewaySlug,
@@ -176,8 +191,10 @@ class PaymentService
                 throw new \RuntimeException('Nenhuma adquirente autorizada pode cobrar este cartão salvo.');
             }
         }
+        $strategy = $this->lastRoutingStrategy;
         $lastException = null;
         $deadline = microtime(true) + self::PAYMENT_TOTAL_TIMEOUT_SECONDS;
+        $position = 0;
 
         foreach ($orderSlugs as $gatewaySlug) {
             if (microtime(true) > $deadline) {
@@ -195,8 +212,9 @@ class PaymentService
             if (! $driver) {
                 continue;
             }
+            $startedAt = microtime(true);
+            $position++;
             try {
-                $startedAt = microtime(true);
                 $result = $driver->createCardPayment(
                     $credentials,
                     (float) $order->amount,
@@ -233,14 +251,31 @@ class PaymentService
                 if (isset($result['charged_amount'])) {
                     $return['charged_amount'] = $result['charged_amount'];
                 }
+                AcquirerAttemptRecorder::record($gatewaySlug, 'card', $tenantId, $order->id, AcquirerAttemptRecorder::classifyCardStatus($result['status'] ?? null), $startedAt, $position, $strategy);
+
                 return $return;
             } catch (\Throwable $e) {
+                $outcome = AcquirerAttemptRecorder::classifyException($e);
+                AcquirerAttemptRecorder::record($gatewaySlug, 'card', $tenantId, $order->id, $outcome, $startedAt, $position, $strategy, $e);
                 Log::warning('PaymentService: cartão gateway falhou.', [
                     'gateway' => $gatewaySlug,
                     'order_id' => $order->id,
                     'message' => $e->getMessage(),
-                    'duration_ms' => isset($startedAt) ? (int) round((microtime(true) - $startedAt) * 1000) : null,
+                    'outcome' => $outcome,
+                    'duration_ms' => (int) round((microtime(true) - $startedAt) * 1000),
                 ]);
+                // Timeout/conexão interrompida: a cobrança pode ter passado na adquirente.
+                // Tentar outra arriscaria cobrar o cartão duas vezes — para aqui e deixa para conciliação.
+                if ($outcome === AcquirerAttemptRecorder::TIMEOUT && config('payments.card_stop_on_ambiguous', true)) {
+                    $meta = is_array($order->metadata) ? $order->metadata : [];
+                    $meta['card_ambiguous_attempt'] = ['gateway' => $gatewaySlug, 'at' => now()->toIso8601String()];
+                    $order->update(['gateway' => $gatewaySlug, 'metadata' => $meta]);
+                    throw new AmbiguousCardChargeException(
+                        'Não conseguimos confirmar o pagamento com a operadora do cartão. Para não cobrar duas vezes, não tentamos de novo. Confira seu extrato antes de tentar outra vez.',
+                        0,
+                        $e
+                    );
+                }
                 $lastException = $e;
             }
         }
@@ -309,8 +344,10 @@ class PaymentService
     {
         $tenantId = $order->tenant_id;
         $orderSlugs = $this->getGatewayOrderForMethod($tenantId, 'boleto', $product, $gatewayConfigOverride);
+        $strategy = $this->lastRoutingStrategy;
         $lastException = null;
         $deadline = microtime(true) + self::PAYMENT_TOTAL_TIMEOUT_SECONDS;
+        $position = 0;
 
         foreach ($orderSlugs as $gatewaySlug) {
             if (microtime(true) > $deadline) {
@@ -328,8 +365,9 @@ class PaymentService
             if (! $driver) {
                 continue;
             }
+            $startedAt = microtime(true);
+            $position++;
             try {
-                $startedAt = microtime(true);
                 $notificationUrl = $gatewaySlug === 'efi'
                     ? GatewayWebhookUrl::forGateway('efi.notification')
                     : $this->webhookUrlForGateway($gatewaySlug);
@@ -345,6 +383,8 @@ class PaymentService
                     'gateway_id' => $result['transaction_id'] ?? null,
                     'cajupay_account_id' => $gatewaySlug === 'cajupay' ? ($resolved['cajupay_account_id'] ?? null) : $order->cajupay_account_id,
                 ]);
+                AcquirerAttemptRecorder::record($gatewaySlug, 'boleto', $tenantId, $order->id, AcquirerAttemptRecorder::SUCCESS, $startedAt, $position, $strategy);
+
                 return [
                     'transaction_id' => $result['transaction_id'] ?? '',
                     'gateway' => $gatewaySlug,
@@ -354,6 +394,7 @@ class PaymentService
                     'pdf_url' => $result['pdf_url'] ?? '',
                 ];
             } catch (\Throwable $e) {
+                AcquirerAttemptRecorder::record($gatewaySlug, 'boleto', $tenantId, $order->id, AcquirerAttemptRecorder::classifyException($e), $startedAt, $position, $strategy, $e);
                 Log::warning('PaymentService: boleto gateway falhou.', [
                     'gateway' => $gatewaySlug,
                     'order_id' => $order->id,
@@ -527,12 +568,15 @@ class PaymentService
         $platformOrder = $this->normalizedGatewayOrder($tenantId)[$method] ?? null;
         $platformDisabled = is_array($platformOrder) && $platformOrder === [];
 
-        return app(AcquirerPolicyService::class)->filter(
-            $tenantId,
-            $method,
-            $this->routingGatewayOrderForMethod($tenantId, $method, $product, $gatewayConfigOverride),
-            $platformDisabled
-        );
+        // 1) ordem base (plataforma/seller/produto); 2) Smart Routing só reordena — nunca quando
+        // o produto/API fixou a adquirente; 3) a política do seller remove o que não é autorizado.
+        $this->routingOverrideActive = false;
+        $base = $this->routingGatewayOrderForMethod($tenantId, $method, $product, $gatewayConfigOverride);
+        [$routed, $this->lastRoutingStrategy] = $this->routingOverrideActive
+            ? [$base, 'override']
+            : app(SmartRoutingService::class)->reorder($base, $method, $tenantId);
+
+        return app(AcquirerPolicyService::class)->filter($tenantId, $method, $routed, $platformDisabled);
     }
 
     /**
@@ -566,6 +610,7 @@ class PaymentService
             if ($slug !== null && $slug !== '' && $slug !== '__default__') {
                 $redundancy = $pg[$method . '_redundancy'] ?? [];
                 $redundancy = is_array($redundancy) ? $redundancy : [];
+                $this->routingOverrideActive = true;
 
                 return GatewayRegistry::filterSlugsToAllowedAcquirers(array_merge([$slug], $redundancy));
             }

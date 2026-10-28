@@ -121,6 +121,7 @@ const navGroupsCore = [
         items: [
             { name: 'Configurações', href: '/plataforma/configuracoes', icon: Settings },
             { name: 'Saúde de Pagamentos', href: '/plataforma/ops/saude-pagamentos', icon: Activity },
+            { name: 'Adquirentes e roteamento', href: '/plataforma/ops/adquirentes', icon: Activity },
             { name: 'Saúde UTMify', href: '/plataforma/ops/saude-utmify', icon: Activity },
             { name: 'Webhooks', href: '/plataforma/webhooks', icon: Webhook },
             { name: 'Log Infoprodutor', href: '/plataforma/log-infoprodutor', icon: ScrollText },

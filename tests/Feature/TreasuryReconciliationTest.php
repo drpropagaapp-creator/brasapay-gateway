@@ -47,6 +47,23 @@ class TreasuryReconciliationTest extends TestCase
         return (new TreasuryReconciliationService)->run();
     }
 
+    public function test_nao_encerra_o_que_nao_foi_reverificado(): void
+    {
+        $order = $this->order($this->seller());
+        $this->reconcile();
+        $row = TreasuryDiscrepancy::query()->where('kind', 'order_paid_without_credit')->firstOrFail();
+
+        // Janela menor que a padrão: nada é encerrado automaticamente.
+        $order->forceFill(['created_at' => now()->subDays(10), 'updated_at' => now()->subDays(10)])->saveQuietly();
+        (new TreasuryReconciliationService(5))->run();
+        $this->assertSame(TreasuryDiscrepancy::STATUS_OPEN, $row->fresh()->status);
+
+        // Pedido saiu da janela padrão: continua aberta (não foi reverificado).
+        $order->forceFill(['created_at' => now()->subDays(200), 'updated_at' => now()->subDays(200)])->saveQuietly();
+        $this->reconcile();
+        $this->assertSame(TreasuryDiscrepancy::STATUS_OPEN, $row->fresh()->status);
+    }
+
     public function test_pedido_pago_sem_credito_e_idempotente_e_encerra_sozinho(): void
     {
         $order = $this->order($this->seller());

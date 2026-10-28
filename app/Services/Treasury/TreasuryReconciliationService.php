@@ -42,7 +42,18 @@ class TreasuryReconciliationService
 
     private const LOCK_KEY = 'treasury:reconcile';
 
-    public function __construct(private int $windowDays = 90) {}
+    public const DEFAULT_WINDOW_DAYS = 90;
+
+    private const ROW_LIMIT = 500;
+
+    /** Tipos cuja consulta bateu no limite de linhas nesta execução: não são encerrados automaticamente. */
+    private array $truncated = [];
+
+    private ?CarbonInterface $since = null;
+
+    private ?int $runId = null;
+
+    public function __construct(private int $windowDays = self::DEFAULT_WINDOW_DAYS) {}
 
     /**
      * @return array{run_id:int|null, counts: array<string,int>, skipped?: bool}
@@ -59,8 +70,10 @@ class TreasuryReconciliationService
         }
 
         $run = TreasuryRun::query()->create(['started_at' => now(), 'status' => 'running', 'triggered_by' => $triggeredBy]);
+        $this->runId = $run->id;
+        $this->truncated = [];
         try {
-            $since = now()->subDays($this->windowDays);
+            $since = $this->since = now()->subDays($this->windowDays);
             $findings = array_merge(
                 $this->ordersPaidWithoutCredit($since),
                 $this->creditsAboveOrder($since),
@@ -99,8 +112,9 @@ class TreasuryReconciliationService
                     ->whereIn('wallet_transactions.type', [WalletTransaction::TYPE_CREDIT_SALE, WalletTransaction::TYPE_CREDIT_SALE_PENDING]);
             })
             ->select(['id', 'tenant_id', 'amount', 'gateway', 'payment_method', 'created_at'])
-            ->limit(500)
+            ->limit(self::ROW_LIMIT)
             ->get()
+            ->tap(fn ($rows) => $this->markTruncated('order_paid_without_credit', $rows->count()))
             ->each(function (Order $o) use (&$out) {
                 $out[] = $this->finding('order_paid_without_credit', 'order:'.$o->id, [
                     'tenant_id' => $o->tenant_id, 'order_id' => (string) $o->id,
@@ -198,8 +212,9 @@ class TreasuryReconciliationService
                     ->where('wallet_transactions.type', WalletTransaction::TYPE_DEBIT_REFUND);
             })
             ->select(['id', 'tenant_id', 'amount'])
-            ->limit(500)
+            ->limit(self::ROW_LIMIT)
             ->get()
+            ->tap(fn ($rows) => $this->markTruncated('refund_without_wallet_debit', $rows->count()))
             ->each(function (Order $o) use (&$out) {
                 $out[] = $this->finding('refund_without_wallet_debit', 'order:'.$o->id, [
                     'tenant_id' => $o->tenant_id, 'order_id' => (string) $o->id, 'amount_cents' => self::cents($o->amount),
@@ -223,8 +238,9 @@ class TreasuryReconciliationService
                     ->where('orders.status', 'disputed');
             })
             ->select(['id', 'tenant_id', 'order_id', 'amount_net', 'meta'])
-            ->limit(500)
+            ->limit(self::ROW_LIMIT)
             ->get()
+            ->tap(fn ($rows) => $this->markTruncated('med_hold_open_outside_dispute', $rows->count()))
             ->each(function (WalletTransaction $h) use (&$out) {
                 $meta = is_array($h->meta) ? $h->meta : [];
                 $out[] = $this->finding('med_hold_open_outside_dispute', 'med_hold:'.$h->id, [
@@ -298,14 +314,24 @@ class TreasuryReconciliationService
         };
 
         $base()->where('status', 'paid')->whereNotExists($ledger(WalletTransaction::TYPE_WITHDRAWAL_REQUEST))
-            ->limit(500)->get()->each(fn ($w) => $add('withdrawal_paid_without_debit', $w));
+            ->limit(self::ROW_LIMIT)->get()
+            ->tap(fn ($rows) => $this->markTruncated('withdrawal_paid_without_debit', $rows->count()))
+            ->each(fn ($w) => $add('withdrawal_paid_without_debit', $w));
 
         $base()->whereIn('status', ['failed', 'rejected'])
             ->whereExists($ledger(WalletTransaction::TYPE_WITHDRAWAL_REQUEST))
             ->whereNotExists($ledger(WalletTransaction::TYPE_WITHDRAWAL_REFUND))
-            ->limit(500)->get()->each(fn ($w) => $add('withdrawal_failed_without_refund', $w));
+            ->limit(self::ROW_LIMIT)->get()
+            ->tap(fn ($rows) => $this->markTruncated('withdrawal_failed_without_refund', $rows->count()))
+            ->each(fn ($w) => $add('withdrawal_failed_without_refund', $w));
 
-        $base()->whereIn('status', ['pending', 'processing'])->limit(2000)->get()->each(function (Withdrawal $w) use ($add) {
+        $base()->whereIn('status', ['pending', 'processing'])->limit(self::ROW_LIMIT * 4)->get()
+            ->tap(function ($rows) {
+                foreach (['withdrawal_reconcile_exhausted', 'withdrawal_stuck_at_provider', 'withdrawal_awaiting_approval'] as $k) {
+                    $this->markTruncated($k, $rows->count(), self::ROW_LIMIT * 4);
+                }
+            })
+            ->each(function (Withdrawal $w) use ($add) {
             $meta = is_array($w->payout_meta) ? $w->payout_meta : [];
             $sentToProvider = $w->status === 'processing' || trim((string) $w->payout_external_id) !== '';
             if (! empty($meta['reconcile_exhausted'])) {
@@ -374,21 +400,41 @@ class TreasuryReconciliationService
             $row->update($payload);
         }
 
-        // O que estava ativo e não apareceu nesta execução deixou de ocorrer.
+        // O que estava ativo e não apareceu nesta execução deixou de ocorrer — mas só encerra o
+        // que foi de fato reverificado: janela completa (nunca com --days menor), tipo cuja
+        // consulta não foi truncada e objeto ainda dentro da janela analisada.
+        if ($this->windowDays < self::DEFAULT_WINDOW_DAYS) {
+            return $counts;
+        }
+        $autoKinds = array_values(array_diff(array_keys(self::KINDS), array_keys($this->truncated)));
         TreasuryDiscrepancy::query()
             ->whereIn('status', [TreasuryDiscrepancy::STATUS_OPEN, TreasuryDiscrepancy::STATUS_INVESTIGATING])
-            ->whereIn('kind', array_keys(self::KINDS))
-            ->select(['id', 'fingerprint'])
+            ->whereIn('kind', $autoKinds)
+            ->select(['id', 'fingerprint', 'order_id', 'withdrawal_id'])
             ->chunkById(500, function ($rows) use ($seen, $now, &$counts) {
+                $ordersInWindow = Order::query()
+                    ->whereIn('id', $rows->pluck('order_id')->filter()->all())
+                    ->where(fn ($q) => $q->where('created_at', '>=', $this->since)->orWhere('updated_at', '>=', $this->since))
+                    ->pluck('id')->map(fn ($id) => (string) $id)->flip();
+                $withdrawalsInWindow = Withdrawal::query()
+                    ->whereIn('id', $rows->pluck('withdrawal_id')->filter()->all())
+                    ->where('created_at', '>=', $this->since)
+                    ->pluck('id')->flip();
                 foreach ($rows as $row) {
                     if (isset($seen[$row->fingerprint])) {
+                        continue;
+                    }
+                    if ($row->order_id !== null && ! isset($ordersInWindow[(string) $row->order_id])) {
+                        continue;
+                    }
+                    if ($row->withdrawal_id !== null && ! isset($withdrawalsInWindow[$row->withdrawal_id])) {
                         continue;
                     }
                     TreasuryDiscrepancy::query()->whereKey($row->id)->update([
                         'status' => TreasuryDiscrepancy::STATUS_RESOLVED,
                         'resolved_at' => $now,
                         'resolved_by' => null,
-                        'resolution_note' => 'Encerrada automaticamente: deixou de ocorrer na conciliação de '.$now->format('d/m/Y H:i').'.',
+                        'resolution_note' => 'Encerrada automaticamente: deixou de ocorrer na conciliação #'.$this->runId.' de '.$now->format('d/m/Y H:i').'.',
                         'updated_at' => $now,
                     ]);
                     $counts['auto_resolved']++;
@@ -396,6 +442,14 @@ class TreasuryReconciliationService
             });
 
         return $counts;
+    }
+
+    private function markTruncated(string $kind, int $count, int $limit = self::ROW_LIMIT): void
+    {
+        if ($count >= $limit) {
+            $this->truncated[$kind] = true;
+            Log::warning('Treasury: consulta truncada — tipo não será encerrado automaticamente', ['kind' => $kind, 'limit' => $limit]);
+        }
     }
 
     private static function cents(mixed $value): int

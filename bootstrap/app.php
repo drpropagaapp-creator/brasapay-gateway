@@ -232,6 +232,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $schedule->command('settlement:release')->everyFiveMinutes();
         // Brasa Treasury: conciliação em modo observação (só registra divergências).
         $schedule->command('treasury:reconcile')->hourlyAt(17)->withoutOverlapping(30);
+        $schedule->command('acquirer:prune-attempts --days=30')->dailyAt('04:10');
         $schedule->command('schedule:heartbeat')->everyMinute();
         $schedule->command('push:process-schedule')->everyMinute();
         $schedule->command('backup:database')->everyMinute()->withoutOverlapping(30);

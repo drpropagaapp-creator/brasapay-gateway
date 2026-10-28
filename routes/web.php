@@ -490,6 +490,15 @@ Route::prefix('plataforma')->name('plataforma.')->group(function () {
                 ->name('ops.mercadopago-balance');
         });
 
+        Route::get('/ops/adquirentes', [\App\Http\Controllers\Platform\SmartRoutingController::class, 'index'])->name('smart-routing.index');
+        Route::put('/ops/adquirentes/roteamento', [\App\Http\Controllers\Platform\SmartRoutingController::class, 'update'])
+            ->middleware('throttle:20,1')->name('smart-routing.update');
+        Route::post('/ops/adquirentes/roteamento/desligar', [\App\Http\Controllers\Platform\SmartRoutingController::class, 'disable'])
+            ->middleware('throttle:20,1')->name('smart-routing.disable');
+        Route::get('/ops/adquirentes/simular', [\App\Http\Controllers\Platform\SmartRoutingController::class, 'simulate'])
+            ->middleware('throttle:60,1')->name('smart-routing.simulate');
+        Route::put('/ops/adquirentes/seller/{user}', [\App\Http\Controllers\Platform\SmartRoutingController::class, 'tenantMode'])
+            ->middleware('throttle:30,1')->name('smart-routing.tenant');
         Route::get('/tesouraria', [\App\Http\Controllers\Platform\TreasuryController::class, 'index'])->name('treasury.index');
         Route::post('/tesouraria/executar', [\App\Http\Controllers\Platform\TreasuryController::class, 'run'])
             ->middleware('throttle:3,1')
