@@ -156,4 +156,7 @@ return [
             && filter_var(env('STACKER_LICENSE_DISABLED', false), FILTER_VALIDATE_BOOLEAN),
         'support_whatsapp' => env('STACKER_SUPPORT_WHATSAPP'),
     ],
+
+    // Brasa Enterprise: hosts que nenhum seller pode cadastrar como domínio white-label (separados por vírgula).
+    'enterprise_reserved_hosts' => env('ENTERPRISE_RESERVED_HOSTS', ''),
 ];

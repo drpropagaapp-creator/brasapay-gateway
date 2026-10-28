@@ -59,6 +59,7 @@ return Application::configure(basePath: dirname(__DIR__))
             \App\Http\Middleware\ResolveWhiteLabelHost::class,
             \App\Http\Middleware\ApplyBrandingConfig::class,
         ], append: [
+            \App\Http\Middleware\EnforceWhiteLabelOwnership::class,
             \App\Http\Middleware\RestrictCustomerImpersonation::class,
             \App\Http\Middleware\BlockMutationsWhenDemoMode::class,
             \App\Http\Middleware\SetPanelLocale::class,

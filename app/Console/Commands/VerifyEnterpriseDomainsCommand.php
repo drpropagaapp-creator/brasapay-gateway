@@ -20,7 +20,8 @@ class VerifyEnterpriseDomainsCommand extends Command
             $enterprise->recheck($d);
             $checked++;
         });
-        $this->info("Domínios reverificados: {$checked}.");
+        $expired = $enterprise->expireStalePending();
+        $this->info("Domínios reverificados: {$checked}. Pendentes expirados: {$expired}.");
 
         return self::SUCCESS;
     }

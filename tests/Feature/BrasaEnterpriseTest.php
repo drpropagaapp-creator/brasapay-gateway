@@ -70,7 +70,7 @@ class BrasaEnterpriseTest extends TestCase
         $this->actingAs($this->admin())->post('/plataforma/enterprise', ['seller' => $seller->email])->assertRedirect();
         $this->assertTrue(EnterpriseAccount::query()->where('tenant_id', $seller->id)->first()->isActive());
 
-        foreach (['app.brasapay.test', 'loja.app.brasapay.test', '10.0.0.1', 'localhost', 'sem-ponto'] as $bad) {
+        foreach (['app.brasapay.test', 'loja.app.brasapay.test', 'www.brasapay.test', 'brasapay.test', '10.0.0.1', 'localhost', 'sem-ponto'] as $bad) {
             $this->actingAs($seller)->post('/marca-e-dominio/dominios', ['host' => $bad])->assertSessionHasErrors('host');
         }
         $this->actingAs($seller)->post('/marca-e-dominio/dominios', ['host' => 'https://Pagar.Cliente.com.br/qualquer'])->assertSessionHasNoErrors();
@@ -108,6 +108,12 @@ class BrasaEnterpriseTest extends TestCase
         $this->get($base.'/c/'.$other->checkout_slug)->assertNotFound();
         $this->assertNotSame(404, $this->get($base.'/c/'.$own->checkout_slug)->status());
         $this->assertSame('Cliente Pagamentos', config('getfy.app_name'), 'Checkout no domínio usa a marca da conta.');
+
+        // Rotas /checkout/*: só com produto do próprio seller; sem referência nenhuma, 404.
+        $this->post($base.'/checkout/validate-coupon', ['product_id' => (string) $other->id, 'coupon_code' => 'X'])->assertNotFound();
+        $this->assertNotSame(404, $this->post($base.'/checkout/validate-coupon', ['product_id' => (string) $own->id, 'coupon_code' => 'X'])->status());
+        $this->get($base.'/checkout/obrigado?token=inexistente')->assertNotFound();
+        $this->get($base.'/checkout/order-status')->assertNotFound();
     }
 
     public function test_dominio_pendente_suspenso_ou_que_perdeu_dns_nao_serve_nada(): void
@@ -116,8 +122,10 @@ class BrasaEnterpriseTest extends TestCase
         $svc = app(EnterpriseService::class);
         $svc->enable($seller->id, 1, null);
         $pending = $svc->addDomain($seller->id, 'novo.cliente.com.br');
-        $this->get('http://novo.cliente.com.br/login')->assertNotFound();
+        // Cadastro sem posse comprovada não muda o roteamento do host (não dá para "sequestrar" um domínio alheio).
+        $this->assertSame(0, $svc->hostState('novo.cliente.com.br'));
         $this->get('http://novo.cliente.com.br/.well-known/brasapay-domain/'.$pending->verification_token)->assertOk()->assertSee($pending->verification_token);
+        $this->get('http://outro.cliente.com.br/.well-known/brasapay-domain/'.$pending->verification_token)->assertNotFound();
 
         $d = $this->activeDomain($seller, 'pagar.cliente.com.br');
         $slug = $this->createTestProduct(['tenant_id' => $seller->id, 'checkout_slug' => 'meuslug2'])->checkout_slug;

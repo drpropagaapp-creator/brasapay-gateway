@@ -2,13 +2,15 @@
 
 namespace App\Http\Middleware;
 
-use App\Models\EnterpriseDomain;
+use App\Models\CheckoutSession;
+use App\Models\Order;
 use App\Models\Product;
 use App\Models\ProductOffer;
 use App\Models\SubscriptionPlan;
 use App\Services\Enterprise\EnterpriseService;
 use Closure;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
@@ -20,7 +22,7 @@ use Symfony\Component\HttpFoundation\Response;
 class ResolveWhiteLabelHost
 {
     /** Caminhos permitidos no domínio white-label. */
-    private const ALLOWED = '#^(c/[a-z0-9]{6,16}|checkout(/.*)?|\.well-known/brasapay-domain/[a-z0-9]{40}|build/.+|storage/.+|images/.+|favicon\.ico|robots\.txt|up)$#';
+    private const ALLOWED = '#^(c/[a-z0-9]{6,16}|checkout(/.*)?|build/.+|storage/.+|images/.+|favicon\.ico|robots\.txt|up)$#';
 
     public function __construct(private EnterpriseService $enterprise) {}
 
@@ -38,7 +40,7 @@ class ResolveWhiteLabelHost
         if ($state === 0) {
             return $next($request);
         }
-        // Cadastrado mas sem poder servir (pendente, desativado, conta suspensa): nada da plataforma aparece.
+        // Domínio comprovado mas sem poder servir (desativado, conta suspensa): nada da plataforma aparece.
         if ($state < 0) {
             abort(404);
         }
@@ -47,9 +49,10 @@ class ResolveWhiteLabelHost
         if (! preg_match(self::ALLOWED, $path)) {
             abort(404);
         }
-        if (preg_match('#^c/([a-z0-9]{6,16})$#', $path, $m) && ! $this->slugBelongsTo($m[1], $tenantId)) {
-            abort(404);
+        if (preg_match('#^c/([a-z0-9]{6,16})$#', $path, $m)) {
+            abort_unless($this->slugBelongsTo($m[1], $tenantId), 404);
         }
+        // Rotas /checkout/*: a posse do produto/pedido é conferida em EnforceWhiteLabelOwnership (depois da sessão).
 
         $request->attributes->set('whitelabel_tenant_id', $tenantId);
 

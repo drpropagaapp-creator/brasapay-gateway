@@ -171,14 +171,16 @@ class EnterpriseService
                 return 0;
             }
             $domain = EnterpriseDomain::query()->where('host', $host)->where('status', '!=', EnterpriseDomain::STATUS_REMOVED)->first();
-            if ($domain === null) {
+            // Cadastro sem posse comprovada (TXT) nunca muda o roteamento de um host.
+            if ($domain === null || $domain->dns_verified_at === null) {
                 return 0;
             }
-            if ($domain->status !== EnterpriseDomain::STATUS_ACTIVE || EnterpriseAccount::activeFor((int) $domain->tenant_id) === null) {
-                return -1;
+            if ($domain->status === EnterpriseDomain::STATUS_ACTIVE && EnterpriseAccount::activeFor((int) $domain->tenant_id) !== null) {
+                return (int) $domain->tenant_id;
             }
 
-            return (int) $domain->tenant_id;
+            // Posse comprovada há pouco, mas sem poder servir (desativado/suspenso): bloqueia. Prova antiga caduca.
+            return $domain->dns_verified_at->gt(now()->subDays(30)) ? -1 : 0;
         });
     }
 
@@ -199,8 +201,8 @@ class EnterpriseService
 
         $invalid = ! preg_match('/^(?=.{4,190}$)([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/', $host)
             || filter_var($host, FILTER_VALIDATE_IP)
-            || $host === $app || ($app !== '' && str_ends_with($host, '.'.$app))
-            || in_array($host, ['localhost'], true);
+            || in_array($host, ['localhost'], true)
+            || $this->isPlatformHost($host);
         if ($invalid) {
             throw ValidationException::withMessages(['host' => 'Informe um domínio válido seu (ex.: pagamento.suaempresa.com.br).']);
         }
@@ -209,6 +211,35 @@ class EnterpriseService
         }
 
         return $host;
+    }
+
+    /**
+     * Hosts da própria plataforma: o host do APP_URL, o domínio dele (ex.: app.brasapay.com.br →
+     * brasapay.com.br) e qualquer subdomínio desse domínio, mais os listados em ENTERPRISE_RESERVED_HOSTS.
+     */
+    private function isPlatformHost(string $host): bool
+    {
+        $roots = array_filter(array_map('trim', explode(',', strtolower((string) config('getfy.enterprise_reserved_hosts', '')))));
+        $labels = explode('.', $this->appHost());
+        if (count($labels) >= 2) {
+            // Domínio registrável aproximado: últimos 2 rótulos, ou 3 em sufixos como .com.br.
+            $take = count($labels) >= 3 && strlen($labels[count($labels) - 2]) <= 3 ? 3 : 2;
+            $roots[] = implode('.', array_slice($labels, -$take));
+        }
+        foreach (array_unique(array_filter($roots)) as $root) {
+            if ($host === $root || str_ends_with($host, '.'.$root)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /** Cadastro pendente sem verificação por mais de 7 dias é descartado. */
+    public function expireStalePending(): int
+    {
+        return EnterpriseDomain::query()->where('status', EnterpriseDomain::STATUS_PENDING)->whereNull('dns_verified_at')
+            ->where('created_at', '<', now()->subDays(7))->update(['status' => EnterpriseDomain::STATUS_REMOVED, 'updated_at' => now()]);
     }
 
     private function appHost(): string
