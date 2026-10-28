@@ -43,7 +43,7 @@ class BrasaRecoveryTest extends TestCase
 
     private function seller(bool $enabled = true): User
     {
-        $u = User::factory()->create(['role' => User::ROLE_INFOPRODUTOR]);
+        $u = User::factory()->create(['role' => User::ROLE_INFOPRODUTOR, 'kyc_status' => User::KYC_APPROVED]);
         $u->forceFill(['tenant_id' => $u->id])->save();
         $cfg = RecoveryEmailSettings::defaults();
         $cfg['enabled'] = $enabled;
@@ -58,7 +58,7 @@ class BrasaRecoveryTest extends TestCase
 
         return CheckoutSession::query()->create([
             'tenant_id' => $seller->id, 'product_id' => $product->id, 'session_token' => bin2hex(random_bytes(8)),
-            'step' => CheckoutSession::STEP_FORM_FILLED, 'email' => $email, 'name' => 'Maria Souza',
+            'checkout_slug' => $product->checkout_slug ?? 'x', 'step' => CheckoutSession::STEP_FORM_FILLED, 'email' => $email, 'name' => 'Maria Souza',
             'form_filled_at' => now()->subMinutes($minutesAgo),
         ]);
     }
@@ -130,7 +130,7 @@ class BrasaRecoveryTest extends TestCase
         $order->forceFill(['created_at' => now()->subMinutes(25)])->saveQuietly();
 
         $this->process();
-        $this->assertCount(1, self::$sent);
+        $this->assertCount(1, self::$sent, json_encode(['msgs' => RecoveryMessage::query()->get()->toArray(), 'order' => $order->fresh()->only(['status','payment_method','created_at','email']), 'slug' => $product->fresh()->checkout_slug, 'now' => now()->toIso8601String()]));
         $this->assertStringContainsString('R$ 197,00', self::$sent[0]['subject']);
 
         Carbon::setTestNow(now()->addMinutes(10));
