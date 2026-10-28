@@ -254,6 +254,8 @@ Route::get('/afiliar/{token}', [\App\Http\Controllers\AffiliateJoinController::c
     ->where('token', '[a-z0-9]{32,64}');
 
 Route::get('/c/{slug}', [\App\Http\Controllers\CheckoutController::class, 'show'])->name('checkout.show')->where('slug', '[a-z0-9]{6,16}');
+Route::get('/.well-known/brasapay-domain/{token}', [\App\Http\Controllers\EnterpriseSellerController::class, 'wellKnown'])
+    ->where('token', '[a-z0-9]{40}')->middleware('throttle:60,1')->name('enterprise.well-known');
 Route::get('/checkout/pix', [\App\Http\Controllers\CheckoutController::class, 'pixPage'])->name('checkout.pix');
 Route::get('/checkout/lina/return/{order}', [\App\Http\Controllers\CheckoutController::class, 'linaReturn'])->name('checkout.lina.return')->where('order', '[0-9]+');
 Route::get('/checkout/lina/aguardar', [\App\Http\Controllers\CheckoutController::class, 'linaWaitPage'])->name('checkout.lina.wait');

@@ -61,6 +61,16 @@ class EnterpriseSellerController extends Controller
         return back()->with('success', 'Domínio removido. O checkout deixa de responder nele.');
     }
 
+    /** Responde o token de verificação só no próprio domínio cadastrado (prova de que o HTTPS chega aqui). */
+    public function wellKnown(Request $request, string $token): \Illuminate\Http\Response
+    {
+        $ok = EnterpriseDomain::query()->where('host', strtolower($request->getHost()))->where('verification_token', $token)
+            ->where('status', '!=', EnterpriseDomain::STATUS_REMOVED)->exists();
+        abort_unless($ok, 404);
+
+        return response($token, 200, ['Content-Type' => 'text/plain', 'Cache-Control' => 'no-store']);
+    }
+
     private function owner(Request $request, ?EnterpriseDomain $domain = null): void
     {
         $user = $request->user();

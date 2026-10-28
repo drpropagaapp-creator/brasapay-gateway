@@ -29,12 +29,9 @@ class ResolveWhiteLabelHost
         $host = strtolower((string) $request->getHost());
         $path = trim($request->path(), '/');
 
-        // Prova de HTTPS da verificação: responde o token em qualquer host cadastrado (ativo ou pendente).
-        if (preg_match('#^\.well-known/brasapay-domain/([a-z0-9]{40})$#', $path, $m)) {
-            $ok = EnterpriseDomain::query()->where('host', $host)->where('verification_token', $m[1])
-                ->where('status', '!=', EnterpriseDomain::STATUS_REMOVED)->exists();
-
-            return $ok ? response($m[1], 200, ['Content-Type' => 'text/plain', 'Cache-Control' => 'no-store']) : abort(404);
+        // Prova de HTTPS da verificação (rota própria): liberada em qualquer host cadastrado.
+        if (preg_match('#^\.well-known/brasapay-domain/[a-z0-9]{40}$#', $path)) {
+            return $next($request);
         }
 
         $state = $this->enterprise->hostState($host);
