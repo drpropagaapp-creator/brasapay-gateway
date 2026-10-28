@@ -14,6 +14,7 @@ import {
     MessageSquare,
     Smartphone,
     Wallet,
+    Landmark,
     Activity,
     ArrowLeftRight,
     AlertTriangle,
@@ -98,6 +99,7 @@ const navGroupsCore = [
             { name: 'Saldo', href: '/plataforma/saldo', icon: CircleDollarSign },
             { name: 'Financeiro', href: '/plataforma/financeiro', icon: Wallet, badgeKey: 'financeiro' },
             { name: 'Fiscal', href: '/plataforma/fiscal', icon: FileSpreadsheet },
+            { name: 'Tesouraria', href: '/plataforma/tesouraria', icon: Landmark },
         ],
     },
     {

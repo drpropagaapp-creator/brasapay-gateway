@@ -230,6 +230,8 @@ return Application::configure(basePath: dirname(__DIR__))
         $schedule->command('versell:reconcile-infractions --hours=72')->everyFiveMinutes()->withoutOverlapping(10);
         $schedule->command('versell:reconcile-pix-auto --limit=80')->everyFiveMinutes()->withoutOverlapping(10);
         $schedule->command('settlement:release')->everyFiveMinutes();
+        // Brasa Treasury: conciliação em modo observação (só registra divergências).
+        $schedule->command('treasury:reconcile')->hourlyAt(17)->withoutOverlapping(30);
         $schedule->command('schedule:heartbeat')->everyMinute();
         $schedule->command('push:process-schedule')->everyMinute();
         $schedule->command('backup:database')->everyMinute()->withoutOverlapping(30);

@@ -490,6 +490,13 @@ Route::prefix('plataforma')->name('plataforma.')->group(function () {
                 ->name('ops.mercadopago-balance');
         });
 
+        Route::get('/tesouraria', [\App\Http\Controllers\Platform\TreasuryController::class, 'index'])->name('treasury.index');
+        Route::post('/tesouraria/executar', [\App\Http\Controllers\Platform\TreasuryController::class, 'run'])
+            ->middleware('throttle:3,1')
+            ->name('treasury.run');
+        Route::put('/tesouraria/divergencias/{discrepancy}', [\App\Http\Controllers\Platform\TreasuryController::class, 'updateStatus'])
+            ->middleware('throttle:60,1')
+            ->name('treasury.discrepancy.update');
         Route::get('/ops/saude-pagamentos', [\App\Http\Controllers\Platform\PaymentHealthController::class, 'index'])
             ->name('ops.payment-health');
         Route::get('/ops/saude-pagamentos/pedidos/{order}/probe', [\App\Http\Controllers\Platform\PaymentHealthController::class, 'probeOrder'])
