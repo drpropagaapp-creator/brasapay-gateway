@@ -3,9 +3,11 @@ import { computed, reactive, ref } from 'vue';
 import { router, usePage } from '@inertiajs/vue3';
 import axios from 'axios';
 import LayoutPlatform from '@/Layouts/LayoutPlatform.vue';
-import Button from '@/components/ui/Button.vue';
 import PlatformStepUpModal from '@/components/platform/PlatformStepUpModal.vue';
-import { Activity, Power, Route } from 'lucide-vue-next';
+import PnPageHeader from '@/components/paynext/PnPageHeader.vue';
+import PnPanel from '@/components/paynext/PnPanel.vue';
+import PnEmptyState from '@/components/paynext/PnEmptyState.vue';
+import { Activity, FlaskConical, LoaderCircle, Power, Route } from 'lucide-vue-next';
 
 defineOptions({ layout: LayoutPlatform });
 
@@ -34,6 +36,14 @@ const STRATEGY_LABELS = {
 };
 const pct = (v) => (v === null || v === undefined ? '—' : `${(v * 100).toFixed(1)}%`);
 const name = (slug) => props.gateway_names?.[slug] || slug;
+
+/* Classes de apresentação. */
+const FIELD = 'mt-1.5 h-10 w-full rounded-full border border-[var(--border-strong)] bg-[var(--glass-bg)] px-4 text-sm text-[var(--text-primary)] outline-none placeholder:text-[var(--text-tertiary)] focus:ring-4 focus:ring-[var(--focus-ring)]';
+const LABEL = 'block text-xs text-[var(--text-secondary)]';
+const CHECK = 'h-4 w-4 shrink-0 rounded accent-[var(--lime-500)] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[var(--focus-ring)]';
+const THEAD = 'text-left text-[11px] uppercase tracking-[0.06em] text-[var(--text-tertiary)]';
+const TH = 'whitespace-nowrap px-3 py-2.5 font-normal first:pl-0 last:pr-0';
+const TD = 'px-3 py-2.5 tabular-nums first:pl-0 last:pr-0';
 
 const form = reactive({
     enabled: !!props.config.enabled,
@@ -98,123 +108,135 @@ const methodRows = computed(() =>
 
 <template>
     <div class="mx-auto max-w-6xl space-y-6">
-        <div class="flex flex-wrap items-start justify-between gap-4">
-            <div>
-                <p class="text-xs font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">Pagamentos</p>
-                <h1 class="mt-1 flex items-center gap-2 text-2xl font-bold text-zinc-900 dark:text-white">
-                    <Activity class="h-6 w-6" /> Adquirentes e Smart Routing
-                </h1>
-                <p class="mt-2 max-w-2xl text-sm text-zinc-600 dark:text-zinc-400">
-                    Medido em cada tentativa real de cobrança. Recusa de cartão é do banco emissor e não conta como falha da
-                    adquirente. PIX criado só vira venda quando é pago — veja a coluna "PIX pago".
-                </p>
-            </div>
-            <Button v-if="config.enabled" type="button" variant="destructive" class="gap-2" @click="emergencyOff">
-                <Power class="h-4 w-4" /> Desligar roteamento
-            </Button>
-        </div>
+        <PnPageHeader eyebrow="Pagamentos" title="Adquirentes e Smart Routing" :icon="Activity"
+            description="Medido em cada tentativa real de cobrança. Recusa de cartão é do banco emissor e não conta como falha da adquirente. PIX criado só vira venda quando é pago — veja a coluna “PIX pago”.">
+            <template #actions>
+                <span :class="config.enabled ? 'pn-badge pn-badge--success' : 'pn-badge pn-badge--neutral'">{{ config.enabled ? 'Roteamento ligado' : 'Roteamento desligado' }}</span>
+                <button v-if="config.enabled" type="button" class="pn-btn pn-btn--danger pn-btn--sm !w-auto" @click="emergencyOff">
+                    <Power class="h-4 w-4" aria-hidden="true" /> Desligar roteamento
+                </button>
+            </template>
+        </PnPageHeader>
 
-        <div class="flex flex-wrap gap-2">
-            <nav class="pn-seg max-w-full overflow-x-auto" aria-label="Período">
-                <button v-for="h in [1, 6, 24, 72, 168]" :key="h" type="button" class="pn-tab pn-keep-shape" :class="hours === h ? 'pn-tab--active' : ''" @click="changeHours(h)">
+        <div class="flex flex-wrap items-center gap-3">
+            <span class="text-xs text-[var(--text-tertiary)]">Período</span>
+            <nav class="relative pn-seg max-w-full overflow-x-auto" aria-label="Período">
+                <button v-for="h in [1, 6, 24, 72, 168]" :key="h" type="button"
+                    class="pn-tab pn-keep-shape focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[var(--focus-ring)]"
+                    :class="hours === h ? 'pn-tab--active' : ''" :aria-pressed="hours === h" @click="changeHours(h)">
                     {{ h < 24 ? `${h} h` : `${h / 24} d` }}
                 </button>
             </nav>
         </div>
 
-        <p v-if="!methodRows.length" class="rounded-2xl border border-dashed border-zinc-300 py-10 text-center text-sm text-zinc-500 dark:border-zinc-700">
-            Nenhuma tentativa registrada neste período. A medição começa a partir desta versão.
-        </p>
+        <PnEmptyState v-if="!methodRows.length" title="Nenhuma tentativa registrada neste período" description="A medição começa a partir desta versão. Escolha um período maior ou volte depois das primeiras cobranças." :icon="Activity" />
 
-        <section v-for="group in methodRows" :key="group.method" class="overflow-x-auto rounded-2xl border border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-900/80">
-            <h2 class="border-b border-zinc-100 px-4 py-3 font-semibold dark:border-zinc-800">{{ METHOD_LABELS[group.method] || group.method }}</h2>
-            <table class="w-full min-w-[760px] text-sm">
-                <thead class="text-left text-xs text-zinc-500">
-                    <tr>
-                        <th class="px-4 py-2">Adquirente</th>
-                        <th class="px-4 py-2">Tentativas</th>
-                        <th class="px-4 py-2">Aprovação técnica</th>
-                        <th class="px-4 py-2">Recusa</th>
-                        <th class="px-4 py-2">Erro técnico</th>
-                        <th class="px-4 py-2">Timeout</th>
-                        <th class="px-4 py-2">Latência p50 / p95</th>
-                        <th v-if="group.method === 'pix'" class="px-4 py-2">PIX pago</th>
-                        <th v-if="group.method === 'pix'" class="px-4 py-2">Custo / R$100</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <tr v-for="r in group.rows" :key="r.slug" class="border-t border-zinc-100 dark:border-zinc-800">
-                        <td class="px-4 py-2 font-medium">
-                            {{ name(r.slug) }}
-                            <span v-if="!r.sufficient_sample" class="ml-1 text-[11px] font-normal text-zinc-400">amostra pequena</span>
-                        </td>
-                        <td class="px-4 py-2 tabular-nums">{{ r.attempts }}</td>
-                        <td class="px-4 py-2 tabular-nums">{{ pct(r.success_rate) }}</td>
-                        <td class="px-4 py-2 tabular-nums">{{ pct(r.decline_rate) }}</td>
-                        <td class="px-4 py-2 tabular-nums" :class="r.technical_error_rate > 0.1 ? 'text-red-600' : ''">{{ pct(r.technical_error_rate) }}</td>
-                        <td class="px-4 py-2 tabular-nums" :class="r.timeout_rate > 0.05 ? 'text-orange-600' : ''">{{ pct(r.timeout_rate) }}</td>
-                        <td class="px-4 py-2 tabular-nums">{{ r.latency_p50_ms ?? '—' }} / {{ r.latency_p95_ms ?? '—' }} ms</td>
-                        <td v-if="group.method === 'pix'" class="px-4 py-2 tabular-nums">{{ pct(r.paid_conversion) }}</td>
-                        <td v-if="group.method === 'pix'" class="px-4 py-2 tabular-nums">{{ r.cost_per_100_brl === null ? '—' : `R$ ${Number(r.cost_per_100_brl).toFixed(2)}` }}</td>
-                    </tr>
-                </tbody>
-            </table>
-        </section>
+        <PnPanel v-for="(group, gi) in methodRows" :key="group.method" :title="METHOD_LABELS[group.method] || group.method"
+            :sub="`${group.rows.length} adquirente(s) · erro técnico acima de 10% em vermelho, timeout acima de 5% em laranja`" :index="gi">
+            <div class="relative overflow-x-auto">
+                <table class="w-full min-w-[760px] text-sm">
+                    <thead :class="THEAD">
+                        <tr>
+                            <th :class="TH">Adquirente</th>
+                            <th :class="TH">Tentativas</th>
+                            <th :class="TH">Aprovação técnica</th>
+                            <th :class="TH">Recusa</th>
+                            <th :class="TH">Erro técnico</th>
+                            <th :class="TH">Timeout</th>
+                            <th :class="TH">Latência p50 / p95</th>
+                            <th v-if="group.method === 'pix'" :class="TH">PIX pago</th>
+                            <th v-if="group.method === 'pix'" :class="TH">Custo / R$100</th>
+                        </tr>
+                    </thead>
+                    <tbody class="text-[var(--text-primary)]">
+                        <tr v-for="r in group.rows" :key="r.slug" class="border-t border-[var(--border-strong)] transition-colors hover:bg-[var(--bg-muted)]/40">
+                            <td class="px-3 py-2.5 font-medium first:pl-0">
+                                {{ name(r.slug) }}
+                                <span v-if="!r.sufficient_sample" class="pn-badge pn-badge--neutral pn-badge--nodot ml-1 !h-5 !px-2 !text-[10.5px] font-normal">amostra pequena</span>
+                            </td>
+                            <td :class="TD">{{ r.attempts }}</td>
+                            <td :class="TD">{{ pct(r.success_rate) }}</td>
+                            <td :class="TD">{{ pct(r.decline_rate) }}</td>
+                            <td :class="[TD, r.technical_error_rate > 0.1 ? 'font-medium text-red-600 dark:text-red-400' : '']">{{ pct(r.technical_error_rate) }}</td>
+                            <td :class="[TD, r.timeout_rate > 0.05 ? 'font-medium text-orange-600 dark:text-orange-400' : '']">{{ pct(r.timeout_rate) }}</td>
+                            <td :class="TD" class="whitespace-nowrap">{{ r.latency_p50_ms ?? '—' }} / {{ r.latency_p95_ms ?? '—' }} ms</td>
+                            <td v-if="group.method === 'pix'" :class="TD">{{ pct(r.paid_conversion) }}</td>
+                            <td v-if="group.method === 'pix'" :class="TD" class="whitespace-nowrap">{{ r.cost_per_100_brl === null ? '—' : `R$ ${Number(r.cost_per_100_brl).toFixed(2)}` }}</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </PnPanel>
 
-        <section class="rounded-2xl border border-zinc-200 bg-white p-5 dark:border-zinc-700 dark:bg-zinc-900/80">
-            <h2 class="flex items-center gap-2 font-semibold"><Route class="h-4 w-4" /> Smart Routing</h2>
-            <p class="mt-1 text-xs text-zinc-500">
-                Só reordena as adquirentes que o seller já pode usar. Adquirente sem amostra suficiente fica na posição atual.
-                Produto ou aplicação de API com adquirente fixada não é reordenado.
-            </p>
-            <div class="mt-4 grid gap-4 md:grid-cols-2">
-                <label class="flex items-center gap-2 text-sm">
-                    <input v-model="form.enabled" type="checkbox" class="h-4 w-4" /> Ativo para sellers que herdam a plataforma
+        <PnPanel title="Smart Routing" sub="Só reordena as adquirentes que o seller já pode usar. Adquirente sem amostra suficiente fica na posição atual. Produto ou aplicação de API com adquirente fixada não é reordenado.">
+            <template #right><Route class="h-5 w-5 shrink-0 text-[var(--text-tertiary)]" aria-hidden="true" /></template>
+            <div class="grid gap-5 md:grid-cols-2">
+                <label class="flex items-center gap-3 rounded-2xl bg-[var(--bg-muted)]/60 p-3 text-sm text-[var(--text-primary)] md:col-span-2">
+                    <input v-model="form.enabled" type="checkbox" :class="CHECK" /> Ativo para sellers que herdam a plataforma
                 </label>
                 <label class="text-sm">
-                    Estratégia
-                    <select v-model="form.strategy" class="mt-1 w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 dark:border-zinc-700 dark:bg-zinc-800">
+                    <span :class="LABEL">Estratégia</span>
+                    <select v-model="form.strategy" :class="FIELD">
                         <option v-for="s in strategies" :key="s" :value="s">{{ STRATEGY_LABELS[s] || s }}</option>
                     </select>
                 </label>
-                <div class="text-sm">
-                    Métodos
-                    <div class="mt-1 flex flex-wrap gap-3">
-                        <label v-for="m in methods" :key="m" class="flex items-center gap-1.5">
-                            <input v-model="form.methods" type="checkbox" :value="m" class="h-4 w-4" /> {{ METHOD_LABELS[m] || m }}
+                <fieldset class="text-sm">
+                    <legend :class="LABEL">Métodos</legend>
+                    <div class="mt-2.5 flex flex-wrap gap-2">
+                        <label v-for="m in methods" :key="m" class="inline-flex h-9 cursor-pointer items-center gap-2 rounded-full border border-[var(--border-strong)] bg-[var(--glass-bg)] px-3.5 text-[var(--text-primary)] has-[:checked]:border-[var(--lime-500)] has-[:checked]:bg-[var(--lime-100)] has-[:checked]:text-[var(--ink-900)]">
+                            <input v-model="form.methods" type="checkbox" :value="m" :class="CHECK" /> {{ METHOD_LABELS[m] || m }}
                         </label>
                     </div>
-                </div>
+                </fieldset>
                 <div class="grid grid-cols-2 gap-3 text-sm">
-                    <label>Amostra mínima<input v-model.number="form.min_sample" type="number" min="10" class="mt-1 w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 dark:border-zinc-700 dark:bg-zinc-800" /></label>
-                    <label>Janela (horas)<input v-model.number="form.window_hours" type="number" min="1" max="168" class="mt-1 w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 dark:border-zinc-700 dark:bg-zinc-800" /></label>
+                    <label><span :class="LABEL">Amostra mínima</span><input v-model.number="form.min_sample" type="number" min="10" :class="FIELD" /></label>
+                    <label><span :class="LABEL">Janela (horas)</span><input v-model.number="form.window_hours" type="number" min="1" max="168" :class="FIELD" /></label>
                 </div>
                 <div v-if="form.strategy === 'custom'" class="grid grid-cols-2 gap-3 text-sm md:col-span-2 md:grid-cols-4">
                     <label v-for="(label, key) in { approval: 'Aprovação', stability: 'Estabilidade', latency: 'Latência', cost: 'Custo' }" :key="key">
-                        {{ label }}
-                        <input v-model.number="form.weights[key]" type="number" min="0" max="1" step="0.05" class="mt-1 w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 dark:border-zinc-700 dark:bg-zinc-800" />
+                        <span :class="LABEL">{{ label }}</span>
+                        <input v-model.number="form.weights[key]" type="number" min="0" max="1" step="0.05" :class="FIELD" />
                     </label>
                 </div>
             </div>
-            <Button type="button" class="mt-4" :disabled="saving" @click="request('save')">Salvar roteamento</Button>
-        </section>
+            <div class="mt-5 flex flex-wrap items-center gap-3">
+                <button type="button" class="pn-btn pn-btn--primary pn-btn--sm !w-auto" :disabled="saving" @click="request('save')">
+                    <LoaderCircle v-if="saving" class="h-4 w-4 animate-spin" aria-hidden="true" /> Salvar roteamento
+                </button>
+                <span v-if="totpEnabled" class="text-xs text-[var(--text-tertiary)]">Pede o código 2FA antes de aplicar.</span>
+            </div>
+        </PnPanel>
 
-        <section class="rounded-2xl border border-zinc-200 bg-white p-5 dark:border-zinc-700 dark:bg-zinc-900/80">
-            <h2 class="font-semibold">Simular ordem de cobrança</h2>
-            <p class="mt-1 text-xs text-zinc-500">Mostra a ordem que um pagamento usaria agora, já com a política do seller. Nada é cobrado.</p>
-            <div class="mt-3 flex flex-wrap items-end gap-2 text-sm">
-                <select v-model="sim.method" class="rounded-xl border border-zinc-200 bg-white px-3 py-2 dark:border-zinc-700 dark:bg-zinc-800">
-                    <option v-for="m in methods" :key="m" :value="m">{{ METHOD_LABELS[m] || m }}</option>
-                </select>
-                <input v-model="sim.tenant_id" type="number" min="1" placeholder="ID do seller (opcional)" class="w-48 rounded-xl border border-zinc-200 bg-white px-3 py-2 dark:border-zinc-700 dark:bg-zinc-800" />
-                <Button type="button" variant="outline" :disabled="sim.loading" @click="simulate">Simular</Button>
+        <PnPanel title="Simular ordem de cobrança" sub="Mostra a ordem que um pagamento usaria agora, já com a política do seller. Nada é cobrado.">
+            <template #right><FlaskConical class="h-5 w-5 shrink-0 text-[var(--text-tertiary)]" aria-hidden="true" /></template>
+            <div class="flex flex-wrap items-end gap-3 text-sm">
+                <label class="w-full sm:w-40">
+                    <span :class="LABEL">Método</span>
+                    <select v-model="sim.method" :class="FIELD">
+                        <option v-for="m in methods" :key="m" :value="m">{{ METHOD_LABELS[m] || m }}</option>
+                    </select>
+                </label>
+                <label class="w-full sm:w-56">
+                    <span :class="LABEL">ID do seller (opcional)</span>
+                    <input v-model="sim.tenant_id" type="number" min="1" placeholder="ID do seller (opcional)" :class="FIELD" />
+                </label>
+                <button type="button" class="pn-btn pn-btn--secondary pn-btn--sm !w-auto" :disabled="sim.loading" @click="simulate">
+                    <LoaderCircle v-if="sim.loading" class="h-4 w-4 animate-spin" aria-hidden="true" /> Simular
+                </button>
             </div>
-            <p v-if="sim.error" class="mt-2 text-sm text-red-600">{{ sim.error }}</p>
-            <div v-if="sim.result" class="mt-3 rounded-xl bg-zinc-50 p-3 text-sm dark:bg-zinc-800/60">
-                <p><b>Ordem final:</b> {{ sim.result.final_order.length ? sim.result.final_order.map(name).join(' → ') : 'nenhuma adquirente disponível' }}</p>
-                <p class="mt-1 text-xs text-zinc-500">Estratégia: {{ sim.result.strategy }} · Seller: {{ sim.result.tenant_mode }} · Política: {{ sim.result.policy?.mode || 'inherit' }}</p>
+            <p v-if="sim.error" class="mt-3 rounded-2xl bg-[var(--status-error-bg)] px-3 py-2 text-sm text-[var(--status-error-fg)]" role="alert">{{ sim.error }}</p>
+            <div v-if="sim.result" class="mt-4 rounded-2xl bg-[var(--bg-muted)]/60 p-4 text-sm">
+                <p class="text-xs text-[var(--text-secondary)]">Ordem final</p>
+                <p v-if="sim.result.final_order.length" class="mt-1.5 flex flex-wrap items-center gap-1.5 text-[var(--text-primary)]">
+                    <template v-for="(slug, i) in sim.result.final_order" :key="slug + i">
+                        <span v-if="i" class="text-[var(--text-tertiary)]" aria-hidden="true">→</span>
+                        <span class="rounded-full border border-[var(--border-strong)] bg-[var(--glass-bg-strong)] px-2.5 py-0.5 font-medium">{{ name(slug) }}</span>
+                    </template>
+                </p>
+                <p v-else class="mt-1.5 text-[var(--text-primary)]">nenhuma adquirente disponível</p>
+                <p class="mt-2 text-xs text-[var(--text-tertiary)]">Estratégia: {{ sim.result.strategy }} · Seller: {{ sim.result.tenant_mode }} · Política: {{ sim.result.policy?.mode || 'inherit' }}</p>
             </div>
-        </section>
+        </PnPanel>
 
         <PlatformStepUpModal
             :open="stepUp !== null"
