@@ -61,7 +61,8 @@ function releaseLabel(p) {
     <div class="rounded-xl border border-zinc-200 bg-white p-6 dark:border-zinc-700 dark:bg-zinc-800">
         <h3 class="text-lg font-semibold text-zinc-900 dark:text-white">Simulação da divisão</h3>
         <p class="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
-            Quanto cada parte recebe numa venda direta. Convites ainda não aceitos aparecem como estimativa.
+            Quanto cada parte recebe numa venda direta. O bruto de cada parte é exato; taxa e líquido dos co-produtores
+            são estimados com as suas condições, pois cada conta pode ter condições próprias.
         </p>
 
         <div class="mt-4 flex flex-wrap items-center gap-2">
@@ -105,6 +106,7 @@ function releaseLabel(p) {
                         <td class="py-2.5 pr-3">
                             <span class="font-medium text-zinc-900 dark:text-white">{{ p.name }}</span>
                             <span v-if="p.pending_invite" class="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">convite pendente</span>
+                            <span v-if="p.estimated" class="block text-[11px] text-zinc-500">taxa e líquido estimados com as suas condições</span>
                         </td>
                         <td class="py-2.5 pr-3 text-right tabular-nums text-zinc-600 dark:text-zinc-300">{{ p.percent.toLocaleString('pt-BR') }}%</td>
                         <td class="py-2.5 pr-3 text-right tabular-nums text-zinc-900 dark:text-white">{{ brl(p.gross) }}</td>

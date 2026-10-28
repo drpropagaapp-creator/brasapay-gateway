@@ -18,7 +18,7 @@ class CoproductionSplitIntegrityTest extends TestCase
 
     private function infoprodutor(): User
     {
-        $u = User::factory()->create(['role' => User::ROLE_INFOPRODUTOR]);
+        $u = User::factory()->create(['role' => User::ROLE_INFOPRODUTOR, 'kyc_status' => User::KYC_APPROVED]);
         $u->forceFill(['tenant_id' => $u->id])->save();
 
         return $u;

@@ -158,9 +158,9 @@ class ProductCoproductionController extends Controller
     }
 
     /**
-     * Simulação da divisão de uma venda direta com a mesma regra, taxas e prazos
-     * que valem ao creditar a carteira. Convites pendentes entram como
-     * estimativa (taxa do seller), pois a conta do co-produtor ainda não existe.
+     * Simulação da divisão de uma venda direta com a mesma regra de split que
+     * vale ao creditar a carteira. Bruto de cada parte é exato; taxa, líquido e
+     * prazo dos co-produtores são estimados com as condições do seller.
      */
     public function simulate(Request $request, Product $produto): JsonResponse
     {
@@ -197,7 +197,6 @@ class ProductCoproductionController extends Controller
             $labels[(int) $row->id] = [
                 'name' => $row->coProducer?->name ?: $row->email,
                 'pending' => $pending,
-                'fee_tenant_id' => $pending ? $sellerTenantId : $tenant,
             ];
         }
 
@@ -209,15 +208,17 @@ class ProductCoproductionController extends Controller
         foreach ($split['slices'] as $slice) {
             $isSeller = $slice['role'] === 'seller';
             $copId = $isSeller ? null : (int) ($slice['product_coproducer_id'] ?? 0);
-            $feeTenant = $isSeller ? $sellerTenantId : ($labels[$copId]['fee_tenant_id'] ?? $sellerTenantId);
             $gross = MoneyDecimal::fromCents((int) $slice['gross_cents']);
-            $fee = $gross > 0 ? EffectiveMerchantFees::calculateSaleFee($feeTenant, $method, $gross) : ['fee' => 0.0, 'net' => 0.0];
-            $rules = EffectiveSettlementRules::forTenantMethod($feeTenant, $method);
+            // Taxas e prazos sempre com as condições do PRÓPRIO seller: as do
+            // co-produtor são condições comerciais privadas daquela conta.
+            $fee = $gross > 0 ? EffectiveMerchantFees::calculateSaleFee($sellerTenantId, $method, $gross) : ['fee' => 0.0, 'net' => 0.0];
+            $rules = EffectiveSettlementRules::forTenantMethod($sellerTenantId, $method);
 
             $participants[] = [
                 'role' => $slice['role'],
                 'name' => $isSeller ? 'Você (produtor)' : ($labels[$copId]['name'] ?? 'Co-produtor'),
                 'pending_invite' => $isSeller ? false : (bool) ($labels[$copId]['pending'] ?? false),
+                'estimated' => ! $isSeller,
                 'percent' => round((int) $slice['gross_cents'] * 100 / max(1, $grossCents), 2),
                 'gross' => $gross,
                 'fee' => round((float) $fee['fee'], 2),
