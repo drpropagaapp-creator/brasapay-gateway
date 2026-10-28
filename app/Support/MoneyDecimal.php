@@ -44,6 +44,26 @@ final class MoneyDecimal
         return (float) self::normalize($input);
     }
 
+    /** Valor em centavos inteiros (arredondamento half-up nos centavos). */
+    public static function toCents(mixed $input): int
+    {
+        return (int) bcmul(self::normalize($input), '100', 0);
+    }
+
+    public static function fromCents(int $cents): float
+    {
+        return (float) bcdiv((string) $cents, '100', 2);
+    }
+
+    /**
+     * Percentual com até 2 casas em pontos-base inteiros (20.5% → 2050).
+     * Contabilidade de split usa só inteiros: nada de float na conta.
+     */
+    public static function percentToBasisPoints(mixed $percent): int
+    {
+        return self::toCents($percent);
+    }
+
     /**
      * Converte preço armazenado (na moeda do produto) para BRL para exibição/edição.
      */

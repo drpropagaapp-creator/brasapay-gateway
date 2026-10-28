@@ -12,7 +12,7 @@ use Tests\TestCase;
 
 class MemberBuilderReorderTest extends TestCase
 {
-    public function test reorder_sections_updates_positions_atomically(): void
+    public function test_reorder_sections_updates_positions_atomically(): void
     {
         $this->withoutMiddleware(EnsureInstalled::class);
 
@@ -52,7 +52,7 @@ class MemberBuilderReorderTest extends TestCase
         $this->assertSame(2, $s1->fresh()->position);
     }
 
-    public function test reorder_modules_requires_valid_section_and_full_id_set(): void
+    public function test_reorder_modules_requires_valid_section_and_full_id_set(): void
     {
         $this->withoutMiddleware(EnsureInstalled::class);
 
@@ -107,7 +107,7 @@ class MemberBuilderReorderTest extends TestCase
         $respBad->assertUnprocessable();
     }
 
-    public function test reorder_lessons_within_module(): void
+    public function test_reorder_lessons_within_module(): void
     {
         $this->withoutMiddleware(EnsureInstalled::class);
 

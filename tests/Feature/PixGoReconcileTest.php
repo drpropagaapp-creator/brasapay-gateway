@@ -88,7 +88,7 @@ class PixGoFakeGatewayDriver implements GatewayDriver
         return true;
     }
 
-    public function createPixPayment(array $credentials, float $amount, array $consumer, string $externalId, string $postbackUrl): array
+    public function createPixPayment(array $credentials, float $amount, array $consumer, string $externalId, string $postbackUrl, array $options = []): array
     {
         return ['transaction_id' => 'tx_1'];
     }
