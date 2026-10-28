@@ -1152,6 +1152,14 @@ Route::middleware(['auth', 'admin.tenant', 'seller.panel', 'stacker.license', 'r
     Route::get('/relatorios', [\App\Http\Controllers\RelatoriosController::class, 'index'])
         ->middleware('team.permission:relatorios.view')
         ->name('relatorios.index');
+    Route::get('/experimentos', [\App\Http\Controllers\ExperimentsController::class, 'index'])
+        ->middleware('team.permission:produtos.view')->name('experiments.index');
+    Route::post('/experimentos', [\App\Http\Controllers\ExperimentsController::class, 'store'])
+        ->middleware(['team.permission:produtos.view', 'throttle:30,1'])->name('experiments.store');
+    Route::post('/experimentos/{experiment}/acao', [\App\Http\Controllers\ExperimentsController::class, 'transition'])
+        ->middleware(['team.permission:produtos.view', 'throttle:30,1'])->whereNumber('experiment')->name('experiments.transition');
+    Route::post('/experimentos/{experiment}/aplicar-vencedora', [\App\Http\Controllers\ExperimentsController::class, 'applyWinner'])
+        ->middleware(['team.permission:produtos.view', 'throttle:10,1'])->whereNumber('experiment')->name('experiments.apply');
     Route::get('/crm', [\App\Http\Controllers\CrmController::class, 'index'])
         ->middleware('team.permission:vendas.view')->name('crm.index');
     Route::get('/crm/contato/{key}', [\App\Http\Controllers\CrmController::class, 'show'])

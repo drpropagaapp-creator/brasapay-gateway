@@ -29,6 +29,7 @@ import {
     MailCheck,
     Contact,
     Repeat,
+    FlaskConical,
 } from 'lucide-vue-next';
 import { useI18n } from '@/composables/useI18n';
 
@@ -133,6 +134,7 @@ export function useAppSidebarNav() {
 
         if (canView('produtos.view')) {
             items.push({ name: t('sidebar.products', 'Produtos'), href: '/produtos', icon: Package });
+            items.push({ name: t('sidebar.experiments', 'Testes A/B'), href: '/experimentos', icon: FlaskConical });
             if (page.props.pixgo_enabled_effective && canView('pixgo.view')) {
                 items.push({
                     name: page.props.pixgo_sidebar_label || 'PixGO',

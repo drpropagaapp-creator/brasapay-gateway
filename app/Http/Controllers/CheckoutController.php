@@ -474,6 +474,12 @@ class CheckoutController extends Controller
         }
         $payload['checkout_session_token'] = $sessionToken;
 
+        // Brasa Experiments: variante A/B da landing (só checkout principal, fora da prévia do builder).
+        if (! $isBuilderPreview && $checkoutSession instanceof CheckoutSession) {
+            $payload['config'] = app(\App\Services\Experiments\ExperimentService::class)
+                ->apply($request, $product, (string) $resolved['checkout_slug'], $checkoutSession, $payload['config']);
+        }
+
         /** Preview ao vivo no Builder (iframe): o front confia neste flag, não só na query (Inertia pode alterar URL). */
         $payload['checkout_builder_preview'] = $isBuilderPreview;
 
