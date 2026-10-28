@@ -161,11 +161,13 @@ class BrasaMarketplaceTest extends TestCase
     {
         $author = $this->seller();
         $settings = RecoveryEmailSettings::defaults();
-        $settings['events']['pix_pending']['steps'][0]['body'] = 'Pague aqui: https://golpe.example/pix {link}';
-        RecoveryEmailSettings::save($author->id, $settings);
-
-        $this->actingAs($author)->post('/biblioteca/enviar', ['kind' => 'recovery', 'title' => 'Textos', 'confirm_public' => '1'])->assertSessionHasErrors('kind');
+        foreach (['Pague aqui: https://golpe.example/pix {link}', 'Pague em golpe.example/pix {link}', 'Acesse 10.0.0.1 agora', 'Veja //cdn {link}'] as $body) {
+            $settings['events']['pix_pending']['steps'][0]['body'] = $body;
+            RecoveryEmailSettings::save($author->id, $settings);
+            $this->actingAs($author)->post('/biblioteca/enviar', ['kind' => 'recovery', 'title' => 'Textos', 'confirm_public' => '1'])->assertSessionHasErrors('kind');
+        }
         $this->assertSame(0, MarketplaceTemplate::query()->count());
+        $this->assertSame([], \App\Services\Marketplace\TemplateLibraryService::extractLinks(RecoveryEmailSettings::defaults()['events']), 'Os textos padrão (com {link} e R$) passam.');
     }
 
     public function test_equipe_e_seller_comum_nao_administram(): void

@@ -100,6 +100,7 @@ class TemplateLibraryService
         DB::transaction(function () use ($version, $admin) {
             $locked = MarketplaceTemplateVersion::query()->lockForUpdate()->findOrFail($version->id);
             abort_unless($locked->status === MarketplaceTemplate::STATUS_PENDING, 422, 'Esta versão já foi revisada.');
+            abort_if($locked->content !== null && self::extractLinks($locked->content) !== [], 422, 'Os textos contêm links; recuse a versão.');
             $locked->update(['status' => MarketplaceTemplate::STATUS_PUBLISHED, 'reviewed_by' => $admin->id, 'reviewed_at' => now(), 'rejection_reason' => null]);
             MarketplaceTemplate::query()->whereKey($locked->template_id)->update([
                 'current_version_id' => $locked->id, 'status' => MarketplaceTemplate::STATUS_PUBLISHED, 'rejection_reason' => null, 'updated_at' => now(),
@@ -140,6 +141,7 @@ class TemplateLibraryService
         $version = MarketplaceTemplateVersion::query()->whereKey($template->current_version_id)->where('status', MarketplaceTemplate::STATUS_PUBLISHED)->firstOrFail();
 
         if ($template->kind === MarketplaceTemplate::KIND_RECOVERY) {
+            abort_if(self::extractLinks($version->content ?? []) !== [], 422, 'Este template contém links e não pode ser instalado.');
             $current = RecoveryEmailSettings::forTenant($tenantId);
             $incoming = (array) ($version->content['events'] ?? []);
             foreach ($current['events'] as $event => $cfg) {
@@ -220,9 +222,22 @@ class TemplateLibraryService
     /** @return list<string> URLs presentes nos textos (para a revisão e para quem vai instalar) */
     public static function extractLinks(mixed $content): array
     {
-        preg_match_all('#\b(?:https?://|www\.)[^\s<>"\']+#i', (string) json_encode($content, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE), $m);
+        $texts = [];
+        array_walk_recursive($content, function ($v) use (&$texts) {
+            if (is_string($v)) {
+                $texts[] = $v;
+            }
+        });
+        $found = [];
+        foreach ($texts as $text) {
+            // Qualquer coisa com cara de endereço: esquema, "//", IP ou palavra.com (com ou sem caminho).
+            preg_match_all('~[a-z][a-z0-9+.-]*://\S+|//\S+|\b\d{1,3}(?:\.\d{1,3}){3}\b|\b(?:[a-z0-9-]+\.)+[a-z]{2,24}\b(?:/\S*)?~iu', $text, $m);
+            foreach ($m[0] as $hit) {
+                $found[] = rtrim($hit, '.,;:)!?');
+            }
+        }
 
-        return array_values(array_unique(array_map(fn ($u) => rtrim($u, '\\.,;)'), $m[0] ?? [])));
+        return array_values(array_unique(array_filter($found)));
     }
 
     /** @return array{relative: string, absolute: string, sha256: string} */
