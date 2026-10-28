@@ -106,7 +106,6 @@ export function useAppSidebarNav() {
                 icon: CircleDollarSign,
             });
             items.push({ name: t('sidebar.crm', 'Clientes (CRM)'), href: '/crm', icon: Contact });
-            items.push({ name: t('sidebar.intelligence', 'Inteligência'), href: '/inteligencia', icon: Lightbulb });
             if (page.props.api_pix_enabled_effective) {
                 items.push({
                     name: t('sidebar.api_transactions', 'Transações API'),
@@ -118,6 +117,7 @@ export function useAppSidebarNav() {
 
         if (canView('relatorios.view')) {
             items.push({ name: t('sidebar.reports', 'Relatórios'), href: '/relatorios', icon: BarChart3 });
+            items.push({ name: t('sidebar.intelligence', 'Inteligência'), href: '/inteligencia', icon: Lightbulb });
         }
 
         if (canView('integracoes.view')) {
