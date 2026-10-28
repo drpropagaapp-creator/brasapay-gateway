@@ -149,7 +149,7 @@ class BrasaRecoveryTest extends TestCase
 
     public function test_nunca_usa_o_smtp_da_plataforma_para_texto_do_seller(): void
     {
-        AppModelsSetting::set('smtp_host', 'smtp.plataforma.test', null);
+        \App\Models\Setting::set('smtp_host', 'smtp.plataforma.test', null);
         $this->abandoned($this->seller(), 'alvo@x.com', 40);
 
         // Serviço real (sem o dublê do setUp): seller sem e-mail próprio não envia nada.
