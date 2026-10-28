@@ -145,6 +145,56 @@ class CoproductionSplitIntegrityTest extends TestCase
         $this->assertEqualsWithDelta(20.00, $gross[$a->id], 0.001);
     }
 
+    private function walletTotal(int $tenantId): float
+    {
+        $w = \App\Models\TenantWallet::query()->where('tenant_id', $tenantId)->first();
+
+        return $w === null ? 0.0 : round((float) $w->available_balance + (float) $w->pending_balance, 2);
+    }
+
+    public function test_cenario_g_reembolso_integral_reverte_cada_participante_pelo_que_recebeu(): void
+    {
+        $seller = $this->infoprodutor();
+        $a = $this->infoprodutor();
+        $b = $this->infoprodutor();
+        $product = $this->createTestProduct(['tenant_id' => $seller->id]);
+        $this->activeCoproducer($product, $seller, $a, 20, 'r');
+        $this->activeCoproducer($product, $seller, $b, 10, 's');
+
+        $order = $this->completedOrder($seller, $product, 100.00);
+        OrderCompletedWalletCreditor::credit($order);
+        $this->assertGreaterThan(0, $this->walletTotal($a->id));
+
+        // Percentual muda depois da venda: a reversão segue o que foi creditado.
+        ProductCoproducer::query()->where('co_producer_user_id', $a->id)->update(['commission_percent' => 50]);
+
+        \App\Services\PlatformOrderAdminService::refundPaidOrDisputed($order->fresh());
+
+        $this->assertEqualsWithDelta(0.0, $this->walletTotal($seller->id), 0.001);
+        $this->assertEqualsWithDelta(0.0, $this->walletTotal($a->id), 0.001);
+        $this->assertEqualsWithDelta(0.0, $this->walletTotal($b->id), 0.001);
+    }
+
+    public function test_cenario_l_med_trava_o_valor_de_cada_participante_sem_mexer_no_dos_outros(): void
+    {
+        $seller = $this->infoprodutor();
+        $a = $this->infoprodutor();
+        $product = $this->createTestProduct(['tenant_id' => $seller->id]);
+        $this->activeCoproducer($product, $seller, $a, 20, 't');
+
+        $order = $this->completedOrder($seller, $product, 100.00);
+        OrderCompletedWalletCreditor::credit($order);
+        $sellerBefore = $this->walletTotal($seller->id);
+        $coBefore = $this->walletTotal($a->id);
+
+        \App\Services\PlatformOrderAdminService::markDisputed($order->fresh());
+
+        $this->assertSame('disputed', $order->fresh()->status);
+        $this->assertEqualsWithDelta($sellerBefore, $this->walletTotal($seller->id), 0.001, 'MED move o saldo para pendente, não some.');
+        $this->assertEqualsWithDelta($coBefore, $this->walletTotal($a->id), 0.001);
+        $this->assertEqualsWithDelta(0.0, (float) \App\Models\TenantWallet::query()->where('tenant_id', $a->id)->value('available_balance'), 0.001);
+    }
+
     public function test_simulacao_mostra_a_divisao_real_e_marca_convite_pendente(): void
     {
         $seller = $this->infoprodutor();
