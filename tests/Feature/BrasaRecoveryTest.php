@@ -25,7 +25,7 @@ class BrasaRecoveryTest extends TestCase
         parent::setUp();
         self::$sent = [];
         // Meio-dia em São Paulo: fora do horário silencioso padrão.
-        Carbon::setTestNow(Carbon::parse('2026-10-29 12:00:00', 'America/Sao_Paulo')->utc());
+        Carbon::setTestNow(Carbon::parse('2026-10-29 12:00:00', 'America/Sao_Paulo')->setTimezone(config('app.timezone')));
         $this->app->bind(BrasaRecoveryService::class, fn ($app) => new class($app->make(TenantMailConfigService::class)) extends BrasaRecoveryService
         {
             protected function send(int $tenantId, string $email, string $subject, string $html): void
@@ -116,7 +116,7 @@ class BrasaRecoveryTest extends TestCase
         // Ativado agora com carrinho de 5 h atrás (passo de 30 min venceu há muito): não envia.
         $other = $this->seller();
         $this->abandoned($other, 'velho@x.com', 300);
-        Carbon::setTestNow(Carbon::parse('2026-10-29 15:00:00', 'America/Sao_Paulo')->utc());
+        Carbon::setTestNow(Carbon::parse('2026-10-29 15:00:00', 'America/Sao_Paulo')->setTimezone(config('app.timezone')));
         $this->process();
         $this->assertSame([], array_values(array_filter(self::$sent, fn ($m) => $m['email'] === 'velho@x.com')));
     }
