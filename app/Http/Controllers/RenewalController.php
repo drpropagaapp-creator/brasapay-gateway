@@ -27,6 +27,9 @@ use Inertia\Response;
 
 class RenewalController extends Controller
 {
+    /** Métodos com fluxo de cobrança implementado na renovação. */
+    private const RENEWAL_METHODS = ['pix', 'card', 'boleto', 'pix_auto'];
+
     public function show(string $token): Response|RedirectResponse
     {
         $subscription = Subscription::with(['user', 'product', 'subscriptionPlan'])
@@ -48,7 +51,11 @@ class RenewalController extends Controller
         }
 
         $tenantId = $subscription->tenant_id;
-        $availablePaymentMethods = app(PaymentService::class)->availablePaymentMethodsForCheckout($product, $plan, $subscription);
+        // Só métodos que a renovação sabe cobrar; carteiras (Apple/Google Pay) não têm fluxo aqui.
+        $availablePaymentMethods = array_values(array_filter(
+            app(PaymentService::class)->availablePaymentMethodsForCheckout($product, $plan, $subscription),
+            fn ($m) => in_array($m['id'] ?? null, self::RENEWAL_METHODS, true)
+        ));
         $savedPaymentMethods = $subscription->user->savedPaymentMethods()->forTenant($tenantId)->get()->map(fn ($m) => [
             'id' => $m->id,
             'type' => $m->type,
@@ -216,9 +223,11 @@ class RenewalController extends Controller
 
     public function process(Request $request): RedirectResponse
     {
+        // Renovação só acontece com cobrança real: não existe mais o caminho "manual" que
+        // criava o pedido como pago sem passar por nenhuma adquirente.
         $request->validate([
             'token' => ['required', 'string', 'max:64'],
-            'payment_method' => ['nullable', 'string', 'in:pix,card,boleto,pix_auto,manual,apple_pay,google_pay'],
+            'payment_method' => ['required', 'string', 'in:'.implode(',', self::RENEWAL_METHODS)],
             'payment_token' => ['nullable', 'string', 'max:8192'],
             'card_mask' => ['nullable', 'string', 'max:64'],
         ]);
@@ -246,16 +255,14 @@ class RenewalController extends Controller
         app(MinimumChargeService::class)->assertPlatformCheckout(round($amount, 2), (int) $tenantId);
 
         [$periodStart, $periodEnd] = $plan->getCurrentPeriod();
-        $paymentMethod = $request->input('payment_method', 'manual');
+        $paymentMethod = (string) $request->input('payment_method');
 
-        if ($paymentMethod !== 'manual') {
-            $allowedIds = array_column(
-                app(PaymentService::class)->availablePaymentMethodsForCheckout($product, $plan, $subscription),
-                'id'
-            );
-            if (! in_array($paymentMethod, $allowedIds, true)) {
-                return back()->with('error', 'Método de pagamento não disponível para este produto.');
-            }
+        $allowedIds = array_column(
+            app(PaymentService::class)->availablePaymentMethodsForCheckout($product, $plan, $subscription),
+            'id'
+        );
+        if (! in_array($paymentMethod, $allowedIds, true)) {
+            return back()->with('error', 'Método de pagamento não disponível para este produto.');
         }
 
         $orderPayload = [
@@ -503,14 +510,7 @@ class RenewalController extends Controller
             }
         }
 
-        $order = Order::create(array_merge($orderPayload, [
-            'status' => 'completed',
-            'gateway' => 'manual',
-            'payment_method' => 'pix',
-        ]));
-        app(SubscriptionRenewalService::class)->applySuccessfulRenewal($order, $subscription, $plan);
-
-        return redirect()->route('renewal.show', $request->input('token'))
-            ->with('success', 'Renovação concluída. Seu acesso foi estendido.');
+        // Nenhum fluxo de cobrança tratou o método: nunca estender o acesso sem pagamento.
+        return back()->with('error', 'Método de pagamento não disponível para este produto.');
     }
 }

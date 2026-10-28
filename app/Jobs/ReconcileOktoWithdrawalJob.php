@@ -90,10 +90,8 @@ class ReconcileOktoWithdrawalJob implements ShouldQueue
         if ($this->attempts() >= 36) {
             $withdrawal = Withdrawal::query()->find($this->withdrawalId);
             if ($withdrawal !== null && in_array($withdrawal->status, ['pending', 'processing'], true)) {
-                MerchantWithdrawalService::markFailed(
-                    $withdrawal->fresh(),
-                    'Payout Okto não confirmado após esgotar tentativas de reconciliação.'
-                );
+                // Sem confirmação de falha não estorna (o PIX pode ter saído): fica para o admin.
+                MerchantWithdrawalService::markReconcileExhausted($withdrawal->fresh(), 'okto');
             }
 
             return;

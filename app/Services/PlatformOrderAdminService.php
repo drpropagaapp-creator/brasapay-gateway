@@ -230,13 +230,14 @@ class PlatformOrderAdminService
 
         foreach ($tenantIds as $tenantId) {
             $tid = (int) $tenantId;
-            $credit = $availableCredits->firstWhere('tenant_id', $tid);
+            // Todas as partes já liberadas (principal, reserva, parcelas) — não só a primeira.
+            $credits = $availableCredits->where('tenant_id', $tid)->values();
             $pending = $pendingCredits->where('tenant_id', $tid)->values();
-            self::moveAvailableToPendingForMedTenant($order, $tid, $credit, $pending);
+            self::moveAvailableToPendingForMedTenant($order, $tid, $credits, $pending);
         }
     }
 
-    private static function moveAvailableToPendingForMedTenant(Order $order, int $tenantId, ?WalletTransaction $credit, Collection $pendingCredits): void
+    private static function moveAvailableToPendingForMedTenant(Order $order, int $tenantId, Collection $credits, Collection $pendingCredits): void
     {
         if ($tenantId < 1) {
             return;
@@ -250,16 +251,17 @@ class PlatformOrderAdminService
             return;
         }
 
-        if ($credit === null && $pendingCredits->isEmpty()) {
+        if ($credits->isEmpty() && $pendingCredits->isEmpty()) {
             return;
         }
+        $hasCredits = $credits->isNotEmpty();
 
-        $bucket = $credit !== null
-            ? (string) $credit->bucket
+        $bucket = $hasCredits
+            ? (string) $credits->first()->bucket
             : (string) $pendingCredits->first()->bucket;
 
-        $net = $credit !== null
-            ? (float) $credit->amount_net
+        $net = $hasCredits
+            ? round((float) $credits->sum('amount_net'), 2)
             : (float) $pendingCredits->sum('amount_net');
 
         $availCol = 'available_'.$bucket;
@@ -275,7 +277,7 @@ class PlatformOrderAdminService
         }
 
         $heldNet = 0.0;
-        if ($credit !== null) {
+        if ($hasCredits) {
             $available = (float) ($wallet->{$availCol} ?? 0);
             $move = min($net, max(0, $available));
             if ($move > 0) {
@@ -288,8 +290,8 @@ class PlatformOrderAdminService
         self::recalcWalletAggregates($wallet);
         $wallet->save();
 
-        $grossRef = $credit !== null ? (float) $credit->amount_gross : (float) $pendingCredits->sum('amount_gross');
-        $feeRef = $credit !== null ? (float) $credit->amount_fee : (float) $pendingCredits->sum('amount_fee');
+        $grossRef = $hasCredits ? (float) $credits->sum('amount_gross') : (float) $pendingCredits->sum('amount_gross');
+        $feeRef = $hasCredits ? (float) $credits->sum('amount_fee') : (float) $pendingCredits->sum('amount_fee');
 
         WalletTransaction::query()->create([
             'tenant_id' => $tenantId,
@@ -301,10 +303,11 @@ class PlatformOrderAdminService
             'amount_fee' => $feeRef,
             'amount_net' => $net,
             'meta' => [
-                'credit_sale_wallet_transaction_id' => $credit?->id,
+                'credit_sale_wallet_transaction_id' => $credits->first()?->id,
+                'credit_sale_wallet_transaction_ids' => $credits->pluck('id')->values()->all(),
                 'credit_sale_pending_ids' => $pendingCredits->pluck('id')->values()->all(),
                 'held_net' => round($heldNet, 2),
-                'hold_mode' => $credit !== null ? 'available_to_pending' : 'pending_only',
+                'hold_mode' => $hasCredits ? 'available_to_pending' : 'pending_only',
                 'reason' => 'med_dispute_hold',
             ],
         ]);
@@ -376,11 +379,23 @@ class PlatformOrderAdminService
         $totalFee = 0.0;
         $refIds = [];
 
-        DB::transaction(function () use ($lines, $tenantId, $availCol, $pendCol, &$totalNet, &$totalGross, &$totalFee, &$refIds) {
+        DB::transaction(function () use ($order, $lines, $tenantId, $availCol, $pendCol, &$totalNet, &$totalGross, &$totalFee, &$refIds) {
             $wallet = TenantWallet::query()->where('tenant_id', $tenantId)->lockForUpdate()->first();
             if ($wallet === null) {
                 return;
             }
+
+            // MED ativo: o líquido das partes liberadas foi movido para o pendente. O estorno
+            // consome esse valor retido (e não o disponível de outras vendas), e a retenção
+            // é encerrada para não ficar presa no pendente.
+            $activeHolds = WalletTransaction::query()
+                ->where('order_id', $order->id)
+                ->where('tenant_id', $tenantId)
+                ->where('type', WalletTransaction::TYPE_MED_HOLD)
+                ->lockForUpdate()
+                ->get()
+                ->filter(fn (WalletTransaction $h) => empty((is_array($h->meta) ? $h->meta : [])['released_at'] ?? null));
+            $heldRemaining = round((float) $activeHolds->sum(fn (WalletTransaction $h) => self::heldNetOfMedHold($h)), 2);
 
             foreach ($lines as $line) {
                 $n = (float) $line->amount_net;
@@ -395,8 +410,25 @@ class PlatformOrderAdminService
                 if ($line->type === WalletTransaction::TYPE_CREDIT_SALE_PENDING) {
                     self::takeFromWalletBucket($wallet, $pendCol, $availCol, $n);
                 } elseif ($line->type === WalletTransaction::TYPE_CREDIT_SALE) {
-                    self::takeFromWalletBucket($wallet, $availCol, $pendCol, $n);
+                    $fromHold = min($n, $heldRemaining);
+                    if ($fromHold > 0) {
+                        self::takeFromWalletBucket($wallet, $pendCol, $availCol, $fromHold);
+                        $heldRemaining = round($heldRemaining - $fromHold, 2);
+                    }
+                    $rest = round($n - $fromHold, 2);
+                    if ($rest > 0) {
+                        self::takeFromWalletBucket($wallet, $availCol, $pendCol, $rest);
+                    }
                 }
+            }
+
+            foreach ($activeHolds as $hold) {
+                $meta = is_array($hold->meta) ? $hold->meta : [];
+                $hold->update(['meta' => array_merge($meta, [
+                    'released_at' => now()->toIso8601String(),
+                    'released_net' => 0,
+                    'reason' => 'med_dispute_refunded',
+                ])]);
             }
 
             self::recalcWalletAggregates($wallet);
@@ -591,11 +623,9 @@ class PlatformOrderAdminService
                     $pendCol = 'pending_pix';
                 }
 
-                $holdMode = (string) ($meta['hold_mode'] ?? 'available_to_pending');
-                $heldNet = isset($meta['held_net']) ? (float) $meta['held_net'] : null;
-                $releaseNet = $holdMode === 'available_to_pending' && $heldNet !== null
-                    ? min($net, max(0, $heldNet))
-                    : $net;
+                // Devolve só o que o MED tirou do disponível. Em pending_only nada foi movido
+                // (as partes pendentes ficam suspensas e liberam no prazo normal).
+                $releaseNet = self::heldNetOfMedHold($hold);
 
                 $pending = (float) ($wallet->{$pendCol} ?? 0);
                 $move = min($releaseNet, max(0, $pending));
@@ -675,6 +705,21 @@ class PlatformOrderAdminService
             'gateway_refund_status' => 'gateway_ok',
             'resolved_at' => now(),
         ]);
+    }
+
+    /**
+     * Quanto este med_hold tirou do disponível. Holds antigos sem held_net:
+     * available_to_pending usa o líquido; pending_only não moveu nada.
+     */
+    private static function heldNetOfMedHold(WalletTransaction $hold): float
+    {
+        $meta = is_array($hold->meta) ? $hold->meta : [];
+        $net = max(0.0, (float) $hold->amount_net);
+        if (isset($meta['held_net'])) {
+            return round(min($net, max(0.0, (float) $meta['held_net'])), 2);
+        }
+
+        return ($meta['hold_mode'] ?? 'available_to_pending') === 'pending_only' ? 0.0 : round($net, 2);
     }
 
     private static function takeFromWalletBucket(

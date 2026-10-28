@@ -284,6 +284,31 @@ class MerchantWithdrawalService
         }
     }
 
+    /**
+     * Reconciliação esgotou as tentativas sem resposta definitiva da adquirente.
+     * NÃO estorna: o PIX pode ter saído, e devolver o saldo permitiria sacar de novo.
+     * O saque fica pendente com a marca `reconcile_exhausted` para o admin decidir.
+     */
+    public static function markReconcileExhausted(Withdrawal $withdrawal, string $provider): void
+    {
+        if (! in_array($withdrawal->status, ['pending', 'processing'], true)) {
+            return;
+        }
+
+        $meta = is_array($withdrawal->payout_meta) ? $withdrawal->payout_meta : [];
+        if (! empty($meta['reconcile_exhausted'])) {
+            return;
+        }
+        $meta['reconcile_exhausted'] = true;
+        $meta['reconcile_exhausted_at'] = now()->toIso8601String();
+        $withdrawal->update(['payout_meta' => $meta]);
+
+        Log::warning('Withdrawal: reconciliação esgotada sem confirmação — aguardando admin', [
+            'withdrawal_id' => $withdrawal->id,
+            'provider' => $provider,
+        ]);
+    }
+
     public static function markFailed(Withdrawal $withdrawal, string $reason, bool $refundWallet = true): void
     {
         if (! in_array($withdrawal->status, [self::STATUS_PENDING, self::STATUS_PROCESSING], true)) {

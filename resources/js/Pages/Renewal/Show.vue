@@ -47,16 +47,13 @@ const flashInfo = computed(() => page.props.flash?.info ?? null);
 
 const form = useForm({
     token: props.token,
-    payment_method: 'manual',
+    payment_method: props.available_payment_methods?.[0]?.id ?? '',
     payment_token: '',
     card_mask: '',
 });
 
 const methods = computed(() => {
     const list = props.available_payment_methods || [];
-    if (list.length === 0) {
-        return [{ id: 'manual', label: 'Outro (instruções por e-mail)' }];
-    }
     return list.map((m) => ({ id: m.id, label: m.label }));
 });
 
@@ -361,7 +358,10 @@ function submitRenewal() {
         return;
     }
     const method = methods.value.find((m) => m.id === form.payment_method);
-    form.payment_method = method ? method.id : 'manual';
+    if (!method) {
+        cardError.value = 'Escolha uma forma de pagamento.';
+        return;
+    }
     form.payment_token = '';
     form.card_mask = '';
     form.post('/renovar', { preserveScroll: true });
@@ -406,6 +406,9 @@ function submitRenewal() {
                     <input v-model="form.token" type="hidden" name="token" />
                     <div>
                         <label class="mb-2 block text-sm font-medium text-zinc-700 dark:text-zinc-300">Forma de pagamento</label>
+                        <p v-if="!methods.length" class="rounded-xl bg-amber-50 p-3 text-sm text-amber-800 dark:bg-amber-950/30 dark:text-amber-300">
+                            Nenhuma forma de pagamento está disponível para renovar agora. Fale com o vendedor do produto.
+                        </p>
                         <div class="space-y-2">
                             <label
                                 v-for="m in methods"
@@ -489,7 +492,7 @@ function submitRenewal() {
                         </template>
                     </div>
 
-                    <Button type="submit" class="w-full" :disabled="form.processing || cardSubmitting">
+                    <Button type="submit" class="w-full" :disabled="form.processing || cardSubmitting || !methods.length">
                         <Loader2 v-if="form.processing || cardSubmitting" class="mr-2 h-4 w-4 animate-spin" />
                         {{ form.processing || cardSubmitting ? 'Processando…' : 'Pagar e renovar' }}
                     </Button>
