@@ -71,6 +71,8 @@ class TemplateLibraryController extends Controller
         return Inertia::render('TemplateLibrary/Show', [
             'template' => $this->card($t) + ['description' => $t->description, 'status' => $t->status, 'is_author' => $isAuthor],
             'summary' => $current?->summary,
+            // Recuperação: quem vai instalar lê os textos completos antes.
+            'content' => $t->kind === MarketplaceTemplate::KIND_RECOVERY ? $current?->content : null,
             'current_version' => $current?->version,
             'versions' => $versions->map(fn ($v) => ['version' => $v->version, 'changelog' => $v->changelog, 'at' => $v->reviewed_at?->toIso8601String()])->values(),
             'reviews' => MarketplaceReview::query()->where('template_id', $t->id)->where('status', 'approved')->latest('id')->limit(30)

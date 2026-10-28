@@ -157,6 +157,17 @@ class BrasaMarketplaceTest extends TestCase
         $this->assertNull($template->fresh()->ratingAverage());
     }
 
+    public function test_template_de_recuperacao_nao_aceita_link_proprio(): void
+    {
+        $author = $this->seller();
+        $settings = RecoveryEmailSettings::defaults();
+        $settings['events']['pix_pending']['steps'][0]['body'] = 'Pague aqui: https://golpe.example/pix {link}';
+        RecoveryEmailSettings::save($author->id, $settings);
+
+        $this->actingAs($author)->post('/biblioteca/enviar', ['kind' => 'recovery', 'title' => 'Textos', 'confirm_public' => '1'])->assertSessionHasErrors('kind');
+        $this->assertSame(0, MarketplaceTemplate::query()->count());
+    }
+
     public function test_equipe_e_seller_comum_nao_administram(): void
     {
         $seller = $this->seller();

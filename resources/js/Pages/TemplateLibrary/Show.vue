@@ -9,6 +9,7 @@ defineOptions({ layout: LayoutInfoprodutor });
 const props = defineProps({
     template: { type: Object, required: true },
     summary: { type: Object, default: null },
+    content: { type: Object, default: null },
     current_version: { type: Number, default: null },
     versions: { type: Array, default: () => [] },
     reviews: { type: Array, default: () => [] },
@@ -64,6 +65,13 @@ function sendReview() {
             <h2 class="font-semibold">O que vem no template</h2>
             <template v-if="template.kind === 'recovery'">
                 <p class="mt-2 text-sm">{{ summary.steps }} etapas de e-mail para: {{ (summary.events || []).map((e) => EVENTS[e] || e).join(', ') }}.</p>
+                <template v-for="(cfg, ev) in content?.events || {}" :key="ev">
+                    <div v-for="(s, i) in cfg.steps" :key="ev + i" class="mt-3 rounded-xl bg-zinc-50 p-3 text-sm dark:bg-zinc-800/60">
+                        <p class="text-xs text-zinc-500">{{ EVENTS[ev] || ev }} · etapa {{ i + 1 }} · após {{ s.delay_minutes }} min</p>
+                        <p class="mt-1 font-medium">{{ s.subject }}</p>
+                        <p class="mt-1 whitespace-pre-line text-zinc-600 dark:text-zinc-300">{{ s.body }}</p>
+                    </div>
+                </template>
             </template>
             <ul v-else class="mt-2 space-y-2 text-sm">
                 <li v-for="p in summary.products" :key="p.key" class="rounded-xl bg-zinc-50 px-3 py-2 dark:bg-zinc-800/60">

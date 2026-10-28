@@ -509,6 +509,8 @@ Route::prefix('plataforma')->name('plataforma.')->group(function () {
             ->middleware('throttle:60,1')->name('risk.review');
         Route::get('/central', [\App\Http\Controllers\Platform\CommandCenterController::class, 'index'])->name('command-center');
         Route::get('/biblioteca', [\App\Http\Controllers\Platform\TemplateLibraryAdminController::class, 'index'])->name('library.index');
+        Route::get('/biblioteca/versoes/{version}/pacote', [\App\Http\Controllers\Platform\TemplateLibraryAdminController::class, 'downloadPackage'])
+            ->middleware('throttle:30,1')->whereNumber('version')->name('library.download');
         Route::post('/biblioteca/versoes/{version}/revisar', [\App\Http\Controllers\Platform\TemplateLibraryAdminController::class, 'review'])
             ->middleware('throttle:60,1')->whereNumber('version')->name('library.review');
         Route::post('/biblioteca/templates/{template}/publicacao', [\App\Http\Controllers\Platform\TemplateLibraryAdminController::class, 'publication'])

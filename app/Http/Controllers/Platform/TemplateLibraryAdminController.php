@@ -29,6 +29,10 @@ class TemplateLibraryAdminController extends Controller
             'max_mb' => (int) (PackageFormat::MAX_PACKAGE_BYTES / 1024 / 1024),
             'pending' => $pending->map(fn ($v) => [
                 'id' => $v->id, 'version' => $v->version, 'changelog' => $v->changelog, 'summary' => $v->summary,
+                // Revisão vê o conteúdo integral: textos de recuperação e os links que eles contêm.
+                'content' => $v->content,
+                'links' => TemplateLibraryService::extractLinks($v->content),
+                'has_package' => (bool) $v->package_path,
                 'created_at' => $v->created_at?->toIso8601String(),
                 'template' => ($t = $templates->get($v->template_id)) ? ['id' => $t->id, 'title' => $t->title, 'kind' => $t->kind,
                     'category' => MarketplaceTemplate::CATEGORIES[$t->category] ?? $t->category, 'author' => $t->author_name,
@@ -43,6 +47,16 @@ class TemplateLibraryAdminController extends Controller
                 ->map(fn ($r) => ['id' => $r->id, 'template_id' => $r->template_id, 'rating' => $r->rating, 'comment' => $r->comment,
                     'template' => MarketplaceTemplate::query()->whereKey($r->template_id)->value('title')])->values(),
         ]);
+    }
+
+    /** Baixa o pacote enviado para o admin conferir (por exemplo, importando numa conta de teste). */
+    public function downloadPackage(MarketplaceTemplateVersion $version): \Symfony\Component\HttpFoundation\BinaryFileResponse
+    {
+        $path = $version->absolutePackagePath();
+        abort_unless($path !== null && is_file($path), 404);
+        \App\Services\PlatformAuditService::log('marketplace.version.downloaded', ['version_id' => $version->id, 'template_id' => $version->template_id]);
+
+        return response()->download($path, 'template-'.$version->template_id.'-v'.$version->version.'.brasapay.zip', ['Content-Type' => 'application/zip']);
     }
 
     public function review(Request $request, MarketplaceTemplateVersion $version): RedirectResponse

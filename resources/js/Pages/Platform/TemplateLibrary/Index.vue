@@ -65,7 +65,18 @@ function sendOfficial() {
                 <ul v-if="v.summary?.products" class="mt-2 text-xs text-zinc-500">
                     <li v-for="p in v.summary.products" :key="p.key">{{ p.name }} · {{ p.offers }} ofertas · {{ p.plans }} planos · {{ p.order_bumps }} bumps · {{ v.summary.assets }} arquivos</li>
                 </ul>
-                <p v-else-if="v.summary?.steps" class="mt-2 text-xs text-zinc-500">{{ v.summary.steps }} etapas de e-mail</p>
+                <a v-if="v.has_package" :href="`/plataforma/biblioteca/versoes/${v.id}/pacote`" class="mt-2 inline-block text-xs underline">Baixar pacote para conferir (importe numa conta de teste)</a>
+                <template v-if="v.content?.events">
+                    <p class="mt-2 text-xs text-zinc-500">{{ v.summary?.steps }} etapas de e-mail. Textos completos:</p>
+                    <template v-for="(cfg, ev) in v.content.events" :key="ev">
+                        <div v-for="(s, i) in cfg.steps" :key="ev + i" class="mt-2 rounded-lg bg-zinc-50 p-2 text-xs dark:bg-zinc-800/60">
+                            <p class="text-zinc-500">{{ ev }} · etapa {{ i + 1 }} · {{ s.delay_minutes }} min</p>
+                            <p class="font-medium">{{ s.subject }}</p>
+                            <p class="whitespace-pre-line">{{ s.body }}</p>
+                        </div>
+                    </template>
+                </template>
+                <p v-if="v.links?.length" class="mt-2 rounded-lg bg-red-50 p-2 text-xs text-red-800 dark:bg-red-950/30 dark:text-red-200">Links encontrados: {{ v.links.join(' · ') }}</p>
             </div>
             <p v-if="!pending.length" class="mt-2 text-sm text-zinc-500">Nada pendente.</p>
         </section>

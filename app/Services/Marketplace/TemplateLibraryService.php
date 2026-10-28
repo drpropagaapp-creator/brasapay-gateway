@@ -65,6 +65,10 @@ class TemplateLibraryService
         $content = ['events' => RecoveryEmailSettings::forTenant($tenantId)['events']];
         $steps = array_sum(array_map(fn ($e) => count($e['steps']), $content['events']));
         abort_if($steps === 0, 422, 'Configure ao menos uma etapa na Recuperação de vendas antes de publicar.');
+        // Template público não carrega link próprio: só o marcador {link}, que vira o checkout de quem instalar.
+        if (self::extractLinks($content) !== []) {
+            throw ValidationException::withMessages(['kind' => 'Templates de recuperação não podem conter links. Use o marcador {link}.']);
+        }
 
         return $this->createVersion($author, $template, $meta + ['kind' => MarketplaceTemplate::KIND_RECOVERY, 'category' => 'recovery'], [
             'content' => $content, 'summary' => ['steps' => $steps, 'events' => array_keys(array_filter($content['events'], fn ($e) => $e['steps'] !== []))],
@@ -211,6 +215,14 @@ class TemplateLibraryService
             $locked->update(['status' => $now, 'moderated_by' => $admin->id]);
         });
         PlatformAuditService::log('marketplace.review.'.($approve ? 'approved' : 'rejected'), ['review_id' => $review->id, 'template_id' => $review->template_id]);
+    }
+
+    /** @return list<string> URLs presentes nos textos (para a revisão e para quem vai instalar) */
+    public static function extractLinks(mixed $content): array
+    {
+        preg_match_all('#\b(?:https?://|www\.)[^\s<>"\']+#i', (string) json_encode($content, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE), $m);
+
+        return array_values(array_unique(array_map(fn ($u) => rtrim($u, '\\.,;)'), $m[0] ?? [])));
     }
 
     /** @return array{relative: string, absolute: string, sha256: string} */
