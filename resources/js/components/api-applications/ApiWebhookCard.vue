@@ -166,6 +166,7 @@ function statusClass(status) {
                         v-if="webhook.name"
                         class="text-sm font-medium text-zinc-900 dark:text-white"
                     >{{ webhook.name }}</span>
+                    <span v-if="webhook.environment === 'sandbox'" class="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-amber-800 dark:bg-amber-900/40 dark:text-amber-200">Sandbox</span>
                     <span
                         class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium"
                         :class="webhook.is_active

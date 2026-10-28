@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Jobs\DeliverApiWebhookJob;
 use App\Models\ApiApplication;
+use App\Models\ApiApplicationWebhook;
 use App\Models\ApiKey;
 use App\Models\ApiRequestLog;
 use App\Models\ApiWebhookDelivery;
@@ -12,6 +13,7 @@ use App\Models\User;
 use App\Models\Withdrawal;
 use App\Support\ApiScopes;
 use App\Support\OpenApiSpec;
+use App\Services\Api\ApiWebhookDeliveryService;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Route;
 use Tests\TestCase;
@@ -58,6 +60,12 @@ class BrasaDevelopersTest extends TestCase
         return [$public, $secret];
     }
 
+    private function sandboxEndpoint(ApiApplication $app): ApiApplicationWebhook
+    {
+        return ApiApplicationWebhook::create(['api_application_id' => $app->id, 'name' => 'Teste', 'url' => 'https://1.1.1.1/sbx',
+            'secret' => 'whsec_sandbox', 'events' => null, 'is_active' => true, 'environment' => ApiKey::ENV_SANDBOX]);
+    }
+
     private function headers(array $pair): array
     {
         return ['X-Public-Key' => $pair[0], 'X-Secret-Key' => $pair[1]];
@@ -80,6 +88,7 @@ class BrasaDevelopersTest extends TestCase
     {
         Queue::fake();
         $a = $this->app($this->seller()->id);
+        $endpoint = $this->sandboxEndpoint($a['app']);
         $h = $this->headers($this->key($a['app'], ApiKey::ENV_SANDBOX));
         $ordersBefore = Order::query()->count();
 
@@ -105,7 +114,32 @@ class BrasaDevelopersTest extends TestCase
         $deliveries = ApiWebhookDelivery::query()->where('api_application_id', $a['app']->id)->get();
         $this->assertEqualsCanonicalizing(['order.pending', 'pix.generated', 'order.completed', 'withdrawal.created', 'withdrawal.failed'], $deliveries->pluck('event')->all());
         $this->assertTrue($deliveries->every(fn ($d) => $d->livemode === false && ($d->payload['livemode'] ?? null) === false));
+        // Nunca para a URL de produção (legada) da aplicação: só para o endpoint de sandbox.
+        $this->assertSame(['https://1.1.1.1/sbx'], $deliveries->pluck('url')->unique()->values()->all());
+        $this->assertSame([$endpoint->id], $deliveries->pluck('api_application_webhook_id')->unique()->values()->all());
         Queue::assertPushed(DeliverApiWebhookJob::class, 5);
+    }
+
+    public function test_sandbox_nunca_entrega_em_url_de_producao(): void
+    {
+        Queue::fake();
+        $a = $this->app($this->seller()->id);
+        $h = $this->headers($this->key($a['app'], ApiKey::ENV_SANDBOX));
+        $this->withHeaders($h)->postJson('/api/sandbox/v1/payments/pix', ['amount' => 5, 'customer' => ['email' => 'c@x.com']])->assertCreated();
+        $this->assertSame(0, ApiWebhookDelivery::query()->count(), 'Sem endpoint de sandbox, o evento de teste não sai.');
+
+        $this->sandboxEndpoint($a['app']);
+        app(ApiWebhookDeliveryService::class)->dispatch($a['app'], 'order.completed', ['order_id' => 'real']);
+        $live = ApiWebhookDelivery::query()->get();
+        $this->assertCount(1, $live);
+        $this->assertSame('https://8.8.8.8/hook', $live[0]->url, 'Evento real continua na URL de produção.');
+        $this->assertTrue($live[0]->livemode);
+
+        // Entrega de sandbox sem o endpoint de sandbox de origem falha em vez de cair na URL de produção.
+        $orphan = ApiWebhookDelivery::create(['tenant_id' => $a['app']->tenant_id, 'api_application_id' => $a['app']->id, 'event' => 'order.completed',
+            'url' => 'https://8.8.8.8/hook', 'status' => ApiWebhookDelivery::STATUS_PENDING, 'payload' => [], 'livemode' => false]);
+        (new DeliverApiWebhookJob((string) $orphan->id))->handle(app(ApiWebhookDeliveryService::class));
+        $this->assertSame(ApiWebhookDelivery::STATUS_FAILED, $orphan->fresh()->status);
     }
 
     public function test_registra_chamadas_sem_corpo(): void
@@ -126,6 +160,7 @@ class BrasaDevelopersTest extends TestCase
         Queue::fake();
         $s = $this->seller();
         $a = $this->app($s->id);
+        $this->sandboxEndpoint($a['app']);
         $delivery = ApiWebhookDelivery::create([
             'tenant_id' => $s->id, 'api_application_id' => $a['app']->id, 'event' => 'order.completed', 'url' => 'https://8.8.8.8/hook',
             'status' => ApiWebhookDelivery::STATUS_DELIVERED, 'payload' => ['email' => 'maria@x.com', 'customer' => ['cpf' => '12345678901']],

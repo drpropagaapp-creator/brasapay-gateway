@@ -157,17 +157,17 @@ valid = hmac.compare_digest(expected, request.headers.get('X-Webhook-Signature',
                 <div class="flex flex-wrap items-end justify-between gap-3">
                     <div>
                         <h2 class="font-semibold">Webhooks</h2>
-                        <p class="text-xs text-zinc-500">Payload exibido com dados pessoais mascarados. Assinatura: <code>X-Webhook-Signature</code> = HMAC-SHA256 do corpo.</p>
+                        <p class="text-xs text-zinc-500">Payload exibido com dados pessoais mascarados. Assinatura: <code>X-Webhook-Signature</code> = HMAC-SHA256 do corpo; <code>X-Webhook-Livemode</code> diz se o evento é real. Testes vão só para endpoints de sandbox.</p>
                     </div>
                     <div class="flex items-center gap-2">
                         <select v-model="testEvent" class="rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-800">
                             <option v-for="e in test_events" :key="e" :value="e">{{ e }}</option>
                         </select>
-                        <Button size="sm" :disabled="!o.has_webhook" @click="sendTest">Enviar evento de teste</Button>
+                        <Button size="sm" :disabled="!o.has_sandbox_webhook" @click="sendTest">Enviar evento de teste</Button>
                     </div>
                 </div>
                 <p v-if="testMsg" class="mt-2 text-xs text-zinc-600 dark:text-zinc-300">{{ testMsg }}</p>
-                <p v-if="!o.has_webhook" class="mt-2 text-xs text-zinc-500">Cadastre uma URL de webhook para receber eventos.</p>
+                <p v-if="!o.has_sandbox_webhook" class="mt-2 text-xs text-zinc-500">Eventos de teste vão só para endpoints de webhook de sandbox. Cadastre um em Aplicações API.</p>
                 <div class="mt-3 overflow-x-auto">
                     <table class="w-full min-w-[620px] text-sm">
                         <thead class="text-left text-xs text-zinc-500"><tr><th class="py-1">Evento</th><th>Ambiente</th><th>Status</th><th>HTTP</th><th>Tentativas</th><th>Tempo</th><th>Quando</th><th /></tr></thead>

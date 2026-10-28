@@ -18,7 +18,14 @@ class ApiApplicationWebhook extends Model
         'secret',
         'events',
         'is_active',
+        'environment',
     ];
+
+    /** Ambiente do endpoint: 'live' recebe só eventos reais; 'sandbox' só eventos do sandbox (livemode false). */
+    public function environmentName(): string
+    {
+        return $this->environment === ApiKey::ENV_SANDBOX ? ApiKey::ENV_SANDBOX : ApiKey::ENV_LIVE;
+    }
 
     protected function casts(): array
     {

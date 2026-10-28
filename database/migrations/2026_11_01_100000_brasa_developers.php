@@ -18,6 +18,14 @@ return new class extends Migration
             });
         }
 
+        // Endpoint de webhook com ambiente próprio: eventos de sandbox só vão para endpoints de sandbox
+        // (com secret próprio), nunca para a URL de produção.
+        if (! Schema::hasColumn('api_application_webhooks', 'environment')) {
+            Schema::table('api_application_webhooks', function (Blueprint $table) {
+                $table->string('environment', 10)->default('live');
+            });
+        }
+
         Schema::table('api_webhook_deliveries', function (Blueprint $table) {
             if (! Schema::hasColumn('api_webhook_deliveries', 'duration_ms')) {
                 $table->unsignedInteger('duration_ms')->nullable();
@@ -75,6 +83,9 @@ return new class extends Migration
             $table->dropColumn(['duration_ms', 'livemode']);
         });
         Schema::table('api_keys', function (Blueprint $table) {
+            $table->dropColumn('environment');
+        });
+        Schema::table('api_application_webhooks', function (Blueprint $table) {
             $table->dropColumn('environment');
         });
     }

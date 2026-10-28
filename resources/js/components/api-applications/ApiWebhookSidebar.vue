@@ -37,6 +37,7 @@ const form = useForm({
     webhook_events: [],
     webhook_enabled: true,
     product_ids: [],
+    environment: 'live',
 });
 
 const allEventsSelected = ref(true);
@@ -52,6 +53,7 @@ watch(
         form.webhook_secret = w.has_secret ? props.webhookSecretMask : '';
         form.webhook_enabled = w.is_active !== false;
         form.product_ids = [...(w.product_ids || [])];
+        form.environment = w.environment || 'live';
         const allSelected = w.events_mode === 'all'
             || !Array.isArray(w.events)
             || w.events.length === 0
@@ -111,6 +113,9 @@ function submit() {
         webhook_events: allEventsSelected.value ? [] : form.webhook_events,
         product_ids: form.product_ids,
     };
+    if (!form.webhook_id) {
+        payload.environment = form.environment;
+    }
     if (form.webhook_id) {
         payload.webhook_id = form.webhook_id;
     }
@@ -149,6 +154,19 @@ function submit() {
 
                 <form class="flex flex-1 flex-col overflow-y-auto p-5" @submit.prevent="submit">
                     <div class="space-y-5">
+                        <div v-if="!isEditing">
+                            <p class="text-sm font-medium text-zinc-700 dark:text-zinc-300">Ambiente</p>
+                            <div class="mt-2 grid grid-cols-2 gap-2">
+                                <label v-for="env in [{ id: 'live', label: 'Produção', hint: 'Eventos reais' }, { id: 'sandbox', label: 'Sandbox', hint: 'Só eventos de teste' }]" :key="env.id"
+                                    class="cursor-pointer rounded-lg border px-3 py-2 text-sm dark:border-zinc-700"
+                                    :class="form.environment === env.id ? 'border-[var(--color-primary)]/50 bg-[var(--color-primary)]/5' : 'border-zinc-200'">
+                                    <input v-model="form.environment" type="radio" :value="env.id" class="sr-only" />
+                                    <span class="block font-medium">{{ env.label }}</span>
+                                    <span class="block text-xs text-zinc-500">{{ env.hint }}</span>
+                                </label>
+                            </div>
+                            <p class="mt-2 text-xs text-zinc-500">Eventos do sandbox (livemode: false) só chegam a endpoints de sandbox, assinados com o secret deles.</p>
+                        </div>
                         <div>
                             <label class="block text-sm font-medium text-zinc-700 dark:text-zinc-300">Nome (opcional)</label>
                             <input

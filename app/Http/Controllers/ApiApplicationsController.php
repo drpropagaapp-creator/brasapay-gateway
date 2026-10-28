@@ -405,6 +405,7 @@ class ApiApplicationsController extends Controller
             'webhook_enabled' => ['sometimes', 'boolean'],
             'product_ids' => ['nullable', 'array'],
             'product_ids.*' => ['exists:products,id'],
+            'environment' => ['nullable', 'in:live,sandbox'],
         ]);
 
         $productIds = $this->ensureProductIdsBelongToTenant($apiApplication->tenant_id, $validated['product_ids'] ?? []);
@@ -415,6 +416,7 @@ class ApiApplicationsController extends Controller
         }
 
         try {
+            $lastIdBefore = (int) ApiApplicationWebhook::query()->where('api_application_id', $apiApplication->id)->max('id');
             $result = $this->webhookConfigService->createEndpoint($apiApplication, [
                 'name' => $validated['name'] ?? null,
                 'url' => $validated['webhook_url'],
@@ -423,6 +425,11 @@ class ApiApplicationsController extends Controller
                 'is_active' => (bool) ($validated['webhook_enabled'] ?? true),
                 'product_ids' => $productIds,
             ]);
+            // Endpoint de sandbox: recebe só eventos de teste (livemode false), com o secret dele.
+            if (($validated['environment'] ?? 'live') === ApiKey::ENV_SANDBOX && Schema::hasColumn('api_application_webhooks', 'environment')) {
+                ApiApplicationWebhook::query()->where('api_application_id', $apiApplication->id)
+                    ->where('id', '>', $lastIdBefore)->update(['environment' => ApiKey::ENV_SANDBOX]);
+            }
         } catch (\InvalidArgumentException $e) {
             return redirect()->route('api-applications.index', ['tab' => 'webhooks'])
                 ->with('error', $e->getMessage());
@@ -430,6 +437,7 @@ class ApiApplicationsController extends Controller
 
         $this->logActivity(SellerActivityLogService::API_WEBHOOK_UPDATED, $apiApplication, [
             'webhook_url' => $validated['webhook_url'],
+            'environment' => $validated['environment'] ?? 'live',
             'created' => true,
         ]);
 

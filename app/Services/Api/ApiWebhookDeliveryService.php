@@ -5,6 +5,7 @@ namespace App\Services\Api;
 use App\Jobs\DeliverApiWebhookJob;
 use App\Models\ApiApplication;
 use App\Models\ApiApplicationWebhook;
+use App\Models\ApiKey;
 use App\Models\ApiWebhookDelivery;
 use App\Support\WebhookUrlValidator;
 use Illuminate\Support\Facades\Log;
@@ -64,12 +65,29 @@ class ApiWebhookDeliveryService
             return [];
         }
 
+        // Cada ambiente entrega só nos seus endpoints (com secret próprio). Eventos de sandbox nunca vão para
+        // URL de produção nem para a URL legada; eventos reais nunca vão para endpoints de sandbox.
+        $environment = $livemode ? ApiKey::ENV_LIVE : ApiKey::ENV_SANDBOX;
         $endpoints = ApiApplicationWebhook::query()
             ->where('api_application_id', $app->id)
             ->where('is_active', true)
             ->with('products:id')
             ->orderBy('id')
-            ->get();
+            ->get()
+            ->filter(fn (ApiApplicationWebhook $e) => $e->environmentName() === $environment)
+            ->values();
+
+        if (! $livemode) {
+            $deliveries = [];
+            foreach ($endpoints as $endpoint) {
+                $delivery = $this->createForEndpoint($app, $endpoint, $event, $payload, $apiKeyId, $productId, false);
+                if ($delivery !== null) {
+                    $deliveries[] = $delivery;
+                }
+            }
+
+            return $deliveries;
+        }
 
         if ($endpoints->isNotEmpty()) {
             $deliveries = [];
@@ -216,7 +234,7 @@ class ApiWebhookDeliveryService
 
         $url = is_string($endpoint?->url) && $endpoint->url !== ''
             ? (string) $endpoint->url
-            : (is_string($app?->webhook_url) && $app->webhook_url !== ''
+            : (is_string($app?->webhook_url) && $app->webhook_url !== '' && $delivery->livemode !== false
                 ? (string) $app->webhook_url
                 : (string) $delivery->url);
 
@@ -240,6 +258,11 @@ class ApiWebhookDeliveryService
             if (is_string($endpoint?->secret) && $endpoint->secret !== '') {
                 return $endpoint->secret;
             }
+        }
+
+        // Entrega de sandbox nunca é assinada com o secret de produção da aplicação.
+        if ($delivery->livemode === false) {
+            return null;
         }
 
         $secret = $app?->webhook_secret;

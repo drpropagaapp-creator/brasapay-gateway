@@ -71,7 +71,7 @@ class DevelopersController extends Controller
             'created' => $created,
             'message' => $created > 0
                 ? 'Evento de teste enviado (livemode: false). Acompanhe a entrega na lista.'
-                : 'Nenhum webhook ativo inscrito neste evento. Cadastre a URL em Aplicações API.',
+                : 'Nenhum webhook de sandbox ativo inscrito neste evento. Cadastre um endpoint de sandbox em Aplicações API.',
         ], $created > 0 ? 202 : 422);
     }
 
@@ -124,7 +124,7 @@ class DevelopersController extends Controller
             'routes' => $routes,
             'errors' => $errors,
             'deliveries' => $deliveries,
-            'has_webhook' => (bool) $app->webhook_url || $app->webhooks()->where('is_active', true)->exists(),
+            'has_sandbox_webhook' => $app->webhooks()->where('is_active', true)->where('environment', ApiKey::ENV_SANDBOX)->exists(),
         ];
     }
 }

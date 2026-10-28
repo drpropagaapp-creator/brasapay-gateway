@@ -49,11 +49,23 @@ class DeliverApiWebhookJob implements ShouldQueue
             return;
         }
 
+        // Sandbox só entrega no endpoint de sandbox de origem (URL e secret dele); sem ele, falha.
+        if ($delivery->livemode === false) {
+            $endpoint = $delivery->api_application_webhook_id
+                ? \App\Models\ApiApplicationWebhook::query()->find($delivery->api_application_webhook_id)
+                : null;
+            if ($endpoint === null || $endpoint->environmentName() !== \App\Models\ApiKey::ENV_SANDBOX || $endpoint->url !== $delivery->url) {
+                $delivery->update(['status' => ApiWebhookDelivery::STATUS_FAILED]);
+
+                return;
+            }
+        }
+
         $payload = $delivery->payload;
         $payload['event_id'] = $delivery->event_id;
 
         $body = json_encode($payload, JSON_UNESCAPED_UNICODE);
-        $headers = ['Content-Type' => 'application/json'];
+        $headers = ['Content-Type' => 'application/json', 'X-Webhook-Livemode' => $delivery->livemode === false ? 'false' : 'true'];
 
         $secret = $deliveryService->resolveSigningSecret($delivery, $app);
         if ($secret) {

@@ -319,6 +319,7 @@ class ApiWebhookConfigService
             'events' => $allEvents ? null : $events,
             'events_mode' => $allEvents ? 'all' : 'selected',
             'is_active' => (bool) $endpoint->is_active,
+            'environment' => $endpoint->environmentName(),
             'product_ids' => $endpoint->products->pluck('id')->map(fn ($id) => (string) $id)->values()->all(),
             'products' => $endpoint->products->map(fn ($p) => [
                 'id' => $p->id,

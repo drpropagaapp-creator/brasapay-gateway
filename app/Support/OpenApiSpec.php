@@ -45,7 +45,7 @@ final class OpenApiSpec
             'info' => [
                 'title' => 'API de pagamentos',
                 'version' => '1.0.0',
-                'description' => "Produção em /api/v1 com chaves gpk_/gsk_. Sandbox em /api/sandbox/v1 com chaves gpk_test_/gsk_test_ (sem efeito financeiro; webhooks com \"livemode\": false).\n\nWebhooks: cabeçalho X-Webhook-Signature = HMAC-SHA256 do corpo bruto com o secret do endpoint; X-Webhook-Id identifica o evento (use para deduplicar).",
+                'description' => "Produção em /api/v1 com chaves gpk_/gsk_. Sandbox em /api/sandbox/v1 com chaves gpk_test_/gsk_test_ (sem efeito financeiro; webhooks com \"livemode\": false).\n\nWebhooks: cabeçalho X-Webhook-Signature = HMAC-SHA256 do corpo bruto com o secret do endpoint; X-Webhook-Id identifica o evento (use para deduplicar); X-Webhook-Livemode = true|false. Eventos de sandbox só são entregues em endpoints de webhook de sandbox, com o secret deles.",
             ],
             'servers' => [['url' => $baseUrl.'/api']],
             'paths' => $paths,
