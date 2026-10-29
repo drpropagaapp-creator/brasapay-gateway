@@ -251,6 +251,46 @@ class LinaOpenxPixAutoTest extends TestCase
         $this->assertArrayNotHasKey('linaopenx_pix_auto_first_payment_posted', $order->fresh()->metadata ?? []);
     }
 
+    public function test_handle_return_ignora_id_de_outro_pedido_na_url(): void
+    {
+        if (! Schema::hasTable('orders')) {
+            $this->markTestSkipped('orders');
+        }
+        $this->seedCredential();
+        $ctx = $this->makePixAutoContext();
+        $order = $ctx['order'];
+        $order->update([
+            'status' => 'pending',
+            'gateway' => 'linaopenx',
+            'gateway_id' => 'pr-auto-1',
+            'metadata' => [
+                'checkout_payment_method' => 'pix_auto',
+                'lina_payment_request_id' => 'pr-auto-1',
+            ],
+        ]);
+
+        // pr-outro é um pagamento já aprovado de outro pedido; o deste ainda aguarda o pagador.
+        Http::fake([
+            'iam.linaob.com.br/*' => Http::response(['access_token' => 'tok', 'expires_in' => 900], 200),
+            'embedded-payment-manager.linaob.com.br/api/v1/automatic-payments/request/pr-outro*' => Http::response([
+                'consentStatus' => 'AUTHORISED',
+                'payments' => [['recurringPaymentId' => 'pay-outro', 'status' => 'ACSC']],
+            ], 200),
+            'embedded-payment-manager.linaob.com.br/api/v1/automatic-payments/request/*' => Http::response([
+                'consentStatus' => 'AWAITING_AUTHORISATION',
+                'payments' => [],
+            ], 200),
+            'embedded-payment-manager.linaob.com.br/api/v1/automatic-payments/recurring-payments/*' => Http::response([
+                'status' => 'ACSC',
+            ], 200),
+        ]);
+
+        $result = app(LinaOpenxPixAutoService::class)->handleReturn($order, 'pr-outro');
+        $this->assertFalse($result['paid']);
+        $this->assertSame('pending', $order->fresh()->status);
+        $this->assertSame('pr-auto-1', $order->fresh()->gateway_id);
+    }
+
     public function test_ensure_next_payment_posts_recurring_payment(): void
     {
         if (! Schema::hasTable('orders') || ! Schema::hasTable('subscriptions')) {

@@ -102,7 +102,11 @@ class LinaOpenxCheckoutService
         if ($paymentLinkId !== null && trim($paymentLinkId) !== '') {
             $linkId = trim($paymentLinkId);
             $meta = is_array($order->metadata) ? $order->metadata : [];
-            if (($order->gateway_id === null || $order->gateway_id === '') || $order->gateway_id !== $linkId) {
+            // O ID do retorno vem da URL (controlável por quem acessa). Só serve para
+            // pedido sem ID salvo; nunca substitui o ID gravado ao iniciar o pagamento,
+            // senão um pagamento aprovado de outro pedido poderia quitar este.
+            $savedId = trim((string) ($order->gateway_id ?? '')) ?: trim((string) ($meta['lina_payment_request_id'] ?? ''));
+            if ($savedId === '') {
                 $meta['lina_payment_request_id'] = $linkId;
                 $order->update([
                     'gateway' => self::GATEWAY_SLUG,

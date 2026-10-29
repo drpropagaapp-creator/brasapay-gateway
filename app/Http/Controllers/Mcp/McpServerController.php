@@ -23,6 +23,8 @@ class McpServerController extends Controller
         '2025-06-18',
     ];
 
+    private const MAX_BATCH = 20;
+
     private ?int $tenantId = null;
 
     public function __construct(
@@ -78,6 +80,10 @@ class McpServerController extends Controller
         }
 
         if ($this->isList($payload)) {
+            // O limitador conta requisições; sem teto, um lote driblaria o limite por minuto.
+            if (count($payload) > self::MAX_BATCH) {
+                return $this->withCors($this->rpcError(null, -32600, 'Lote JSON-RPC acima de '.self::MAX_BATCH.' mensagens.'));
+            }
             $responses = [];
             foreach ($payload as $message) {
                 if (! is_array($message)) {
