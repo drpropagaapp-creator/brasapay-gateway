@@ -8,8 +8,9 @@ use Stripe\Exception\ApiErrorException;
 use Stripe\StripeClient;
 
 /**
- * Stripe driver – PIX (BRL) e cartão.
+ * Stripe driver – PIX (BRL), boleto (BRL) e cartão.
  * PIX: https://docs.stripe.com/payments/pix/accept-a-payment
+ * Boleto: https://docs.stripe.com/payments/boleto/accept-a-payment
  * Cartão: https://docs.stripe.com/api
  * Parcelamento não utilizado neste gateway; cartão sempre à vista (1x).
  */
@@ -149,6 +150,15 @@ class StripeDriver implements GatewayDriver
         return substr($digits, 0, 3).'.'.substr($digits, 3, 3).'.'.substr($digits, 6, 3).'-'.substr($digits, 9, 2);
     }
 
+    private function formatTaxId(string $digits): string
+    {
+        if (strlen($digits) === 11) {
+            return $this->formatCpf($digits);
+        }
+
+        return substr($digits, 0, 2).'.'.substr($digits, 2, 3).'.'.substr($digits, 5, 3).'/'.substr($digits, 8, 4).'-'.substr($digits, 12, 2);
+    }
+
     public function createBoletoPayment(
         array $credentials,
         float $amount,
@@ -156,7 +166,142 @@ class StripeDriver implements GatewayDriver
         string $externalId,
         string $notificationUrl
     ): array {
-        throw new \RuntimeException('Stripe não suporta boleto neste gateway. Use cartão de crédito.');
+        $secret = trim((string) ($credentials['secret_key'] ?? ''));
+        if ($secret === '') {
+            throw new \RuntimeException('Stripe: chave secreta não configurada.');
+        }
+
+        $amountCents = $this->amountToSmallestUnit($amount, 'brl');
+        if ($amountCents < 500) {
+            throw new \RuntimeException('Stripe: o valor mínimo do boleto é R$ 5,00.');
+        }
+
+        $document = preg_replace('/\D/', '', (string) ($consumer['document'] ?? '')) ?? '';
+        if (strlen($document) !== 11 && strlen($document) !== 14) {
+            throw new \RuntimeException('Informe um CPF ou CNPJ válido para pagar com boleto na Stripe.');
+        }
+
+        $name = trim((string) ($consumer['name'] ?? ''));
+        if ($name === '') {
+            throw new \RuntimeException('Informe o nome para pagar com boleto na Stripe.');
+        }
+
+        $email = trim((string) ($consumer['email'] ?? ''));
+        if ($email === '' || ! filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            throw new \RuntimeException('Informe um e-mail válido para pagar com boleto na Stripe.');
+        }
+
+        $address = is_array($consumer['address'] ?? null) ? $consumer['address'] : [];
+        $street = trim((string) ($address['street_name'] ?? ''));
+        $number = trim((string) ($address['street_number'] ?? ''));
+        $city = trim((string) ($address['city'] ?? ''));
+        $state = strtoupper(substr(trim((string) ($address['federal_unit'] ?? '')), 0, 2));
+        $zipDigits = preg_replace('/\D/', '', (string) ($address['zip_code'] ?? '')) ?? '';
+        if (strlen($zipDigits) > 8) {
+            $zipDigits = substr($zipDigits, 0, 8);
+        }
+
+        if ($street === '' || $number === '' || $city === '' || strlen($state) !== 2 || strlen($zipDigits) !== 8) {
+            throw new \RuntimeException('Informe o endereço completo (CEP, rua, número, cidade e UF) para gerar o boleto na Stripe.');
+        }
+
+        $stripe = new StripeClient($secret);
+        try {
+            $paymentIntent = $stripe->paymentIntents->create([
+                'amount' => $amountCents,
+                'currency' => 'brl',
+                'payment_method_types' => ['boleto'],
+                'confirm' => true,
+                'payment_method_data' => [
+                    'type' => 'boleto',
+                    'boleto' => [
+                        'tax_id' => $this->formatTaxId($document),
+                    ],
+                    'billing_details' => [
+                        'name' => $name,
+                        'email' => $email,
+                        'address' => [
+                            'line1' => $street.' '.$number,
+                            'city' => $city,
+                            'state' => $state,
+                            'postal_code' => substr($zipDigits, 0, 5).'-'.substr($zipDigits, 5, 3),
+                            'country' => 'BR',
+                        ],
+                    ],
+                ],
+                'payment_method_options' => [
+                    'boleto' => [
+                        'expires_after_days' => 3,
+                    ],
+                ],
+                'metadata' => ['order_id' => $externalId],
+            ], [
+                'idempotency_key' => 'getfy-stripe-boleto-'.$externalId,
+            ]);
+        } catch (ApiErrorException $e) {
+            Log::warning('StripeDriver createBoletoPayment failed', [
+                'order_id' => $externalId,
+                'code' => $e->getStripeCode(),
+                'message' => $e->getMessage(),
+            ]);
+            $message = strtolower($e->getMessage());
+            if (str_contains($message, 'tax') || str_contains($message, 'cpf') || str_contains($message, 'cnpj')) {
+                throw new \RuntimeException('CPF ou CNPJ não aceito pela Stripe. Confira o documento e tente novamente.');
+            }
+            if (str_contains($message, 'address') || str_contains($message, 'postal')) {
+                throw new \RuntimeException('Endereço não aceito pela Stripe. Confira CEP, rua, número, cidade e UF.');
+            }
+            if (str_contains($message, 'boleto')) {
+                throw new \RuntimeException('A Stripe recusou o boleto. Ative o Boleto no painel da Stripe (conta brasileira) e tente novamente.');
+            }
+            throw new \RuntimeException('Não foi possível gerar o boleto na Stripe. Tente novamente.');
+        } catch (\Throwable $e) {
+            Log::warning('StripeDriver createBoletoPayment error', [
+                'order_id' => $externalId,
+                'message' => $e->getMessage(),
+            ]);
+            throw new \RuntimeException('Não foi possível gerar o boleto na Stripe. Tente novamente.');
+        }
+
+        return $this->boletoChargeFromPaymentIntent($paymentIntent, $amount);
+    }
+
+    /**
+     * @param  object  $paymentIntent
+     * @return array{transaction_id: string, amount: float, expire_at?: string, barcode?: string, pdf_url?: string, status?: string}
+     */
+    public function boletoChargeFromPaymentIntent(object $paymentIntent, float $amount): array
+    {
+        $payload = method_exists($paymentIntent, 'toArray') ? $paymentIntent->toArray() : [];
+        $details = is_array($payload['next_action']['boleto_display_details'] ?? null)
+            ? $payload['next_action']['boleto_display_details']
+            : [];
+        $number = trim((string) ($details['number'] ?? ''));
+        $pdfUrl = trim((string) ($details['pdf'] ?? ''));
+        if ($pdfUrl === '') {
+            $pdfUrl = trim((string) ($details['hosted_voucher_url'] ?? ''));
+        }
+        $expiresAt = $details['expires_at'] ?? null;
+        $expireAt = '';
+        if (is_numeric($expiresAt)) {
+            $expireAt = date('Y-m-d', (int) $expiresAt);
+        } elseif (is_string($expiresAt) && strlen($expiresAt) >= 10) {
+            $expireAt = substr($expiresAt, 0, 10);
+        }
+
+        $transactionId = trim((string) ($payload['id'] ?? ''));
+        if ($transactionId === '' || ($number === '' && $pdfUrl === '')) {
+            throw new \RuntimeException('A Stripe não devolveu os dados do boleto. Tente novamente.');
+        }
+
+        return [
+            'transaction_id' => $transactionId,
+            'amount' => $amount,
+            'expire_at' => $expireAt,
+            'barcode' => $number,
+            'pdf_url' => $pdfUrl,
+            'status' => 'pending',
+        ];
     }
 
     /**

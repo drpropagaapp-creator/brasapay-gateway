@@ -16,6 +16,7 @@ use App\Services\MinimumChargeService;
 use App\Services\PaymentService;
 use App\Services\PlatformCardInstallments;
 use App\Services\SubscriptionRenewalService;
+use App\Services\LinaOpenx\LinaOpenxPixAutoRenewalService;
 use App\Services\Versell\VersellPixAutoRenewalService;
 use App\Support\CheckoutCardContract;
 use App\Support\FakeConsumerData;
@@ -287,7 +288,7 @@ class RenewalController extends Controller
                 ->where('user_id', $subscription->user_id)
                 ->where('product_id', $subscription->product_id)
                 ->where('payment_method', 'pix_auto')
-                ->whereIn('gateway', ['efi', 'versell'])
+                ->whereIn('gateway', ['efi', 'versell', 'linaopenx'])
                 ->orderByDesc('id')
                 ->value('gateway');
             $pixAutoGateway = is_string($pixAutoGateway) && $pixAutoGateway !== '' ? $pixAutoGateway : 'efi';
@@ -295,9 +296,12 @@ class RenewalController extends Controller
             $credential = GatewayCredential::resolveForPayment($tenantId, $pixAutoGateway);
             if ($credential) {
                 $credentials = $credential->getDecryptedCredentials();
-                $ready = $pixAutoGateway === 'versell'
-                    ? VersellCredentials::isCashInReady($credentials)
-                    : ! empty($credentials['certificate_path']);
+                $ready = match ($pixAutoGateway) {
+                    'versell' => VersellCredentials::isCashInReady($credentials),
+                    'linaopenx' => trim((string) ($credentials['client_id'] ?? '')) !== ''
+                        && trim((string) ($credentials['client_secret'] ?? '')) !== '',
+                    default => ! empty($credentials['certificate_path']),
+                };
 
                 if ($ready) {
                     if ($pixAutoGateway === 'versell') {
@@ -316,6 +320,24 @@ class RenewalController extends Controller
                         }
 
                         return back()->with('error', 'Não foi possível agendar o PIX automático. A recorrência precisa estar aprovada pelo pagador.');
+                    }
+
+                    if ($pixAutoGateway === 'linaopenx') {
+                        $renewal = app(LinaOpenxPixAutoRenewalService::class);
+                        [$nextStart, $nextEnd] = $renewal->nextPeriod($subscription, $plan);
+                        $existing = $renewal->findPendingRenewal($subscription, $nextEnd->toDateString());
+                        if ($existing !== null && trim((string) $existing->gateway_id) !== '') {
+                            return redirect()->route('renewal.show', $request->input('token'))
+                                ->with('info', 'O débito PIX automático já está agendado. Você receberá a confirmação quando o pagamento for processado.');
+                        }
+
+                        $scheduled = $renewal->ensureNextPayment($subscription);
+                        if ($scheduled !== null && trim((string) $scheduled->gateway_id) !== '') {
+                            return redirect()->route('renewal.show', $request->input('token'))
+                                ->with('info', 'O débito PIX automático foi agendado. Você receberá a confirmação quando o pagamento for processado.');
+                        }
+
+                        return back()->with('error', 'Não foi possível agendar o PIX automático. O contrato precisa estar autorizado pelo pagador.');
                     }
 
                     $order = Order::create(array_merge($orderPayload, [

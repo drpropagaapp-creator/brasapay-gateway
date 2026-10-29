@@ -3,6 +3,7 @@
 namespace App\Services\Platform;
 
 use App\Models\MedDispute;
+use App\Models\Order;
 use App\Models\PlatformAdminMenuView;
 use App\Models\Product;
 use App\Models\RefundRequest;
@@ -189,14 +190,27 @@ class PlatformAdminAlertCounts
 
     public function refundRequestsPendingCount(?User $user = null): int
     {
-        if (! Schema::hasTable('refund_requests')) {
+        $pendingRequests = 0;
+        if (Schema::hasTable('refund_requests')) {
+            $query = RefundRequest::query()->pending();
+            $this->applyUnseenFilter($query, $user, self::KEY_TRANSACOES);
+            $pendingRequests = (int) $query->count();
+        }
+
+        return $pendingRequests + $this->refundPendingOrdersCount();
+    }
+
+    /**
+     * Pedidos aguardando efetivação no adquirente (ex.: estorno de cartão CajuPay no painel).
+     * O badge permanece até o webhook confirmar — visitar Transações não zera.
+     */
+    public function refundPendingOrdersCount(): int
+    {
+        if (! Schema::hasTable('orders')) {
             return 0;
         }
 
-        $query = RefundRequest::query()->pending();
-        $this->applyUnseenFilter($query, $user, self::KEY_TRANSACOES);
-
-        return (int) $query->count();
+        return (int) Order::query()->where('status', 'refund_pending')->count();
     }
 
     /**

@@ -232,6 +232,8 @@ const props = defineProps({
     cardGatewayKeys: { type: Object, default: () => ({}) },
     paypalClientId: { type: String, default: '' },
     paypalSandbox: { type: Boolean, default: false },
+    /** Participantes OpenX para PIX automático (organisationId / authorisationServerId). */
+    linaopenxPixAuto: { type: Object, default: () => ({ participants: [] }) },
     checkoutLocale: { type: String, default: 'pt_BR' },
     /** Cloudflare Turnstile: { enabled, site_key, mode } */
     turnstile: { type: Object, default: () => ({ enabled: false, site_key: '', mode: 'pix_boleto' }) },
@@ -440,7 +442,7 @@ const pixUsesStripe = computed(() => {
     return methods.some((method) => method?.id === 'pix' && method?.gateway_slug === 'stripe');
 });
 const showCpf = computed(() => {
-    if (form.payment_method === 'open_finance' || pixUsesStripe.value) {
+    if (form.payment_method === 'open_finance' || pixUsesStripe.value || isLinaOpenxPixAuto.value) {
         return true;
     }
     return customerFields.value.cpf === true && props.displayCurrency === 'BRL';
@@ -480,6 +482,25 @@ const isCardGatewayCielo = computed(() => isCardMethodSelected.value && currentM
 const isCardGatewayCajupay = computed(() => isCardMethodSelected.value && currentMethodGatewaySlug.value === 'cajupay');
 const isCardPaymentFamily = computed(() => ['card', 'apple_pay', 'google_pay'].includes(form.payment_method));
 const isPaypalMethodSelected = computed(() => form.payment_method === 'paypal');
+const isLinaOpenxPixAuto = computed(() => form.payment_method === 'pix_auto' && currentMethodGatewaySlug.value === 'linaopenx');
+const linaPixAutoParticipants = computed(() => {
+    const list = props.linaopenxPixAuto?.participants;
+    return Array.isArray(list) ? list : [];
+});
+const linaOrganisationId = ref('');
+const linaAuthorisationServerId = ref('');
+const linaBankKey = ref('');
+function applyLinaBankKey(key) {
+    const [orgId, asId] = String(key || '').split('|');
+    linaOrganisationId.value = orgId || '';
+    linaAuthorisationServerId.value = asId || '';
+}
+watch(linaPixAutoParticipants, (list) => {
+    if (!Array.isArray(list) || list.length !== 1) return;
+    linaBankKey.value = `${list[0].organisation_id}|${list[0].authorisation_server_id}`;
+    applyLinaBankKey(linaBankKey.value);
+}, { immediate: true });
+watch(linaBankKey, (key) => applyLinaBankKey(key));
 const paypalButtonsReady = computed(() => {
     if (!isPaypalMethodSelected.value) return false;
     if (!(props.paypalClientId || '').trim()) return false;
@@ -510,6 +531,7 @@ const hidePrimarySubmitForPaypal = computed(() => isPaypalMethodSelected.value);
 const primarySubmitButtonLabel = computed(() => {
     const pm = form.payment_method;
     if (pm === 'pix') return tf('checkout.gerar_pix', 'Gerar PIX');
+    if (pm === 'pix_auto' && isLinaOpenxPixAuto.value) return tf('checkout.pagar_pix_auto_banco', 'Autorizar no banco');
     if (pm === 'pix_auto') return tf('checkout.gerar_pix_auto', 'Gerar PIX (renovação automática)');
     if (pm === 'open_finance') return tf('checkout.pagar_open_finance', 'Pagar com Open Finance');
     if (pm === 'boleto') return tf('checkout.gerar_boleto', 'Gerar boleto');
@@ -1402,11 +1424,22 @@ watch(
     }
 );
 
+const cajuPayPayer = computed(() => ({
+    name: form.name || '',
+    email: form.email || '',
+    document: (form.cpf || '').replace(/\D/g, ''),
+    phone: showPhone.value ? `${form.country_code || ''}${phoneDigits.value || ''}` : '',
+}));
+
 function buildCajuPaySessionPayload() {
     const payload = {
         product_id: form.product_id,
         payment_method: form.payment_method,
         coupon_code: (form.coupon_code || '').trim() || null,
+        email: form.email || '',
+        name: form.name || '',
+        cpf: (form.cpf || '').replace(/\D/g, '') || '',
+        phone: showPhone.value ? `${form.country_code || ''}${phoneDigits.value || ''}` : '',
     };
     if (props.productOfferId) payload.product_offer_id = props.productOfferId;
     if (props.subscriptionPlanId) payload.subscription_plan_id = props.subscriptionPlanId;
@@ -1717,11 +1750,7 @@ async function submitCajuPaySdkFlow(paymentMethod) {
             throw e;
         }
 
-        cajupayMountRef.value?.setPayer?.({
-            name: form.name,
-            email: form.email,
-            document: (form.cpf || '').replace(/\D/g, ''),
-        });
+        cajupayMountRef.value?.setPayer?.(cajuPayPayer.value);
 
         await cajupayMountRef.value.confirm();
         if (!cajupayPolling.value) {
@@ -2691,7 +2720,7 @@ function submit() {
         payment_method: paymentMethod,
         email: form.email,
         name: showName.value ? form.name : '',
-        cpf: (showCpf.value || paymentMethod === 'open_finance') ? (form.cpf || '').replace(/\D/g, '') : '',
+        cpf: (showCpf.value || paymentMethod === 'open_finance' || isLinaOpenxPixAuto.value) ? (form.cpf || '').replace(/\D/g, '') : '',
         phone: showPhone.value ? form.country_code + phoneDigits.value : '',
         coupon_code: (form.coupon_code || '').trim() || null,
         idempotency_key: checkoutIdempotencyKey.value,
@@ -2724,13 +2753,24 @@ function submit() {
     }
     appendUtmsAndAffiliate(payload);
 
-    if (paymentMethod === 'open_finance') {
+    if (paymentMethod === 'open_finance' || isLinaOpenxPixAuto.value) {
         const cpfDigits = (payload.cpf || '').replace(/\D/g, '');
         if (cpfDigits.length < 11) {
             checkoutSubmitting.value = false;
-            form.setError('cpf', 'Informe um CPF válido para pagar com Open Finance.');
+            form.setError('cpf', paymentMethod === 'open_finance'
+                ? 'Informe um CPF válido para pagar com Open Finance.'
+                : 'Informe um CPF válido para autorizar o PIX automático.');
             showEditForm.value = true;
             return;
+        }
+        if (isLinaOpenxPixAuto.value) {
+            if (linaPixAutoParticipants.value.length > 1 && (!linaOrganisationId.value || !linaAuthorisationServerId.value)) {
+                checkoutSubmitting.value = false;
+                form.setError('payment_method', 'Selecione o banco para autorizar o PIX automático.');
+                return;
+            }
+            payload.lina_organisation_id = linaOrganisationId.value || '';
+            payload.lina_authorisation_server_id = linaAuthorisationServerId.value || '';
         }
         axios.post('/checkout', payload, {
             headers: {
@@ -2746,14 +2786,19 @@ function submit() {
                     window.location.href = data.redirect_url;
                     return;
                 }
-                form.setError('payment_method', data?.message || 'Não foi possível iniciar o Open Finance.');
+                form.setError('payment_method', data?.message || (isLinaOpenxPixAuto.value
+                    ? 'Não foi possível iniciar o PIX automático.'
+                    : 'Não foi possível iniciar o Open Finance.'));
             })
             .catch((err) => {
+                const fallback = isLinaOpenxPixAuto.value
+                    ? 'Não foi possível iniciar o PIX automático. Tente novamente.'
+                    : 'Não foi possível iniciar o Open Finance. Tente novamente.';
                 const msg = err?.response?.data?.message
                     || err?.response?.data?.errors?.payment_method?.[0]
                     || err?.response?.data?.errors?.cpf?.[0]
-                    || 'Não foi possível iniciar o Open Finance. Tente novamente.';
-                form.setError('payment_method', typeof msg === 'string' ? msg : 'Não foi possível iniciar o Open Finance.');
+                    || fallback;
+                form.setError('payment_method', typeof msg === 'string' ? msg : fallback);
                 showEditForm.value = true;
             })
             .finally(() => {
@@ -3239,6 +3284,26 @@ function submit() {
                 :primary-color="primaryColor"
                 :t="t"
             />
+            <div
+                v-if="isLinaOpenxPixAuto && linaPixAutoParticipants.length > 1"
+                class="mt-3 space-y-2"
+            >
+                <label for="lina-pix-auto-bank" class="block text-sm font-medium text-gray-700">Banco para o débito</label>
+                <select
+                    id="lina-pix-auto-bank"
+                    v-model="linaBankKey"
+                    :class="inputClass"
+                >
+                    <option value="" disabled>Selecione o banco</option>
+                    <option
+                        v-for="bank in linaPixAutoParticipants"
+                        :key="bank.organisation_id + ':' + bank.authorisation_server_id"
+                        :value="bank.organisation_id + '|' + bank.authorisation_server_id"
+                    >
+                        {{ bank.name }}
+                    </option>
+                </select>
+            </div>
             <p v-if="form.errors.payment_method" class="text-sm font-medium text-red-600">{{ form.errors.payment_method }}</p>
 
             <!-- Formulário de cartão (Stripe Elements ou campos Efí) -->
@@ -3482,7 +3547,7 @@ function submit() {
                             :payment-method="form.payment_method"
                             :session-token="cajupaySessionToken"
                             :api-base-url="cajupaySdkBaseUrl"
-                            :initial-payer="{ name: form.name, email: form.email, document: (form.cpf || '').replace(/\D/g, '') }"
+                            :initial-payer="cajuPayPayer"
                             :locale="(checkoutLocale || '').replace('_', '-')"
                             :before-wallet-prime="beforeCajuPayWalletPrime"
                             container-id="cajupay-method"

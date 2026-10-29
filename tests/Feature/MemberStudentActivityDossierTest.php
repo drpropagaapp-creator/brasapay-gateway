@@ -25,6 +25,7 @@ class MemberStudentActivityDossierTest extends TestCase
             EnsureStackerLicense::class,
             ValidateCsrfToken::class,
         ]);
+        config(['app.name' => 'Getfy', 'getfy.app_name' => 'Getfy']);
     }
 
     public function test_member_area_login_and_visit_are_logged_with_ip(): void
@@ -146,6 +147,8 @@ class MemberStudentActivityDossierTest extends TestCase
         $this->assertStringContainsString($student->email, $body);
         $this->assertStringContainsString('Data;Evento;IP', $body);
         $this->assertStringContainsString('Acesso concedido', $body);
+        $this->assertStringContainsString('Empresa', $body);
+        $this->assertStringNotContainsString('Getfy', $body);
 
         $pdf = $this->actingAs($owner)->get(route('alunos.dossier.export-pdf', [
             'aluno' => $student->id,
@@ -154,6 +157,9 @@ class MemberStudentActivityDossierTest extends TestCase
         $pdf->assertOk();
         $pdf->assertHeader('content-type', 'application/pdf');
         $this->assertStringStartsWith('%PDF', $pdf->getContent());
+        $pdfText = @iconv('ISO-8859-1', 'UTF-8//IGNORE', $pdf->getContent()) ?: $pdf->getContent();
+        $this->assertStringContainsString('Empresa', $pdfText);
+        $this->assertStringNotContainsString('Getfy', $pdfText);
         $this->assertStringContainsString(
             'attachment; filename="',
             (string) $pdf->headers->get('content-disposition')

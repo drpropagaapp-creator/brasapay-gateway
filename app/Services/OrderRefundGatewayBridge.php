@@ -28,6 +28,12 @@ class OrderRefundGatewayBridge
             return ['status' => 'skipped', 'note' => 'Pedido sem gateway registrado.'];
         }
 
+        // Cartão/wallet CajuPay: não existe POST público de estorno. O seller autoriza
+        // aqui; a Caju confirma depois via webhook checkout.payment.refunded.
+        if ($gatewaySlug === 'cajupay' && ! CajuPayPaymentId::isPixPaymentMethod($order->payment_method)) {
+            return $this->pendingCajuPayCardRefund($order);
+        }
+
         $tenantId = (int) $order->tenant_id;
         $credentials = GatewayPaymentCredentials::resolve($tenantId, $gatewaySlug, $order);
         if ($credentials === null) {
@@ -50,16 +56,25 @@ class OrderRefundGatewayBridge
     }
 
     /**
-     * @param  array<string, mixed>  $credentials
-     * @return array{status: string, note: ?string, error_code?: string}
+     * @return array{status: string, note: ?string}
      */
+    private function pendingCajuPayCardRefund(Order $order): array
+    {
+        $meta = is_array($order->metadata) ? $order->metadata : [];
+        $meta['cajupay_card_refund_pending'] = true;
+        $meta['cajupay_card_refund_status'] = 'awaiting_panel';
+        $order->update(['metadata' => $meta]);
+
+        return [
+            'status' => 'gateway_pending',
+            'note' => 'Estorne o cartão no painel da CajuPay. Quando a Caju confirmar, o pedido aparece como reembolsado.',
+        ];
+    }
+
     private function tryCajuPayRefund(object $driver, Order $order, array $credentials): array
     {
         if (! CajuPayPaymentId::isPixPaymentMethod($order->payment_method)) {
-            return [
-                'status' => 'skipped',
-                'note' => 'Reembolso de cartão/wallet CajuPay é confirmado via webhook; a carteira será ajustada quando o estorno for processado no adquirente.',
-            ];
+            return $this->pendingCajuPayCardRefund($order);
         }
 
         $paymentId = CajuPayPaymentId::fromOrder($order);

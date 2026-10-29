@@ -96,6 +96,9 @@ class LinaOpenxCheckoutService
     public function handleReturn(Order $order, ?string $paymentLinkId = null): array
     {
         $order = $order->fresh() ?? $order;
+        if (LinaOpenxPixAutoService::isPixAutoOrder($order)) {
+            return app(LinaOpenxPixAutoService::class)->handleReturn($order, $paymentLinkId);
+        }
         if ($paymentLinkId !== null && trim($paymentLinkId) !== '') {
             $linkId = trim($paymentLinkId);
             $meta = is_array($order->metadata) ? $order->metadata : [];
@@ -132,6 +135,9 @@ class LinaOpenxCheckoutService
         if ($order->status !== 'pending') {
             return $order;
         }
+        if (LinaOpenxPixAutoService::isPixAutoOrder($order)) {
+            return app(LinaOpenxPixAutoService::class)->tryCompleteFromApi($order);
+        }
 
         $status = $this->resolveNormalizedStatus($order);
         if ($status === 'paid') {
@@ -144,6 +150,10 @@ class LinaOpenxCheckoutService
 
     public function resolveNormalizedStatus(Order $order): string
     {
+        if (LinaOpenxPixAutoService::isPixAutoOrder($order)) {
+            return app(LinaOpenxPixAutoService::class)->resolveNormalizedStatus($order);
+        }
+
         $requestId = trim((string) ($order->gateway_id ?? ''));
         if ($requestId === '') {
             $meta = is_array($order->metadata) ? $order->metadata : [];

@@ -94,6 +94,32 @@ const gatewayRows = [
     { key: 'pix', label: 'PIX' }, { key: 'card', label: 'Cartão' },
     { key: 'boleto', label: 'Boleto' }, { key: 'pix_auto', label: 'PIX automático' },
 ];
+const editTabs = [
+    { id: 'dados', label: 'Dados' },
+    { id: 'financeiro', label: 'Financeiro' },
+    { id: 'taxas', label: 'Taxas e prazos' },
+    { id: 'integracoes', label: 'Integrações' },
+];
+
+function tabFromLocation() {
+    try {
+        const tab = new URL(window.location.href).searchParams.get('tab');
+        return editTabs.some((item) => item.id === tab) ? tab : 'dados';
+    } catch {
+        return 'dados';
+    }
+}
+
+const activeTab = ref(tabFromLocation());
+
+function setActiveTab(id) {
+    if (!editTabs.some((item) => item.id === id)) return;
+    activeTab.value = id;
+    const url = new URL(window.location.href);
+    if (id === 'dados') url.searchParams.delete('tab');
+    else url.searchParams.set('tab', id);
+    window.history.replaceState(window.history.state, '', `${url.pathname}${url.search}${url.hash}`);
+}
 
 const savedFees = ref(null);
 const feesDirty = ref(false);
@@ -113,7 +139,7 @@ function defaultIntegrationModes() {
     const modes = {};
     for (const item of props.platform_integrations) modes[item.id] = 'inherit';
     if (!Object.keys(modes).length) {
-        for (const id of ['webhook', 'utmify', 'spedy', 'cademi']) modes[id] = 'inherit';
+        for (const id of ['webhook', 'utmify', 'spedy', 'cademi', 'uazapi', 'evolution', 'mcp']) modes[id] = 'inherit';
     }
     return modes;
 }
@@ -206,6 +232,15 @@ function syncGatewayPrimary() {
 }
 watch(gatewayPrimary, (current) => {
     gatewayDirty.value = Object.keys(current).some((method) => (current[method] || '') !== (initialGatewayPrimary.value[method] || ''));
+}, { deep: true });
+
+watch(() => form.errors, (errors) => {
+    if (!errors || !Object.keys(errors).length) return;
+    const has = (keys) => keys.some((key) => errors[key]);
+    if (has(['name', 'email', 'phone', 'password', 'account_status'])) setActiveTab('dados');
+    else if (has(['admin_blocked_amount', 'admin_block_until', 'admin_block_note', 'api_pix_mode', 'med_zero_enabled', 'api_pix_minimum_charge_brl', 'platform_minimum_charge_brl', 'cajupay_account_id', 'merchant_gateway_order'])) setActiveTab('financeiro');
+    else if (has(['referral_commission_percent', 'merchant_fees', 'merchant_settlement_overrides'])) setActiveTab('taxas');
+    else if (has(['integration_modes'])) setActiveTab('integracoes');
 }, { deep: true });
 
 function initialize() {
@@ -370,8 +405,29 @@ function submit() {
             {{ page.props.flash?.error || page.props.errors?.totp_code }}
         </p>
 
+        <nav class="flex flex-wrap gap-1 border-b border-zinc-200 dark:border-zinc-700" aria-label="Abas de edição do infoprodutor">
+            <button
+                v-for="tab in editTabs"
+                :key="tab.id"
+                type="button"
+                class="rounded-t-lg px-4 py-2.5 text-sm font-medium transition"
+                :class="activeTab === tab.id
+                    ? 'border-b-2 border-[var(--color-primary)] text-[var(--color-primary)]'
+                    : 'text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-white'"
+                :aria-current="activeTab === tab.id ? 'page' : undefined"
+                @click="setActiveTab(tab.id)"
+            >
+                {{ tab.label }}
+            </button>
+        </nav>
+
         <form class="space-y-6" @submit.prevent="submit">
+            <div v-show="activeTab === 'dados'" class="space-y-6">
             <section class="grid gap-4 rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm sm:grid-cols-2 dark:border-zinc-700 dark:bg-zinc-900">
+                <div class="sm:col-span-2">
+                    <h2 class="font-semibold">Dados pessoais e cadastro</h2>
+                    <p class="mt-1 text-xs text-zinc-500">Nome, contato, status da conta e senha deste infoprodutor.</p>
+                </div>
                 <div><label class="text-sm font-medium">Nome</label><input v-model="form.name" required class="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 dark:border-zinc-600 dark:bg-zinc-800" /><p v-if="form.errors.name" class="mt-1 text-sm text-red-600">{{ form.errors.name }}</p></div>
                 <div><label class="text-sm font-medium">E-mail</label><input v-model="form.email" type="email" required class="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 dark:border-zinc-600 dark:bg-zinc-800" /><p v-if="form.errors.email" class="mt-1 text-sm text-red-600">{{ form.errors.email }}</p></div>
                 <div><label class="text-sm font-medium">WhatsApp / telefone</label><input :value="form.phone" type="tel" class="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 dark:border-zinc-600 dark:bg-zinc-800" @input="form.phone = formatPhone($event.target.value)" /><p v-if="form.errors.phone" class="mt-1 text-sm text-red-600">{{ form.errors.phone }}</p></div>
@@ -407,6 +463,12 @@ function submit() {
                 </div>
             </section>
 
+            <section class="rounded-2xl border border-amber-200 bg-amber-50/40 p-6 dark:border-amber-900/50 dark:bg-amber-950/20">
+                <h2 class="mb-3 font-semibold">Observações internas</h2><MerchantAdminNotesPanel :merchant-user-id="merchant.id" compact :initial-count="merchant.admin_notes_count || 0" />
+            </section>
+            </div>
+
+            <div v-show="activeTab === 'financeiro'" class="space-y-6">
             <section class="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm dark:border-zinc-700 dark:bg-zinc-900">
                 <h2 class="font-semibold">Saldo e saques</h2>
                 <p class="mt-2 text-xs text-zinc-500">Disponível: {{ formatBRL(merchant.saldo_disponivel) }} · PIX pendente: {{ formatBRL(merchant.saldo_pix) }} · MED: {{ formatBRL(merchant.med_total) }}</p>
@@ -418,6 +480,27 @@ function submit() {
                 </div>
             </section>
 
+            <section v-if="showCajuPay" class="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm dark:border-zinc-700 dark:bg-zinc-900">
+                <h2 class="font-semibold">Conta CajuPay</h2><select v-model="form.cajupay_account_id" class="mt-3 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 dark:border-zinc-600 dark:bg-zinc-800" @change="cajupayDirty = true"><option value="">Padrão da plataforma</option><option v-for="account in cajupay_accounts" :key="account.id" :value="String(account.id)">{{ account.name }}{{ account.is_default ? ' (padrão global)' : '' }}</option></select>
+            </section>
+
+            <section class="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm dark:border-zinc-700 dark:bg-zinc-900">
+                <h2 class="font-semibold">Ordem de adquirentes</h2><p class="mt-1 text-xs text-zinc-500">Selecione o principal ou herde a ordem da plataforma.</p>
+                <div class="mt-4 grid gap-3 sm:grid-cols-2"><template v-for="row in gatewayRows" :key="row.key"><label v-if="row.key !== 'pix_auto' || showPixAuto" class="text-sm"><span class="font-medium">{{ row.label }}</span><select v-model="gatewayPrimary[row.key]" class="mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 dark:border-zinc-600 dark:bg-zinc-800"><option value="">Padrão da plataforma</option><option v-for="gateway in gatewaysFor(row.key)" :key="gateway.slug" :value="gateway.slug">{{ gateway.name }}{{ gateway.is_connected ? '' : ' (não conectado)' }}</option></select></label></template></div>
+            </section>
+
+            <SellerAcquirerPolicyPanel v-if="merchant.is_infoprodutor" :merchant-id="merchant.id" />
+
+            <section class="grid gap-6 rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm md:grid-cols-2 dark:border-zinc-700 dark:bg-zinc-900">
+                <div><h2 class="font-semibold">API PIX</h2><p class="mt-1 text-xs text-zinc-500">Padrão global: {{ platform_api_pix_enabled ? 'habilitada' : 'desabilitada' }}.</p><select v-model="form.api_pix_mode" class="mt-3 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 dark:border-zinc-600 dark:bg-zinc-800" @change="apiPixDirty = true"><option value="inherit">Herdar plataforma</option><option value="enabled">Habilitada</option><option value="disabled">Desabilitada</option></select><label class="mt-4 flex items-center gap-2 text-sm"><input v-model="form.med_zero_enabled" type="checkbox" @change="apiPixDirty = true" /> MED Zero</label></div>
+                <div><h2 class="font-semibold">Limites de cobrança</h2><div class="mt-3 space-y-4">
+                    <div><label class="text-sm">Ticket mínimo API PIX</label><input v-model="form.api_pix_minimum_charge_brl" type="number" min="0" step="0.01" :disabled="form.use_platform_api_pix_minimum" class="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 disabled:opacity-50 dark:border-zinc-600 dark:bg-zinc-800" @input="limitsDirty = true" /><label class="mt-1 flex gap-2 text-xs"><input v-model="form.use_platform_api_pix_minimum" type="checkbox" @change="limitsDirty = true" /> Usar padrão (efetivo: {{ formatBRL(effectiveApiMinimum) }})</label></div>
+                    <div><label class="text-sm">Ticket mínimo plataforma</label><input v-model="form.platform_minimum_charge_brl" type="number" min="0" step="0.01" :disabled="form.use_platform_platform_minimum" class="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 disabled:opacity-50 dark:border-zinc-600 dark:bg-zinc-800" @input="limitsDirty = true" /><label class="mt-1 flex gap-2 text-xs"><input v-model="form.use_platform_platform_minimum" type="checkbox" @change="limitsDirty = true" /> Usar padrão (efetivo: {{ formatBRL(effectivePlatformMinimum) }})</label></div>
+                </div></div>
+            </section>
+            </div>
+
+            <div v-show="activeTab === 'taxas'" class="space-y-6">
             <section class="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm dark:border-zinc-700 dark:bg-zinc-900">
                 <h2 class="font-semibold">Indique e Ganhe</h2>
                 <p class="mt-1 text-xs text-zinc-500">Deixe vazio para herdar {{ platform_referral_commission_percent }}% da plataforma.</p>
@@ -452,15 +535,9 @@ function submit() {
                     </div>
                 </div>
             </section>
+            </div>
 
-            <section class="grid gap-6 rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm md:grid-cols-2 dark:border-zinc-700 dark:bg-zinc-900">
-                <div><h2 class="font-semibold">API PIX</h2><p class="mt-1 text-xs text-zinc-500">Padrão global: {{ platform_api_pix_enabled ? 'habilitada' : 'desabilitada' }}.</p><select v-model="form.api_pix_mode" class="mt-3 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 dark:border-zinc-600 dark:bg-zinc-800" @change="apiPixDirty = true"><option value="inherit">Herdar plataforma</option><option value="enabled">Habilitada</option><option value="disabled">Desabilitada</option></select><label class="mt-4 flex items-center gap-2 text-sm"><input v-model="form.med_zero_enabled" type="checkbox" @change="apiPixDirty = true" /> MED Zero</label></div>
-                <div><h2 class="font-semibold">Limites de cobrança</h2><div class="mt-3 space-y-4">
-                    <div><label class="text-sm">Ticket mínimo API PIX</label><input v-model="form.api_pix_minimum_charge_brl" type="number" min="0" step="0.01" :disabled="form.use_platform_api_pix_minimum" class="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 disabled:opacity-50 dark:border-zinc-600 dark:bg-zinc-800" @input="limitsDirty = true" /><label class="mt-1 flex gap-2 text-xs"><input v-model="form.use_platform_api_pix_minimum" type="checkbox" @change="limitsDirty = true" /> Usar padrão (efetivo: {{ formatBRL(effectiveApiMinimum) }})</label></div>
-                    <div><label class="text-sm">Ticket mínimo plataforma</label><input v-model="form.platform_minimum_charge_brl" type="number" min="0" step="0.01" :disabled="form.use_platform_platform_minimum" class="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 disabled:opacity-50 dark:border-zinc-600 dark:bg-zinc-800" @input="limitsDirty = true" /><label class="mt-1 flex gap-2 text-xs"><input v-model="form.use_platform_platform_minimum" type="checkbox" @change="limitsDirty = true" /> Usar padrão (efetivo: {{ formatBRL(effectivePlatformMinimum) }})</label></div>
-                </div></div>
-            </section>
-
+            <div v-show="activeTab === 'integracoes'" class="space-y-6">
             <section class="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm dark:border-zinc-700 dark:bg-zinc-900">
                 <h2 class="font-semibold">Integrações</h2>
                 <p class="mt-1 text-xs text-zinc-500">Herdar o padrão da plataforma, ou forçar habilitada/desabilitada para este infoprodutor — inclusive se a integração estiver oculta globalmente.</p>
@@ -478,21 +555,8 @@ function submit() {
                 <p v-if="form.errors.integration_modes" class="mt-2 text-sm text-red-600">{{ form.errors.integration_modes }}</p>
             </section>
 
-            <section v-if="showCajuPay" class="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm dark:border-zinc-700 dark:bg-zinc-900">
-                <h2 class="font-semibold">Conta CajuPay</h2><select v-model="form.cajupay_account_id" class="mt-3 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 dark:border-zinc-600 dark:bg-zinc-800" @change="cajupayDirty = true"><option value="">Padrão da plataforma</option><option v-for="account in cajupay_accounts" :key="account.id" :value="String(account.id)">{{ account.name }}{{ account.is_default ? ' (padrão global)' : '' }}</option></select>
-            </section>
-
-            <section class="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm dark:border-zinc-700 dark:bg-zinc-900">
-                <h2 class="font-semibold">Ordem de adquirentes</h2><p class="mt-1 text-xs text-zinc-500">Selecione o principal ou herde a ordem da plataforma.</p>
-                <div class="mt-4 grid gap-3 sm:grid-cols-2"><template v-for="row in gatewayRows" :key="row.key"><label v-if="row.key !== 'pix_auto' || showPixAuto" class="text-sm"><span class="font-medium">{{ row.label }}</span><select v-model="gatewayPrimary[row.key]" class="mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 dark:border-zinc-600 dark:bg-zinc-800"><option value="">Padrão da plataforma</option><option v-for="gateway in gatewaysFor(row.key)" :key="gateway.slug" :value="gateway.slug">{{ gateway.name }}{{ gateway.is_connected ? '' : ' (não conectado)' }}</option></select></label></template></div>
-            </section>
-
-            <SellerAcquirerPolicyPanel v-if="merchant.is_infoprodutor" :merchant-id="merchant.id" />
             <SellerProductPortabilityPanel v-if="merchant.is_infoprodutor" :merchant-id="merchant.id" />
-
-            <section class="rounded-2xl border border-amber-200 bg-amber-50/40 p-6 dark:border-amber-900/50 dark:bg-amber-950/20">
-                <h2 class="mb-3 font-semibold">Observações internas</h2><MerchantAdminNotesPanel :merchant-user-id="merchant.id" compact :initial-count="merchant.admin_notes_count || 0" />
-            </section>
+            </div>
 
             <div class="sticky bottom-4 flex justify-end gap-2 rounded-xl border border-zinc-200 bg-white/95 p-3 shadow-lg backdrop-blur dark:border-zinc-700 dark:bg-zinc-900/95">
                 <Button type="button" variant="secondary" @click="$inertia.visit(`/plataforma/usuarios/${merchant.id}`)">Cancelar</Button>

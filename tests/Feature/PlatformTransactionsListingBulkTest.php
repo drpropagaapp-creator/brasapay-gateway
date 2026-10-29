@@ -267,4 +267,31 @@ class PlatformTransactionsListingBulkTest extends TestCase
 
         $this->assertDatabaseHas('orders', ['id' => $order->id, 'status' => 'completed']);
     }
+
+    public function test_refund_requests_filter_includes_refund_pending_orders(): void
+    {
+        $admin = $this->platformAdmin();
+        $seller = $this->seller('Seller Await Caju', 'seller.await.caju@example.com');
+        $pendingAcquirer = $this->makeOrder($seller, [
+            'status' => 'refund_pending',
+            'email' => 'await.caju@example.com',
+            'gateway' => 'cajupay',
+            'payment_method' => 'card',
+        ]);
+        $this->makeOrder($seller, [
+            'status' => 'completed',
+            'email' => 'pago.await@example.com',
+        ]);
+
+        $this->actingAs($admin)
+            ->get(route('plataforma.transacoes.index', [
+                'status' => PlatformTransactionsListing::STATUS_REFUND_REQUESTS,
+            ]))
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->where('orders.total', 1)
+                ->where('orders.data.0.id', $pendingAcquirer->id)
+                ->where('orders.data.0.status', 'refund_pending')
+            );
+    }
 }

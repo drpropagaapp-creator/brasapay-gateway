@@ -7,6 +7,7 @@ use App\Models\MemberLessonProgress;
 use App\Models\Order;
 use App\Models\Product;
 use App\Services\MemberProgressService;
+use App\Support\PlatformCompanySettings;
 use Carbon\Carbon;
 use FPDF;
 use Illuminate\Support\Facades\DB;
@@ -33,6 +34,7 @@ class MedDefenseDossierService
         $absolutePath = $disk->path($relativePath);
 
         $pdf = new FPDF;
+        $pdf->SetCompression(false);
         $pdf->AddPage();
         $pdf->SetFont('Arial', 'B', 16);
         $pdf->Cell(0, 10, $this->encode('Dossiê de prova de entrega — MED'), 0, 1);
@@ -115,8 +117,8 @@ class MedDefenseDossierService
 
         $pdf->Ln(8);
         $pdf->SetFont('Arial', 'I', 9);
-        $appName = config('app.name', 'Getfy');
-        $pdf->Cell(0, 6, $this->encode('Gerado em '.now()->format('d/m/Y H:i').' — '.$appName), 0, 1);
+        $company = PlatformCompanySettings::documentCompanyName();
+        $pdf->Cell(0, 6, $this->encode('Gerado em '.now()->format('d/m/Y H:i').' — '.$company), 0, 1);
 
         $pdf->Output('F', $absolutePath);
 

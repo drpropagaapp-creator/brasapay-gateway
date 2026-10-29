@@ -7,6 +7,7 @@ use App\Models\MemberStudentActivityLog;
 use App\Models\Order;
 use App\Models\Product;
 use App\Models\User;
+use App\Services\ChargebackDefensePdfService;
 use App\Services\MemberStudentActivityLogService;
 use App\Services\PlatformAdminDeletionService;
 use App\Services\PlatformAuditService;
@@ -257,6 +258,39 @@ class CustomersController extends Controller
             'Content-Type' => 'application/pdf',
             'Content-Disposition' => 'attachment; filename="'.$filename.'"',
         ]);
+    }
+
+    public function exportChargebackDefense(
+        Request $request,
+        User $user,
+        Order $order,
+        ChargebackDefensePdfService $defense,
+    ): \Illuminate\Http\Response {
+        $this->assertCanExportChargebackDefense($user, $order);
+
+        PlatformAuditService::log('platform.customer.chargeback_defense.exported', [
+            'user_id' => $user->id,
+            'order_id' => $order->id,
+        ], $request);
+
+        $filename = $defense->filename($order);
+        $binary = $defense->renderPdf($order);
+
+        return response($binary, 200, [
+            'Content-Type' => 'application/pdf',
+            'Content-Disposition' => 'attachment; filename="'.$filename.'"',
+        ]);
+    }
+
+    private function assertCanExportChargebackDefense(User $user, Order $order): void
+    {
+        if (! PlatformCustomerDirectory::isViewableCustomer($user)) {
+            abort(404);
+        }
+
+        if ((int) $order->user_id !== (int) $user->id) {
+            abort(404);
+        }
     }
 
     private function assertCanViewCustomerAccessDossier(User $user, Product $produto): void
@@ -583,6 +617,9 @@ class CustomersController extends Controller
                 : null,
             'transactions_url' => route('plataforma.transacoes.index', ['q' => (string) $order->id]),
             'has_access_dossier' => $productId !== null,
+            'contestacao_url' => $order->user_id
+                ? route('plataforma.clientes.contestacao', ['user' => $order->user_id, 'order' => $order->id])
+                : null,
         ];
     }
 }

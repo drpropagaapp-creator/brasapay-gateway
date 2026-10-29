@@ -170,7 +170,9 @@ class ProcessPaymentWebhook implements ShouldQueue
                 ->where('gateway', 'linaopenx')
                 ->where(function ($q) {
                     $q->where('metadata->lina_payment_request_id', $this->transactionId)
-                        ->orWhere('metadata->payment_request_id', $this->transactionId);
+                        ->orWhere('metadata->payment_request_id', $this->transactionId)
+                        ->orWhere('metadata->linaopenx_pix_auto_consent_id', $this->transactionId)
+                        ->orWhere('metadata->linaopenx_pix_auto_recurring_payment_id', $this->transactionId);
                 })
                 ->first();
             if ($order !== null) {
@@ -386,6 +388,8 @@ class ProcessPaymentWebhook implements ShouldQueue
                 $createExtra['gateway_subscription_id'] = $metadata['versell_pix_auto_id_rec'];
             } elseif (isset($metadata['pushinpay_subscription_id']) && $this->gatewaySlug === 'pushinpay') {
                 $createExtra['gateway_subscription_id'] = $metadata['pushinpay_subscription_id'];
+            } elseif (isset($metadata['linaopenx_pix_auto_consent_id']) && $this->gatewaySlug === 'linaopenx') {
+                $createExtra['gateway_subscription_id'] = $metadata['linaopenx_pix_auto_consent_id'];
             }
 
             $sync = app(\App\Services\SubscriptionRenewalService::class)->syncFromPaidOrder($order, $createExtra);
@@ -393,12 +397,16 @@ class ProcessPaymentWebhook implements ShouldQueue
             if ($subscription) {
                 if (! empty($sync['renewed']) && $this->gatewaySlug === 'versell') {
                     $this->scheduleVersellPixAutoNextCobr($order, $subscription);
+                } elseif (! empty($sync['renewed']) && $this->gatewaySlug === 'linaopenx' && $order->payment_method === 'pix_auto') {
+                    $this->scheduleLinaOpenxPixAutoNextPayment($order, $subscription);
                 } elseif (! empty($sync['created']) && ! empty($createExtra['gateway_subscription_id'])) {
                     $plan = $order->subscriptionPlan ?? $subscription->subscriptionPlan;
                     if ($this->gatewaySlug === 'efi' && $plan) {
                         $this->createEfiPixAutoCobrForNextPeriod($order, $subscription, $plan);
                     } elseif ($this->gatewaySlug === 'versell') {
                         $this->scheduleVersellPixAutoNextCobr($order, $subscription);
+                    } elseif ($this->gatewaySlug === 'linaopenx' && $order->payment_method === 'pix_auto') {
+                        $this->scheduleLinaOpenxPixAutoNextPayment($order, $subscription);
                     }
                 }
             }
@@ -644,6 +652,19 @@ class ProcessPaymentWebhook implements ShouldQueue
         }
     }
 
+    private function scheduleLinaOpenxPixAutoNextPayment(Order $order, Subscription $subscription): void
+    {
+        try {
+            app(\App\Services\LinaOpenx\LinaOpenxPixAutoRenewalService::class)->ensureNextPayment($subscription, $order);
+        } catch (\Throwable $e) {
+            Log::warning('ProcessPaymentWebhook: falha ao criar débito PIX automático OpenX', [
+                'order_id' => $order->id,
+                'consent_id' => $subscription->gateway_subscription_id,
+                'message' => $e->getMessage(),
+            ]);
+        }
+    }
+
     private function inferPaymentMethodForOrder(Order $order): string
     {
         $meta = is_array($order->metadata ?? null) ? $order->metadata : [];
@@ -656,6 +677,11 @@ class ProcessPaymentWebhook implements ShouldQueue
             return $g === 'paypal' ? 'paypal' : 'card';
         }
         if ($g === 'linaopenx') {
+            $pixAutoConsent = trim((string) ($meta['linaopenx_pix_auto_consent_id'] ?? ''));
+            if ($pixAutoConsent !== '' || ($meta['checkout_payment_method'] ?? null) === 'pix_auto') {
+                return 'pix_auto';
+            }
+
             return 'open_finance';
         }
 

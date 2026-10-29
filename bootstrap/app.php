@@ -48,6 +48,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'checkout/pixel/events',
             'checkout/pixel/purchase-ack',
             'api/metrics/collect',
+            'mcp',
         ]);
 
         $middleware->web(prepend: [
@@ -232,6 +233,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $schedule->command('withdrawals:reconcile-xpag --limit=80 --min-age-minutes=0')->everyMinute();
         $schedule->command('versell:reconcile-infractions --hours=72')->everyFiveMinutes()->withoutOverlapping(10);
         $schedule->command('versell:reconcile-pix-auto --limit=80')->everyFiveMinutes()->withoutOverlapping(10);
+        $schedule->command('linaopenx:reconcile-pix-auto --limit=80')->everyFiveMinutes()->withoutOverlapping(10);
         $schedule->command('settlement:release')->everyFiveMinutes();
         // Brasa Treasury: conciliação em modo observação (só registra divergências).
         $schedule->command('treasury:reconcile')->hourlyAt(17)->withoutOverlapping(30);
