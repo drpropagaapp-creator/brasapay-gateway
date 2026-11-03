@@ -9,6 +9,7 @@ use App\Mail\MedResolvedSellerMail;
 use App\Models\MedDispute;
 use App\Models\User;
 use App\Support\KycNotificationEmails;
+use App\Support\PublicAppUrl;
 use App\Models\Setting;
 
 class MedEmailNotifications
@@ -26,7 +27,7 @@ class MedEmailNotifications
             if ($owner?->email) {
                 $branding = BrandingEmailData::forTenant($dispute->tenant_id);
                 $this->mail->send(
-                    new MedOpenedSellerMail($dispute, $branding, route('disputas.show', $dispute)),
+                    new MedOpenedSellerMail($dispute, $branding, PublicAppUrl::route('disputas.show', $dispute)),
                     $owner->email
                 );
             }
@@ -41,7 +42,7 @@ class MedEmailNotifications
 
         $branding = BrandingEmailData::forTenant(null);
         $this->mail->send(
-            new MedOpenedAdminMail($dispute, $branding, route('plataforma.disputas.show', $dispute)),
+            new MedOpenedAdminMail($dispute, $branding, PublicAppUrl::route('plataforma.disputas.show', $dispute)),
             $emails
         );
     }
@@ -55,7 +56,7 @@ class MedEmailNotifications
             if ($owner?->email) {
                 $branding = BrandingEmailData::forTenant($dispute->tenant_id);
                 $this->mail->send(
-                    new MedResolvedSellerMail($dispute, $branding, route('disputas.show', $dispute)),
+                    new MedResolvedSellerMail($dispute, $branding, PublicAppUrl::route('disputas.show', $dispute)),
                     $owner->email
                 );
             }
@@ -68,7 +69,7 @@ class MedEmailNotifications
 
         $branding = BrandingEmailData::forTenant(null);
         $this->mail->send(
-            new MedResolvedAdminMail($dispute, $branding, route('plataforma.disputas.show', $dispute)),
+            new MedResolvedAdminMail($dispute, $branding, PublicAppUrl::route('plataforma.disputas.show', $dispute)),
             $emails
         );
     }

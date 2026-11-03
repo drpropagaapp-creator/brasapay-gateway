@@ -595,7 +595,7 @@ class AccessEmailService
 
     private function resolvePlatformLoginLink(): string
     {
-        return rtrim(PublicAppUrl::base(), '/').'/login';
+        return PublicAppUrl::to('/login');
     }
 
     private function resolveMemberAreaUrl(Product $product): string
@@ -660,7 +660,7 @@ class AccessEmailService
 
     private function resolveForgotPasswordLink(): string
     {
-        return rtrim(PublicAppUrl::base(), '/').'/esqueci-senha';
+        return PublicAppUrl::to('/esqueci-senha');
     }
 
     private function prependLogoToBody(string $logoUrl, string $bodyHtml): string

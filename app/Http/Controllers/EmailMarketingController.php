@@ -65,7 +65,7 @@ class EmailMarketingController extends Controller
         $queueOk = self::isHeartbeatRecent(Cache::get('queue_heartbeat'), 5);
 
         $cronSecret = config('getfy.cron_secret');
-        $appUrl = rtrim(config('app.url'), '/');
+        $appUrl = rtrim(\App\Support\PublicAppUrl::base(), '/');
         $cronUrl = $cronSecret
             ? $appUrl . '/cron?token=' . urlencode($cronSecret)
             : null;

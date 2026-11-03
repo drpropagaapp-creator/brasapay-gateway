@@ -181,7 +181,7 @@ class OutboundEmailRecorder
             return;
         }
 
-        $url = route('email.open', ['token' => $token]);
+        $url = \App\Support\PublicAppUrl::route('email.open', ['token' => $token]);
         $pixel = '<img src="'.e($url).'" width="1" height="1" alt="" style="display:none;max-height:0;overflow:hidden" />';
         if (stripos($html, '</body>') !== false) {
             $html = preg_replace('/<\/body>/i', $pixel.'</body>', $html, 1) ?? ($html.$pixel);
