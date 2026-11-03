@@ -2,10 +2,12 @@
 
 namespace Tests\Feature;
 
+use App\Models\CajuPayAccount;
 use App\Models\GatewayCredential;
 use App\Models\Order;
 use App\Models\User;
 use App\Models\WalletTransaction;
+use App\Models\Withdrawal;
 use App\Services\Platform\PlatformRevenueKpis;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Schema;
@@ -267,5 +269,129 @@ class PlatformDashboardRevenueTest extends TestCase
         $kpis = PlatformRevenueKpis::compute(null, null);
 
         $this->assertSame(0.0, $kpis['faturamento_custo_adquirente_vendas']);
+    }
+
+    public function test_adq_vendas_uses_order_cajupay_account_fees_not_only_default(): void
+    {
+        if (! Schema::hasTable('wallet_transactions') || ! Schema::hasTable('cajupay_accounts')) {
+            $this->markTestSkipped('wallet or cajupay_accounts tables');
+        }
+
+        Carbon::setTestNow(Carbon::parse('2026-04-13 14:00:00'));
+
+        $default = CajuPayAccount::create([
+            'name' => 'Default zero fee',
+            'is_default' => true,
+            'is_connected' => true,
+            'is_enabled' => true,
+        ]);
+        $default->setEncryptedCredentials([
+            'public_key' => 'gpk_default',
+            'secret_key' => 'gsk_default',
+            'cajupay_admin_fee_pix_brl' => '0',
+            'cajupay_admin_fee_pix_percent' => '0',
+        ]);
+        $default->save();
+
+        $secondary = CajuPayAccount::create([
+            'name' => 'Secondary with fee',
+            'is_default' => false,
+            'is_connected' => true,
+            'is_enabled' => true,
+        ]);
+        $secondary->setEncryptedCredentials([
+            'public_key' => 'gpk_b',
+            'secret_key' => 'gsk_b',
+            'cajupay_admin_fee_pix_brl' => '1,00',
+            'cajupay_admin_fee_pix_percent' => '2',
+        ]);
+        $secondary->save();
+
+        $seller = User::factory()->create(['role' => User::ROLE_INFOPRODUTOR]);
+        $seller->forceFill([
+            'tenant_id' => $seller->id,
+            'cajupay_account_id' => $secondary->id,
+        ])->save();
+        $buyer = User::factory()->create(['role' => User::ROLE_ALUNO]);
+        $product = $this->createTestProduct(['tenant_id' => $seller->id]);
+
+        Order::create([
+            'tenant_id' => $seller->id,
+            'user_id' => $buyer->id,
+            'product_id' => $product->id,
+            'status' => 'completed',
+            'amount' => 100.00,
+            'email' => $buyer->email,
+            'payment_method' => 'pix',
+            'gateway' => 'cajupay',
+            'cajupay_account_id' => $secondary->id,
+            'metadata' => [],
+        ]);
+
+        // Conta da cobrança: 100 * 2% + 1,00 = 3,00 (default tem 0)
+        $kpis = PlatformRevenueKpis::compute(null, null);
+
+        $this->assertSame(3.0, $kpis['faturamento_custo_adquirente_vendas']);
+    }
+
+    public function test_adq_saques_uses_withdrawal_cajupay_account_fees_not_only_default(): void
+    {
+        if (! Schema::hasTable('wallet_transactions') || ! Schema::hasTable('withdrawals') || ! Schema::hasTable('cajupay_accounts')) {
+            $this->markTestSkipped('wallet/withdrawals/cajupay tables');
+        }
+
+        Carbon::setTestNow(Carbon::parse('2026-04-13 14:00:00'));
+
+        $default = CajuPayAccount::create([
+            'name' => 'Default zero payout fee',
+            'is_default' => true,
+            'is_connected' => true,
+            'is_enabled' => true,
+        ]);
+        $default->setEncryptedCredentials([
+            'public_key' => 'gpk_default',
+            'secret_key' => 'gsk_default',
+            'cajupay_admin_fee_payout_brl' => '0',
+            'cajupay_admin_fee_payout_percent' => '0',
+        ]);
+        $default->save();
+
+        $secondary = CajuPayAccount::create([
+            'name' => 'Secondary payout fee',
+            'is_default' => false,
+            'is_connected' => true,
+            'is_enabled' => true,
+        ]);
+        $secondary->setEncryptedCredentials([
+            'public_key' => 'gpk_b',
+            'secret_key' => 'gsk_b',
+            'cajupay_admin_fee_payout_brl' => '2,50',
+            'cajupay_admin_fee_payout_percent' => '0',
+        ]);
+        $secondary->save();
+
+        $seller = User::factory()->create(['role' => User::ROLE_INFOPRODUTOR]);
+        $seller->forceFill([
+            'tenant_id' => $seller->id,
+            'cajupay_account_id' => $secondary->id,
+        ])->save();
+
+        Withdrawal::query()->create([
+            'tenant_id' => $seller->id,
+            'user_id' => $seller->id,
+            'amount' => 102.50,
+            'fee_amount' => 0,
+            'net_amount' => 100.00,
+            'bucket' => 'pix',
+            'status' => 'completed',
+            'currency' => 'BRL',
+            'payout_provider' => 'cajupay',
+            'payout_meta' => ['cajupay_account_id' => $secondary->id],
+        ]);
+
+        // Conta do payout: fixo 2,50 (default tem 0)
+        $kpis = PlatformRevenueKpis::compute(null, null);
+
+        $this->assertSame(2.5, $kpis['faturamento_custo_adquirente_saques']);
     }
 }

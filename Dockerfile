@@ -1,4 +1,4 @@
-ARG PHP_BASE_IMAGE=php:8.3.36-cli-alpine
+ARG PHP_BASE_IMAGE=php:8.3-cli-alpine3.21
 FROM ${PHP_BASE_IMAGE} AS php_base
 
 RUN apk add --no-cache \

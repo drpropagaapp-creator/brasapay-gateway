@@ -40,6 +40,7 @@ use App\Policies\ProductPolicy;
 use App\Policies\RefundRequestPolicy;
 use App\Support\DockerInternalDatabaseConfig;
 use App\Support\DockerSetupState;
+use App\Support\PublicAppUrl;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
@@ -82,6 +83,10 @@ class AppServiceProvider extends ServiceProvider
         $this->fallbackInvalidQueueConnectionToSync();
         $this->applyPanelPushConfig();
         $this->bootCloudFolder();
+        // Queue/console não têm Host HTTP — força domínio público para route()/url() em e-mails.
+        if ($this->app->runningInConsole()) {
+            PublicAppUrl::forceRoot();
+        }
         if (DockerSetupState::isDocker() && class_exists(\Illuminate\Support\Facades\Vite::class)) {
             \Illuminate\Support\Facades\Vite::useHotFile(storage_path('framework/vite.hot'));
         }

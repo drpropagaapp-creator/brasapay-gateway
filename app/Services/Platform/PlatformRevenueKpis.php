@@ -31,15 +31,20 @@ class PlatformRevenueKpis
         $taxasCobradas = self::sumMerchantFeesForOrderIds($orderIds);
 
         $custoVendas = 0.0;
+        $orderSelect = ['id', 'payment_method', 'metadata', 'gateway', 'amount', 'tenant_id'];
+        if (Schema::hasColumn('orders', 'cajupay_account_id')) {
+            $orderSelect[] = 'cajupay_account_id';
+        }
         self::ordersInPeriodQuery($start, $end)
-            ->select(['id', 'payment_method', 'metadata', 'gateway', 'amount'])
+            ->select($orderSelect)
             ->chunkById(500, function ($orders) use (&$custoVendas) {
                 foreach ($orders as $order) {
                     $slug = trim((string) ($order->gateway ?? ''));
                     if ($slug === '' || ! self::countsAcquirerSaleFee($order, $slug)) {
                         continue;
                     }
-                    $e = GatewayPayoutEconomics::fromSlug($slug);
+                    // CajuPay multi-conta: taxas da conta da cobrança, não só a default.
+                    $e = GatewayPayoutEconomics::forOrder($order);
                     $custoVendas += GatewayPayoutEconomics::pixInFeeCostBrl(
                         (float) ($order->amount ?? 0),
                         (float) ($e['admin_fee_pix_brl'] ?? 0),
@@ -58,7 +63,11 @@ class PlatformRevenueKpis
             } elseif ($end) {
                 $wdQ->where('created_at', '<=', $end);
             }
-            $wdQ->select(['id', 'payout_provider', 'net_amount'])->chunkById(500, function ($rows) use (&$custoSaques) {
+            $wdSelect = ['id', 'payout_provider', 'net_amount', 'tenant_id'];
+            if (Schema::hasColumn('withdrawals', 'payout_meta')) {
+                $wdSelect[] = 'payout_meta';
+            }
+            $wdQ->select($wdSelect)->chunkById(500, function ($rows) use (&$custoSaques) {
                 foreach ($rows as $w) {
                     $slug = $w->payout_provider;
                     if ($slug === null || $slug === '') {
@@ -67,7 +76,8 @@ class PlatformRevenueKpis
                     if ($slug === null || $slug === '') {
                         continue;
                     }
-                    $e = GatewayPayoutEconomics::fromSlug($slug);
+                    // CajuPay multi-conta: taxas da conta do payout (meta/tenant), não só a default.
+                    $e = GatewayPayoutEconomics::forWithdrawal($w);
                     $custoSaques += GatewayPayoutEconomics::payoutFeeCostBrl(
                         (float) ($w->net_amount ?? 0),
                         (float) ($e['admin_fee_payout_brl'] ?? 0),

@@ -36,7 +36,7 @@ class SendProductApprovedMailJob implements ShouldQueue
 
         try {
             $branding = BrandingEmailData::forTenant(null);
-            $panelUrl = route('produtos.edit', $product);
+            $panelUrl = \App\Support\PublicAppUrl::route('produtos.edit', $product);
             $mailService->send(
                 new ProductApprovedMail($seller, $product, $branding, $panelUrl),
                 $seller->email

@@ -154,6 +154,22 @@ if [ "${GETFY_RUN_SETUP:-true}" != "true" ]; then
       fi
     fi
   fi
+  # Worker/scheduler: espelha APP_URL pública (.docker/app.url) para links de e-mail sem localhost.
+  if [ -f .docker/app.url ]; then
+    APP_URL_SHARED="$(tr -d '\n\r' < .docker/app.url)"
+    if [ -n "$APP_URL_SHARED" ]; then
+      export APP_URL="$APP_URL_SHARED"
+      if [ -f .env ]; then
+        if grep -qE '^APP_URL=' .env 2>/dev/null; then
+          # Escapa & para sed; URL não deve ter newlines.
+          ESCAPED_URL="$(printf '%s' "$APP_URL_SHARED" | sed 's/[&|\\]/\\&/g')"
+          sed -i "s|^APP_URL=.*|APP_URL=$ESCAPED_URL|" .env
+        else
+          echo "APP_URL=$APP_URL_SHARED" >> .env
+        fi
+      fi
+    fi
+  fi
   exec "$@"
 fi
 

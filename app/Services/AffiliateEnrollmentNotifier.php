@@ -29,7 +29,7 @@ class AffiliateEnrollmentNotifier
             return;
         }
 
-        $panelUrl = route('produtos.painel-afiliado.show', $product->id);
+        $panelUrl = \App\Support\PublicAppUrl::route('produtos.painel-afiliado.show', $product->id);
         $title = 'Afiliação aprovada: '.$product->name;
         $body = 'Sua solicitação foi aprovada. Acesse o painel do afiliado para copiar seu link exclusivo de divulgação.';
 
