@@ -1171,7 +1171,7 @@ const selectClass =
                         <p class="mb-5 text-sm text-zinc-600 dark:text-zinc-400">
                             Escolha o provedor de e-mail para envio de acessos, notificações e recuperação de senha.
                         </p>
-                        <div class="grid gap-4 sm:grid-cols-2 md:grid-cols-3">
+                        <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
                             <IntegrationCard
                                 v-for="prov in providers"
                                 :key="prov.id"

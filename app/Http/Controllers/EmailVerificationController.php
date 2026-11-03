@@ -100,6 +100,8 @@ class EmailVerificationController extends Controller
 
     public static function signedVerificationUrl(User $user): string
     {
+        \App\Support\PublicAppUrl::forceRoot();
+
         return URL::temporarySignedRoute(
             'verification.verify',
             now()->addMinutes(60),

@@ -3,6 +3,9 @@
 namespace App\Services\Payout;
 
 use App\Models\GatewayCredential;
+use App\Models\Order;
+use App\Models\Withdrawal;
+use App\Services\CajuPay\CajuPayCredentialEconomics;
 use App\Support\PercentDecimal;
 
 class GatewayPayoutEconomics
@@ -45,16 +48,8 @@ class GatewayPayoutEconomics
     {
         if ($slug === 'cajupay') {
             // Contas multi-CajuPay (CajuPayAccount) — não a credencial legada GatewayCredential.
-            $e = \App\Services\CajuPay\CajuPayCredentialEconomics::fromGateway();
-
-            return [
-                'required_min_net' => $e['required_min_net'],
-                'payout_min_brl' => $e['cajupay_payout_min_brl'],
-                'admin_fee_pix_brl' => $e['cajupay_admin_fee_pix_brl'],
-                'admin_fee_payout_brl' => $e['cajupay_admin_fee_payout_brl'],
-                'admin_fee_pix_percent' => $e['cajupay_admin_fee_pix_percent'],
-                'admin_fee_payout_percent' => $e['cajupay_admin_fee_payout_percent'],
-            ];
+            // Sem contexto de pedido/saque, usa a conta default (mínimo/limites globais).
+            return self::fromCajuPayEconomicsArray(CajuPayCredentialEconomics::fromGateway());
         }
 
         $cred = GatewayCredential::resolveForPayment(null, $slug);
@@ -63,6 +58,89 @@ class GatewayPayoutEconomics
         }
 
         return self::fromCredentialsArray($slug, $cred->getDecryptedCredentials());
+    }
+
+    /**
+     * Economia do adquirente do pedido (CajuPay: conta da cobrança; demais: slug).
+     *
+     * @return array{
+     *     required_min_net: float,
+     *     payout_min_brl: float,
+     *     admin_fee_pix_brl: float,
+     *     admin_fee_payout_brl: float,
+     *     admin_fee_pix_percent: float,
+     *     admin_fee_payout_percent: float
+     * }
+     */
+    public static function forOrder(Order $order): array
+    {
+        $slug = trim((string) ($order->gateway ?? ''));
+        if ($slug === '') {
+            return self::defaults();
+        }
+        if ($slug === 'cajupay') {
+            return self::fromCajuPayEconomicsArray(CajuPayCredentialEconomics::forOrder($order));
+        }
+
+        return self::fromSlug($slug);
+    }
+
+    /**
+     * Economia do adquirente do saque (CajuPay: conta do payout; demais: slug).
+     *
+     * @return array{
+     *     required_min_net: float,
+     *     payout_min_brl: float,
+     *     admin_fee_pix_brl: float,
+     *     admin_fee_payout_brl: float,
+     *     admin_fee_pix_percent: float,
+     *     admin_fee_payout_percent: float
+     * }
+     */
+    public static function forWithdrawal(Withdrawal $withdrawal): array
+    {
+        $slug = trim((string) ($withdrawal->payout_provider ?? ''));
+        if ($slug === '') {
+            $slug = (string) (PlatformPayoutGateway::activeSlug() ?? '');
+        }
+        if ($slug === '') {
+            return self::defaults();
+        }
+        if ($slug === 'cajupay') {
+            return self::fromCajuPayEconomicsArray(CajuPayCredentialEconomics::forWithdrawal($withdrawal));
+        }
+
+        return self::fromSlug($slug);
+    }
+
+    /**
+     * @param  array{
+     *     required_min_net: float,
+     *     cajupay_payout_min_brl: float,
+     *     cajupay_admin_fee_pix_brl: float,
+     *     cajupay_admin_fee_payout_brl: float,
+     *     cajupay_admin_fee_pix_percent: float,
+     *     cajupay_admin_fee_payout_percent: float
+     * }  $e
+     * @return array{
+     *     required_min_net: float,
+     *     payout_min_brl: float,
+     *     admin_fee_pix_brl: float,
+     *     admin_fee_payout_brl: float,
+     *     admin_fee_pix_percent: float,
+     *     admin_fee_payout_percent: float
+     * }
+     */
+    private static function fromCajuPayEconomicsArray(array $e): array
+    {
+        return [
+            'required_min_net' => $e['required_min_net'],
+            'payout_min_brl' => $e['cajupay_payout_min_brl'],
+            'admin_fee_pix_brl' => $e['cajupay_admin_fee_pix_brl'],
+            'admin_fee_payout_brl' => $e['cajupay_admin_fee_payout_brl'],
+            'admin_fee_pix_percent' => $e['cajupay_admin_fee_pix_percent'],
+            'admin_fee_payout_percent' => $e['cajupay_admin_fee_payout_percent'],
+        ];
     }
 
     /**

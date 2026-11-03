@@ -41,6 +41,7 @@ const props = defineProps({
             platform_card_installments_max: 12,
         }),
     },
+    bundle_candidates: { type: Array, default: () => [] },
 });
 
 const produtosList = computed(() => props.produtos?.data ?? (Array.isArray(props.produtos) ? props.produtos : []));
@@ -420,6 +421,7 @@ function pluginActions(productId) {
         :exchange-rates="exchange_rates"
         :plugin-form-sections="plugin_form_sections"
         :checkout-gateway-ui="checkout_gateway_ui"
+        :bundle-candidates="bundle_candidates"
         @close="closeSidebar"
         @success="closeSidebar"
     />

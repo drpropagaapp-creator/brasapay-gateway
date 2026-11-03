@@ -106,8 +106,8 @@ class ProductCoproductionController extends Controller
             'theme_primary' => config('getfy.theme_primary', '#0050fc'),
         ];
 
-        $acceptUrl = url('/coproducao/convite/'.$token);
-        $registerUrl = url('/cadastro?coproducer_invite='.$token);
+        $acceptUrl = \App\Support\PublicAppUrl::to('/coproducao/convite/'.$token);
+        $registerUrl = \App\Support\PublicAppUrl::to('/cadastro?coproducer_invite='.$token);
 
         $this->mailService->send(
             new CoproductionInvitationMail(

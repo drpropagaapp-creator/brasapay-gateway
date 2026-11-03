@@ -38,7 +38,7 @@ class EmailTestController extends Controller
     {
         $validated = $request->validate([
             'test_to' => ['required', 'email'],
-            'email_provider' => ['nullable', 'string', 'in:smtp,hostinger,sendgrid,resend'],
+            'email_provider' => ['nullable', 'string', 'in:'.implode(',', TenantMailConfigService::PROVIDERS)],
             'smtp_host' => ['nullable', 'string'],
             'smtp_port' => ['nullable', 'string'],
             'smtp_username' => ['nullable', 'string'],
@@ -76,7 +76,7 @@ class EmailTestController extends Controller
         $tenantId = PlatformConfigContext::settingsTenantId();
 
         $validated = $request->validate([
-            'email_provider' => ['nullable', 'string', 'in:smtp,hostinger,sendgrid,resend'],
+            'email_provider' => ['nullable', 'string', 'in:'.implode(',', TenantMailConfigService::PROVIDERS)],
             'smtp_host' => ['nullable', 'string'],
             'smtp_port' => ['nullable', 'string'],
             'smtp_username' => ['nullable', 'string'],

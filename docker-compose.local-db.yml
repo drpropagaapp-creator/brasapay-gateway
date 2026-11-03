@@ -19,7 +19,7 @@ x-logging: &default-logging
 
 services:
   postgres:
-    image: postgres:16-alpine
+    image: postgres:16-bookworm
     restart: unless-stopped
     logging: *default-logging
     ports:

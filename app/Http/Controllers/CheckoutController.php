@@ -1035,14 +1035,17 @@ class CheckoutController extends Controller
                     'subscription_plan_id' => null,
                     'amount' => $bump->getEffectiveAmountBrl(),
                     'position' => $pos++,
+                    'source' => OrderItem::SOURCE_ORDER_BUMP,
                 ]);
             }
+
+            app(\App\Services\ProductBundleService::class)->snapshotIncludedProducts($order);
 
             return $order;
         };
 
         $grantAccessForOrder = function (Order $order) {
-            $order->loadMissing('product', 'orderItems.product');
+            $order->load(['product', 'orderItems.product']);
             if ($order->product && $order->product->type !== Product::TYPE_PRODUTO_FISICO) {
                 $order->product->users()->syncWithoutDetaching([$order->user_id]);
             }
@@ -3051,9 +3054,12 @@ class CheckoutController extends Controller
                     'subscription_plan_id' => null,
                     'amount' => $bump->getEffectiveAmountBrl(),
                     'position' => $pos++,
+                    'source' => OrderItem::SOURCE_ORDER_BUMP,
                 ]);
             }
         }
+
+        app(\App\Services\ProductBundleService::class)->snapshotIncludedProducts($order);
     }
 
     /**
@@ -3388,9 +3394,12 @@ class CheckoutController extends Controller
                     'subscription_plan_id' => null,
                     'amount' => $bump->getEffectiveAmountBrl(),
                     'position' => $pos++,
+                    'source' => OrderItem::SOURCE_ORDER_BUMP,
                 ]);
             }
         }
+
+        app(\App\Services\ProductBundleService::class)->snapshotIncludedProducts($order);
 
         $order->load('orderItems');
 

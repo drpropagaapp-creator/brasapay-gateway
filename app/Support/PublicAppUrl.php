@@ -76,6 +76,33 @@ final class PublicAppUrl
         URL::forceRootUrl($origin);
     }
 
+    /**
+     * URL absoluta na origem pública (evita localhost em e-mails/jobs).
+     */
+    public static function to(string $path = '/'): string
+    {
+        self::forceRoot();
+        $base = rtrim(self::base(), '/');
+        $path = '/'.ltrim($path, '/');
+        if ($path === '/') {
+            return $base !== '' ? $base : '/';
+        }
+
+        return $base.$path;
+    }
+
+    /**
+     * route() absoluto com root URL pública forçada.
+     *
+     * @param  mixed  $parameters
+     */
+    public static function route(string $name, mixed $parameters = [], bool $absolute = true): string
+    {
+        self::forceRoot();
+
+        return route($name, $parameters, $absolute);
+    }
+
     private static function normalize(string $url): ?string
     {
         $url = rtrim(trim($url), '/');

@@ -24,8 +24,19 @@ class SecurityHeadersMemberVideoEmbedTest extends TestCase
 
         $this->assertStringContainsString('https://fast.wistia.net', $csp);
         $this->assertStringContainsString('https://*.wistia.com', $csp);
+        // E-v1.js da barra unificada Wistia
+        $this->assertStringContainsString('https://fast.wistia.com', $csp);
+        $this->assertMatchesRegularExpression('/script-src[^;]*https:\/\/fast\.wistia\.net/', $csp);
 
         $this->assertStringContainsString('https://www.loom.com', $csp);
         $this->assertStringContainsString('https://*.loom.com', $csp);
+
+        $this->assertStringContainsString('https://player.mediadelivery.net', $csp);
+        $this->assertStringContainsString('https://iframe.mediadelivery.net', $csp);
+        $this->assertStringContainsString('https://*.mediadelivery.net', $csp);
+
+        $this->assertStringContainsString('https://player.pandavideo.com.br', $csp);
+        $this->assertStringContainsString('https://*.pandavideo.com.br', $csp);
+        $this->assertStringContainsString('https://*.tv.pandavideo.com.br', $csp);
     }
 }

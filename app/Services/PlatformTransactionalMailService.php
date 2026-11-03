@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Support\PublicAppUrl;
 use Illuminate\Mail\Mailable;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
@@ -20,6 +21,8 @@ class PlatformTransactionalMailService
      */
     public function send(Mailable $mailable, string|array $to): bool
     {
+        PublicAppUrl::forceRoot();
+
         $recipients = is_array($to) ? array_values(array_filter($to)) : [trim($to)];
         if ($recipients === []) {
             return false;

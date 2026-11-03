@@ -7,6 +7,7 @@ use App\Models\Setting;
 use App\Services\LegalDocumentsService;
 use App\Services\PhysicalProductAccess;
 use App\Services\SellerIntegrationVisibility;
+use App\Services\TenantMailConfigService;
 use App\Support\RemoteStorage;
 use App\Services\PlatformAuditService;
 use App\Support\HtmlSanitizer;
@@ -136,6 +137,7 @@ class SettingsController extends Controller
                 // SendGrid/Resend: do NOT expose API keys to the frontend
                 'sendgrid_mail_from_address' => Setting::get('sendgrid_mail_from_address', config('mail.from.address', ''), $tenantId),
                 'sendgrid_mail_from_name' => Setting::get('sendgrid_mail_from_name', config('mail.from.name', ''), $tenantId),
+                // Resend: do NOT expose resend_api_key to the frontend
                 'resend_mail_from_address' => Setting::get('resend_mail_from_address', config('mail.from.address', ''), $tenantId),
                 'resend_mail_from_name' => Setting::get('resend_mail_from_name', config('mail.from.name', ''), $tenantId),
                 'kyc_notification_emails' => Setting::get('kyc_notification_emails', '', $tenantId),
@@ -202,7 +204,7 @@ class SettingsController extends Controller
 
         $validated = $request->validate([
             'totp_code' => ['nullable', 'string', 'max:16'],
-            'email_provider' => ['nullable', 'string', 'in:smtp,hostinger,sendgrid,resend'],
+            'email_provider' => ['nullable', 'string', 'in:'.implode(',', TenantMailConfigService::PROVIDERS)],
             'smtp_password' => ['nullable', 'string', 'max:255'],
             'mail_from_address' => ['nullable', 'email', 'max:255'],
             'mail_from_name' => ['nullable', 'string', 'max:255'],
@@ -519,7 +521,7 @@ class SettingsController extends Controller
             }
 
             if (in_array($key, $alwaysSetKeys, true) || in_array($key, $emailKeys, true)) {
-                if ($key === 'email_provider' && ! in_array($value, ['smtp', 'hostinger', 'sendgrid', 'resend'], true)) {
+                if ($key === 'email_provider' && ! in_array($value, TenantMailConfigService::PROVIDERS, true)) {
                     continue;
                 }
                 Setting::set($key, $value ?? '', $tenantId);
@@ -625,7 +627,7 @@ class SettingsController extends Controller
     {
         $v = is_string($value) ? strtolower(trim($value)) : '';
 
-        return in_array($v, ['smtp', 'hostinger', 'sendgrid', 'resend'], true) ? $v : 'smtp';
+        return in_array($v, TenantMailConfigService::PROVIDERS, true) ? $v : 'smtp';
     }
 
     private function persistEmailProviderFromRequest(Request $request, ?int $tenantId): void
@@ -684,6 +686,9 @@ class SettingsController extends Controller
             'sendgrid_api_key',
             'sendgrid_mail_from_address',
             'sendgrid_mail_from_name',
+            'resend_api_key',
+            'resend_mail_from_address',
+            'resend_mail_from_name',
             'kyc_notification_emails',
         ];
 
