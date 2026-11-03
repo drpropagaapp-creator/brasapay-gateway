@@ -1,5 +1,5 @@
 /**
- * Conversão de URLs da área de membros (YouTube, Vimeo, Wistia, Loom, Bunny Stream e arquivo nativo).
+ * Conversão de URLs da área de membros (YouTube, Vimeo, Wistia, Loom, Bunny Stream, Panda Video e arquivo nativo).
  * A detecção do YouTube permanece igual à original para não alterar o player legado.
  */
 
@@ -122,12 +122,71 @@ export function parseBunnyStream(url) {
 export function bunnyEmbedUrl(url) {
     const parsed = parseBunnyStream(url);
     if (!parsed) return null;
-    return `https://${parsed.host}/embed/${parsed.libraryId}/${parsed.videoId}${parsed.search}`;
+    let embed = `https://${parsed.host}/embed/${parsed.libraryId}/${parsed.videoId}${parsed.search}`;
+    try {
+        const u = new URL(embed);
+        // Garante inline no iPhone; autoplay off para o primeiro gesto ser do aluno.
+        if (!u.searchParams.has('playsinline')) u.searchParams.set('playsinline', 'true');
+        if (!u.searchParams.has('autoplay')) u.searchParams.set('autoplay', 'false');
+        embed = u.toString();
+    } catch (_) {
+        /* mantém URL original */
+    }
+    return embed;
+}
+
+/**
+ * Panda Video: player-vz-*.tv.pandavideo.com.br / *.pandavideo.com.br com ?v=UUID.
+ * @param {string} url
+ * @returns {{ host: string, videoId: string, pathname: string, searchParams: URLSearchParams }|null}
+ */
+export function parsePandaVideo(url) {
+    const u = trimUrl(url);
+    if (!u) return null;
+
+    let parsed;
+    try {
+        parsed = new URL(u.includes('://') ? u : `https://${u}`);
+    } catch (_) {
+        return null;
+    }
+
+    const host = parsed.hostname.replace(/^www\./i, '').toLowerCase();
+    if (host !== 'pandavideo.com.br' && !host.endsWith('.pandavideo.com.br')) {
+        return null;
+    }
+
+    const videoId = parsed.searchParams.get('v');
+    if (!videoId || !/^[a-zA-Z0-9-]+$/.test(videoId)) {
+        return null;
+    }
+
+    return {
+        host: parsed.hostname,
+        videoId,
+        pathname: parsed.pathname || '/embed/',
+        searchParams: parsed.searchParams,
+    };
+}
+
+export function pandaEmbedUrl(url) {
+    const parsed = parsePandaVideo(url);
+    if (!parsed) return null;
+
+    const path = /\/embed\/?$/i.test(parsed.pathname) ? parsed.pathname : '/embed/';
+    const embed = new URL(`https://${parsed.host}${path.endsWith('/') ? path : `${path}/`}`);
+    parsed.searchParams.forEach((value, key) => {
+        embed.searchParams.set(key, value);
+    });
+    embed.searchParams.set('v', parsed.videoId);
+    // Esvazia a lista de controles nativos; a barra Stacker assume play/pause/seek.
+    embed.searchParams.set('controls', '');
+    return embed.toString();
 }
 
 /**
  * @param {string} url
- * @returns {'youtube'|'vimeo'|'wistia'|'loom'|'bunny'|'native'}
+ * @returns {'youtube'|'vimeo'|'wistia'|'loom'|'bunny'|'panda'|'native'}
  */
 export function getVideoProviderType(url) {
     const u = trimUrl(url);
@@ -137,6 +196,7 @@ export function getVideoProviderType(url) {
     if (parseWistiaId(u)) return 'wistia';
     if (parseLoomId(u)) return 'loom';
     if (parseBunnyStream(u)) return 'bunny';
+    if (parsePandaVideo(u)) return 'panda';
     return 'native';
 }
 
@@ -152,20 +212,23 @@ export function vimeoVidstackSrc(url) {
 }
 
 /**
- * URL de iframe para Wistia/Loom/Bunny Stream. YouTube e Vimeo não passam por aqui.
+ * URL de iframe para Wistia/Loom/Bunny Stream/Panda. YouTube e Vimeo não passam por aqui.
  * @param {string} url
  * @returns {string|null}
  */
 export function iframeVideoEmbedUrl(url) {
     const wistiaId = parseWistiaId(url);
     if (wistiaId) {
-        return `https://fast.wistia.net/embed/iframe/${wistiaId}`;
+        // Minimiza chrome nativo; a barra Stacker assume play/pause/seek.
+        return `https://fast.wistia.net/embed/iframe/${wistiaId}?seo=false&videoFoam=true&controlsVisibleOnLoad=false&playbar=false&fullscreenButton=false&settingsControl=false`;
     }
     const loomId = parseLoomId(url);
     if (loomId) {
-        return `https://www.loom.com/embed/${loomId}`;
+        return `https://www.loom.com/embed/${loomId}?hide_share=true&hide_title=true&hide_owner=true&hide_speed=true`;
     }
-    return bunnyEmbedUrl(url);
+    const bunny = bunnyEmbedUrl(url);
+    if (bunny) return bunny;
+    return pandaEmbedUrl(url);
 }
 
 /**
