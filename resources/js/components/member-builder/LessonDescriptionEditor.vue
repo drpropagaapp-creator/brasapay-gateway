@@ -27,6 +27,11 @@ const linkUrl = ref('https://');
 const colorOpen = ref(false);
 const sizeOpen = ref(false);
 let hydrating = false;
+/** Range da seleção no contenteditable — o focus no input da URL apaga a seleção nativa. */
+let savedLinkRange = null;
+let savedLinkText = '';
+
+const PLAIN_URL_RE = /^(https?:\/\/[^\s<>"']+|www\.[^\s<>"']+\.[^\s<>"']+)$/i;
 
 const COLORS = [
     { label: 'Padrão', value: '' },
@@ -87,10 +92,90 @@ function applySize(size) {
     run('fontSize', size);
 }
 
+function escapeHtmlText(value) {
+    return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+}
+
+function normalizeLessonHref(raw) {
+    let href = String(raw || '').trim();
+    if (!href) return '';
+    if (!/^https?:\/\//i.test(href) && !href.startsWith('/')) {
+        href = `https://${href}`;
+    }
+    if (/^\s*javascript:/i.test(href) || /^\s*data:/i.test(href)) {
+        return '';
+    }
+    return href;
+}
+
+function buildAnchorHtml(href, label) {
+    const safeHref = escapeHtmlText(href);
+    const safeLabel = escapeHtmlText(label || href);
+    return sanitizeLessonHtml(
+        `<a href="${safeHref}" target="_blank" rel="noopener noreferrer">${safeLabel}</a>`,
+    );
+}
+
+function selectionIsInsideEditor(selection) {
+    if (!selection || selection.rangeCount === 0 || !editorRef.value) return false;
+    const node = selection.getRangeAt(0).commonAncestorContainer;
+    return editorRef.value.contains(node.nodeType === Node.TEXT_NODE ? node.parentNode : node);
+}
+
+function captureEditorSelection() {
+    const selection = window.getSelection?.();
+    if (!selection || !selectionIsInsideEditor(selection) || selection.isCollapsed) {
+        return null;
+    }
+    return {
+        range: selection.getRangeAt(0).cloneRange(),
+        text: selection.toString(),
+    };
+}
+
+function restoreEditorSelection(range) {
+    const selection = window.getSelection?.();
+    if (!selection || !range || !editorRef.value) return false;
+    try {
+        editorRef.value.focus();
+        selection.removeAllRanges();
+        selection.addRange(range);
+        return true;
+    } catch (_) {
+        return false;
+    }
+}
+
+function clearSavedLinkSelection() {
+    savedLinkRange = null;
+    savedLinkText = '';
+}
+
+function findAnchorFromRange(range) {
+    if (!range) return null;
+    let node = range.commonAncestorContainer;
+    if (node?.nodeType === Node.TEXT_NODE) node = node.parentElement;
+    return node?.closest?.('a') || null;
+}
+
 function onPaste(event) {
     event.preventDefault();
     const html = event.clipboardData?.getData('text/html') || '';
     const text = event.clipboardData?.getData('text/plain') || '';
+    const trimmed = String(text || '').trim();
+    if (trimmed && PLAIN_URL_RE.test(trimmed) && !(html && looksLikeLessonHtml(html))) {
+        const href = normalizeLessonHref(trimmed);
+        if (href) {
+            editorRef.value?.focus();
+            document.execCommand('insertHTML', false, buildAnchorHtml(href, trimmed));
+            emitValue();
+            return;
+        }
+    }
     if (html && looksLikeLessonHtml(html)) {
         document.execCommand('insertHTML', false, sanitizeLessonHtml(html));
     } else {
@@ -102,38 +187,67 @@ function onPaste(event) {
 function openLinkPopover() {
     colorOpen.value = false;
     sizeOpen.value = false;
-    const selection = window.getSelection?.()?.toString() ?? '';
-    if (!selection.trim()) {
+    const captured = captureEditorSelection();
+    if (!captured?.text?.trim()) {
+        clearSavedLinkSelection();
         alert('Selecione o texto que deve virar link. Ex.: “Baixar material”.');
         return;
     }
-    linkUrl.value = 'https://';
+    savedLinkRange = captured.range;
+    savedLinkText = captured.text;
+    const existing = findAnchorFromRange(captured.range);
+    linkUrl.value = existing?.getAttribute?.('href') || 'https://';
     linkOpen.value = true;
-    nextTick(() => document.getElementById('lesson-editor-link-input')?.focus());
+    nextTick(() => {
+        const input = document.getElementById('lesson-editor-link-input');
+        input?.focus();
+        input?.select?.();
+    });
 }
 
 function applyLink() {
-    const raw = (linkUrl.value || '').trim();
-    if (!raw) {
+    const href = normalizeLessonHref(linkUrl.value);
+    if (!href) {
+        if ((linkUrl.value || '').trim()) {
+            alert('Use um link http ou https.');
+            return;
+        }
         linkOpen.value = false;
+        clearSavedLinkSelection();
         return;
     }
-    let href = raw;
-    if (!/^https?:\/\//i.test(href) && !href.startsWith('/')) {
-        href = `https://${href}`;
+
+    const label = (savedLinkText || '').trim() || href;
+    const restored = savedLinkRange ? restoreEditorSelection(savedLinkRange) : false;
+    if (!restored) {
+        editorRef.value?.focus();
     }
-    if (/^\s*javascript:/i.test(href) || /^\s*data:/i.test(href)) {
-        alert('Use um link http ou https.');
-        return;
+
+    const html = buildAnchorHtml(href, label);
+    const inserted = document.execCommand('insertHTML', false, html);
+    if (!inserted && savedLinkRange) {
+        try {
+            savedLinkRange.deleteContents();
+            const template = document.createElement('template');
+            template.innerHTML = html;
+            savedLinkRange.insertNode(template.content);
+        } catch (_) {
+            document.execCommand('insertHTML', false, html);
+        }
     }
-    editorRef.value?.focus();
-    document.execCommand('createLink', false, href);
+
     editorRef.value?.querySelectorAll('a').forEach((a) => {
         a.setAttribute('target', '_blank');
         a.setAttribute('rel', 'noopener noreferrer');
     });
     linkOpen.value = false;
+    clearSavedLinkSelection();
     emitValue();
+}
+
+function cancelLinkPopover() {
+    linkOpen.value = false;
+    clearSavedLinkSelection();
 }
 
 function clearFormatting() {
@@ -145,6 +259,7 @@ function closeMenus() {
     colorOpen.value = false;
     sizeOpen.value = false;
     linkOpen.value = false;
+    clearSavedLinkSelection();
 }
 
 function onDocumentPointerDown(event) {
@@ -244,10 +359,19 @@ onBeforeUnmount(() => {
                 class="min-w-0 flex-1 rounded-md border border-zinc-300 bg-white px-2 py-1 text-xs dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-200"
                 placeholder="https://..."
                 @keydown.enter.prevent="applyLink"
-                @keydown.escape.prevent="linkOpen = false"
+                @keydown.escape.prevent="cancelLinkPopover"
             />
-            <button type="button" class="rounded-md bg-zinc-900 px-2 py-1 text-xs font-medium text-white dark:bg-white dark:text-zinc-900" @click="applyLink">Aplicar</button>
-            <button type="button" class="text-xs text-zinc-500 hover:underline" @click="linkOpen = false">Cancelar</button>
+            <button
+                type="button"
+                class="rounded-md bg-zinc-900 px-2 py-1 text-xs font-medium text-white dark:bg-white dark:text-zinc-900"
+                @mousedown.prevent
+                @click="applyLink"
+            >
+                Aplicar
+            </button>
+            <button type="button" class="text-xs text-zinc-500 hover:underline" @mousedown.prevent @click="cancelLinkPopover">
+                Cancelar
+            </button>
         </div>
 
         <div

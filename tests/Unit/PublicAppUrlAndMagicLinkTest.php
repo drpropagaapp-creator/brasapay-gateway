@@ -63,4 +63,34 @@ class PublicAppUrlAndMagicLinkTest extends TestCase
         $this->assertStringNotContainsString('localhost', $url);
         $this->assertStringContainsString('signature=', $url);
     }
+
+    public function test_public_app_url_to_and_route_avoid_localhost_for_email_links(): void
+    {
+        config([
+            'app.url' => 'http://localhost',
+            'getfy.webhook_public_url' => 'https://pay.exemplo.com',
+        ]);
+        URL::forceRootUrl('http://localhost');
+
+        $this->assertSame('https://pay.exemplo.com/login', PublicAppUrl::to('/login'));
+        $this->assertSame('https://pay.exemplo.com/dashboard', PublicAppUrl::to('dashboard'));
+        $this->assertStringStartsWith('https://pay.exemplo.com/', PublicAppUrl::route('login'));
+        $this->assertStringNotContainsString('localhost', PublicAppUrl::route('login'));
+    }
+
+    public function test_signed_verification_url_uses_public_host(): void
+    {
+        config([
+            'app.url' => 'http://localhost',
+            'getfy.webhook_public_url' => 'https://conta.exemplo.com',
+        ]);
+        URL::forceRootUrl('http://localhost');
+
+        $user = User::factory()->create(['email' => 'verify-public@exemplo.com']);
+        $url = \App\Http\Controllers\EmailVerificationController::signedVerificationUrl($user);
+
+        $this->assertStringStartsWith('https://conta.exemplo.com/', $url);
+        $this->assertStringNotContainsString('localhost', $url);
+        $this->assertStringContainsString('signature=', $url);
+    }
 }

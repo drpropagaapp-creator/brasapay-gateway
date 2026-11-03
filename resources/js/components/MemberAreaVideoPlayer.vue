@@ -1,9 +1,19 @@
 <script setup>
 import { computed, ref, onMounted, onUnmounted, watch, nextTick } from 'vue';
 import { getVideoProviderType } from '@/lib/utils';
-import { iframeVideoEmbedUrl, MEMBER_IFRAME_ALLOW, vimeoVidstackSrc } from '@/lib/memberVideoEmbed';
+import {
+    iframeVideoEmbedUrl,
+    MEMBER_IFRAME_ALLOW,
+    parseWistiaId,
+    vimeoVidstackSrc,
+} from '@/lib/memberVideoEmbed';
+import {
+    createEmbedPlaybackController,
+    providerNeedsOpenEmbedClick,
+    providerUsesUnifiedEmbedControls,
+} from '@/lib/memberVideoPlayback';
 import { ensureVidstackLoaded } from '@/lib/vidstackLoader';
-import { Maximize2, Minimize2, Play, Pause, Monitor, Gauge } from 'lucide-vue-next';
+import { Maximize2, Minimize2, Play, Pause, Monitor, Gauge, RotateCcw, RotateCw } from 'lucide-vue-next';
 
 const props = defineProps({
     src: { type: String, default: '' },
@@ -32,6 +42,14 @@ const isIframeProvider = computed(() => !!iframeSrc.value);
 /** Quando a IFrame API falha (CSP, bloqueador, timeout), usa Vidstack como na referência open source. */
 const useVidstackFallback = ref(false);
 const useLegacyYoutube = computed(() => isYoutube.value && !useVidstackFallback.value);
+/** Bunny/Panda/Loom/Wistia: iframe + barra Stacker (play/pause/±/scrub). */
+const useUnifiedEmbedControls = computed(
+    () => providerUsesUnifiedEmbedControls(providerType.value) && !!iframeSrc.value,
+);
+/** Wistia no iOS: veil impede o 1º play nativo — manter iframe clicável. */
+const showEmbedVeil = computed(
+    () => useUnifiedEmbedControls.value && !providerNeedsOpenEmbedClick(providerType.value),
+);
 const showVidstackPlayer = computed(
     () => !!props.src?.trim() && !isIframeProvider.value && (!isYoutube.value || useVidstackFallback.value),
 );
@@ -548,6 +566,176 @@ function showControls() {
     scheduleHideControls();
 }
 
+// ---------------------------------------------------------------------------
+// Embeds unificados (Bunny / Panda) — barra Stacker via postMessage / Player.js
+// ---------------------------------------------------------------------------
+const UNIFIED_SEEK_STEP_SEC = 10;
+const embedIframeEl = ref(null);
+/** Src aplicado depois do listener postMessage, para não perder o `ready` do Player.js. */
+const embedFrameSrc = ref('');
+const embedIsPlaying = ref(false);
+const embedCurrentTime = ref(0);
+const embedDuration = ref(0);
+const embedControlsVisible = ref(true);
+const embedScrubbing = ref(false);
+let embedPlayback = null;
+let embedControlsHideTimer = null;
+
+const embedProgressPct = computed(() => {
+    const d = embedDuration.value || 0;
+    if (d <= 0) return 0;
+    return Math.max(0, Math.min(100, (embedCurrentTime.value / d) * 100));
+});
+
+function destroyEmbedPlayback() {
+    if (embedControlsHideTimer) {
+        clearTimeout(embedControlsHideTimer);
+        embedControlsHideTimer = null;
+    }
+    try {
+        embedPlayback?.destroy?.();
+    } catch (_) {}
+    embedPlayback = null;
+    embedFrameSrc.value = '';
+    embedIsPlaying.value = false;
+    embedCurrentTime.value = 0;
+    embedDuration.value = 0;
+    embedControlsVisible.value = true;
+    embedScrubbing.value = false;
+}
+
+function scheduleHideEmbedControls() {
+    if (embedControlsHideTimer) clearTimeout(embedControlsHideTimer);
+    if (!embedIsPlaying.value) {
+        embedControlsVisible.value = true;
+        return;
+    }
+    embedControlsHideTimer = setTimeout(() => {
+        embedControlsVisible.value = false;
+    }, 2200);
+}
+
+function showEmbedControls() {
+    embedControlsVisible.value = true;
+    scheduleHideEmbedControls();
+}
+
+function onEmbedPlaybackEvent(name, payload = {}) {
+    if (name === 'play') {
+        embedIsPlaying.value = true;
+        markUserPlayed();
+        scheduleHideEmbedControls();
+        return;
+    }
+    if (name === 'pause') {
+        embedIsPlaying.value = false;
+        embedControlsVisible.value = true;
+        return;
+    }
+    if (name === 'ended') {
+        embedIsPlaying.value = false;
+        embedControlsVisible.value = true;
+        onEnded();
+        return;
+    }
+    if (name === 'timeupdate') {
+        const seconds = Number(payload.seconds);
+        const duration = Number(payload.duration);
+        if (Number.isFinite(seconds) && seconds >= 0) embedCurrentTime.value = seconds;
+        if (Number.isFinite(duration) && duration > 0) embedDuration.value = duration;
+    }
+}
+
+async function initEmbedPlayback() {
+    destroyEmbedPlayback();
+    if (!useUnifiedEmbedControls.value || !iframeSrc.value) return;
+    await nextTick();
+    const iframe = embedIframeEl.value;
+    if (!iframe) return;
+    // Listener antes do src: Bunny/Loom disparam `ready` no load do iframe.
+    embedPlayback = createEmbedPlaybackController(iframe, providerType.value, {
+        onEvent: onEmbedPlaybackEvent,
+        mediaId: parseWistiaId(props.src) || undefined,
+    });
+    embedFrameSrc.value = iframeSrc.value;
+}
+
+function toggleEmbedPlay() {
+    if (!embedPlayback) {
+        void initEmbedPlayback();
+        return;
+    }
+    try {
+        if (embedIsPlaying.value) {
+            embedPlayback.pause();
+            embedIsPlaying.value = false;
+            embedControlsVisible.value = true;
+        } else {
+            embedPlayback.play();
+            embedIsPlaying.value = true;
+            markUserPlayed();
+            scheduleHideEmbedControls();
+        }
+    } catch (_) {}
+}
+
+function seekEmbedToPct(pct) {
+    if (!embedPlayback) return;
+    const d = embedDuration.value || 0;
+    if (d <= 0) return;
+    const t = (Math.max(0, Math.min(100, pct)) / 100) * d;
+    try {
+        embedPlayback.seek(t);
+        embedCurrentTime.value = t;
+    } catch (_) {}
+}
+
+function seekEmbedBy(deltaSeconds) {
+    if (!embedPlayback) return;
+    const delta = Number(deltaSeconds) || 0;
+    if (!delta) return;
+    try {
+        if (
+            typeof embedPlayback.seekBy === 'function' &&
+            (providerType.value === 'panda' || providerType.value === 'wistia')
+        ) {
+            embedPlayback.seekBy(delta);
+            const d = embedDuration.value || 0;
+            const next = Math.max(0, embedCurrentTime.value + delta);
+            embedCurrentTime.value = d > 0 ? Math.min(d, next) : next;
+            return;
+        }
+        const d = embedDuration.value || 0;
+        const next = Math.max(0, embedCurrentTime.value + delta);
+        const clamped = d > 0 ? Math.min(d, next) : next;
+        embedPlayback.seek(clamped);
+        embedCurrentTime.value = clamped;
+    } catch (_) {}
+}
+
+function seekYoutubeBy(deltaSeconds) {
+    if (!ytPlayer || !ytReady.value) return;
+    const delta = Number(deltaSeconds) || 0;
+    if (!delta) return;
+    const d = ytDuration.value || 0;
+    const next = Math.max(0, ytCurrentTime.value + delta);
+    const clamped = d > 0 ? Math.min(d, next) : next;
+    try {
+        ytPlayer.seekTo?.(clamped, true);
+        ytCurrentTime.value = clamped;
+        maskBrandingFor(350);
+    } catch (_) {}
+}
+
+function onEmbedScrubStart() {
+    embedScrubbing.value = true;
+    showEmbedControls();
+}
+function onEmbedScrubEnd() {
+    embedScrubbing.value = false;
+    scheduleHideEmbedControls();
+}
+
 function isIosTouchDevice() {
     if (typeof navigator === 'undefined') return false;
     const ua = String(navigator.userAgent || '');
@@ -608,7 +796,7 @@ async function requestMemberVideoFullscreen() {
         }
     }
 
-    if (useLegacyYoutube.value && wrap) {
+    if ((useLegacyYoutube.value || useUnifiedEmbedControls.value) && wrap) {
         if (isIosTouchDevice() && isMobile.value) {
             enterImmersiveMode();
             return;
@@ -719,7 +907,12 @@ function isTrustedLessonEmbedOrigin(origin) {
             host === 'wistia.net' ||
             host.endsWith('.wistia.net') ||
             host === 'loom.com' ||
-            host.endsWith('.loom.com')
+            host.endsWith('.loom.com') ||
+            host === 'player.mediadelivery.net' ||
+            host === 'iframe.mediadelivery.net' ||
+            host.endsWith('.mediadelivery.net') ||
+            host === 'pandavideo.com.br' ||
+            host.endsWith('.pandavideo.com.br')
         );
     } catch (_) {
         return false;
@@ -727,6 +920,8 @@ function isTrustedLessonEmbedOrigin(origin) {
 }
 
 function onLessonEmbedMessage(e) {
+    // Controllers unificados (Bunny/Panda) já tratam ended/timeupdate.
+    if (useUnifiedEmbedControls.value) return;
     if (!iframeSrc.value) return;
     if (!isTrustedLessonEmbedOrigin(e.origin)) return;
     let data = e.data;
@@ -738,8 +933,12 @@ function onLessonEmbedMessage(e) {
         }
     }
     if (!data || typeof data !== 'object') return;
-    const eventName = data.event || data.method || data.type || data.name;
-    if (eventName === 'ended' || eventName === 'end') {
+    const eventName = data.event || data.method || data.type || data.name || data.message;
+    if (
+        eventName === 'ended' ||
+        eventName === 'end' ||
+        eventName === 'panda_ended'
+    ) {
         onEnded();
     }
 }
@@ -782,6 +981,7 @@ onMounted(() => {
     }
 
     initYoutubePlayer();
+    void initEmbedPlayback();
     if (typeof window !== 'undefined') {
         window.addEventListener('message', onLessonEmbedMessage);
     }
@@ -792,6 +992,7 @@ onUnmounted(() => {
     }
     if (watermarkInterval) clearInterval(watermarkInterval);
     destroyYoutubePlayer();
+    destroyEmbedPlayback();
     exitImmersiveMode();
     if (typeof document !== 'undefined' && onFullscreenChangeHandler) {
         document.removeEventListener('fullscreenchange', onFullscreenChangeHandler);
@@ -822,9 +1023,11 @@ watch(
         useVidstackFallback.value = false;
         ytLoadError.value = false;
         if (providerType.value === 'youtube') {
+            destroyEmbedPlayback();
             void initYoutubePlayer();
         } else {
             destroyYoutubePlayer();
+            void initEmbedPlayback();
         }
     }
 );
@@ -971,9 +1174,15 @@ function onContextMenu(e) {
 
             <div class="yt-legacy-controls" :class="{ hidden: !ytControlsVisible }" @pointerdown.stop>
                 <div class="yt-controlbar">
+                    <button type="button" class="yt-icon-btn" aria-label="Voltar 10 segundos" @click="seekYoutubeBy(-UNIFIED_SEEK_STEP_SEC)">
+                        <RotateCcw class="h-4 w-4" aria-hidden="true" />
+                    </button>
                     <button type="button" class="yt-icon-btn" aria-label="Play/Pause" @click="togglePlay">
                         <Pause v-if="ytIsPlaying" class="h-4 w-4" aria-hidden="true" />
                         <Play v-else class="h-4 w-4" aria-hidden="true" />
+                    </button>
+                    <button type="button" class="yt-icon-btn" aria-label="Avançar 10 segundos" @click="seekYoutubeBy(UNIFIED_SEEK_STEP_SEC)">
+                        <RotateCw class="h-4 w-4" aria-hidden="true" />
                     </button>
 
                     <div class="yt-time">
@@ -1052,6 +1261,76 @@ function onContextMenu(e) {
             </div>
         </div>
 
+        <div
+            v-else-if="useUnifiedEmbedControls"
+            class="embed-unified-root"
+            @mousemove="showEmbedControls"
+            @touchstart.passive="showEmbedControls"
+        >
+            <iframe
+                ref="embedIframeEl"
+                class="member-embed-iframe"
+                :src="embedFrameSrc"
+                title="Vídeo da aula"
+                :allow="MEMBER_IFRAME_ALLOW"
+                allowfullscreen
+                referrerpolicy="strict-origin-when-cross-origin"
+            />
+            <!-- Camada transparente: toque/clique no vídeo = play/pause (exceto Wistia no mobile). -->
+            <button
+                v-if="showEmbedVeil"
+                type="button"
+                class="yt-veil"
+                aria-label="Reproduzir/pausar vídeo"
+                @click.stop.prevent="toggleEmbedPlay"
+            />
+
+            <div
+                class="yt-progress-overlay"
+                :class="{ hidden: !embedControlsVisible && !embedScrubbing }"
+                @pointerdown.stop="onEmbedScrubStart"
+                @pointerup.stop="onEmbedScrubEnd"
+                @pointercancel.stop="onEmbedScrubEnd"
+                @touchend.stop="onEmbedScrubEnd"
+            >
+                <input
+                    class="yt-progress-overlay-range"
+                    type="range"
+                    min="0"
+                    max="100"
+                    step="0.1"
+                    :value="embedProgressPct"
+                    :disabled="embedDuration <= 0"
+                    @input="seekEmbedToPct(parseFloat($event.target.value))"
+                    aria-label="Progresso do vídeo"
+                />
+            </div>
+
+            <div class="yt-legacy-controls" :class="{ hidden: !embedControlsVisible }" @pointerdown.stop>
+                <div class="yt-controlbar">
+                    <button type="button" class="yt-icon-btn" aria-label="Voltar 10 segundos" @click="seekEmbedBy(-UNIFIED_SEEK_STEP_SEC)">
+                        <RotateCcw class="h-4 w-4" aria-hidden="true" />
+                    </button>
+                    <button type="button" class="yt-icon-btn" aria-label="Play/Pause" @click="toggleEmbedPlay">
+                        <Pause v-if="embedIsPlaying" class="h-4 w-4" aria-hidden="true" />
+                        <Play v-else class="h-4 w-4" aria-hidden="true" />
+                    </button>
+                    <button type="button" class="yt-icon-btn" aria-label="Avançar 10 segundos" @click="seekEmbedBy(UNIFIED_SEEK_STEP_SEC)">
+                        <RotateCw class="h-4 w-4" aria-hidden="true" />
+                    </button>
+
+                    <div class="yt-time">
+                        {{ formatTime(embedCurrentTime) }} <span class="yt-time-sep">/</span> {{ formatTime(embedDuration) }}
+                    </div>
+
+                    <button type="button" class="yt-icon-btn" aria-label="Tela cheia" @click="requestMemberVideoFullscreen">
+                        <Maximize2 v-if="!immersiveActive" class="h-4 w-4" aria-hidden="true" />
+                        <Minimize2 v-else class="h-4 w-4" aria-hidden="true" />
+                    </button>
+                </div>
+            </div>
+        </div>
+
         <iframe
             v-else-if="iframeSrc"
             class="member-embed-iframe"
@@ -1083,6 +1362,8 @@ function onContextMenu(e) {
             <media-video-layout
                 :translations="vidstackLayoutTranslations"
                 :playback-rates="vidstackPlaybackRates"
+                :seek-buttons="true"
+                :seek-step="UNIFIED_SEEK_STEP_SEC"
             >
                 <media-airplay-button slot="airPlayButton">
                     <media-icon type="airplay" />
@@ -1116,7 +1397,8 @@ function onContextMenu(e) {
     display: flex;
     flex-direction: column;
 }
-.member-area-video-player.is-immersive .yt-legacy-root {
+.member-area-video-player.is-immersive .yt-legacy-root,
+.member-area-video-player.is-immersive .embed-unified-root {
     flex: 1;
     min-height: 0;
 }
@@ -1124,6 +1406,11 @@ function onContextMenu(e) {
 .member-area-video-player.is-immersive .member-embed-iframe {
     flex: 1;
     min-height: 0;
+    height: 100%;
+}
+.embed-unified-root {
+    position: relative;
+    width: 100%;
     height: 100%;
 }
 .member-embed-iframe {
@@ -1196,6 +1483,14 @@ function onContextMenu(e) {
 /* Camada 1: esconder PiP para dificultar gravação */
 .player :deep(media-pip-button) {
     display: none !important;
+}
+/* Vimeo/nativo: manter Seek ± visível também no layout mobile do Vidstack */
+.player :deep(media-seek-button),
+.player :deep([data-media-button='seek-backward']),
+.player :deep([data-media-button='seek-forward']) {
+    display: inline-flex !important;
+    min-width: 40px;
+    min-height: 40px;
 }
 
 .yt-legacy-root,

@@ -247,7 +247,7 @@ class EquipeController extends Controller
             try {
                 app(TenantMailConfigService::class)->applyMailerConfigForTenant($tenantId, [], null);
                 Mail::purge('smtp');
-                $loginUrl = rtrim((string) config('app.url'), '/') . '/login';
+                $loginUrl = \App\Support\PublicAppUrl::to('/login');
                 Mail::mailer('smtp')->to($member->email)->send(new TeamMemberAccessMail(
                     name: $member->name,
                     email: $member->email,

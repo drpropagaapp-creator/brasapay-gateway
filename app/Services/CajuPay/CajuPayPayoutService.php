@@ -38,6 +38,12 @@ class CajuPayPayoutService
             return ['ok' => false, 'error' => 'Credenciais CajuPay incompletas.'];
         }
 
+        // Persiste a conta usada no payout para KPIs de custo do adquirente (multi-conta).
+        $meta = is_array($withdrawal->payout_meta) ? $withdrawal->payout_meta : [];
+        $meta['cajupay_account_id'] = (int) $account->id;
+        $withdrawal->payout_meta = $meta;
+        $withdrawal->save();
+
         $net = (float) $withdrawal->net_amount;
         if ($net <= 0) {
             return ['ok' => false, 'error' => 'Valor líquido do saque inválido.'];

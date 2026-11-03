@@ -1,10 +1,10 @@
-FROM node:22-alpine AS build
+FROM node:22-alpine3.21 AS build
 WORKDIR /app
 COPY package.json tsconfig.json ./
 COPY src ./src
 RUN npm install && npm run build && npm prune --omit=dev
 
-FROM node:22-alpine
+FROM node:22-alpine3.21
 RUN apk add --no-cache docker-cli bash unzip curl \
   && mkdir -p /usr/lib/docker/cli-plugins \
   && ARCH="$(uname -m | sed 's/x86_64/linux-x86_64/;s/aarch64/linux-aarch64/')" \

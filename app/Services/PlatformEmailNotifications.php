@@ -18,6 +18,7 @@ use App\Models\Setting;
 use App\Models\User;
 use App\Models\Withdrawal;
 use App\Support\KycNotificationEmails;
+use App\Support\PublicAppUrl;
 use Illuminate\Support\Facades\Log;
 
 class PlatformEmailNotifications
@@ -34,7 +35,7 @@ class PlatformEmailNotifications
         }
 
         $branding = BrandingEmailData::forTenant(null);
-        $reviewUrl = route('plataforma.kyc.show', ['user' => $merchant->id]);
+        $reviewUrl = PublicAppUrl::route('plataforma.kyc.show', ['user' => $merchant->id]);
 
         $this->mail->send(
             new KycSubmittedAdminMail($merchant, $branding, $reviewUrl),
@@ -51,7 +52,7 @@ class PlatformEmailNotifications
 
         $product->loadMissing('tenantOwner');
         $branding = BrandingEmailData::forTenant(null);
-        $reviewUrl = route('plataforma.produtos.index', [
+        $reviewUrl = PublicAppUrl::route('plataforma.produtos.index', [
             'filter' => 'pending',
             'q' => $product->name,
         ]);
@@ -80,7 +81,7 @@ class PlatformEmailNotifications
                 $owner?->email,
                 $reason,
                 $branding,
-                route('plataforma.saques.index', ['withdrawal_status' => 'failed'])
+                PublicAppUrl::route('plataforma.saques.index', ['withdrawal_status' => 'failed'])
             ),
             $emails
         );
@@ -104,7 +105,7 @@ class PlatformEmailNotifications
                 $owner?->email,
                 $reason,
                 $branding,
-                route('plataforma.saques.index', ['withdrawal_status' => 'pending'])
+                PublicAppUrl::route('plataforma.saques.index', ['withdrawal_status' => 'pending'])
             ),
             $emails
         );
@@ -124,7 +125,7 @@ class PlatformEmailNotifications
             new RefundRequestAdminMail(
                 $refundRequest,
                 $branding,
-                route('plataforma.transacoes.index')
+                PublicAppUrl::route('plataforma.transacoes.index')
             ),
             $emails
         );
@@ -133,7 +134,7 @@ class PlatformEmailNotifications
     public function kycApproved(User $merchant): void
     {
         $branding = BrandingEmailData::forTenant($merchant->tenant_id);
-        $dashboardUrl = url('/dashboard');
+        $dashboardUrl = PublicAppUrl::to('/dashboard');
 
         $this->mail->send(
             new KycApprovedMail($merchant, $branding, $dashboardUrl),
@@ -144,7 +145,7 @@ class PlatformEmailNotifications
     public function kycRejected(User $merchant, string $reason): void
     {
         $branding = BrandingEmailData::forTenant($merchant->tenant_id);
-        $kycUrl = url('/financeiro?tab=seus-dados');
+        $kycUrl = PublicAppUrl::to('/financeiro?tab=seus-dados');
 
         $this->mail->send(
             new KycRejectedMail($merchant, $branding, $reason, $kycUrl),
@@ -160,7 +161,7 @@ class PlatformEmailNotifications
         }
 
         $branding = BrandingEmailData::forTenant(null);
-        $settingsUrl = route('plataforma.financeiro.index', ['tab' => 'saques']);
+        $settingsUrl = PublicAppUrl::route('plataforma.financeiro.index', ['tab' => 'saques']);
 
         $this->mail->send(
             new ManualApprovalPinResetAdminMail($pin, $requestedBy, $branding, $settingsUrl),
@@ -171,8 +172,8 @@ class PlatformEmailNotifications
     public function welcomeInfoprodutor(User $user): void
     {
         $branding = BrandingEmailData::forTenant($user->tenant_id);
-        $dashboardUrl = url('/dashboard');
-        $kycUrl = url('/financeiro?tab=seus-dados');
+        $dashboardUrl = PublicAppUrl::to('/dashboard');
+        $kycUrl = PublicAppUrl::to('/financeiro?tab=seus-dados');
 
         $this->mail->send(
             new WelcomeInfoprodutorMail($user, $branding, $dashboardUrl, $kycUrl),

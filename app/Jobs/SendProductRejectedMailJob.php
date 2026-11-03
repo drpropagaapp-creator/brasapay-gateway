@@ -41,7 +41,7 @@ class SendProductRejectedMailJob implements ShouldQueue
 
         try {
             $branding = BrandingEmailData::forTenant(null);
-            $panelUrl = route('produtos.edit', $product);
+            $panelUrl = \App\Support\PublicAppUrl::route('produtos.edit', $product);
             $mailService->send(
                 new ProductRejectedMail($seller, $product, $branding, $panelUrl, $reason),
                 $seller->email

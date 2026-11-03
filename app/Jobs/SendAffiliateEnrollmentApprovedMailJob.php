@@ -37,7 +37,7 @@ class SendAffiliateEnrollmentApprovedMailJob implements ShouldQueue
         }
 
         $branding = BrandingEmailData::forTenant(null);
-        $panelUrl = route('produtos.painel-afiliado.show', $product->id);
+        $panelUrl = \App\Support\PublicAppUrl::route('produtos.painel-afiliado.show', $product->id);
         $affiliateLink = AffiliateEnrollmentNotifier::affiliateCheckoutLink($product, $enrollment);
         $materialsUrl = $product->affiliate_page_url ?: null;
 

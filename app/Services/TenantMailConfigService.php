@@ -6,6 +6,8 @@ use App\Models\Setting;
 
 class TenantMailConfigService
 {
+    public const PROVIDERS = ['smtp', 'hostinger', 'sendgrid', 'resend'];
+
     /**
      * Whether the tenant has at least one email provider configured (SMTP, Hostinger, SendGrid or Resend).
      */
@@ -23,8 +25,8 @@ class TenantMailConfigService
                 return true;
             }
         }
-        foreach (['sendgrid_api_key', 'resend_api_key'] as $apiKeySetting) {
-            $encrypted = Setting::get($apiKeySetting, null, $tenantId);
+        foreach (['sendgrid_api_key', 'resend_api_key'] as $apiKey) {
+            $encrypted = Setting::get($apiKey, null, $tenantId);
             if ($encrypted) {
                 $key = @decrypt($encrypted);
                 if ($key !== null && $key !== '') {
@@ -32,6 +34,7 @@ class TenantMailConfigService
                 }
             }
         }
+
         return false;
     }
 
@@ -60,10 +63,11 @@ class TenantMailConfigService
                 $encrypted = Setting::get('resend_api_key', null, $tenantId);
                 $password = $encrypted ? @decrypt($encrypted) : null;
             }
+
             return [
                 'host' => 'smtp.resend.com',
-                'port' => 465,
-                'encryption' => 'ssl',
+                'port' => 587,
+                'encryption' => 'tls',
                 'username' => 'resend',
                 'password' => $password,
             ];
@@ -98,7 +102,7 @@ class TenantMailConfigService
     }
 
     /**
-     * Return the email provider name for the tenant (smtp, hostinger, sendgrid).
+     * Return the email provider name for the tenant (smtp, hostinger, sendgrid, resend).
      * Uses resolveTenantIdForMail so it matches the tenant used when applying config.
      */
     public function getProviderForTenant(?int $tenantId): string
@@ -255,7 +259,7 @@ class TenantMailConfigService
         config(['mail.mailers.smtp.password' => $config['password']]);
 
         // SMTP/Hostinger exigem From = mailbox autenticada (evita 553 "not owned by user").
-        // SendGrid usa username "apikey" — aí o From verificado no painel é obrigatório.
+        // SendGrid/Resend usam username de API — o From verificado no painel é obrigatório.
         $username = trim((string) ($config['username'] ?? ''));
         $fromAddress = config('mail.from.address');
         $fromName = config('mail.from.name', 'Getfy');
@@ -265,7 +269,6 @@ class TenantMailConfigService
             $fromAddress = $overrides['sendgrid_mail_from_address'] ?? Setting::get('sendgrid_mail_from_address', config('mail.from.address'), $tenantId);
             $fromName = $overrides['sendgrid_mail_from_name'] ?? Setting::get('sendgrid_mail_from_name', config('mail.from.name'), $tenantId);
         } elseif ($provider === 'resend') {
-            // Resend usa username "resend" — o From deve ser de um domínio verificado no painel Resend.
             $fromAddress = $overrides['resend_mail_from_address'] ?? Setting::get('resend_mail_from_address', config('mail.from.address'), $tenantId);
             $fromName = $overrides['resend_mail_from_name'] ?? Setting::get('resend_mail_from_name', config('mail.from.name'), $tenantId);
         } elseif ($provider === 'hostinger') {

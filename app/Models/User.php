@@ -459,6 +459,7 @@ class User extends Authenticatable
         if ($redirect !== null) {
             $params['redirect'] = $redirect;
         }
+        \App\Support\PublicAppUrl::forceRoot();
         $url = url(route('password.reset', $params, false));
         $expire = (int) config('auth.passwords.'.config('auth.defaults.passwords').'.expire');
         $tenantId = $this->tenant_id;
