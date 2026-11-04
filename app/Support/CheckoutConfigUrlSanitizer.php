@@ -48,6 +48,11 @@ final class CheckoutConfigUrlSanitizer
             $config['vturb_embed'] = str_contains($embed, 'converteai.net') ? $embed : '';
         }
 
+        // Player próprio (iframe): guarda só a URL https de host permitido.
+        if (isset($config['video_iframe_url']) && is_string($config['video_iframe_url'])) {
+            $config['video_iframe_url'] = CheckoutVideoIframe::normalize($config['video_iframe_url']);
+        }
+
         if (isset($config['landing']) && is_array($config['landing'])) {
             if (isset($config['landing']['hero_image']) && is_string($config['landing']['hero_image'])) {
                 $safe = SafeUrl::normalizeHttpUrl($config['landing']['hero_image']);

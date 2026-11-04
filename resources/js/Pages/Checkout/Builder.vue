@@ -45,7 +45,7 @@ const LANDING_SECTION_DEFS = [
     { id: 'headline', label: 'Título principal' },
     { id: 'subheadline', label: 'Subtítulo' },
     { id: 'cta', label: 'Botão de chamada (CTA)' },
-    { id: 'video', label: 'Vídeo (YouTube/VTurb)' },
+    { id: 'video', label: 'Vídeo (YouTube/VTurb/Player próprio)' },
     { id: 'hero_image', label: 'Imagem de destaque' },
     { id: 'images', label: 'Imagens em sequência' },
     { id: 'custom_html', label: 'HTML personalizado' },
@@ -152,6 +152,7 @@ const configForm = reactive({
     },
     youtube_url: props.config?.youtube_url ?? null,
     vturb_embed: props.config?.vturb_embed ?? '',
+    video_iframe_url: props.config?.video_iframe_url ?? '',
     youtube_position: props.config?.youtube_position ?? 'top',
     redirect_after_purchase: props.config?.redirect_after_purchase ?? '',
     back_redirect: {
@@ -767,6 +768,18 @@ const inputClass =
                                 />
                                 <p class="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
                                     No VTurb: seu vídeo → Incorporar → copie o código. Se preenchido, o player VTurb é exibido no lugar do YouTube. Só scripts oficiais do converteai.net são carregados.
+                                </p>
+                            </div>
+                            <div>
+                                <label class="mb-1.5 block text-sm font-medium text-zinc-700 dark:text-zinc-300">Ou player próprio (link ou código iframe)</label>
+                                <textarea
+                                    v-model="configForm.video_iframe_url"
+                                    rows="3"
+                                    :class="[inputClass, 'font-mono text-xs']"
+                                    placeholder="https://drpropaga-vsl.vercel.app/p/xxxxxxxx&#10;ou cole o código &lt;iframe src=&quot;...&quot;&gt;&lt;/iframe&gt;"
+                                />
+                                <p class="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+                                    Cole o link direto ou o código de incorporação do seu player. Só o endereço (https) é guardado. Se o VTurb estiver preenchido, ele tem prioridade; o player próprio tem prioridade sobre o YouTube.
                                 </p>
                             </div>
                             <div>

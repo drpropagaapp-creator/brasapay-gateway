@@ -9,6 +9,7 @@ import CheckoutTimer from '@/components/checkout/CheckoutTimer.vue';
 import CheckoutBanners from '@/components/checkout/CheckoutBanners.vue';
 import CheckoutYoutube from '@/components/checkout/CheckoutYoutube.vue';
 import CheckoutVturb from '@/components/checkout/CheckoutVturb.vue';
+import CheckoutIframeVideo from '@/components/checkout/CheckoutIframeVideo.vue';
 import LandingBlocks from '@/components/checkout/landing/LandingBlocks.vue';
 import CheckoutSummary from '@/components/checkout/CheckoutSummary.vue';
 import CheckoutForm from '@/components/checkout/CheckoutForm.vue';
@@ -172,6 +173,7 @@ const previewRemountKey = computed(() => {
             tp: effectiveConfig.value?.template,
             lp: effectiveConfig.value?.landing,
             vt: effectiveConfig.value?.vturb_embed,
+            vi: effectiveConfig.value?.video_iframe_url,
         })}`;
     } catch (_) {
         return `p-${previewEpoch.value}`;
@@ -259,6 +261,8 @@ const landingCustomHtml = computed(() => String(landingConfig.value.custom_html 
 /** VTurb tem precedência sobre YouTube quando o embed está preenchido. */
 const vturbEmbed = computed(() => String(effectiveConfig.value?.vturb_embed || '').trim());
 const hasVturb = computed(() => vturbEmbed.value.includes('converteai.net'));
+const iframeVideoUrl = computed(() => String(effectiveConfig.value?.video_iframe_url || '').trim());
+const hasIframeVideo = computed(() => !hasVturb.value && iframeVideoUrl.value !== '');
 const videoPosition = computed(() => effectiveConfig.value?.youtube_position ?? 'top');
 const landingBenefits = computed(() =>
     String(landingConfig.value.benefits || '')
@@ -305,7 +309,7 @@ function landingSectionHasContent(id) {
         case 'subheadline': return !!landingSubheadline.value;
         case 'cta':
         case 'cta_final': return !!landingCtaText.value;
-        case 'video': return hasVturb.value || !!effectiveConfig.value?.youtube_url;
+        case 'video': return hasVturb.value || hasIframeVideo.value || !!effectiveConfig.value?.youtube_url;
         case 'hero_image': return !!landingHeroImage.value;
         case 'images': return landingImages.value.length > 0;
         case 'custom_html': return !!landingCustomHtml.value;
@@ -535,8 +539,12 @@ function onConversionPixelsReady() {
                 v-if="!isLandingTemplate && hasVturb && videoPosition !== 'bottom'"
                 :embed-code="vturbEmbed"
             />
+            <CheckoutIframeVideo
+                v-if="!isLandingTemplate && hasIframeVideo && videoPosition !== 'bottom'"
+                :url="iframeVideoUrl"
+            />
             <CheckoutYoutube
-                v-if="!isLandingTemplate && !hasVturb && videoPosition !== 'bottom'"
+                v-if="!isLandingTemplate && !hasVturb && !hasIframeVideo && videoPosition !== 'bottom'"
                 :url="effectiveConfig?.youtube_url"
             />
 
@@ -586,6 +594,11 @@ function onConversionPixelsReady() {
                         <CheckoutVturb
                             v-if="hasVturb"
                             :embed-code="vturbEmbed"
+                            class="mx-auto max-w-4xl"
+                        />
+                        <CheckoutIframeVideo
+                            v-else-if="hasIframeVideo"
+                            :url="iframeVideoUrl"
                             class="mx-auto max-w-4xl"
                         />
                         <CheckoutYoutube
@@ -817,8 +830,13 @@ function onConversionPixelsReady() {
                 :embed-code="vturbEmbed"
                 class="mt-8"
             />
+            <CheckoutIframeVideo
+                v-if="!isLandingTemplate && hasIframeVideo && videoPosition === 'bottom'"
+                :url="iframeVideoUrl"
+                class="mt-8"
+            />
             <CheckoutYoutube
-                v-if="!isLandingTemplate && !hasVturb && videoPosition === 'bottom'"
+                v-if="!isLandingTemplate && !hasVturb && !hasIframeVideo && videoPosition === 'bottom'"
                 :url="effectiveConfig?.youtube_url"
                 class="mt-8"
             />
