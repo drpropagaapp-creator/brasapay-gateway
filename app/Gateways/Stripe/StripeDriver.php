@@ -425,9 +425,16 @@ class StripeDriver implements GatewayDriver
         }
         try {
             $stripe = new StripeClient($secret);
-            $pi = $stripe->paymentIntents->retrieve($transactionId);
+            // latest_charge expandido: um PaymentIntent reembolsado continua "succeeded" na Stripe;
+            // o reembolso total só aparece na cobrança (charge.refunded).
+            $pi = $stripe->paymentIntents->retrieve($transactionId, ['expand' => ['latest_charge']]);
             $status = $pi->status ?? null;
             if ($status === 'succeeded') {
+                $charge = $pi->latest_charge ?? null;
+                if (is_object($charge) && ($charge->refunded ?? false) === true) {
+                    return 'cancelled';
+                }
+
                 return 'paid';
             }
             if (in_array($status, ['requires_action', 'requires_confirmation', 'requires_payment_method', 'processing'], true)) {

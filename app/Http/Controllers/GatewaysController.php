@@ -150,7 +150,7 @@ class GatewaysController extends Controller
             $webhookHelp = 'Cadastre esta URL HTTPS no Site Cielo (E-commerce → Gestão API E-commerce → URL de notificações), método POST, JSON. A URL é estática (não vai em cada cobrança). Recomendado: configure o mesmo header Key/Value no portal e nos campos abaixo. O Post de Notificação só traz PaymentId; o sistema confirma o status em GET /1/sales/{PaymentId}. PIX Cielo2 (Provider Cielo2) não tem sandbox de pagamento confirmado.';
         } elseif ($slug === 'stripe') {
             $webhookUrl = GatewayWebhookUrl::forGateway('stripe');
-            $webhookHelp = 'Cadastre esta URL HTTPS no Stripe Dashboard (Developers → Webhooks), no mesmo modo da Secret Key (teste ou live). Evento: payment_intent.succeeded. Depois cole o signing secret (whsec_…) no campo Webhook Secret abaixo.';
+            $webhookHelp = 'Cadastre esta URL HTTPS no Stripe Dashboard (Developers → Webhooks), no mesmo modo da Secret Key (teste ou live). Eventos: payment_intent.succeeded, charge.refunded, charge.dispute.created e charge.dispute.closed (só estes). Depois cole o signing secret (whsec_…) no campo Webhook Secret abaixo.';
         } elseif ($slug === 'asaas') {
             $webhookUrl = GatewayWebhookUrl::forGateway('asaas');
             $webhookHelp = 'Cadastre esta URL HTTPS no painel Asaas (Integrações → Webhooks), método POST. Eventos: PAYMENT_RECEIVED, PAYMENT_CONFIRMED, PAYMENT_REFUNDED, PAYMENT_DELETED e PAYMENT_CHARGEBACK_REQUESTED. No cadastro do webhook, defina um token de autenticação e cole o mesmo valor no campo Token de autenticação do webhook abaixo. A Asaas envia esse token no header asaas-access-token.';
