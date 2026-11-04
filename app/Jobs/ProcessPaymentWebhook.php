@@ -117,6 +117,13 @@ class ProcessPaymentWebhook implements ShouldQueue
             return;
         }
 
+        // Disputa encerrada (Stripe): ganha → libera o saldo e volta a "pago"; perdida → debita o seller.
+        if ($this->event === 'payment.dispute_closed' && in_array($this->status, ['won', 'lost'], true)) {
+            $this->applyDisputeClosed($order);
+
+            return;
+        }
+
         $isRefundEvent = in_array($this->event, ['order.refunded', 'payment.refunded'], true)
             || ($this->gatewaySlug === 'cajupay' && in_array($this->event, ['checkout.payment.refunded', 'card.payment.refunded', 'pix.payment.refunded'], true));
         if ($isRefundEvent && in_array($this->status, ['refunded', 'refund'], true)) {
@@ -128,6 +135,27 @@ class ProcessPaymentWebhook implements ShouldQueue
                 }
                 PlatformOrderAdminService::applyGatewayRefund($order);
             }
+        }
+    }
+
+    private function applyDisputeClosed(Order $order): void
+    {
+        $fresh = $order->fresh();
+        if ($fresh === null) {
+            return;
+        }
+
+        if ($this->status === 'won') {
+            if ($fresh->status === 'disputed') {
+                PlatformOrderAdminService::releaseMedHoldAndComplete($fresh);
+            }
+
+            return;
+        }
+
+        // lost: a Stripe já retirou o valor; reflete na carteira do seller (mesmo efeito de MED perdido).
+        if (in_array($fresh->status, ['completed', 'disputed'], true)) {
+            PlatformOrderAdminService::refundPaidOrDisputed($fresh, null, 'gateway_dispute_lost');
         }
     }
 
