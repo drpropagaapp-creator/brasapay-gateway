@@ -3,6 +3,7 @@
 namespace App\Http\Middleware;
 
 use App\Support\CheckoutEmbed;
+use App\Support\CheckoutVideoIframe;
 use Closure;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
