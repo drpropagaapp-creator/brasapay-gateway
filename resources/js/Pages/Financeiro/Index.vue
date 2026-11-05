@@ -545,6 +545,51 @@ function formatPendingReleaseDate(isoDate) {
     return `${d}/${m}/${y}`;
 }
 
+const PENDING_METHOD_LABELS = {
+    card: 'Cartão',
+    pix: 'PIX',
+    boleto: 'Boleto',
+    apple_pay: 'Apple Pay',
+    google_pay: 'Google Pay',
+};
+
+function pendingReasonLabel(reason) {
+    const method = PENDING_METHOD_LABELS[reason?.method] || 'Venda';
+    return reason?.portion === 'reserve'
+        ? `Reserva de segurança (${method})`
+        : `${method} — dentro do prazo de liberação`;
+}
+
+/** Explica, por método, quando o dinheiro vira "Saldo disponível" (regras reais do seller). */
+const retentionLines = computed(() => {
+    const sp = props.settlement_preview || {};
+    const defs = [
+        ['card', 'Cartão de crédito'],
+        ['apple_pay', 'Apple Pay'],
+        ['google_pay', 'Google Pay'],
+        ['boleto', 'Boleto'],
+        ['pix', 'PIX'],
+    ];
+    const lines = [];
+    for (const [key, label] of defs) {
+        const r = sp[key];
+        if (!r || typeof r !== 'object') continue;
+        const days = Number(r.days_to_available) || 0;
+        const pct = Number(r.reserve_percent) || 0;
+        const hold = Number(r.reserve_hold_days) || 0;
+        let line = days === 0
+            ? `${label}: liberado na hora (D+0)`
+            : `${label}: liberado ${days} dia(s) após a aprovação da venda (D+${days})`;
+        if (pct > 0 && hold > 0) {
+            line += `; ${pct}% do valor fica em reserva de segurança por mais ${hold} dia(s)`;
+        }
+        lines.push(`${line}.`);
+    }
+    return lines;
+});
+
+const nextRelease = computed(() => pendingReceiveByDate.value.find((row) => row.date) || null);
+
 const settlementCards = computed(() => {
     const fees = props.fee_preview || {};
     const sp = props.settlement_preview || {};
@@ -722,6 +767,9 @@ const inputClass =
                     </div>
                     <p class="mt-3 text-xs font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">{{ t('finance.pending_receive', 'A receber') }}</p>
                     <p class="mt-1 text-xl font-bold tabular-nums sm:text-2xl text-zinc-900 dark:text-white">{{ formatBRL(wallet.pending_total) }}</p>
+                    <p v-if="(Number(wallet.pending_total) || 0) > 0.0001" class="mt-1 text-[11px] leading-snug text-zinc-500 dark:text-zinc-400">
+                        Vendas aprovadas aguardando o prazo de liberação da operadora de pagamento.
+                    </p>
                     <p
                         v-if="!pendingReceiveByDate.length"
                         class="mt-1 text-[11px] text-zinc-500 dark:text-zinc-400"
@@ -743,10 +791,18 @@ const inputClass =
                             <li
                                 v-for="(row, idx) in pendingReceiveByDate"
                                 :key="row.date ?? `unknown-${idx}`"
-                                class="flex items-center justify-between gap-2 text-[11px] tabular-nums text-amber-950 dark:text-amber-50"
+                                class="text-[11px] tabular-nums text-amber-950 dark:text-amber-50"
                             >
-                                <span>{{ formatPendingReleaseDate(row.date) }}</span>
-                                <span class="font-semibold">{{ formatBRL(row.amount) }}</span>
+                                <div class="flex items-center justify-between gap-2">
+                                    <span>{{ formatPendingReleaseDate(row.date) }}</span>
+                                    <span class="font-semibold">{{ formatBRL(row.amount) }}</span>
+                                </div>
+                                <ul v-if="row.reasons && row.reasons.length" class="mt-0.5 space-y-0.5 pl-2 text-[10px] font-normal text-amber-900/80 dark:text-amber-100/80">
+                                    <li v-for="(r, ri) in row.reasons" :key="ri" class="flex items-center justify-between gap-2">
+                                        <span>{{ pendingReasonLabel(r) }}</span>
+                                        <span>{{ formatBRL(r.amount) }}</span>
+                                    </li>
+                                </ul>
                             </li>
                         </ul>
                     </details>
@@ -791,6 +847,26 @@ const inputClass =
                         </div>
                     </div>
                 </div>
+            </div>
+
+            <div
+                v-if="(Number(wallet.pending_total) || 0) > 0.0001"
+                class="rounded-xl border border-amber-200/80 bg-amber-50/60 px-4 py-3 text-amber-950 dark:border-amber-900/50 dark:bg-amber-950/20 dark:text-amber-50"
+                data-testid="why-pending"
+            >
+                <p class="text-sm font-semibold">Por que parte do meu saldo ainda não está disponível para saque?</p>
+                <p class="mt-1 text-xs leading-relaxed">
+                    O <strong>Saldo disponível</strong> é o que já pode ser sacado. O valor <strong>A receber</strong> são vendas já aprovadas que
+                    ainda estão dentro do prazo de liberação. Esse prazo existe porque a operadora do cartão (adquirente) só repassa o dinheiro depois da
+                    compensação, e porque uma parte fica retida por segurança para cobrir reembolsos e contestações (chargeback).
+                    Quando a data chega, o valor passa sozinho para o Saldo disponível — você não precisa fazer nada.
+                </p>
+                <ul v-if="retentionLines.length" class="mt-2 list-disc space-y-1 pl-5 text-xs leading-relaxed">
+                    <li v-for="line in retentionLines" :key="line">{{ line }}</li>
+                </ul>
+                <p v-if="nextRelease" class="mt-2 text-xs font-medium">
+                    Próxima liberação: {{ formatPendingReleaseDate(nextRelease.date) }} · {{ formatBRL(nextRelease.amount) }}
+                </p>
             </div>
 
             <details

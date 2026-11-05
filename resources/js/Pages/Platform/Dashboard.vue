@@ -590,6 +590,30 @@ const paymentMax = computed(() => Math.max(1, ...props.payment_methods.map((m) =
                     >{{ displayCurrency(cash_reconciliation.sobra_total) }}</dd>
                 </div>
             </dl>
+            <details class="mt-3 rounded-xl border border-zinc-200 bg-zinc-50/60 px-3 py-2 text-xs text-zinc-600 dark:border-zinc-700 dark:bg-zinc-800/30 dark:text-zinc-300" open>
+                <summary class="cursor-pointer font-medium text-zinc-800 dark:text-zinc-200">Por que parte do saldo não está disponível?</summary>
+                <ul class="mt-2 list-disc space-y-1 pl-5 leading-relaxed">
+                    <li>
+                        <strong>Nas adquirentes:</strong> cada PSP segura o dinheiro por um prazo antes de repassar à plataforma (ex.: a Stripe retém 30 dias no cartão).
+                        Enquanto isso o valor aparece como “a liberar” e não pode ser sacado nem usado para pagar sellers.
+                    </li>
+                    <li>
+                        <strong>Nos sellers:</strong> a plataforma libera cada venda conforme o prazo configurado em Financeiro → Prazos (D+N), e uma parte pode ficar em
+                        <strong>reserva de segurança</strong> por mais alguns dias. O seller vê esse motivo e a data de liberação na tela dele.
+                        Retido agora nos sellers: <strong>{{ displayCurrency(cash_reconciliation.sellers_a_liberar) }}</strong>
+                        (cartão {{ displayCurrency(cash_reconciliation.sellers_a_liberar_por_metodo?.card ?? 0) }},
+                        PIX {{ displayCurrency(cash_reconciliation.sellers_a_liberar_por_metodo?.pix ?? 0) }},
+                        boleto {{ displayCurrency(cash_reconciliation.sellers_a_liberar_por_metodo?.boleto ?? 0) }})<template v-if="cash_reconciliation.proxima_liberacao">; próxima liberação em {{ formatShortDate(cash_reconciliation.proxima_liberacao) }}</template>.
+                    </li>
+                    <li>
+                        <strong>Adiantamento de caixa:</strong> se o prazo do seller for menor que o da adquirente, a plataforma paga o seller antes de receber — é isso que faz o
+                        “saldo dos sellers” superar o caixa disponível. A sobra total (linha acima) mostra se isso se resolve quando as adquirentes liberarem.
+                    </li>
+                    <li>
+                        <strong>Saques pedidos:</strong> o valor sai do saldo do seller no pedido, mas o dinheiro continua nas adquirentes até o saque ser pago.
+                    </li>
+                </ul>
+            </details>
             <p v-if="cash_reconciliation.adquirentes_com_erro > 0" class="mt-3 flex items-center gap-1.5 text-xs text-amber-600 dark:text-amber-400">
                 <AlertTriangle class="h-3.5 w-3.5" />
                 {{ cash_reconciliation.adquirentes_com_erro }} adquirente(s) não responderam: o caixa pode estar subestimado.

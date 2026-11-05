@@ -31,6 +31,25 @@ class MerchantWithdrawalBucketMessageTest extends TestCase
         $this->assertStringContainsString('Escolha a carteira correta', $msg);
     }
 
+    public function test_insufficient_bucket_message_explains_pending_amount(): void
+    {
+        $wallet = new TenantWallet([
+            'available_pix' => 10.0,
+            'available_card' => 0.0,
+            'available_boleto' => 0.0,
+            'pending_card' => 87.32,
+        ]);
+
+        $method = new ReflectionMethod(MerchantWithdrawalService::class, 'insufficientBucketBalanceMessage');
+        $method->setAccessible(true);
+
+        $msg = $method->invoke(null, $wallet, 'pix', 10.0);
+
+        $this->assertStringContainsString('"A receber"', $msg);
+        $this->assertStringContainsString('R$ 87,32', $msg);
+        $this->assertStringContainsString('prazo de liberação', $msg);
+    }
+
     public function test_parse_brl_amount_accepts_thousand_separator(): void
     {
         $method = new ReflectionMethod(SellerFinancialController::class, 'parseBrlAmountToFloat');
