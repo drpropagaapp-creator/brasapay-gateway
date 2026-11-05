@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Order;
 use App\Services\Platform\AcquirerWalletBalanceService;
 use App\Services\Platform\PlatformCashReconciliation;
+use App\Services\Platform\PayoutFundingNeed;
 use App\Services\Platform\PlatformDashboardAnalytics;
 use App\Support\Demo\DemoPlatformData;
 use App\Support\DemoMode;
@@ -76,6 +77,8 @@ class DashboardController extends Controller
         // Os cards de saldo dos sellers e saques pendentes usam os mesmos números para não divergirem da conciliação.
         $cash = PlatformCashReconciliation::build($payload['acquirer_wallets']);
         $payload['cash_reconciliation'] = $cash;
+        // Quanto abastecer na conta de saque (CajuPay) para pagar os saques pendentes, já com a taxa de saque.
+        $payload['payout_funding'] = PayoutFundingNeed::compute($payload['acquirer_wallets']);
         $payload['kpis'] = array_merge($payload['kpis'] ?? [], [
             'wallet_available' => $cash['sellers_disponivel'],
             'wallet_pending' => $cash['sellers_a_liberar'],
