@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Platform;
 use App\Http\Controllers\Controller;
 use App\Models\Order;
 use App\Services\Platform\AcquirerWalletBalanceService;
+use App\Services\Platform\PlatformCashReconciliation;
 use App\Services\Platform\PlatformDashboardAnalytics;
 use App\Support\Demo\DemoPlatformData;
 use App\Support\DemoMode;
@@ -70,6 +71,17 @@ class DashboardController extends Controller
         $payload['from'] = $from;
         $payload['to'] = $to;
         $payload['acquirer_wallets'] = $acquirerWallets->list();
+
+        // Caixa x obrigações: calculado ao vivo (o payload do período fica em cache por alguns minutos).
+        // Os cards de saldo dos sellers e saques pendentes usam os mesmos números para não divergirem da conciliação.
+        $cash = PlatformCashReconciliation::build($payload['acquirer_wallets']);
+        $payload['cash_reconciliation'] = $cash;
+        $payload['kpis'] = array_merge($payload['kpis'] ?? [], [
+            'wallet_available' => $cash['sellers_disponivel'],
+            'wallet_pending' => $cash['sellers_a_liberar'],
+            'withdrawals_pending' => $cash['saques_pendentes'],
+            'withdrawals_pending_count' => $cash['saques_pendentes_qtd'],
+        ]);
 
         return Inertia::render('Platform/Dashboard', $payload);
     }

@@ -130,6 +130,8 @@ class CajuPayCredentialEconomics
             'cajupay_admin_fee_payout_brl' => $e['admin_fee_payout_brl'],
             'cajupay_admin_fee_pix_percent' => $e['admin_fee_pix_percent'],
             'cajupay_admin_fee_payout_percent' => $e['admin_fee_payout_percent'],
+            'cajupay_admin_fee_card_brl' => $e['admin_fee_card_brl'] ?? 0.0,
+            'cajupay_admin_fee_card_percent' => $e['admin_fee_card_percent'] ?? 0.0,
         ];
     }
 
@@ -154,6 +156,8 @@ class CajuPayCredentialEconomics
             'cajupay_admin_fee_payout_brl' => $e['admin_fee_payout_brl'],
             'cajupay_admin_fee_pix_percent' => $e['admin_fee_pix_percent'],
             'cajupay_admin_fee_payout_percent' => $e['admin_fee_payout_percent'],
+            'cajupay_admin_fee_card_brl' => $e['admin_fee_card_brl'] ?? 0.0,
+            'cajupay_admin_fee_card_percent' => $e['admin_fee_card_percent'] ?? 0.0,
         ];
     }
 }

@@ -46,10 +46,12 @@ class PlatformRevenueKpis
                     }
                     // CajuPay multi-conta: taxas da conta da cobrança, não só a default.
                     $e = GatewayPayoutEconomics::forOrder($order);
+                    // PIX usa a taxa de entrada do adquirente; cartão (inclui Apple/Google Pay) usa a taxa de cartão.
+                    $isCard = self::paymentBucket($order) === 'card';
                     $custoVendas += GatewayPayoutEconomics::pixInFeeCostBrl(
                         (float) ($order->amount ?? 0),
-                        (float) ($e['admin_fee_pix_brl'] ?? 0),
-                        (float) ($e['admin_fee_pix_percent'] ?? 0),
+                        (float) ($e[$isCard ? 'admin_fee_card_brl' : 'admin_fee_pix_brl'] ?? 0),
+                        (float) ($e[$isCard ? 'admin_fee_card_percent' : 'admin_fee_pix_percent'] ?? 0),
                     );
                 }
             });
@@ -131,7 +133,7 @@ class PlatformRevenueKpis
 
     /**
      * PIX: taxa de entrada do adquirente.
-     * Cartão: só Stripe por enquanto — demais adquirentes têm taxa por parcelamento.
+     * Cartão: taxa de cartão do adquirente (campos *_admin_fee_card_*). Sem taxa configurada, o custo é zero.
      */
     private static function countsAcquirerSaleFee(Order $order, string $slug): bool
     {
@@ -141,7 +143,7 @@ class PlatformRevenueKpis
             return true;
         }
 
-        return $bucket === 'card' && $slug === 'stripe';
+        return $bucket === 'card';
     }
 
     /**

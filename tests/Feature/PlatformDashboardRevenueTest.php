@@ -208,8 +208,8 @@ class PlatformDashboardRevenueTest extends TestCase
         $cred->setEncryptedCredentials([
             'secret_key' => 'sk_test',
             'publishable_key' => 'pk_test',
-            'stripe_admin_fee_pix_brl' => '0,50',
-            'stripe_admin_fee_pix_percent' => '1',
+            'stripe_admin_fee_card_brl' => '0,50',
+            'stripe_admin_fee_card_percent' => '1',
         ]);
         $cred->save();
 
@@ -394,5 +394,54 @@ class PlatformDashboardRevenueTest extends TestCase
         $kpis = PlatformRevenueKpis::compute(null, null);
 
         $this->assertSame(2.5, $kpis['faturamento_custo_adquirente_saques']);
+    }
+
+    public function test_adq_vendas_cajupay_card_uses_card_fee_and_pix_uses_pix_fee(): void
+    {
+        if (! Schema::hasTable('wallet_transactions') || ! Schema::hasTable('cajupay_accounts')) {
+            $this->markTestSkipped('wallet or cajupay_accounts tables');
+        }
+
+        Carbon::setTestNow(Carbon::parse('2026-04-13 14:00:00'));
+
+        $account = CajuPayAccount::create([
+            'name' => 'Default',
+            'is_default' => true,
+            'is_connected' => true,
+            'is_enabled' => true,
+        ]);
+        $account->setEncryptedCredentials([
+            'public_key' => 'gpk',
+            'secret_key' => 'gsk',
+            'cajupay_admin_fee_pix_brl' => '0,60',
+            'cajupay_admin_fee_card_brl' => '0,60',
+            'cajupay_admin_fee_card_percent' => '4,69',
+        ]);
+        $account->save();
+
+        $seller = User::factory()->create(['role' => User::ROLE_INFOPRODUTOR]);
+        $seller->forceFill(['tenant_id' => $seller->id])->save();
+        $buyer = User::factory()->create(['role' => User::ROLE_ALUNO]);
+        $product = $this->createTestProduct(['tenant_id' => $seller->id]);
+
+        foreach (['card', 'pix'] as $method) {
+            Order::create([
+                'tenant_id' => $seller->id,
+                'user_id' => $buyer->id,
+                'product_id' => $product->id,
+                'status' => 'completed',
+                'amount' => 100.00,
+                'email' => $buyer->email,
+                'payment_method' => $method,
+                'gateway' => 'cajupay',
+                'cajupay_account_id' => $account->id,
+                'metadata' => ['checkout_payment_method' => $method],
+            ]);
+        }
+
+        // cartão: 100 * 4,69% + 0,60 = 5,29; PIX: 0,60 fixo
+        $kpis = PlatformRevenueKpis::compute(null, null);
+
+        $this->assertSame(5.89, $kpis['faturamento_custo_adquirente_vendas']);
     }
 }
