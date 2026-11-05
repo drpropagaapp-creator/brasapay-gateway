@@ -24,6 +24,11 @@ const props = defineProps({
         type: String,
         default: '',
     },
+    /** Quanto abastecer na conta de saque para cobrir os pendentes (já com a taxa de saque) */
+    payout_funding: {
+        type: Object,
+        default: () => ({}),
+    },
     /** PIN obrigatório quando o 2FA do admin está desligado */
     require_manual_approval_pin: {
         type: Boolean,
@@ -358,6 +363,28 @@ const paginationLinks = computed(() => props.withdrawals?.links ?? []);
             class="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm dark:border-zinc-700 dark:bg-zinc-800"
         >
             <div
+                v-if="payout_funding && payout_funding.pending_count > 0"
+                class="mb-4 rounded-xl border px-4 py-3 text-sm"
+                :class="payout_funding.covered
+                    ? 'border-emerald-200 bg-emerald-50/80 text-emerald-950 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-100'
+                    : 'border-red-200 bg-red-50/80 text-red-950 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-100'"
+                data-testid="payout-funding-banner"
+            >
+                <p class="font-medium">
+                    {{ payout_funding.covered ? 'O saldo da conta de saque cobre os pendentes' : 'Abasteça a conta de saque antes de aprovar' }}
+                </p>
+                <ul class="mt-1 space-y-1 text-xs">
+                    <li v-for="g in payout_funding.groups" :key="g.key">
+                        {{ g.slug === 'cajupay' ? 'CajuPay' : g.slug }}{{ g.conta ? ` (${g.conta})` : '' }}:
+                        {{ g.count }} saque(s), precisam de <strong>{{ formatBRL(g.required) }}</strong>
+                        (líquido {{ formatBRL(g.net) }} + taxa de saque {{ formatBRL(g.fees) }});
+                        saldo atual <strong>{{ g.balance === null ? 'indisponível' : formatBRL(g.balance) }}</strong>
+                        <template v-if="g.shortfall > 0"> — <strong>abasteça {{ formatBRL(g.shortfall) }}</strong></template>
+                        <template v-else-if="g.shortfall === 0"> — ok</template>.
+                    </li>
+                </ul>
+            </div>
+            <div
                 class="mb-4 rounded-xl border border-amber-200 bg-amber-50/90 px-4 py-3 text-sm text-amber-950 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-100"
             >
                 <p class="font-medium">Pendentes</p>
@@ -415,6 +442,18 @@ const paginationLinks = computed(() => props.withdrawals?.links ?? []);
                                             ]"
                                         >
                                             {{ withdrawalStatusLabel(w.status) }}
+                                        </span>
+                                        <span
+                                            v-if="w.status === 'pending' && w.funding && w.funding.status === 'ok'"
+                                            class="text-[10px] font-medium uppercase tracking-wide text-emerald-600 dark:text-emerald-400"
+                                        >
+                                            Saldo cobre este saque
+                                        </span>
+                                        <span
+                                            v-else-if="w.status === 'pending' && w.funding && w.funding.status === 'short'"
+                                            class="text-[10px] font-medium uppercase tracking-wide text-red-600 dark:text-red-400"
+                                        >
+                                            Falta {{ formatBRL(w.funding.missing) }} na conta de saque
                                         </span>
                                         <span
                                             v-if="withdrawalAwaitingGateway(w)"

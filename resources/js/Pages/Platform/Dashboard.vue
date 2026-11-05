@@ -74,6 +74,7 @@ const props = defineProps({
     acquirers: { type: Array, default: () => [] },
     acquirer_wallets: { type: Array, default: () => [] },
     cash_reconciliation: { type: Object, default: () => ({}) },
+    payout_funding: { type: Object, default: () => ({}) },
     top_sellers: { type: Array, default: () => [] },
     top_products: { type: Array, default: () => [] },
     alerts: { type: Array, default: () => [] },
@@ -180,6 +181,25 @@ function formatNumber(value) {
 
 function displayCurrency(value, currency = 'BRL') {
     return valuesVisible.value ? formatMoney(value, currency) : '••••••';
+}
+
+const FUNDING_LABELS = { cajupay: 'CajuPay', woovi: 'Woovi', assetpay: 'AssetPay', versell: 'Versell', xflow: 'Xflow', okto: 'Okto', xpag: 'XPag', onlyup: 'OnlyUp' };
+
+function fundingName(group) {
+    const base = FUNDING_LABELS[group?.slug] || String(group?.slug || 'conta de saque');
+    return group?.conta ? `${base} (${group.conta})` : base;
+}
+
+const fundingCopied = ref('');
+async function copyFundingAmount(group) {
+    const value = Number(group?.shortfall || 0).toFixed(2).replace('.', ',');
+    try {
+        await navigator.clipboard.writeText(value);
+        fundingCopied.value = group.key;
+        setTimeout(() => { fundingCopied.value = ''; }, 2000);
+    } catch (_) {
+        fundingCopied.value = '';
+    }
 }
 
 function formatShortDate(value) {
@@ -535,6 +555,48 @@ const paymentMax = computed(() => Math.max(1, ...props.payment_methods.map((m) =
                 </li>
             </ul>
             <p v-if="!acquirer_wallets.length" class="py-4 text-center text-sm text-zinc-500">Nenhuma adquirente cadastrada.</p>
+        </section>
+
+        <section
+            v-if="payout_funding && payout_funding.pending_count !== undefined"
+            class="rounded-2xl border p-4"
+            :class="payout_funding.pending_count === 0
+                ? 'border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-900/40'
+                : (payout_funding.covered
+                    ? 'border-emerald-200 bg-emerald-50/60 dark:border-emerald-900/50 dark:bg-emerald-950/20'
+                    : 'border-red-200 bg-red-50/70 dark:border-red-900/50 dark:bg-red-950/20')"
+            data-testid="payout-funding"
+        >
+            <h3 class="text-sm font-semibold text-zinc-900 dark:text-white">Saldo para pagar saques</h3>
+            <p v-if="payout_funding.pending_count === 0" class="mt-1 text-sm text-zinc-600 dark:text-zinc-300">
+                Nenhum saque pendente. Não há nada para abastecer agora.
+            </p>
+            <template v-else>
+                <p class="mt-1 text-xs text-zinc-600 dark:text-zinc-300">
+                    Antes de aprovar, confira se a conta que paga o PIX tem saldo. O valor abaixo já inclui a taxa de saque cobrada pela adquirente.
+                </p>
+                <div v-for="g in payout_funding.groups" :key="g.key" class="mt-3 rounded-xl border border-zinc-200/80 bg-white/70 p-3 text-sm dark:border-zinc-700 dark:bg-zinc-900/40">
+                    <p class="font-medium text-zinc-800 dark:text-zinc-100">{{ fundingName(g) }} · {{ displayNumber(g.count) }} saque(s) pendente(s)</p>
+                    <dl class="mt-2 space-y-1 text-xs text-zinc-600 dark:text-zinc-300">
+                        <div class="flex justify-between gap-3"><dt>Líquido dos sellers</dt><dd class="tabular-nums">{{ displayCurrency(g.net) }}</dd></div>
+                        <div class="flex justify-between gap-3"><dt>(+) Taxa de saque da adquirente</dt><dd class="tabular-nums">{{ displayCurrency(g.fees) }}</dd></div>
+                        <div class="flex justify-between gap-3 font-medium text-zinc-800 dark:text-zinc-100"><dt>= Precisa ter na conta</dt><dd class="tabular-nums">{{ displayCurrency(g.required) }}</dd></div>
+                        <div class="flex justify-between gap-3"><dt>Saldo atual</dt><dd class="tabular-nums">{{ g.balance === null ? 'indisponível' : displayCurrency(g.balance) }}</dd></div>
+                    </dl>
+                    <p v-if="g.shortfall > 0" class="mt-2 flex flex-wrap items-center justify-between gap-2 text-sm font-semibold text-red-700 dark:text-red-300">
+                        <span>Abasteça {{ fundingName(g) }} com {{ displayCurrency(g.shortfall) }}</span>
+                        <button
+                            type="button"
+                            class="rounded-lg border border-red-300 px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-100 dark:border-red-800 dark:text-red-200 dark:hover:bg-red-950/40"
+                            @click="copyFundingAmount(g)"
+                        >
+                            {{ fundingCopied === g.key ? 'Copiado' : 'Copiar valor' }}
+                        </button>
+                    </p>
+                    <p v-else-if="g.shortfall === 0" class="mt-2 text-sm font-medium text-emerald-700 dark:text-emerald-300">O saldo cobre os saques pendentes.</p>
+                    <p v-else class="mt-2 text-xs text-amber-700 dark:text-amber-300">Não foi possível consultar o saldo desta conta agora.</p>
+                </div>
+            </template>
         </section>
 
         <section

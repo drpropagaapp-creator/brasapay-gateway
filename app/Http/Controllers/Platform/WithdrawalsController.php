@@ -4,6 +4,8 @@ namespace App\Http\Controllers\Platform;
 
 use App\Http\Controllers\Controller;
 use App\Models\Withdrawal;
+use App\Services\Platform\AcquirerWalletBalanceService;
+use App\Services\Platform\PayoutFundingNeed;
 use App\Services\Payout\PlatformPayoutGateway;
 use App\Services\Withdrawal\WithdrawalPolicyService;
 use App\Services\WithdrawalPixReceiptService;
@@ -33,6 +35,9 @@ class WithdrawalsController extends Controller
             $origin = 'all';
         }
 
+        // Cobertura de saldo na conta de saque para cada saque pendente (aviso de abastecimento).
+        $payoutFunding = PayoutFundingNeed::compute(app(AcquirerWalletBalanceService::class)->list());
+
         $withdrawalsPaginator = new LengthAwarePaginator([], 0, 40, 1, [
             'path' => $request->url(),
             'query' => $request->query(),
@@ -54,6 +59,7 @@ class WithdrawalsController extends Controller
             }
             $withdrawalsPaginator = $wq->paginate(40)->withQueryString()->through(
                 fn (Withdrawal $w) => $this->receiptService->mapWithdrawalListItem($w)
+                    + ['funding' => $payoutFunding['items'][(int) $w->id] ?? null]
             );
         }
 
@@ -64,6 +70,7 @@ class WithdrawalsController extends Controller
                 'origin' => $origin,
             ],
             'payout_gateway_active' => PlatformPayoutGateway::activeSlug() ?? '',
+            'payout_funding' => $payoutFunding,
             'cashout_acquirers' => PlatformPayoutGateway::connectedOptions(),
             'require_manual_approval_pin' => $request->user() !== null
                 && WithdrawalPolicyService::requiresOperationPinFor($request->user()),
