@@ -472,13 +472,25 @@ class MerchantWithdrawalService
 
         $fmt = static fn (float $v): string => 'R$ '.number_format($v, 2, ',', '.');
 
+        $pending = round(
+            (float) ($wallet->pending_pix ?? 0) + (float) ($wallet->pending_card ?? 0) + (float) ($wallet->pending_boleto ?? 0),
+            2
+        );
+        $pendingNote = $pending > 0
+            ? sprintf(
+                ' Você tem %s em "A receber": são vendas aprovadas ainda dentro do prazo de liberação da operadora; elas entram no saldo disponível automaticamente na data indicada.',
+                $fmt($pending)
+            )
+            : '';
+
         return sprintf(
-            'Saldo insuficiente na carteira %s (disponível: %s). PIX: %s · Cartão: %s · Boleto: %s. Escolha a carteira correta ou um valor menor.',
+            'Saldo insuficiente na carteira %s (disponível: %s). PIX: %s · Cartão: %s · Boleto: %s. Escolha a carteira correta ou um valor menor.%s',
             $bucketLabel,
             $fmt($available),
             $fmt($pix),
             $fmt($card),
-            $fmt($boleto)
+            $fmt($boleto),
+            $pendingNote
         );
     }
 

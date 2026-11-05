@@ -537,11 +537,27 @@ class SellerFinancialController extends Controller
                         'date' => $dateKey === 'unknown' ? null : $dateKey,
                         'amount' => 0.0,
                         'count' => 0,
+                        'reasons' => [],
                     ];
                 }
 
                 $byDate[$dateKey]['amount'] += (float) $tx->amount_net;
                 $byDate[$dateKey]['count']++;
+
+                // Motivo da retenção: venda dentro do prazo da operadora ou reserva de segurança.
+                $portion = ($meta['portion'] ?? 'main') === 'reserve' ? 'reserve' : 'main';
+                $method = is_string($meta['payment_method'] ?? null) && $meta['payment_method'] !== ''
+                    ? $meta['payment_method']
+                    : (string) $tx->bucket;
+                $reasonKey = $portion.'|'.$method;
+                if (! isset($byDate[$dateKey]['reasons'][$reasonKey])) {
+                    $byDate[$dateKey]['reasons'][$reasonKey] = [
+                        'portion' => $portion,
+                        'method' => $method,
+                        'amount' => 0.0,
+                    ];
+                }
+                $byDate[$dateKey]['reasons'][$reasonKey]['amount'] += (float) $tx->amount_net;
             });
 
         $rows = array_values($byDate);
@@ -558,6 +574,11 @@ class SellerFinancialController extends Controller
 
         return array_map(function (array $row) {
             $row['amount'] = round($row['amount'], 2);
+            $row['reasons'] = array_values(array_map(function (array $r) {
+                $r['amount'] = round($r['amount'], 2);
+
+                return $r;
+            }, $row['reasons'] ?? []));
 
             return $row;
         }, $rows);

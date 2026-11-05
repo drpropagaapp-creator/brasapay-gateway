@@ -3,6 +3,7 @@
 namespace App\Services\Platform;
 
 use App\Models\TenantWallet;
+use App\Models\WalletTransaction;
 use App\Models\Withdrawal;
 use App\Services\MerchantWithdrawalService;
 use Illuminate\Support\Facades\Schema;
@@ -26,6 +27,8 @@ final class PlatformCashReconciliation
      *     caixa_a_liberar: float,
      *     sellers_disponivel: float,
      *     sellers_a_liberar: float,
+     *     sellers_a_liberar_por_metodo: array{pix: float, card: float, boleto: float},
+     *     proxima_liberacao: string|null,
      *     saques_pendentes: float,
      *     saques_pendentes_qtd: int,
      *     saques_pendentes_mais_antigo: string|null,
@@ -75,6 +78,12 @@ final class PlatformCashReconciliation
             'caixa_a_liberar' => round($aLiberar, 2),
             'sellers_disponivel' => round($sellersDisponivel, 2),
             'sellers_a_liberar' => round($sellersALiberar, 2),
+            'sellers_a_liberar_por_metodo' => [
+                'pix' => self::walletSum('pending_pix'),
+                'card' => self::walletSum('pending_card'),
+                'boleto' => self::walletSum('pending_boleto'),
+            ],
+            'proxima_liberacao' => self::nextRelease(),
             'saques_pendentes' => round($saques['amount'], 2),
             'saques_pendentes_qtd' => $saques['count'],
             'saques_pendentes_mais_antigo' => $saques['oldest'],
@@ -84,6 +93,39 @@ final class PlatformCashReconciliation
             'adquirentes_com_erro' => $erros,
             'adquirentes_moeda_ignorada' => $outraMoeda,
         ];
+    }
+
+    /**
+     * Data (ISO) da próxima liberação de venda pendente dos sellers; null se não houver.
+     */
+    private static function nextRelease(): ?string
+    {
+        if (! Schema::hasTable('wallet_transactions')) {
+            return null;
+        }
+
+        $next = null;
+        WalletTransaction::query()
+            ->where('type', WalletTransaction::TYPE_CREDIT_SALE_PENDING)
+            ->select(['id', 'meta'])
+            ->orderBy('id')
+            ->chunkById(500, function ($chunk) use (&$next) {
+                foreach ($chunk as $tx) {
+                    $meta = is_array($tx->meta) ? $tx->meta : [];
+                    if (! empty($meta['released_at'])) {
+                        continue;
+                    }
+                    $clears = $meta['clears_at'] ?? null;
+                    if (! is_string($clears) || $clears === '') {
+                        continue;
+                    }
+                    if ($next === null || strcmp($clears, $next) < 0) {
+                        $next = $clears;
+                    }
+                }
+            });
+
+        return $next;
     }
 
     private static function walletSum(string $column): float
