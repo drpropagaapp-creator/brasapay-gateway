@@ -47,20 +47,26 @@ final class GatewayAdminFeeSummary
             (float) ($economics['admin_fee_pix_percent'] ?? 0),
             (float) ($economics['admin_fee_payout_brl'] ?? 0),
             (float) ($economics['admin_fee_payout_percent'] ?? 0),
+            (float) ($economics['admin_fee_card_brl'] ?? 0),
+            (float) ($economics['admin_fee_card_percent'] ?? 0),
         );
     }
 
-    public static function format(float $inBrl, float $inPercent, float $outBrl, float $outPercent): ?string
+    public static function format(float $inBrl, float $inPercent, float $outBrl, float $outPercent, float $cardBrl = 0.0, float $cardPercent = 0.0): ?string
     {
         $in = self::formatSide($inBrl, $inPercent);
         $out = self::formatSide($outBrl, $outPercent);
-        if ($in === null && $out === null) {
+        $card = self::formatSide($cardBrl, $cardPercent);
+        if ($in === null && $out === null && $card === null) {
             return null;
         }
 
         $parts = [];
         if ($in !== null) {
             $parts[] = 'in = '.$in;
+        }
+        if ($card !== null) {
+            $parts[] = 'cartão = '.$card;
         }
         if ($out !== null) {
             $parts[] = 'out = '.$out;

@@ -140,6 +140,8 @@ class GatewayPayoutEconomics
             'admin_fee_payout_brl' => $e['cajupay_admin_fee_payout_brl'],
             'admin_fee_pix_percent' => $e['cajupay_admin_fee_pix_percent'],
             'admin_fee_payout_percent' => $e['cajupay_admin_fee_payout_percent'],
+            'admin_fee_card_brl' => $e['cajupay_admin_fee_card_brl'] ?? 0.0,
+            'admin_fee_card_percent' => $e['cajupay_admin_fee_card_percent'] ?? 0.0,
         ];
     }
 
@@ -162,6 +164,8 @@ class GatewayPayoutEconomics
         $feePayout = self::parseNonNegative($credentials[$slug.'_admin_fee_payout_brl'] ?? null, 0.0);
         $feePixPct = self::parsePercent($credentials[$slug.'_admin_fee_pix_percent'] ?? null);
         $feePayoutPct = self::parsePercent($credentials[$slug.'_admin_fee_payout_percent'] ?? null);
+        $feeCard = self::parseNonNegative($credentials[$slug.'_admin_fee_card_brl'] ?? null, 0.0);
+        $feeCardPct = self::parsePercent($credentials[$slug.'_admin_fee_card_percent'] ?? null);
 
         // Piso técnico do adquirente = mínimo líquido configurado.
         // Taxas admin (PIX/saque) não entram no piso do seller — só KPIs + valor da API de cashout.
@@ -174,6 +178,8 @@ class GatewayPayoutEconomics
             'admin_fee_payout_brl' => $feePayout,
             'admin_fee_pix_percent' => $feePixPct,
             'admin_fee_payout_percent' => $feePayoutPct,
+            'admin_fee_card_brl' => $feeCard,
+            'admin_fee_card_percent' => $feeCardPct,
         ];
     }
 
@@ -196,6 +202,8 @@ class GatewayPayoutEconomics
             'admin_fee_payout_brl' => 0.0,
             'admin_fee_pix_percent' => 0.0,
             'admin_fee_payout_percent' => 0.0,
+            'admin_fee_card_brl' => 0.0,
+            'admin_fee_card_percent' => 0.0,
         ];
     }
 

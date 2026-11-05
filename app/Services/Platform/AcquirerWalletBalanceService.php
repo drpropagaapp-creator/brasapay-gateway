@@ -81,7 +81,7 @@ class AcquirerWalletBalanceService
                 'nome' => $this->gatewayName($slug),
                 'conta' => null,
                 'image' => $this->gatewayImage($slug),
-                'cache_key' => 'acquirer-wallet:v2:'.$slug.':'.$credential->id,
+                'cache_key' => 'acquirer-wallet:v3:'.$slug.':'.$credential->id,
                 'fetch' => $slug === 'stripe'
                     ? fn (): array => $this->fetchStripe($creds)
                     : fn (): float => $this->fetchBySlug($slug, $creds),
@@ -138,12 +138,17 @@ class AcquirerWalletBalanceService
                     $currency = 'BRL';
                 }
 
-                return array_merge($base, [
+                $row = array_merge($base, [
                     'status' => 'ok',
                     'available' => round($available, 2),
                     'currency' => $currency,
                     'error' => null,
                 ]);
+                if (isset($cached['pending']) && is_numeric($cached['pending'])) {
+                    $row['pending'] = round((float) $cached['pending'], 2);
+                }
+
+                return $row;
             }
 
             return array_merge($base, [
@@ -368,8 +373,15 @@ class AcquirerWalletBalanceService
     private function fetchStripe(array $credentials): array
     {
         $payload = app(StripeDriver::class)->fetchAccountBalance($credentials);
+        $details = $this->parseStripeAvailableDetails($payload);
 
-        return $this->parseStripeAvailableDetails($payload);
+        // Saldo a liberar (retido pela Stripe): o painel da Stripe mostra disponível + a liberar.
+        $pending = $this->parseStripePending($payload, $details['currency']);
+        if ($pending !== null) {
+            $details['pending'] = $pending;
+        }
+
+        return $details;
     }
 
     /**
@@ -648,6 +660,32 @@ class AcquirerWalletBalanceService
             'available' => StripeDriver::fromSmallestUnit($byCurrency[$chosen], $chosen),
             'currency' => strtoupper($chosen),
         ];
+    }
+
+    /**
+     * Saldo pendente (a liberar) da Stripe na moeda escolhida; null se a resposta não trouxer o bloco.
+     *
+     * @param  array<string, mixed>  $body
+     */
+    public function parseStripePending(array $body, string $currency): ?float
+    {
+        $buckets = $body['pending'] ?? null;
+        if (! is_array($buckets)) {
+            return null;
+        }
+
+        $currency = strtolower(trim($currency));
+        $total = 0;
+        foreach ($buckets as $bucket) {
+            if (! is_array($bucket) || strtolower(trim((string) ($bucket['currency'] ?? ''))) !== $currency) {
+                continue;
+            }
+            if (is_numeric($bucket['amount'] ?? null)) {
+                $total += (int) $bucket['amount'];
+            }
+        }
+
+        return StripeDriver::fromSmallestUnit($total, $currency);
     }
 
     /**

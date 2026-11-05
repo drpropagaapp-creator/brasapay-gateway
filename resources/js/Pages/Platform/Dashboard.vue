@@ -73,6 +73,7 @@ const props = defineProps({
     payment_methods: { type: Array, default: () => [] },
     acquirers: { type: Array, default: () => [] },
     acquirer_wallets: { type: Array, default: () => [] },
+    cash_reconciliation: { type: Object, default: () => ({}) },
     top_sellers: { type: Array, default: () => [] },
     top_products: { type: Array, default: () => [] },
     alerts: { type: Array, default: () => [] },
@@ -179,6 +180,12 @@ function formatNumber(value) {
 
 function displayCurrency(value, currency = 'BRL') {
     return valuesVisible.value ? formatMoney(value, currency) : '••••••';
+}
+
+function formatShortDate(value) {
+    if (!value) return '';
+    const d = new Date(String(value).replace(' ', 'T'));
+    return Number.isNaN(d.getTime()) ? '' : d.toLocaleDateString('pt-BR');
 }
 
 function displayNumber(value) {
@@ -408,12 +415,12 @@ const paymentMax = computed(() => Math.max(1, ...props.payment_methods.map((m) =
                 <div class="tpl-card rounded-2xl border border-zinc-200 bg-zinc-50/50 p-4 dark:border-zinc-700 dark:bg-zinc-900/40">
                     <div class="tpl-fg-muted flex items-center gap-2 text-sm font-medium text-zinc-600 dark:text-zinc-400">
                         <Wallet class="h-4 w-4 text-[var(--color-primary)]" />
-                        Saldo disponível
+                        Saldo dos sellers
                     </div>
                     <p class="tpl-fg mt-2 text-2xl font-bold tabular-nums text-zinc-900 dark:text-white">
                         {{ displayCurrency(kpis.wallet_available) }}
                     </p>
-                    <p class="tpl-fg-subtle mt-1 text-xs text-zinc-500">Estado atual das carteiras · pendente {{ displayCurrency(kpis.wallet_pending) }}</p>
+                    <p class="tpl-fg-subtle mt-1 text-xs text-zinc-500">Disponível para saque (o que você deve aos sellers) · a liberar {{ displayCurrency(kpis.wallet_pending) }}</p>
                 </div>
 
                 <div class="tpl-card rounded-2xl border border-zinc-200 bg-zinc-50/50 p-4 dark:border-zinc-700 dark:bg-zinc-900/40">
@@ -489,7 +496,7 @@ const paymentMax = computed(() => Math.max(1, ...props.payment_methods.map((m) =
                         <Building2 class="h-4 w-4 text-zinc-500" />
                         <h3 class="tpl-fg text-sm font-semibold text-zinc-900 dark:text-white">Saldo nas adquirentes</h3>
                     </div>
-                    <p class="tpl-fg-subtle mt-1 text-xs text-zinc-500">Carteira da PSP quando a credencial está conectada. Sem conexão aparece como fora de uso.</p>
+                    <p class="tpl-fg-subtle mt-1 text-xs text-zinc-500">Dinheiro que a plataforma tem em cada PSP (disponível agora; retido pela PSP aparece como “a liberar”). Sem conexão aparece como fora de uso.</p>
                 </div>
             </div>
             <ul class="divide-y divide-zinc-100 dark:divide-zinc-800 sm:grid sm:grid-cols-2 sm:gap-x-8 sm:divide-y-0">
@@ -511,9 +518,14 @@ const paymentMax = computed(() => Math.max(1, ...props.payment_methods.map((m) =
                             <p v-if="w.conta" class="truncate text-xs text-zinc-500">{{ w.conta }}</p>
                         </div>
                     </div>
-                    <p v-if="w.status === 'ok'" class="shrink-0 text-sm font-semibold tabular-nums text-zinc-900 dark:text-white">
-                        {{ displayCurrency(w.available, w.currency) }}
-                    </p>
+                    <div v-if="w.status === 'ok'" class="shrink-0 text-right">
+                        <p class="text-sm font-semibold tabular-nums text-zinc-900 dark:text-white">
+                            {{ displayCurrency(w.available, w.currency) }}
+                        </p>
+                        <p v-if="w.pending !== undefined && w.pending !== null" class="text-[11px] tabular-nums text-zinc-500">
+                            a liberar {{ displayCurrency(w.pending, w.currency) }}
+                        </p>
+                    </div>
                     <p v-else-if="w.status === 'inactive'" class="shrink-0 text-xs font-medium text-zinc-400 dark:text-zinc-500">
                         Fora de uso
                     </p>
@@ -523,6 +535,68 @@ const paymentMax = computed(() => Math.max(1, ...props.payment_methods.map((m) =
                 </li>
             </ul>
             <p v-if="!acquirer_wallets.length" class="py-4 text-center text-sm text-zinc-500">Nenhuma adquirente cadastrada.</p>
+        </section>
+
+        <section
+            v-if="cash_reconciliation && cash_reconciliation.caixa_disponivel !== undefined"
+            class="tpl-card rounded-2xl border border-zinc-200 bg-white p-4 dark:border-zinc-700 dark:bg-zinc-900/40"
+            data-testid="cash-reconciliation"
+        >
+            <div class="mb-3">
+                <h3 class="tpl-fg text-sm font-semibold text-zinc-900 dark:text-white">Conciliação de caixa</h3>
+                <p class="tpl-fg-subtle mt-1 text-xs text-zinc-500">
+                    O saldo dos sellers é o que você <strong>deve</strong>; o saldo nas adquirentes é onde o seu dinheiro <strong>está</strong>.
+                    Eles não precisam ser iguais: a diferença abaixo é a sobra (ou falta) de caixa para pagar os sellers agora.
+                </p>
+            </div>
+            <dl class="space-y-1.5 text-sm">
+                <div class="flex items-center justify-between gap-3">
+                    <dt class="text-zinc-600 dark:text-zinc-400">Caixa disponível nas adquirentes</dt>
+                    <dd class="font-semibold tabular-nums text-zinc-900 dark:text-white">{{ displayCurrency(cash_reconciliation.caixa_disponivel) }}</dd>
+                </div>
+                <div class="flex items-center justify-between gap-3">
+                    <dt class="text-zinc-600 dark:text-zinc-400">(−) Saldo disponível dos sellers</dt>
+                    <dd class="font-semibold tabular-nums text-zinc-900 dark:text-white">{{ displayCurrency(cash_reconciliation.sellers_disponivel) }}</dd>
+                </div>
+                <div class="flex items-center justify-between gap-3">
+                    <dt class="text-zinc-600 dark:text-zinc-400">
+                        (−) Saques pedidos e ainda não pagos
+                        <span class="text-xs text-zinc-500">· {{ displayNumber(cash_reconciliation.saques_pendentes_qtd) }}<template v-if="cash_reconciliation.saques_pendentes_mais_antigo"> · o mais antigo é de {{ formatShortDate(cash_reconciliation.saques_pendentes_mais_antigo) }}</template></span>
+                    </dt>
+                    <dd class="font-semibold tabular-nums text-zinc-900 dark:text-white">{{ displayCurrency(cash_reconciliation.saques_pendentes) }}</dd>
+                </div>
+                <div class="flex items-center justify-between gap-3 border-t border-zinc-200 pt-2 dark:border-zinc-700">
+                    <dt class="font-medium text-zinc-800 dark:text-zinc-200">= Sobra (falta) de caixa agora</dt>
+                    <dd
+                        class="text-base font-bold tabular-nums"
+                        :class="cash_reconciliation.sobra_agora < 0 ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400'"
+                    >{{ displayCurrency(cash_reconciliation.sobra_agora) }}</dd>
+                </div>
+            </dl>
+            <dl class="mt-3 space-y-1 border-t border-dashed border-zinc-200 pt-3 text-xs text-zinc-500 dark:border-zinc-700">
+                <div class="flex items-center justify-between gap-3">
+                    <dt>A liberar nas adquirentes (retido pela PSP)</dt>
+                    <dd class="tabular-nums">{{ displayCurrency(cash_reconciliation.caixa_a_liberar) }}</dd>
+                </div>
+                <div class="flex items-center justify-between gap-3">
+                    <dt>A liberar aos sellers (dentro do prazo D+N)</dt>
+                    <dd class="tabular-nums">{{ displayCurrency(cash_reconciliation.sellers_a_liberar) }}</dd>
+                </div>
+                <div class="flex items-center justify-between gap-3">
+                    <dt>Sobra (falta) total, contando o que ainda vai liberar</dt>
+                    <dd
+                        class="font-medium tabular-nums"
+                        :class="cash_reconciliation.sobra_total < 0 ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400'"
+                    >{{ displayCurrency(cash_reconciliation.sobra_total) }}</dd>
+                </div>
+            </dl>
+            <p v-if="cash_reconciliation.adquirentes_com_erro > 0" class="mt-3 flex items-center gap-1.5 text-xs text-amber-600 dark:text-amber-400">
+                <AlertTriangle class="h-3.5 w-3.5" />
+                {{ cash_reconciliation.adquirentes_com_erro }} adquirente(s) não responderam: o caixa pode estar subestimado.
+            </p>
+            <p v-if="cash_reconciliation.adquirentes_moeda_ignorada > 0" class="mt-2 text-xs text-zinc-500">
+                Carteiras em moeda diferente de BRL não entram nesta conta.
+            </p>
         </section>
 
         <section class="space-y-3">
