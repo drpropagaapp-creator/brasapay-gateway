@@ -15,6 +15,12 @@ class SavedPaymentMethod extends Model
         'last_four',
         'brand',
         'type',
+        // Cartão salvo pela API (aplicação do seller): cliente na adquirente, dono e pedido de origem.
+        'gateway_customer_id',
+        'api_application_id',
+        'source_order_id',
+        'exp_month',
+        'exp_year',
     ];
 
     public function user(): BelongsTo

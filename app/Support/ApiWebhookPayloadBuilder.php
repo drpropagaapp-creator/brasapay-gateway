@@ -4,6 +4,7 @@ namespace App\Support;
 
 use App\Models\Order;
 use App\Models\Withdrawal;
+use App\Services\Api\ApiCardService;
 
 final class ApiWebhookPayloadBuilder
 {
@@ -34,6 +35,11 @@ final class ApiWebhookPayloadBuilder
             $payload['transaction_id'] = $order->gateway_id;
             $payload['payment_method'] = $order->payment_method;
             $payload['paid_at'] = $order->updated_at?->toIso8601String();
+            // Checkout hospedado com save_card: o cartão guardado nesta cobrança (campo novo, opcional).
+            $saved = app(ApiCardService::class)->forOrder($order);
+            if ($saved !== null) {
+                $payload['saved_card'] = app(ApiCardService::class)->serialize($saved);
+            }
         }
 
         return $payload;

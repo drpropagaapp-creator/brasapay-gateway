@@ -16,6 +16,7 @@ use App\Models\Product;
 use App\Models\ProductOffer;
 use App\Models\Setting;
 use App\Models\SubscriptionPlan;
+use App\Services\Api\ApiCardService;
 use App\Services\Checkout\CheckoutAbuseGuard;
 use App\Services\EfiPixRecorrenteService;
 use App\Services\MinimumChargeService;
@@ -82,17 +83,16 @@ class ApiCheckoutController extends Controller
 
         $paymentService = app(PaymentService::class);
         $tenantId = $app->tenant_id;
-        $pixEnabled = ! empty($pg['pix']);
-        $pixAutoEnabled = ! empty($pg['pix_auto']);
-        $cardEnabled = ! empty($pg['card']);
-        $boletoEnabled = ! empty($pg['boleto']);
+        $pixEnabled = ! empty($pg['pix']) && $session->allowsMethod('pix');
+        $pixAutoEnabled = ! empty($pg['pix_auto']) && $session->allowsMethod('pix_auto');
+        $cardGatewaySlug = app(ApiCardService::class)->hostedCardGateway($app, $session, $productModel);
+        $cardEnabled = $cardGatewaySlug !== null;
+        $boletoEnabled = ! empty($pg['boleto']) && $session->allowsMethod('boleto');
 
         $firstPixGateway = $pixEnabled ? $paymentService->getFirstAvailableGatewayForMethod($tenantId, 'pix', $productModel, $pg) : null;
         $firstPixAutoGateway = $pixAutoEnabled ? $paymentService->getFirstAvailableGatewayForMethod($tenantId, 'pix_auto', $productModel, $pg) : null;
-        $firstCardGateway = $cardEnabled ? $paymentService->getFirstAvailableGatewayForMethod($tenantId, 'card', $productModel, $pg) : null;
+        $firstCardGateway = $cardEnabled ? $paymentService->getFirstAvailableGatewayForMethod($tenantId, 'card', $productModel, array_merge($pg, ['card' => $cardGatewaySlug, 'card_redundancy' => []])) : null;
         $firstBoletoGateway = $boletoEnabled ? $paymentService->getFirstAvailableGatewayForMethod($tenantId, 'boleto', $productModel, $pg) : null;
-
-        $cardGatewaySlug = $cardEnabled ? (string) $pg['card'] : null;
         $cardStripePublishableKey = '';
         $cardStripeSandbox = false;
         $cardStripeLinkEnabled = true;
@@ -206,6 +206,8 @@ class ApiCheckoutController extends Controller
             'available_methods' => $availableMethods,
             'return_url' => $session->return_url,
             'card_gateway_slug' => $cardGatewaySlug,
+            // O comprador é avisado de que o cartão fica guardado para as próximas cobranças.
+            'save_card' => (bool) $session->save_card,
             'card_stripe_publishable_key' => $cardStripePublishableKey,
             'card_stripe_sandbox' => $cardStripeSandbox,
             'card_stripe_link_enabled' => $cardStripeLinkEnabled,
@@ -258,7 +260,7 @@ class ApiCheckoutController extends Controller
         if ($method === 'pix_auto' && empty($pg['pix_auto'])) {
             return redirect()->back()->with('error', 'Método de pagamento não disponível.');
         }
-        if ($method === 'card' && empty($pg['card'])) {
+        if (! $session->allowsMethod($method)) {
             return redirect()->back()->with('error', 'Método de pagamento não disponível.');
         }
         if ($method === 'boleto' && empty($pg['boleto'])) {
@@ -278,6 +280,16 @@ class ApiCheckoutController extends Controller
             if ($offer && $offer->product && (int) $offer->product->tenant_id === (int) $tenantId) {
                 $productModel = $offer->product;
             }
+        }
+
+        if ($method === 'card') {
+            // Mesma adquirente que montou o formulário na página: o token do cartão só vale nela.
+            $cardSlug = app(ApiCardService::class)->hostedCardGateway($app, $session, $productModel);
+            if ($cardSlug === null) {
+                return redirect()->back()->with('error', 'Método de pagamento não disponível.');
+            }
+            $gatewayConfig = array_merge($gatewayConfig, ['card' => $cardSlug, 'card_redundancy' => []]);
+            $pg = $gatewayConfig;
         }
 
         $checkoutGuard = app(CheckoutAbuseGuard::class);
@@ -803,12 +815,19 @@ class ApiCheckoutController extends Controller
             $card = [
                 'payment_token' => $validated['payment_token'],
                 'card_mask' => $validated['card_mask'] ?? null,
+                // Sem a moeda a Stripe cobrava em dólar o valor que estava em reais.
+                'currency' => strtolower((string) ($session->currency ?? 'BRL')),
+                'save' => (bool) $session->save_card,
             ];
             try {
                 event(new OrderPending($order));
                 $cardGatewayConfig = $gatewayConfig;
                 $cardGatewayConfig['card_redundancy'] = [];
                 $result = $paymentService->createCardPayment($order, $product, $consumer, $card, $cardGatewayConfig);
+                // Guarda antes de avisar "pago": o webhook order.completed já leva o cartão salvo.
+                if ($session->save_card && is_array($result['saved_card'] ?? null)) {
+                    app(ApiCardService::class)->remember($order, (string) $result['gateway'], $result['saved_card']);
+                }
                 $status = is_string($result['status'] ?? null) ? strtolower(trim((string) $result['status'])) : 'pending';
                 if (in_array($status, ['paid', 'settled', 'approved', 'completed'], true)) {
                     $order->update(['status' => 'completed']);

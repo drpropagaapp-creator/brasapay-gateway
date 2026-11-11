@@ -1804,6 +1804,11 @@ class CheckoutController extends Controller
                 ]),
             ]);
             $card['currency'] = $walletGateway === 'stripe' ? 'brl' : strtolower($currency);
+            // Assinatura no cartão: a adquirente que guarda cartão (Stripe) prepara o reuso já na
+            // primeira cobrança — sem isso a renovação automática era recusada pela Stripe.
+            if ($walletGateway !== 'stripe' && $plan !== null && $plan->interval !== SubscriptionPlan::INTERVAL_LIFETIME) {
+                $card['save'] = true;
+            }
             if ($checkoutSlug !== '') {
                 $card['return_url'] = url()->route('checkout.show', ['slug' => $checkoutSlug]);
             }
@@ -1859,7 +1864,7 @@ class CheckoutController extends Controller
                     $result = app(SubscriptionRenewalService::class)->syncFromPaidOrder($order->fresh());
                     $subscription = $result['subscription'] ?? null;
                     if ($subscription) {
-                        $this->attachStripeSavedPaymentMethodForSubscription($subscription, $order, $card, $tenantId, $user->id);
+                        $this->attachStripeSavedPaymentMethodForSubscription($subscription, $order, $card, $tenantId, $user->id, is_array($cardResult['saved_card'] ?? null) ? $cardResult['saved_card'] : null);
                     }
                     event(new OrderCompleted($order));
                 } elseif ($isApproved && $alreadyCompleted) {
@@ -3739,13 +3744,15 @@ class CheckoutController extends Controller
 
     /**
      * @param  array{payment_token?: string, card_mask?: string}  $card
+     * @param  array<string, mixed>|null  $saved  cartão preparado para reuso pela adquirente (cliente Stripe, bandeira, validade)
      */
     private function attachStripeSavedPaymentMethodForSubscription(
         Subscription $subscription,
         Order $order,
         array $card,
         int $tenantId,
-        int $userId
+        int $userId,
+        ?array $saved = null
     ): void {
         if (($order->gateway ?? '') !== 'stripe') {
             return;
@@ -3754,8 +3761,8 @@ class CheckoutController extends Controller
         if ($pm === '' || ! str_starts_with($pm, 'pm_')) {
             return;
         }
-        $lastFour = null;
-        if (! empty($card['card_mask']) && preg_match('/(\d{4})\s*$/', (string) $card['card_mask'], $m)) {
+        $lastFour = isset($saved['last_four']) ? (string) $saved['last_four'] : null;
+        if ($lastFour === null && ! empty($card['card_mask']) && preg_match('/(\d{4})\s*$/', (string) $card['card_mask'], $m)) {
             $lastFour = $m[1];
         }
         $spm = SavedPaymentMethod::create([
@@ -3763,8 +3770,13 @@ class CheckoutController extends Controller
             'user_id' => $userId,
             'gateway' => 'stripe',
             'gateway_payment_method_id' => $pm,
+            // Sem o cliente Stripe a renovação automática não consegue reusar o cartão.
+            'gateway_customer_id' => ($saved['customer_id'] ?? '') !== '' ? (string) $saved['customer_id'] : null,
             'last_four' => $lastFour,
-            'brand' => 'card',
+            'brand' => isset($saved['brand']) ? substr((string) $saved['brand'], 0, 32) : 'card',
+            'exp_month' => isset($saved['exp_month']) ? (int) $saved['exp_month'] : null,
+            'exp_year' => isset($saved['exp_year']) ? (int) $saved['exp_year'] : null,
+            'source_order_id' => $order->id,
             'type' => 'card',
         ]);
         $subscription->update(['saved_payment_method_id' => $spm->id]);

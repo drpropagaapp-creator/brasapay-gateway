@@ -205,6 +205,82 @@ Status comuns: `pending`, `processing`, `completed`, `cancelled`, `refunded`, `d
 
 ---
 
+## Cartão (checkout hospedado e cartão salvo)
+
+Para cobrar no cartão sem tocar nos dados do cartão: o cliente digita o cartão na **página da BrasaPay** (`/api-checkout/{token}`); se a sessão pedir `save_card`, o cartão fica guardado na adquirente e o seu sistema cobra as próximas vezes com `POST /api/v1/payments/card/saved`, sem o cliente presente (assinaturas, mensalidades).
+
+### 1. Ver o que a conta recebe agora
+
+`GET /api/v1/payment-methods` (permissão `payments:read`) — o sistema descobre sozinho qual adquirente está recebendo cartão:
+
+```json
+{
+  "methods": {
+    "pix": { "available": true, "gateway": "cajupay" },
+    "boleto": { "available": false, "gateway": null },
+    "card": { "available": true, "gateway": "stripe", "hosted_checkout": true, "saved_cards": true }
+  }
+}
+```
+
+- `hosted_checkout`: a página hospedada sabe pedir o cartão nessa adquirente (Stripe, Efí, Pagar.me, Cielo com as chaves públicas configuradas).
+- `saved_cards`: a adquirente guarda cartão para cobrar de novo (hoje: **Stripe**). Se for `false`, crie a sessão sem `save_card` e mande o link a cada cobrança.
+
+### 2. Criar a sessão do checkout hospedado
+
+`POST /api/v1/checkout/sessions` (permissão `payments:write`):
+
+```json
+{
+  "customer": { "email": "cliente@exemplo.com", "name": "Cliente", "cpf": "52998224725" },
+  "amount": 97.00,
+  "metadata": { "invoice_id": "inv_123" },
+  "return_url": "https://seusistema.com/obrigado",
+  "expires_in": 60,
+  "payment_methods": ["card"],
+  "save_card": true
+}
+```
+
+Resposta `201`: `{ "session_id": "12", "checkout_url": "https://…/api-checkout/…", "expires_at": "…" }`. Mande o cliente para `checkout_url`.
+
+- `payment_methods` (opcional): métodos que a página mostra. Pedir `card` faz a página usar a adquirente de cartão atual da conta mesmo que a aplicação não tenha uma fixada.
+- `save_card` (opcional): devolve `422` se a adquirente de cartão atual não guarda cartão (o corpo traz `gateway`). A página avisa o comprador que o cartão fica guardado.
+- Quando o pagamento é aprovado, o webhook `order.completed` traz `saved_card` (ver abaixo). Guarde o `saved_card.id`.
+
+### 3. Cobrar o cartão salvo
+
+`POST /api/v1/payments/card/saved` (permissão `payments:write`; aceita `Idempotency-Key`):
+
+```json
+{
+  "saved_card_id": "34",
+  "customer": { "email": "cliente@exemplo.com", "name": "Cliente", "cpf": "52998224725" },
+  "amount": 97.00,
+  "metadata": { "invoice_id": "inv_124" },
+  "idempotency_key": "inv_124"
+}
+```
+
+| Resposta | Significado |
+|----------|-------------|
+| `201` `status: completed` | Pago (o webhook `order.completed` também chega) |
+| `201` `status: pending` | A adquirente ainda processa; aguarde o webhook |
+| `202` `status: processing` | A operadora não respondeu a tempo; **não cobre de novo** — consulte `GET /payments/{order_id}` |
+| `422` `code: card_declined` / `card_failed` | Recusado; ofereça o link de pagamento (PIX ou cartão novo) |
+| `422` `code: authentication_required` | O banco pediu confirmação; mande o cliente pagar pelo link |
+
+Regras: o cartão só é cobrado depois que a primeira cobrança dele foi paga; só a aplicação que guardou enxerga o cartão; o `customer.email` precisa ser o mesmo do cartão; a cobrança vai sempre na adquirente que guardou o cartão (nunca em outra).
+
+### 4. Consultar e remover
+
+| Método | Endpoint | Descrição |
+|--------|----------|-----------|
+| GET | `/api/v1/saved-cards/{id}` | `status` (`active` / `pending`), `brand`, `last_four`, `exp_month`, `exp_year` |
+| DELETE | `/api/v1/saved-cards/{id}` | Remove o cartão (desvincula na adquirente) |
+
+---
+
 ## Cancelar e estornar PIX
 
 | Método | Endpoint | Descrição |
@@ -328,6 +404,11 @@ A chave informada fica no saque (`payout_meta.destination_snapshot`) e **não so
 | GET | /api/v1/webhook | Consultar configuração do webhook |
 | PUT | /api/v1/webhook | Provisionar/atualizar webhook (parceiros) |
 | POST | /api/v1/webhook/rotate-secret | Rotacionar secret do webhook |
+| GET | /api/v1/payment-methods | O que a conta recebe agora (adquirente de cartão, cartão salvo) |
+| POST | /api/v1/checkout/sessions | Checkout hospedado (PIX/cartão/boleto; `save_card`) |
+| POST | /api/v1/payments/card/saved | Cobrar cartão salvo sem o cliente presente |
+| GET | /api/v1/saved-cards/{id} | Consultar cartão salvo |
+| DELETE | /api/v1/saved-cards/{id} | Remover cartão salvo |
 
 ---
 
@@ -376,6 +457,12 @@ Em caso de falha na entrega (endpoint offline ou não-2xx), reenviamos automatic
   "created_at": "2026-06-13T14:00:00.000000Z",
   "updated_at": "2026-06-13T14:05:12.000000Z"
 }
+```
+
+Pagamento no checkout hospedado com `save_card`: o `order.completed` traz também o cartão guardado (e `GET /payments/{order_id}` devolve o mesmo campo):
+
+```json
+"saved_card": { "id": "34", "status": "active", "gateway": "stripe", "brand": "visa", "last_four": "4242", "exp_month": 12, "exp_year": 2031, "source_order_id": 456 }
 ```
 
 ### Eventos de saque

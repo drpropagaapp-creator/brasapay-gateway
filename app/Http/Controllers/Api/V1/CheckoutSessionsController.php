@@ -8,6 +8,7 @@ use App\Models\ApiCheckoutSession;
 use App\Models\Product;
 use App\Models\ProductOffer;
 use App\Models\SubscriptionPlan;
+use App\Services\Api\ApiCardService;
 use App\Support\ApiHostedCheckoutPricing;
 use App\Services\ApiPixAccess;
 use App\Services\MerchantOperationalGuard;
@@ -44,7 +45,17 @@ class CheckoutSessionsController extends Controller
             'metadata' => ['nullable', 'array'],
             'return_url' => ['nullable', 'string', 'url', 'max:512'],
             'expires_in' => ['nullable', 'integer', 'min:5', 'max:1440'],
+            // Guardar o cartão para o sistema do seller cobrar as próximas vezes (POST /payments/card/saved).
+            'save_card' => ['nullable', 'boolean'],
+            // Métodos que a página mostra (vazio = todos os configurados na aplicação).
+            'payment_methods' => ['nullable', 'array'],
+            'payment_methods.*' => ['string', 'in:pix,pix_auto,card,boleto'],
         ]);
+        $saveCard = (bool) ($validated['save_card'] ?? false);
+        $methods = array_values(array_unique($validated['payment_methods'] ?? []));
+        if ($saveCard && $methods !== [] && ! in_array('card', $methods, true)) {
+            return response()->json(['message' => 'save_card exige o cartão entre os payment_methods.'], 422);
+        }
 
         $tenantId = $app->tenant_id;
         $chargeBrl = null;
@@ -92,6 +103,22 @@ class CheckoutSessionsController extends Controller
 
         app(MinimumChargeService::class)->assertApiPayment($chargeBrl, (int) $tenantId);
 
+        if ($saveCard) {
+            // Confere agora (e não na página) se a adquirente que recebe cartão hoje guarda cartão.
+            $cards = app(ApiCardService::class);
+            $product = ! empty($validated['product_id']) ? Product::find($validated['product_id']) : null;
+            $gateway = $cards->gatewayFor($app, 'card', $product);
+            if ($gateway === null || ! $cards->hostedCardReady((int) $tenantId, $gateway, $product !== null)) {
+                return response()->json(['message' => 'Cartão indisponível no checkout desta conta. Confira a adquirente de cartão em Integrações.'], 422);
+            }
+            if (! $cards->gatewaySavesCards($gateway)) {
+                return response()->json([
+                    'message' => "A adquirente de cartão desta conta ({$gateway}) ainda não guarda cartão. Crie a sessão sem save_card e cobre pelo link a cada vez.",
+                    'gateway' => $gateway,
+                ], 422);
+            }
+        }
+
         $expiresIn = (int) ($validated['expires_in'] ?? 30);
         $expiresAt = now()->addMinutes($expiresIn);
         $sessionToken = Str::uuid()->toString();
@@ -114,6 +141,8 @@ class CheckoutSessionsController extends Controller
             'metadata' => $validated['metadata'] ?? [],
             'return_url' => $validated['return_url'] ?? ($app->default_return_url ?: null),
             'expires_at' => $expiresAt,
+            'save_card' => $saveCard,
+            'payment_methods' => $methods !== [] ? $methods : null,
         ]);
 
         $checkoutUrl = url('/api-checkout/' . $sessionToken);
