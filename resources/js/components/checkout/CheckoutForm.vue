@@ -25,7 +25,15 @@ import { isValidCpf } from '@/utils/brazilianDocuments.js';
 import { navigateAfterCheckout } from '@/lib/checkoutRedirect.js';
 import { trackCheckoutAddPaymentInfo, trackCheckoutPurchase } from '@/composables/useCheckoutPurchaseTracking.js';
 import { applyMetaAdvancedMatching } from '@/composables/useMetaCheckoutTracking.js';
-import { splitCustomerName, normalizeMetaPhone } from '@/lib/metaTracking/browserPixel.js';
+import { splitCustomerName } from '@/lib/metaTracking/browserPixel.js';
+import {
+    PHONE_COUNTRIES,
+    phoneCountryLabel,
+    findPhoneCountry,
+    findPhoneCountryByCode,
+    splitInternationalDigits,
+    isValidPhoneForCountry,
+} from '@/lib/phoneCountries.js';
 import { getMetricsSessionKey } from '@/lib/metricsTracking.js';
 import CheckoutLegalFooter from './CheckoutLegalFooter.vue';
 import { usePlatformBranding } from '@/composables/usePlatformBranding';
@@ -570,35 +578,41 @@ watch(cardPagarmePublicKey, (next, prev) => {
     }
 });
 
-const countryCodes = [
-    { code: '55', country: 'BR', label: 'Brasil', flag: '🇧🇷' },
-    { code: '1', country: 'US', label: 'EUA', flag: '🇺🇸' },
-    { code: '351', country: 'PT', label: 'Portugal', flag: '🇵🇹' },
-    { code: '54', country: 'AR', label: 'Argentina', flag: '🇦🇷' },
-    { code: '52', country: 'MX', label: 'México', flag: '🇲🇽' },
-    { code: '57', country: 'CO', label: 'Colômbia', flag: '🇨🇴' },
-    { code: '34', country: 'ES', label: 'Espanha', flag: '🇪🇸' },
-    { code: '39', country: 'IT', label: 'Itália', flag: '🇮🇹' },
-    { code: '33', country: 'FR', label: 'França', flag: '🇫🇷' },
-    { code: '49', country: 'DE', label: 'Alemanha', flag: '🇩🇪' },
-    { code: '44', country: 'GB', label: 'Reino Unido', flag: '🇬🇧' },
-    { code: '81', country: 'JP', label: 'Japão', flag: '🇯🇵' },
-];
+// Todos os países (antes eram só 12); nome no idioma do checkout, Brasil primeiro.
+const countryCodes = (() => {
+    const [br, ...rest] = PHONE_COUNTRIES.map((c) => ({ ...c, label: phoneCountryLabel(c.country, props.checkoutLocale) }));
+    rest.sort((a, b) => a.label.localeCompare(b.label, String(props.checkoutLocale || 'pt_BR').replace('_', '-')));
+    return [br, ...rest];
+})();
+const phoneCountrySearch = ref('');
+const filteredCountryCodes = computed(() => {
+    const q = phoneCountrySearch.value
+        .trim()
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/^\+/, '');
+    if (!q) return countryCodes;
+    return countryCodes.filter((c) => {
+        const label = c.label.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+        return label.includes(q) || c.code.startsWith(q) || c.country.toLowerCase() === q;
+    });
+});
 
-function getDefaultCountryCode() {
-    const suggested = (props.suggestedCountryCode || '').toUpperCase();
-    if (!suggested && typeof navigator !== 'undefined') {
-        const lang = String(navigator.language || '').trim();
-        const region = lang.split('-')[1]?.toUpperCase?.() || '';
-        if (region) {
-            const navFound = countryCodes.find((c) => c.country === region);
-            if (navFound) return navFound.code;
-        }
-    } else if (!suggested) {
-        return '55';
+/** País pré-selecionado no DDI: geo do servidor, senão idioma do navegador, senão Brasil. */
+function getDefaultPhoneCountry() {
+    const suggested = findPhoneCountry(props.suggestedCountryCode);
+    if (suggested) return suggested;
+    if (typeof navigator !== 'undefined') {
+        const region = String(navigator.language || '').trim().split('-')[1]?.toUpperCase?.() || '';
+        const navFound = findPhoneCountry(region);
+        if (navFound) return navFound;
     }
-    const found = countryCodes.find((c) => c.country === suggested);
-    return found ? found.code : '55';
+    return findPhoneCountry('BR');
+}
+const phoneCountryIso = ref(getDefaultPhoneCountry().country);
+function getDefaultCountryCode() {
+    return findPhoneCountry(phoneCountryIso.value)?.code || '55';
 }
 
 const form = useForm({
@@ -712,9 +726,22 @@ function formatPhone(value, countryCode) {
     return d.replace(/(\d{2})(?=\d)/g, '$1 ').trim();
 }
 function onPhoneInput(e) {
-    const digits = (e.target.value || '').replace(/\D/g, '').slice(0, 15);
+    const raw = String(e.target.value || '').trim();
+    let digits = raw.replace(/\D/g, '');
+    // Colou/digitou no formato internacional (+351…, 00351…): troca o DDI e fica só com o número.
+    if (raw.startsWith('+') || raw.startsWith('00')) {
+        const split = splitInternationalDigits(raw.startsWith('00') ? digits.slice(2) : digits);
+        if (split) {
+            if (split.code !== form.country_code) phoneCountryIso.value = split.country;
+            form.country_code = split.code;
+            digits = split.national;
+        }
+    }
+    digits = digits.slice(0, Math.max(4, 15 - String(form.country_code || '').length));
     phoneDigits.value = digits;
     phoneDisplay.value = formatPhone(digits, form.country_code);
+    // Mantém o campo sem o "+DDI" depois de extraído (o DDI fica no seletor).
+    if (e.target.value !== phoneDisplay.value) e.target.value = phoneDisplay.value;
 }
 watch(
     () => form.country_code,
@@ -750,7 +777,14 @@ function loadDraft() {
             phoneDigits.value = String(draft.phone_digits).replace(/\D/g, '').slice(0, 15);
             phoneDisplay.value = formatPhone(phoneDigits.value, draft.country_code || form.country_code);
         }
-        if (draft.country_code) form.country_code = draft.country_code;
+        if (draft.country_code) {
+            form.country_code = String(draft.country_code);
+            const draftCountry = findPhoneCountry(draft.phone_country);
+            phoneCountryIso.value =
+                draftCountry && draftCountry.code === form.country_code
+                    ? draftCountry.country
+                    : findPhoneCountryByCode(form.country_code)?.country || phoneCountryIso.value;
+        }
         if (draft.email && draft.email.trim() !== '') showEditForm.value = false;
     } catch (_) {}
 }
@@ -767,6 +801,7 @@ function saveDraft() {
                 cpf: (form.cpf || '').replace(/\D/g, ''),
                 phone_digits: phoneDigits.value || '',
                 country_code: form.country_code || '55',
+                phone_country: phoneCountryIso.value || 'BR',
             };
             if (typeof localStorage !== 'undefined') localStorage.setItem(STORAGE_KEY, JSON.stringify(draft));
         } catch (_) {}
@@ -795,12 +830,13 @@ let trackTimeout = null;
 let contactSyncTimeout = null;
 const trackStepSent = ref({ form_started: false, form_filled: false });
 
+/** Com "+": sem ele o normalizador da Meta tenta adivinhar se o número é brasileiro. */
 function currentCheckoutPhone() {
-    return showPhone.value ? `${form.country_code || ''}${phoneDigits.value || ''}` : '';
+    return showPhone.value && phoneDigits.value ? `+${form.country_code || ''}${phoneDigits.value}` : '';
 }
 
 function isCheckoutPhoneComplete() {
-    return Boolean(normalizeMetaPhone(currentCheckoutPhone()));
+    return isValidPhoneForCountry(form.country_code, phoneDigits.value);
 }
 
 function currentMetaCustomer() {
@@ -987,13 +1023,23 @@ watch(
     }
 );
 const flagImgUrl = (code) => `https://flagcdn.com/24x18/${(code || 'br').toLowerCase()}.png`;
-const currentCountry = computed(() => countryCodes.find((c) => c.code === form.country_code)?.country ?? 'BR');
-const currentCountryOption = computed(() => countryCodes.find((c) => c.code === form.country_code) || countryCodes[0]);
+// País escolhido guardado à parte: vários países dividem o mesmo DDI (+1 EUA/Canadá, +7 Rússia/Cazaquistão).
+const currentCountry = computed(() => {
+    const chosen = findPhoneCountry(phoneCountryIso.value);
+    if (chosen && chosen.code === form.country_code) return chosen.country;
+    return findPhoneCountryByCode(form.country_code)?.country ?? 'BR';
+});
+const currentCountryOption = computed(() => countryCodes.find((c) => c.country === currentCountry.value) || countryCodes[0]);
 
 function selectPhoneCountry(c) {
+    phoneCountryIso.value = c.country;
     form.country_code = c.code;
     phoneCountryOpen.value = false;
+    phoneCountrySearch.value = '';
 }
+watch(phoneCountryOpen, (open) => {
+    if (!open) phoneCountrySearch.value = '';
+});
 
 const addressCepLoading = ref(false);
 const boletoAddressFetched = computed(() => !!(form.address_street || '').trim());
@@ -1530,7 +1576,7 @@ function validateCajuPayCustomerFields() {
         }
     }
     if (showPhone.value && !isCheckoutPhoneComplete()) {
-        errors.phone = 'Telefone inválido.';
+        errors.phone = tf('checkout.phone_invalid', 'Telefone inválido.');
     }
     if (Object.keys(errors).length > 0) {
         Object.entries(errors).forEach(([k, v]) => form.setError(k, v));
@@ -2959,13 +3005,23 @@ function submit() {
                                     <span class="shrink-0">+{{ form.country_code }}</span>
                                 </div>
                             </template>
+                            <div class="sticky top-0 z-10 min-w-[16rem] bg-white px-3 pb-1.5 pt-1">
+                                <input
+                                    v-model="phoneCountrySearch"
+                                    type="text"
+                                    autocomplete="off"
+                                    :placeholder="tf('checkout.country_search_placeholder', 'Buscar país ou DDI')"
+                                    class="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-gray-400 focus:outline-none"
+                                    @click.stop
+                                />
+                            </div>
                             <button
-                                v-for="c in countryCodes"
-                                :key="c.code"
+                                v-for="c in filteredCountryCodes"
+                                :key="c.country"
                                 type="button"
                                 role="option"
                                 class="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm transition hover:bg-gray-50"
-                                :class="form.country_code === c.code ? 'bg-gray-50 font-medium text-gray-900' : 'text-gray-700'"
+                                :class="currentCountry === c.country ? 'bg-gray-50 font-medium text-gray-900' : 'text-gray-700'"
                                 @click="selectPhoneCountry(c)"
                             >
                                 <img
@@ -2977,7 +3033,7 @@ function submit() {
                                 />
                                 <span class="min-w-0 flex-1">{{ c.label }}</span>
                                 <span class="shrink-0 text-gray-500">+{{ c.code }}</span>
-                                <Check v-if="form.country_code === c.code" class="h-4 w-4 shrink-0 text-gray-500" />
+                                <Check v-if="currentCountry === c.country" class="h-4 w-4 shrink-0 text-gray-500" />
                             </button>
                             </CheckoutDropdown>
                         </div>
@@ -3040,13 +3096,23 @@ function submit() {
                                             <span class="shrink-0">+{{ form.country_code }}</span>
                                         </div>
                                     </template>
+                                    <div class="sticky top-0 z-10 min-w-[16rem] bg-white px-3 pb-1.5 pt-1">
+                                        <input
+                                            v-model="phoneCountrySearch"
+                                            type="text"
+                                            autocomplete="off"
+                                            :placeholder="tf('checkout.country_search_placeholder', 'Buscar país ou DDI')"
+                                            class="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-gray-400 focus:outline-none"
+                                            @click.stop
+                                        />
+                                    </div>
                                     <button
-                                        v-for="c in countryCodes"
-                                        :key="c.code"
+                                        v-for="c in filteredCountryCodes"
+                                        :key="c.country"
                                         type="button"
                                         role="option"
                                         class="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm transition hover:bg-gray-50"
-                                        :class="form.country_code === c.code ? 'bg-gray-50 font-medium text-gray-900' : 'text-gray-700'"
+                                        :class="currentCountry === c.country ? 'bg-gray-50 font-medium text-gray-900' : 'text-gray-700'"
                                         @click="selectPhoneCountry(c)"
                                     >
                                         <img
@@ -3058,7 +3124,7 @@ function submit() {
                                         />
                                         <span class="min-w-0 flex-1">{{ c.label }}</span>
                                         <span class="shrink-0 text-gray-500">+{{ c.code }}</span>
-                                        <Check v-if="form.country_code === c.code" class="h-4 w-4 shrink-0 text-gray-500" />
+                                        <Check v-if="currentCountry === c.country" class="h-4 w-4 shrink-0 text-gray-500" />
                                     </button>
                                 </CheckoutDropdown>
                             </div>
