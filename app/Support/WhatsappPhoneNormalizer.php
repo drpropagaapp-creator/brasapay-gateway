@@ -51,8 +51,13 @@ final class WhatsappPhoneNormalizer
         }
 
         // Local BR (DDD + número) sem DDI → prefixa 55.
-        if ($len >= 10 && $len <= 11) {
-            return '55'.$digits;
+        // Celular BR tem 11 dígitos com o 3º = 9; fixo BR tem 10 com o 3º entre 2 e 8.
+        // Fora disso é número internacional gravado sem "+" (ex.: EUA "18575551233").
+        if ($len === 11) {
+            return $digits[2] === '9' ? '55'.$digits : $digits;
+        }
+        if ($len === 10) {
+            return ($digits[2] >= '2' && $digits[2] <= '8') ? '55'.$digits : $digits;
         }
 
         // Já veio com DDI internacional (12–15 dígitos, fora do padrão BR 55+12/13).

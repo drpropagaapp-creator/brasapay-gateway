@@ -1,6 +1,7 @@
 <script setup>
 import { computed, h, ref } from 'vue';
 import { Link, router } from '@inertiajs/vue3';
+import { buildWhatsAppUrl, formatCustomerPhone } from '@/lib/whatsappUrl';
 import LayoutInfoprodutor from '@/Layouts/LayoutInfoprodutor.vue';
 import PnPageHeader from '@/components/paynext/PnPageHeader.vue';
 import PnKpiCard from '@/components/paynext/PnKpiCard.vue';
@@ -42,7 +43,7 @@ const subtitle = computed(() => {
     const c = props.contact;
     // Sem nome, o e-mail já é o título: não repete.
     const first = c.placeholder ? `Comprou por ${c.placeholder}, sem e-mail informado` : c.name ? c.email : '';
-    return [first, c.phone].filter(Boolean).join(' · ');
+    return [first, c.phone ? formatCustomerPhone(c.phone) : null].filter(Boolean).join(' · ');
 });
 const initials = computed(() => {
     const c = props.contact;
@@ -56,8 +57,7 @@ const initials = computed(() => {
 const AvatarMark = () => h('span', { class: 'inline-flex items-center justify-center text-[13px] font-semibold leading-none' }, initials.value);
 
 const whatsapp = computed(() => {
-    const d = (props.contact.phone || '').replace(/\D/g, '');
-    return d.length >= 10 ? `https://wa.me/${d.length <= 11 ? '55' + d : d}` : null;
+    return buildWhatsAppUrl(props.contact.phone);
 });
 const copied = ref(false);
 function copyEmail() {

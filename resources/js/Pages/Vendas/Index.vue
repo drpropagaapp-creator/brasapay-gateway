@@ -33,7 +33,7 @@ import {
 } from 'lucide-vue-next';
 import Checkbox from '@/components/ui/Checkbox.vue';
 import { htmlToText } from '@/lib/sanitizeHtml';
-import { buildWhatsAppUrl, orderCustomerPhone } from '@/lib/whatsappUrl';
+import { buildWhatsAppUrl, formatCustomerPhone, orderCustomerPhone } from '@/lib/whatsappUrl';
 
 defineOptions({ layout: LayoutInfoprodutor });
 const { t } = useI18n();
@@ -1291,7 +1291,7 @@ const exportJsonUrl = computed(() => `/vendas/export?${buildExportSearchParams('
                                     rel="noopener noreferrer"
                                     class="flex h-8 w-8 items-center justify-center rounded-lg text-[#25D366] transition hover:bg-emerald-50 dark:hover:bg-emerald-900/20"
                                     :aria-label="t('sales.whatsapp_customer', 'WhatsApp do cliente')"
-                                    :title="orderCustomerPhone(v) || t('sales.whatsapp_customer', 'WhatsApp do cliente')"
+                                    :title="formatCustomerPhone(orderCustomerPhone(v)) || t('sales.whatsapp_customer', 'WhatsApp do cliente')"
                                 >
                                     <svg class="h-4 w-4" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
                                         <path

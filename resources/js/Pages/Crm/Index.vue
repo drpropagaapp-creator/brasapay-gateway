@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { Link, router } from '@inertiajs/vue3';
+import { buildWhatsAppUrl, formatCustomerPhone } from '@/lib/whatsappUrl';
 import LayoutInfoprodutor from '@/Layouts/LayoutInfoprodutor.vue';
 import {
     Contact, Search, LayoutGrid, Columns3, X, Copy, MessageCircle, ArrowUpRight, Users, Wallet, Repeat, Gem, UserCheck, Plus,
@@ -118,8 +119,7 @@ async function saveMeta() {
     }
 }
 const whatsapp = computed(() => {
-    const d = (detail.value?.phone || '').replace(/\D/g, '');
-    return d.length >= 10 ? `https://wa.me/${d.length <= 11 ? '55' + d : d}` : null;
+    return buildWhatsAppUrl(detail.value?.phone);
 });
 watch(open, (v) => document.body.classList.toggle('overflow-hidden', !!v));
 function copyEmail() {
@@ -240,7 +240,7 @@ onBeforeUnmount(() => {
                         <span class="pn-avatar pn-avatar--md shrink-0" :class="c.placeholder ? '!bg-[var(--ink-100)] !text-[var(--ink-600)]' : ''">{{ initials(c) }}</span>
                         <div class="min-w-0 flex-1">
                             <p class="truncate text-sm font-medium text-[var(--text-primary)]">{{ title(c) }}</p>
-                            <p class="truncate text-xs text-[var(--text-tertiary)]">{{ c.placeholder || c.phone || 'sem telefone' }}</p>
+                            <p class="truncate text-xs text-[var(--text-tertiary)]">{{ c.placeholder || (c.phone ? formatCustomerPhone(c.phone) : 'sem telefone') }}</p>
                         </div>
                         <span class="shrink-0 rounded-full px-2.5 py-0.5 text-[11px] font-medium" :class="STAGE_STYLE[c.stage]?.chip">{{ stages[c.stage] || 'Lead' }}</span>
                     </div>

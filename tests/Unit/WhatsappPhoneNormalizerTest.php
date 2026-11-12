@@ -22,6 +22,16 @@ class WhatsappPhoneNormalizerTest extends TestCase
         $this->assertSame('5491112345678', WhatsappPhoneNormalizer::normalize('5491112345678'));
     }
 
+    public function test_international_digits_saved_without_plus_are_not_treated_as_brazilian(): void
+    {
+        // Checkout gravava DDI + número sem "+": EUA tem 11 dígitos, mas o 3º nunca é 9.
+        $this->assertSame('18575551233', WhatsappPhoneNormalizer::normalize('18575551233'));
+        $this->assertSame('33612345678', WhatsappPhoneNormalizer::normalize('33612345678'));
+        // Brasil sem DDI continua ganhando 55 (celular com 9, fixo com 3º dígito 2–8).
+        $this->assertSame('5518991234567', WhatsappPhoneNormalizer::normalize('18991234567'));
+        $this->assertSame('551832345678', WhatsappPhoneNormalizer::normalize('1832345678'));
+    }
+
     public function test_rejects_invalid_phones(): void
     {
         $this->assertNull(WhatsappPhoneNormalizer::normalize(''));
