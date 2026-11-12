@@ -6,6 +6,7 @@ use App\Models\GatewayCredential;
 use App\Models\Withdrawal;
 use App\Services\EffectiveMerchantFees;
 use App\Services\Payout\GatewayPayoutEconomics;
+use App\Services\Payout\PayoutDestinationValidator;
 use App\Services\Withdrawal\WithdrawalMinimumService;
 use App\Services\WithdrawalPixReceiptService;
 use App\Support\BrazilianDocumentDigits;
@@ -73,6 +74,10 @@ class CajuPayPayoutService
         $amountCents = (int) round($apiAmount * 100);
 
         $http = $this->httpForCredentials($credentials);
+
+        // Chaves gravadas antes da normalização (ex.: CPF com pontos vindo da API) também saem no formato do DICT.
+        $pixKeyType = trim((string) $pixKeyType);
+        $pixKey = PayoutDestinationValidator::normalizePixKey($pixKeyType, (string) $pixKey);
 
         // CajuPay exige que a mesma Idempotency-Key seja reutilizada apenas com o MESMO payload.
         // Como chave/titular/taxas podem mudar entre tentativas, incluímos assinatura do payload.
