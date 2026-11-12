@@ -37,6 +37,7 @@ class ApiApplication extends Model
         'webhook_events',
         'webhook_enabled',
         'is_active',
+        'legacy_key_active',
         'is_legacy',
         'scopes',
         'strict_idempotency',
@@ -54,6 +55,7 @@ class ApiApplication extends Model
             'webhook_enabled' => 'boolean',
             'scopes' => 'array',
             'is_active' => 'boolean',
+            'legacy_key_active' => 'boolean',
             'is_legacy' => 'boolean',
             'strict_idempotency' => 'boolean',
             'async_payments' => 'boolean',
@@ -107,6 +109,15 @@ class ApiApplication extends Model
     public function scopeActive($query)
     {
         return $query->where('is_active', true);
+    }
+
+    /**
+     * Chave original (legacy) da aplicação ainda aceita? Revogá-la não desliga a integração nem as chaves extras.
+     * Sem a coluna (migração pendente) ou com valor nulo, vale como ativa.
+     */
+    public function legacyKeyActive(): bool
+    {
+        return $this->getAttribute('legacy_key_active') !== false;
     }
 
     /**

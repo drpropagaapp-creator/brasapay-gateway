@@ -76,13 +76,32 @@ class ApiApplicationsController extends Controller
         $validated = $request->validate([
             'name' => ['sometimes', 'string', 'max:255'],
             'is_active' => ['sometimes', 'boolean'],
+            'legacy_key_active' => ['sometimes', 'boolean'],
         ]);
         $apiApplication->update(array_filter([
             'name' => $validated['name'] ?? null,
             'is_active' => array_key_exists('is_active', $validated) ? (bool) $validated['is_active'] : null,
+            'legacy_key_active' => array_key_exists('legacy_key_active', $validated) ? (bool) $validated['legacy_key_active'] : null,
         ], fn ($v) => $v !== null));
 
-        return redirect()->route('api-applications.index')->with('success', 'Integração atualizada.');
+        if (array_key_exists('legacy_key_active', $validated) || array_key_exists('is_active', $validated)) {
+            $this->logActivity(SellerActivityLogService::API_KEY_UPDATED, $apiApplication, array_filter([
+                'name' => $apiApplication->name ?: 'Integração principal',
+                'key_type' => 'legacy',
+                'public_key_masked' => self::maskPublicKey($apiApplication->public_key),
+                'legacy_key_active' => $validated['legacy_key_active'] ?? null,
+                'application_active' => $validated['is_active'] ?? null,
+            ], fn ($v) => $v !== null));
+        }
+
+        $message = match (true) {
+            array_key_exists('legacy_key_active', $validated) => $validated['legacy_key_active']
+                ? 'Chave original reativada.'
+                : 'Chave original revogada. As outras chaves continuam funcionando.',
+            default => 'Integração atualizada.',
+        };
+
+        return redirect()->route('api-applications.index')->with('success', $message);
     }
 
     public function destroy(ApiApplication $apiApplication): RedirectResponse
@@ -586,7 +605,7 @@ class ApiApplicationsController extends Controller
                 'public_key_masked' => self::maskPublicKey($app->public_key),
                 'scopes' => [ApiScopes::WILDCARD],
                 'environment' => ApiKey::ENV_LIVE,
-                'is_active' => (bool) $app->is_active,
+                'is_active' => $app->legacyKeyActive(),
                 'can_reveal_secret' => self::apiApplicationCanRevealSecret($app),
                 'can_delete' => false,
                 'can_edit' => true,
