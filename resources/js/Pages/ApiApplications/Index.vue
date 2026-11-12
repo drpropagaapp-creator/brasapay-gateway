@@ -211,8 +211,9 @@ function regenerateKey(keyRow) {
 
 function toggleKeyActive(keyRow) {
     if (keyRow.type === 'legacy') {
+        // Revoga só a chave original; a integração e as outras chaves continuam ativas.
         router.put(`/aplicacoes-api/${props.application.id}`, {
-            is_active: !keyRow.is_active,
+            legacy_key_active: !keyRow.is_active,
         }, { preserveScroll: true });
         return;
     }

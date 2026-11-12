@@ -31,7 +31,9 @@ class AuthenticateApiApplication
         $apiKey = $resolved['api_key'] ?? null;
 
         if (! $application->is_active) {
-            return response()->json(['message' => 'API application is disabled.'], 403);
+            return response()->json([
+                'message' => 'API application is disabled. Reactivate the integration in the BrasaPay panel (Developers > API keys).',
+            ], 403);
         }
 
         if ($apiKey !== null && ! $apiKey->is_active) {
@@ -114,17 +116,17 @@ class AuthenticateApiApplication
 
             if ($apiKey !== null && $apiKey->verifySecretKey($credentials['secret_key'])) {
                 $app = $apiKey->apiApplication;
-                if ($app !== null && $app->is_active) {
+                if ($app !== null) {
+                    // Aplicação desativada é tratada em handle() com 403 explícito (não "Invalid API key").
                     return ['application' => $app, 'api_key' => $apiKey];
                 }
             }
 
             $app = ApiApplication::query()
-                ->active()
                 ->where('public_key', $credentials['public_key'])
                 ->first();
 
-            if ($app !== null && $app->verifySecretKey($credentials['secret_key'])) {
+            if ($app !== null && $app->legacyKeyActive() && $app->verifySecretKey($credentials['secret_key'])) {
                 return ['application' => $app];
             }
 
@@ -140,7 +142,7 @@ class AuthenticateApiApplication
         $cachedAppId = Cache::get($cacheKey);
         if (is_int($cachedAppId) || (is_string($cachedAppId) && $cachedAppId !== '')) {
             $app = ApiApplication::active()->find((int) $cachedAppId);
-            if ($app !== null && $app->verifyApiKey($plainKey)) {
+            if ($app !== null && $app->legacyKeyActive() && $app->verifyApiKey($plainKey)) {
                 return ['application' => $app];
             }
             Cache::forget($cacheKey);
@@ -152,7 +154,7 @@ class AuthenticateApiApplication
             ->where('legacy_api_key_sha256', $sha)
             ->first();
 
-        if ($app !== null && $app->verifyApiKey($plainKey)) {
+        if ($app !== null && $app->legacyKeyActive() && $app->verifyApiKey($plainKey)) {
             Cache::put($cacheKey, $app->id, now()->addDays(7));
 
             return ['application' => $app];
@@ -160,7 +162,7 @@ class AuthenticateApiApplication
 
         $applications = ApiApplication::active()->get();
         foreach ($applications as $application) {
-            if ($application->verifyApiKey($plainKey)) {
+            if ($application->legacyKeyActive() && $application->verifyApiKey($plainKey)) {
                 if (\Illuminate\Support\Facades\Schema::hasColumn($application->getTable(), 'legacy_api_key_sha256')) {
                     $application->forceFill(['legacy_api_key_sha256' => $sha])->saveQuietly();
                 }
