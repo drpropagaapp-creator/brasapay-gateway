@@ -322,9 +322,12 @@ class AccessEmailService
     }
 
     /**
+     * Contato de suporte do seller (produto → rodapé do checkout → e-mail da conta) e nome exibido.
+     * Público: também usado na confirmação de compra da plataforma.
+     *
      * @return array{email: ?string, name: ?string}
      */
-    private function resolveSellerSenderIdentity(?int $tenantId, ?Product $product = null): array
+    public function resolveSellerSenderIdentity(?int $tenantId, ?Product $product = null): array
     {
         $email = null;
         $name = null;

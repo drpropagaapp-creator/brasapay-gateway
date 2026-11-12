@@ -280,6 +280,7 @@ class AppServiceProvider extends ServiceProvider
         Event::listen(OrderCompleted::class, IncrementCouponUsageOnOrderCompleted::class);
         Event::listen(OrderCompleted::class, GrantMemberModuleAccessOnOrderCompleted::class);
         Event::listen(OrderCompleted::class, SendAccessEmailOnOrderCompleted::class);
+        Event::listen(OrderCompleted::class, \App\Listeners\SendPurchaseConfirmationOnOrderCompleted::class);
         Event::listen(OrderCompleted::class, SendPlatformGa4PurchaseOnOrderCompleted::class);
         Event::listen(OrderRejected::class, RevokeProductAccessOnOrderRejected::class);
         Event::listen(PixGenerated::class, SendPanelPushOnPixGenerated::class);
