@@ -7,6 +7,7 @@ use App\Models\MemberInternalProduct;
 use App\Models\MemberLesson;
 use App\Models\MemberModule;
 use App\Models\MemberSection;
+use App\Models\MemberTurma;
 use App\Models\Product;
 use App\Models\ProductCoproducer;
 use App\Models\ProductOffer;
@@ -33,6 +34,7 @@ class ProductExporter
         'refund_policy_days', 'physical_config', 'affiliate_enabled', 'affiliate_commission_percent',
         'affiliate_manual_approval', 'affiliate_show_in_showcase', 'affiliate_page_url',
         'affiliate_support_email', 'affiliate_showcase_description', 'affiliate_hide_customer_data',
+        'support_email',
     ];
 
     /**
@@ -91,8 +93,11 @@ class ProductExporter
         }
 
         $assets = new AssetCollector(new StorageService($tenantId));
-        $assets->allowProducts($products->map(fn ($p) => (string) $p->id)->all());
-        foreach ($products as $p) {
+        // Mídia de QUALQUER produto da mesma conta (o seller reaproveita banners/imagens enviados
+        // em outro produto). Arquivos de outras contas continuam fora: só pastas deste tenant.
+        $tenantProducts = Product::withTrashed()->where('tenant_id', $tenantId)->get(['id', 'image']);
+        $assets->allowProducts($tenantProducts->map(fn ($p) => (string) $p->id)->all());
+        foreach ($tenantProducts as $p) {
             $assets->allowKey($p->getRawOriginal('image') ?: null);
         }
 
@@ -211,6 +216,14 @@ class ProductExporter
                 'internal_products' => ! $this->withMemberContent ? [] : MemberInternalProduct::query()->where('product_id', $p->id)->orderBy('position')->get()
                     ->map(fn ($ip) => ['related_product' => $ref((string) $ip->related_product_id, 'member_internal_product'), 'position' => (int) $ip->position])
                     ->values()->all(),
+                'turmas' => ! $this->withMemberContent ? [] : MemberTurma::query()->where('product_id', $p->id)->orderBy('position')->get()
+                    ->map(fn (MemberTurma $t) => [
+                        'name' => $t->name,
+                        'description' => $t->description,
+                        'start_date' => $t->getRawOriginal('start_date'),
+                        'end_date' => $t->getRawOriginal('end_date'),
+                        'position' => (int) $t->position,
+                    ])->values()->all(),
                 'community_pages' => ! $this->withMemberContent ? [] : MemberCommunityPage::query()->where('product_id', $p->id)->orderBy('position')->get()
                     ->map(fn ($cp) => [
                         'title' => $cp->title, 'icon' => $cp->icon, 'position' => (int) $cp->position,

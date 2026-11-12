@@ -7,6 +7,7 @@ use App\Models\MemberInternalProduct;
 use App\Models\MemberLesson;
 use App\Models\MemberModule;
 use App\Models\MemberSection;
+use App\Models\MemberTurma;
 use App\Models\Product;
 use App\Models\ProductOffer;
 use App\Models\ProductOrderBump;
@@ -270,6 +271,7 @@ class ProductImporter
             'affiliate_support_email' => filter_var($f['affiliate_support_email'] ?? null, FILTER_VALIDATE_EMAIL) ?: null,
             'affiliate_showcase_description' => isset($f['affiliate_showcase_description']) ? HtmlSanitizer::plainTextMultiline((string) $f['affiliate_showcase_description'], 4000) : null,
             'affiliate_hide_customer_data' => (bool) ($f['affiliate_hide_customer_data'] ?? false),
+            'support_email' => filter_var($f['support_email'] ?? null, FILTER_VALIDATE_EMAIL) ?: null,
             'physical_config' => $type === Product::TYPE_PRODUTO_FISICO && is_array($f['physical_config'] ?? null)
                 ? ['free_shipping' => (bool) ($f['physical_config']['free_shipping'] ?? false)]
                 : null,
@@ -405,6 +407,20 @@ class ProductImporter
             ]);
         }
 
+        foreach (array_slice((array) ($member['turmas'] ?? []), 0, 200) as $t) {
+            if (! is_array($t)) {
+                continue;
+            }
+            MemberTurma::query()->create([
+                'product_id' => $product->id,
+                'name' => HtmlSanitizer::plainText((string) ($t['name'] ?? 'Turma'), 255) ?: 'Turma',
+                'description' => isset($t['description']) ? HtmlSanitizer::plainTextMultiline((string) $t['description'], 4000) : null,
+                'start_date' => $this->dateOnly($t['start_date'] ?? null),
+                'end_date' => $this->dateOnly($t['end_date'] ?? null),
+                'position' => (int) ($t['position'] ?? 0),
+            ]);
+        }
+
         foreach ((array) ($member['community_pages'] ?? []) as $cp) {
             MemberCommunityPage::query()->create([
                 'product_id' => $product->id,
@@ -519,6 +535,11 @@ class ProductImporter
     private function money(mixed $value): string
     {
         return \App\Support\MoneyDecimal::normalize(is_numeric($value) && (float) $value >= 0 ? $value : 0);
+    }
+
+    private function dateOnly(mixed $value): ?string
+    {
+        return is_string($value) && strtotime($value) !== false ? date('Y-m-d', (int) strtotime($value)) : null;
     }
 
     private function date(mixed $value): ?string

@@ -166,6 +166,55 @@ class ProductPortabilityTest extends TestCase
         $this->assertSame([], $assets);
     }
 
+    public function test_imagem_reaproveitada_de_outro_produto_da_mesma_conta_vai_no_pacote_e_e_copiada(): void
+    {
+        $a = $this->seller();
+        $b = $this->seller();
+        $product = $this->createTestProduct(['tenant_id' => $a->id, 'name' => 'Checkup']);
+        $irmao = $this->createTestProduct(['tenant_id' => $a->id, 'name' => 'Outro produto da conta']);
+        $bannerPath = "checkout/{$irmao->id}/banner.png";
+        Storage::disk('public')->put($bannerPath, base64_decode(self::PNG));
+        $bannerUrl = (new StorageService($a->id))->url($bannerPath);
+        $product->forceFill(['checkout_config' => ['appearance' => ['side_banners' => [$bannerUrl]]]])->save();
+
+        $zip = app(ProductExporter::class)->export($product->fresh());
+        $result = $this->importInto($zip, $b);
+
+        $new = Product::query()->findOrFail($result['products'][0]['id']);
+        $cfg = $new->getRawOriginal('checkout_config');
+        $cfg = is_string($cfg) ? json_decode($cfg, true) : $cfg;
+        $newBanner = $cfg['appearance']['side_banners'][0];
+        $this->assertNotSame($bannerUrl, $newBanner, 'Banner não pode continuar apontando para a conta de origem.');
+        $this->assertStringContainsString("checkout/{$new->id}/imported/", $newBanner);
+    }
+
+    public function test_caminho_relativo_na_area_de_membros_e_suporte_e_turmas_viajam(): void
+    {
+        $a = $this->seller();
+        $b = $this->seller();
+        $product = $this->createTestProduct(['tenant_id' => $a->id, 'name' => 'Curso', 'type' => Product::TYPE_AREA_MEMBROS]);
+        $badge = "member-area-gamification/{$product->id}/badges/medalha.png";
+        Storage::disk('public')->put($badge, base64_decode(self::PNG));
+        $product->forceFill([
+            'support_email' => 'suporte@curso.com',
+            'member_area_config' => ['gamification' => ['enabled' => true, 'achievements' => [['title' => 'Primeira aula', 'image_url' => $badge]]]],
+        ])->save();
+        \App\Models\MemberTurma::query()->create(['product_id' => $product->id, 'name' => 'Turma Janeiro', 'start_date' => '2027-01-10', 'position' => 0]);
+
+        $zip = app(ProductExporter::class)->export($product->fresh());
+        $result = $this->importInto($zip, $b);
+
+        $new = Product::query()->findOrFail($result['products'][0]['id']);
+        $this->assertSame('suporte@curso.com', $new->support_email);
+        $member = $new->getRawOriginal('member_area_config');
+        $member = is_string($member) ? json_decode($member, true) : $member;
+        $newBadge = $member['gamification']['achievements'][0]['image_url'];
+        $this->assertStringContainsString("member-area/{$new->id}/imported/", $newBadge);
+        $turma = \App\Models\MemberTurma::query()->where('product_id', $new->id)->firstOrFail();
+        $this->assertSame('Turma Janeiro', $turma->name);
+        $this->assertSame('2027-01-10', $turma->start_date->format('Y-m-d'));
+    }
+
     public function test_seller_nao_exporta_produto_de_outro_seller(): void
     {
         $a = $this->seller();
