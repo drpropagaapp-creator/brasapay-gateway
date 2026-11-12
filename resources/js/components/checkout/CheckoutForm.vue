@@ -3,7 +3,7 @@ import { PN_PRIMARY } from '@/lib/paynextBrand';
 import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick, inject } from 'vue';
 import { useForm, router } from '@inertiajs/vue3';
 import axios from 'axios';
-import { User, UserRound, Mail, ShoppingBag, Loader2, CreditCard, Tag, Check, Pencil, ScanQrCode, X, AlertCircle, FileText, MapPin } from 'lucide-vue-next';
+import { User, UserRound, Mail, ShoppingBag, Loader2, CreditCard, Tag, Check, Pencil, ScanQrCode, X, AlertCircle, FileText, MapPin, ChevronDown } from 'lucide-vue-next';
 import CheckoutDropdown from './CheckoutDropdown.vue';
 import CheckoutOrderBumps from './CheckoutOrderBumps.vue';
 import CheckoutPaymentMethods from './CheckoutPaymentMethods.vue';
@@ -881,7 +881,7 @@ function currentMetaContents() {
 
 function buildTrackContactPayload(email, name) {
     const cpf = (form.cpf || '').replace(/\D/g, '');
-    const phone = (showPhone.value ? `${form.country_code || ''}${phoneDigits.value || ''}` : '').trim();
+    const phone = (currentCheckoutPhone()).trim();
     return {
         session_token: props.checkoutSessionToken,
         email: email || undefined,
@@ -1481,7 +1481,7 @@ const cajuPayPayer = computed(() => ({
     name: form.name || '',
     email: form.email || '',
     document: (form.cpf || '').replace(/\D/g, ''),
-    phone: showPhone.value ? `${form.country_code || ''}${phoneDigits.value || ''}` : '',
+    phone: currentCheckoutPhone(),
 }));
 
 function buildCajuPaySessionPayload() {
@@ -1492,7 +1492,7 @@ function buildCajuPaySessionPayload() {
         email: form.email || '',
         name: form.name || '',
         cpf: (form.cpf || '').replace(/\D/g, '') || '',
-        phone: showPhone.value ? `${form.country_code || ''}${phoneDigits.value || ''}` : '',
+        phone: currentCheckoutPhone(),
     };
     if (props.productOfferId) payload.product_offer_id = props.productOfferId;
     if (props.subscriptionPlanId) payload.subscription_plan_id = props.subscriptionPlanId;
@@ -1515,7 +1515,7 @@ function buildPaypalPayload() {
         email: form.email,
         name: showName.value ? form.name : '',
         cpf: showCpf.value ? (form.cpf || '').replace(/\D/g, '') : '',
-        phone: showPhone.value ? form.country_code + phoneDigits.value : '',
+        phone: currentCheckoutPhone(),
         coupon_code: (form.coupon_code || '').trim() || null,
         website: honeypotWebsite.value,
         turnstile_token: turnstileActive.value ? turnstileToken.value : '',
@@ -1720,7 +1720,7 @@ async function postCajuPayConfirmOrder() {
         email: form.email,
         name: showName.value ? form.name : '',
         cpf: showCpf.value ? (form.cpf || '').replace(/\D/g, '') : '',
-        phone: showPhone.value ? form.country_code + phoneDigits.value : '',
+        phone: currentCheckoutPhone(),
         installments: cajupayMountRef.value?.getInstallments?.() ?? 1,
     };
     appendUtmsAndAffiliate(orderPayload);
@@ -1905,7 +1905,7 @@ async function submitStripeWalletPayment(paymentMethodId) {
         email: form.email,
         name: showName.value ? form.name : '',
         cpf: showCpf.value ? (form.cpf || '').replace(/\D/g, '') : '',
-        phone: showPhone.value ? form.country_code + phoneDigits.value : '',
+        phone: currentCheckoutPhone(),
         coupon_code: (form.coupon_code || '').trim() || null,
         payment_token: paymentMethodId,
         installments: 1,
@@ -2054,7 +2054,7 @@ function submitCardWithMercadopagoFormData(formData) {
         email: form.email,
         name: showName.value ? form.name : '',
         cpf: showCpf.value ? (form.cpf || '').replace(/\D/g, '') : '',
-        phone: showPhone.value ? form.country_code + phoneDigits.value : '',
+        phone: currentCheckoutPhone(),
         coupon_code: (form.coupon_code || '').trim() || null,
         payment_token: JSON.stringify(formData),
         installments: Math.min(effectiveCardMaxInstallments.value, Math.max(1, requested)),
@@ -2497,7 +2497,7 @@ function submit() {
                 email: form.email,
                 name: showName.value ? form.name : '',
                 cpf: showCpf.value ? (form.cpf || '').replace(/\D/g, '') : '',
-                phone: showPhone.value ? form.country_code + phoneDigits.value : '',
+                phone: currentCheckoutPhone(),
                 coupon_code: (form.coupon_code || '').trim() || null,
                 card_holder_name: (card?.card_holder_name || '').trim(),
                 card_number: (card?.card_number || '').replace(/\D/g, ''),
@@ -2630,7 +2630,7 @@ function submit() {
                     email: form.email,
                     name: showName.value ? form.name : '',
                     cpf: showCpf.value ? (form.cpf || '').replace(/\D/g, '') : '',
-                    phone: showPhone.value ? form.country_code + phoneDigits.value : '',
+                    phone: currentCheckoutPhone(),
                     coupon_code: (form.coupon_code || '').trim() || null,
                     payment_token,
                     card_mask: card_mask || undefined,
@@ -2774,7 +2774,7 @@ function submit() {
         email: form.email,
         name: showName.value ? form.name : '',
         cpf: (showCpf.value || paymentMethod === 'open_finance' || isLinaOpenxPixAuto.value) ? (form.cpf || '').replace(/\D/g, '') : '',
-        phone: showPhone.value ? form.country_code + phoneDigits.value : '',
+        phone: currentCheckoutPhone(),
         coupon_code: (form.coupon_code || '').trim() || null,
         idempotency_key: checkoutIdempotencyKey.value,
         website: honeypotWebsite.value,
@@ -3009,7 +3009,7 @@ function submit() {
                                         width="24"
                                         height="18"
                                     />
-                                    <span class="shrink-0">+{{ form.country_code }}</span>
+                                    <span class="shrink-0">+{{ form.country_code }}</span><ChevronDown class="h-3.5 w-3.5 shrink-0 text-gray-400 transition-transform" :class="phoneCountryOpen ? 'rotate-180' : ''" aria-hidden="true" />
                                 </div>
                             </template>
                             <div class="sticky top-0 z-10 min-w-[16rem] bg-white px-3 pb-1.5 pt-1">
@@ -3100,7 +3100,7 @@ function submit() {
                                                 width="24"
                                                 height="18"
                                             />
-                                            <span class="shrink-0">+{{ form.country_code }}</span>
+                                            <span class="shrink-0">+{{ form.country_code }}</span><ChevronDown class="h-3.5 w-3.5 shrink-0 text-gray-400 transition-transform" :class="phoneCountryOpen ? 'rotate-180' : ''" aria-hidden="true" />
                                         </div>
                                     </template>
                                     <div class="sticky top-0 z-10 min-w-[16rem] bg-white px-3 pb-1.5 pt-1">

@@ -1,6 +1,7 @@
 <script setup>
 import { ref, computed } from 'vue';
 import { X, ExternalLink } from 'lucide-vue-next';
+import { buildWhatsAppUrl, formatCustomerPhone } from '@/lib/whatsappUrl';
 
 const props = defineProps({
     open: { type: Boolean, default: false },
@@ -394,7 +395,7 @@ const shippingDeliveryLabel = computed(() => {
                             </div>
                             <div class="space-y-1">
                                 <p class="text-xs font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Celular</p>
-                                <p class="text-sm text-zinc-900 dark:text-white">{{ venda.phone ?? '–' }}</p>
+                                <p class="text-sm text-zinc-900 dark:text-white">{{ venda.phone ? formatCustomerPhone(venda.phone) : '–' }}</p>
                             </div>
                             <div class="space-y-1">
                                 <p class="text-xs font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">CPF</p>
