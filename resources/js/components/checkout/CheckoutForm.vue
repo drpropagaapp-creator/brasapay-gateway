@@ -729,13 +729,20 @@ function onPhoneInput(e) {
     const raw = String(e.target.value || '').trim();
     let digits = raw.replace(/\D/g, '');
     // Colou/digitou no formato internacional (+351…, 00351…): troca o DDI e fica só com o número.
-    if (raw.startsWith('+') || raw.startsWith('00')) {
-        const split = splitInternationalDigits(raw.startsWith('00') ? digits.slice(2) : digits);
-        if (split) {
-            if (split.code !== form.country_code) phoneCountryIso.value = split.country;
-            form.country_code = split.code;
-            digits = split.national;
+    // "00" pelos dígitos: com o Brasil selecionado a máscara já pôs "(" na frente (DDD nunca começa com 0).
+    const viaZeroZero = !raw.startsWith('+') && digits.startsWith('00');
+    if (raw.startsWith('+') || viaZeroZero) {
+        const split = splitInternationalDigits(viaZeroZero ? digits.slice(2) : digits);
+        if (!split) {
+            // Ainda digitando o DDI ("+", "+3", "+35"): mantém o que foi digitado até o DDI ficar claro.
+            phoneDigits.value = '';
+            phoneDisplay.value = raw.replace(/[^\d+\s]/g, '');
+            if (e.target.value !== phoneDisplay.value) e.target.value = phoneDisplay.value;
+            return;
         }
+        if (split.code !== form.country_code) phoneCountryIso.value = split.country;
+        form.country_code = split.code;
+        digits = split.national;
     }
     digits = digits.slice(0, Math.max(4, 15 - String(form.country_code || '').length));
     phoneDigits.value = digits;
@@ -2983,7 +2990,7 @@ function submit() {
                 <div v-if="showPhone && !showCpf" class="relative sm:col-span-1" data-checkout="field-phone">
                     <label for="checkout-phone" class="mb-2 block text-sm font-medium text-gray-700">{{ t('checkout.phone') }}</label>
                     <div :class="phoneWrapperClass">
-                        <div class="flex h-full w-[4.5rem] shrink-0 items-center">
+                        <div class="flex h-full w-auto min-w-[4.5rem] shrink-0 items-center">
                             <CheckoutDropdown
                                 v-model:open="phoneCountryOpen"
                                 :aria-label="t('checkout.country_code_label')"
@@ -3074,7 +3081,7 @@ function submit() {
                     <div class="relative sm:col-span-1" data-checkout="field-phone">
                         <label for="checkout-phone-both" class="mb-2 block text-sm font-medium text-gray-700">{{ t('checkout.phone') }}</label>
                         <div :class="phoneWrapperClass">
-                            <div class="flex h-full w-[4.5rem] shrink-0 items-center">
+                            <div class="flex h-full w-auto min-w-[4.5rem] shrink-0 items-center">
                                 <CheckoutDropdown
                                     v-model:open="phoneCountryOpen"
                                     :aria-label="t('checkout.country_code_label')"
