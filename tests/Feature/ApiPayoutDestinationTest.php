@@ -226,6 +226,79 @@ class ApiPayoutDestinationTest extends TestCase
         $this->assertNull($ctx['seller']->payout_settings);
     }
 
+    public function test_put_payout_destination_accepts_masked_cpf_and_uses_key_as_owner(): void
+    {
+        $ctx = $this->createWithdrawalApiContext();
+        $this->connectCajuPayPayout();
+
+        // Seller manda CPF com máscara e um key_owner_document diferente: a CajuPay exige o próprio CPF da chave.
+        $resp = $this->withHeaders($this->apiHeaders($ctx['public'], $ctx['secret']))
+            ->putJson('/api/v1/payout-destination', [
+                'pix_key' => '529.982.247-25',
+                'pix_key_type' => 'cpf',
+                'key_owner_document' => '11.222.333/0001-81',
+            ]);
+
+        $resp->assertOk()
+            ->assertJsonPath('pix_key_type', 'cpf')
+            ->assertJsonPath('pix_key_masked', '*******4725')
+            ->assertJsonPath('key_owner_document_masked', '*******4725');
+    }
+
+    public function test_put_payout_destination_cpf_with_wrong_length_returns_422(): void
+    {
+        $ctx = $this->createWithdrawalApiContext();
+        $this->connectCajuPayPayout();
+
+        $resp = $this->withHeaders($this->apiHeaders($ctx['public'], $ctx['secret']))
+            ->putJson('/api/v1/payout-destination', [
+                'pix_key' => '529.982.247',
+                'pix_key_type' => 'cpf',
+            ]);
+
+        $resp->assertStatus(422)
+            ->assertJsonValidationErrors(['pix_key']);
+    }
+
+    public function test_post_withdrawals_stores_normalized_phone_and_email_keys(): void
+    {
+        if (! Schema::hasTable('withdrawals') || ! Schema::hasTable('tenant_wallets')) {
+            $this->markTestSkipped('withdrawals/tenant_wallets tables');
+        }
+
+        Queue::fake();
+
+        $ctx = $this->createWithdrawalApiContext();
+        $this->connectCajuPayPayout();
+        $this->fundWallet($ctx['seller'], 500.0);
+
+        $resp = $this->withHeaders($this->apiHeaders($ctx['public'], $ctx['secret']))
+            ->postJson('/api/v1/withdrawals', [
+                'amount' => 50.00,
+                'pix_key' => '(11) 99999-8888',
+                'pix_key_type' => 'phone',
+                'key_owner_document' => '529.982.247-25',
+            ]);
+
+        $resp->assertStatus(201);
+        $withdrawal = Withdrawal::query()->where('tenant_id', $ctx['seller']->id)->latest('id')->first();
+        $dest = WithdrawalPayoutDestination::fromWithdrawal($withdrawal);
+        $this->assertSame('11999998888', $dest['pix_key']);
+        $this->assertSame('52998224725', $dest['key_owner_document']);
+
+        $resp = $this->withHeaders($this->apiHeaders($ctx['public'], $ctx['secret']))
+            ->postJson('/api/v1/withdrawals', [
+                'amount' => 50.00,
+                'pix_key' => ' Financeiro@Exemplo.com ',
+                'pix_key_type' => 'email',
+                'key_owner_document' => '52998224725',
+            ]);
+
+        $resp->assertStatus(201);
+        $withdrawal = Withdrawal::query()->where('tenant_id', $ctx['seller']->id)->latest('id')->first();
+        $this->assertSame('financeiro@exemplo.com', WithdrawalPayoutDestination::fromWithdrawal($withdrawal)['pix_key']);
+    }
+
     public function test_post_withdrawals_without_destination_returns_422_and_keeps_balance(): void
     {
         if (! Schema::hasTable('withdrawals') || ! Schema::hasTable('tenant_wallets')) {

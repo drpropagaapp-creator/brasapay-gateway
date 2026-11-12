@@ -65,6 +65,8 @@ class VersellPayoutService
 
         $pixKey = trim($pixKey);
         $pixKeyType = $this->normalizePixKeyType($pixKeyType, $pixKey);
+        // Mesmo formato do cadastro no painel: CPF/CNPJ/telefone só dígitos; e-mail/EVP em minúsculas.
+        $pixKey = \App\Services\Payout\PayoutDestinationValidator::normalizePixKey($pixKeyType, $pixKey);
         $doc = BrazilianDocumentDigits::onlyDigits($keyOwnerDocument);
         if ($pixKey === '' || $pixKeyType === '') {
             return ['ok' => false, 'error' => 'Configure a chave PIX e o tipo da chave em Financeiro antes de solicitar saque.'];

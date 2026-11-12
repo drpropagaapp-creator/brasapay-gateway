@@ -27,22 +27,39 @@ class PayoutDestinationValidator
     }
 
     /**
+     * Coloca a chave no formato aceito pelo DICT/adquirente (mesmas regras do cadastro no painel):
+     * CPF/CNPJ e telefone só com dígitos; e-mail e EVP em minúsculas. Sem isso, chaves enviadas
+     * pela API com máscara ("123.456.789-09", "(11) 99999-9999") são recusadas pelo adquirente.
+     */
+    public static function normalizePixKey(string $pixKeyType, string $pixKey): string
+    {
+        $key = trim($pixKey);
+
+        return match (self::normalizePixKeyType($pixKeyType)) {
+            'cpf', 'cnpj', 'phone' => BrazilianDocumentDigits::onlyDigits($key),
+            'email', 'evp' => strtolower($key),
+            default => $key,
+        };
+    }
+
+    /**
      * Resolve CPF/CNPJ do titular para Cajupay (auto-derive em chaves cpf/cnpj).
+     * Em chaves cpf/cnpj o titular é sempre o próprio documento da chave (regra da CajuPay).
      */
     public static function resolveOwnerDocument(string $pixKeyType, string $pixKey, ?string $keyOwnerDocument): ?string
     {
         $type = self::normalizePixKeyType($pixKeyType);
-        $doc = BrazilianDocumentDigits::onlyDigits((string) $keyOwnerDocument);
-
-        if ($doc !== '' && BrazilianDocumentDigits::isValidCpfOrCnpjLength($doc)) {
-            return $doc;
-        }
 
         if (in_array($type, ['cpf', 'cnpj'], true)) {
             $fromKey = BrazilianDocumentDigits::onlyDigits($pixKey);
             if ($fromKey !== '' && BrazilianDocumentDigits::isValidCpfOrCnpjLength($fromKey)) {
                 return $fromKey;
             }
+        }
+
+        $doc = BrazilianDocumentDigits::onlyDigits((string) $keyOwnerDocument);
+        if ($doc !== '' && BrazilianDocumentDigits::isValidCpfOrCnpjLength($doc)) {
+            return $doc;
         }
 
         return null;
@@ -76,6 +93,12 @@ class PayoutDestinationValidator
             $normalizedType = self::normalizePixKeyType($pixKeyType);
             if (! in_array($normalizedType, self::CAJUPAY_PIX_KEY_TYPES, true)) {
                 return ['ok' => false, 'field' => 'pix_key_type', 'message' => 'Tipo de chave PIX inválido.'];
+            }
+
+            $pixKey = self::normalizePixKey($normalizedType, $pixKey);
+            $keyError = self::keyFormatError($normalizedType, $pixKey);
+            if ($keyError !== null) {
+                return ['ok' => false, 'field' => 'pix_key', 'message' => $keyError];
             }
 
             $ownerDoc = self::resolveOwnerDocument(
@@ -185,6 +208,23 @@ class PayoutDestinationValidator
             'ok' => false,
             'message' => 'Saque automático não disponível para esta conta.',
         ];
+    }
+
+    /**
+     * Recusa chaves que claramente não batem com o tipo, com mensagem clara (antes de ir ao adquirente).
+     * Recebe a chave já normalizada.
+     */
+    private static function keyFormatError(string $normalizedType, string $pixKey): ?string
+    {
+        $len = strlen($pixKey);
+
+        return match ($normalizedType) {
+            'cpf' => $len === 11 ? null : 'Chave PIX do tipo cpf deve ter 11 dígitos.',
+            'cnpj' => $len === 14 ? null : 'Chave PIX do tipo cnpj deve ter 14 dígitos.',
+            'phone' => ($len >= 10 && $len <= 13) ? null : 'Chave PIX do tipo phone deve ter DDD + número (ex.: 11999999999).',
+            'email' => str_contains($pixKey, '@') ? null : 'Chave PIX do tipo email inválida.',
+            default => $pixKey === '' ? 'Informe a chave PIX.' : null,
+        };
     }
 
     public static function maskDocument(string $digits): string
