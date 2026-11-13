@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { Link, router, useForm } from '@inertiajs/vue3';
 import axios from 'axios';
 import LayoutInfoprodutor from '@/Layouts/LayoutInfoprodutor.vue';
@@ -20,6 +20,16 @@ const props = defineProps({
 
 const current = ref(props.import);
 const form = useForm({ package: null });
+// O envio e a confirmação redirecionam para esta mesma página (o Inertia reaproveita o componente):
+// sem acompanhar a prop, a prévia/resultado só apareciam depois de um F5.
+watch(
+    () => props.import,
+    (value) => {
+        current.value = value;
+        if (['importing', 'validating'].includes(value?.status)) startPolling();
+        else clearInterval(poll);
+    }
+);
 const TYPE_LABELS = {
     aplicativo: 'Aplicativo',
     area_membros: 'Área de membros',
@@ -60,17 +70,34 @@ function pickFile(event) {
 
 function upload() {
     if (!form.package) return;
-    form.post('/produtos/importar', { forceFormData: true });
+    form.post('/produtos/importar', {
+        forceFormData: true,
+        onSuccess: () => form.reset('package'),
+    });
 }
 
+const confirming = ref(false);
 function confirmImport() {
+    if (confirming.value) return;
+    confirming.value = true;
+    current.value = { ...current.value, status: 'importing' };
     router.post(`/produtos/importar/${current.value.uuid}/confirmar`, {}, {
         preserveScroll: true,
-        onSuccess: () => {
-            current.value = { ...current.value, status: 'importing' };
-            startPolling();
+        onSuccess: () => startPolling(),
+        onError: () => {
+            current.value = { ...current.value, status: 'ready' };
+        },
+        onFinish: () => {
+            confirming.value = false;
         },
     });
+}
+
+function importAnother() {
+    clearInterval(poll);
+    current.value = null;
+    form.reset();
+    router.visit('/produtos/importar', { preserveScroll: true });
 }
 
 function cancelImport() {
@@ -97,7 +124,11 @@ const brl = (v, c = 'BRL') => Number(v || 0).toLocaleString('pt-BR', { style: 'c
                 </div>
 
                 <label class="flex cursor-pointer flex-col items-center gap-3 rounded-2xl border-2 border-dashed border-zinc-300 p-10 text-center hover:border-[var(--color-primary)] dark:border-zinc-600">
-                    <Upload class="h-8 w-8 text-zinc-400" />
+                    <Loader2 v-if="form.processing" class="h-8 w-8 animate-spin text-[var(--color-primary)]" />
+                    <Upload v-else class="h-8 w-8 text-zinc-400" />
+                    <span v-if="form.processing" class="text-xs text-zinc-500">
+                        Enviando e lendo o pacote{{ form.progress?.percentage ? ` (${form.progress.percentage}%)` : '' }}…
+                    </span>
                     <span class="text-sm font-medium text-zinc-800 dark:text-zinc-200">
                         {{ form.package ? form.package.name : 'Escolha o arquivo .brasapay.zip' }}
                     </span>
@@ -150,7 +181,7 @@ const brl = (v, c = 'BRL') => Number(v || 0).toLocaleString('pt-BR', { style: 'c
 
                 <div class="flex justify-end gap-2">
                     <Button type="button" variant="secondary" @click="cancelImport">Cancelar</Button>
-                    <Button type="button" @click="confirmImport">Importar {{ summary.products.length > 1 ? `${summary.products.length} produtos` : 'produto' }}</Button>
+                    <Button type="button" :disabled="confirming" @click="confirmImport">Importar {{ summary.products.length > 1 ? `${summary.products.length} produtos` : 'produto' }}</Button>
                 </div>
             </div>
 
@@ -176,6 +207,10 @@ const brl = (v, c = 'BRL') => Number(v || 0).toLocaleString('pt-BR', { style: 'c
                 <div v-if="result.warnings?.length" class="space-y-1 rounded-xl bg-amber-50 p-3 text-sm text-amber-800 dark:bg-amber-950/30 dark:text-amber-300">
                     <p class="font-medium">Pontos para revisar:</p>
                     <p v-for="(w, i) in result.warnings" :key="i">• {{ w }}</p>
+                </div>
+                <div class="flex justify-end gap-2">
+                    <Button type="button" variant="secondary" @click="importAnother">Importar outro produto</Button>
+                    <Link href="/produtos" class="inline-flex items-center rounded-lg px-3 py-2 text-sm font-medium text-[var(--color-primary)] hover:underline">Ver meus produtos</Link>
                 </div>
             </div>
         </AuroraPageSection>

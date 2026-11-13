@@ -15,6 +15,9 @@ use Illuminate\Support\Facades\Log;
  */
 final class AssetCollector
 {
+    /** Pastas de upload por produto (+ imagem principal em products/), com extensão de mídia aceita. */
+    private const RELATIVE_MEDIA = '#^/?(storage/)?(checkout|member-area|member-area-gamification|email-templates|products)/[A-Za-z0-9._\-/]+\.(jpe?g|png|webp|gif|pdf)$#i';
+
     /** @var array<string, array{name: string, bytes: string}> nome => conteúdo */
     private array $assets = [];
 
@@ -65,7 +68,18 @@ final class AssetCollector
      */
     public function rewriteString(string $value): string
     {
-        if ($value === '' || ! str_contains($value, '://')) {
+        if ($value === '') {
+            return $value;
+        }
+        // Caminho relativo do storage (ex.: medalha da gamificação, fundo do certificado):
+        // sem isso o destino recebia um caminho da conta de origem e a imagem sumia.
+        if (! str_contains($value, '://')) {
+            if (preg_match(self::RELATIVE_MEDIA, $value) === 1) {
+                $name = $this->collectKey($this->storage->toStoragePath($value) ?? $value);
+
+                return $name !== null ? PackageFormat::assetPlaceholder($name) : $value;
+            }
+
             return $value;
         }
 
