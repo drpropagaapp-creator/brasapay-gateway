@@ -41,6 +41,11 @@ class ChargeDueSubscriptionsWithSavedCardJob
             if (! $method || $method->gateway !== 'stripe') {
                 continue;
             }
+            // Cartão guardado antes da correção (sem cliente Stripe): a Stripe recusa o reuso.
+            // A assinatura segue pelo lembrete e pelo link de renovação.
+            if (trim((string) $method->gateway_customer_id) === '') {
+                continue;
+            }
             $periodEndStr = $subscription->current_period_end?->toDateString() ?? '';
             $lockKey = 'sub_stripe_auto_renew:'.$subscription->id.':'.$periodEndStr;
             if (! Cache::add($lockKey, 1, now()->addDays(2))) {
@@ -106,6 +111,8 @@ class ChargeDueSubscriptionsWithSavedCardJob
                     'payment_token' => $pmId,
                     'card_mask' => $method->last_four ? '**** '.$method->last_four : '',
                     'currency' => $currency,
+                    'customer_id' => $method->gateway_customer_id,
+                    'off_session' => true,
                 ];
                 // O token salvo é do Stripe: nunca tentar outra adquirente com ele.
                 $cardResult = $paymentService->createCardPayment($order, $product, $consumer, $card, null, ['stripe']);
