@@ -301,6 +301,7 @@ const form = useForm({
     kyc_require_selfie_with_document: props.settings.kyc_require_selfie_with_document ?? '1',
     kyc_require_company_address_proof: props.settings.kyc_require_company_address_proof ?? '1',
     kyc_require_company_constitution: props.settings.kyc_require_company_constitution ?? '1',
+    kyc_enforcement: props.settings.kyc_enforcement ?? 'onboarding',
 });
 
 const showCloudR2Override = ref(false);
@@ -781,6 +782,7 @@ function applyKycSettingsFromSettings(s) {
     form.kyc_require_selfie_with_document = s.kyc_require_selfie_with_document ?? '1';
     form.kyc_require_company_address_proof = s.kyc_require_company_address_proof ?? '1';
     form.kyc_require_company_constitution = s.kyc_require_company_constitution ?? '1';
+    form.kyc_enforcement = s.kyc_enforcement ?? 'onboarding';
 }
 
 function syncKycSettingsFromProps() {
@@ -889,6 +891,7 @@ function buildSettingsPayload() {
             kyc_require_selfie_with_document: data.kyc_require_selfie_with_document,
             kyc_require_company_address_proof: data.kyc_require_company_address_proof,
             kyc_require_company_constitution: data.kyc_require_company_constitution,
+            kyc_enforcement: data.kyc_enforcement,
         };
     }
     if (activeTab.value === 'suporte_painel') {

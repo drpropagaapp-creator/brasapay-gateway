@@ -361,6 +361,7 @@ class User extends Authenticatable
         $subject = $this->kycSubjectUser();
 
         if (\Illuminate\Support\Facades\Schema::hasColumn('users', 'kyc_status')
+            && \App\Support\KycEnforcement::requiresKycBeforeSelling()
             && $subject->kyc_status !== self::KYC_APPROVED) {
             return false;
         }
@@ -416,6 +417,13 @@ class User extends Authenticatable
 
     public function sellerPanelRestrictedMessage(): string
     {
+        if (! \App\Support\KycEnforcement::requiresKycBeforeSelling()) {
+            $accountStatus = (string) ($this->kycSubjectUser()->account_status ?? 'approved');
+            if ($accountStatus === 'pending') {
+                return 'Sua conta aguarda aprovação da plataforma para começar a vender.';
+            }
+        }
+
         if ($this->mustCompleteKycOnboarding()) {
             return 'Envie seus documentos de verificação de identidade (KYC) para acessar o painel do infoprodutor.';
         }
