@@ -27,6 +27,7 @@ use App\Support\PublicAppUrl;
 use App\Support\SellerDashboardTemplate;
 use App\Support\PlatformGa4Settings;
 use App\Support\SellerPanelSupportSettings;
+use App\Support\KycEnforcement;
 use App\Support\KycRequiredDocuments;
 use App\Support\ReferralProgramSettings;
 use App\Support\ProductApprovalSettings;
@@ -228,10 +229,12 @@ class HandleInertiaRequests extends Middleware
 
         $kycSubject = null;
         $needsDocumentUpgrade = false;
+        $kycOnboardingState = null;
         if ($user && $user->canAccessSellerPanel() && Schema::hasColumn('users', 'kyc_status')) {
             $kycSubject = $user->kycSubjectUser();
             $needsDocumentUpgrade = $kycSubject !== null
                 && KycRequiredDocuments::mayUpgradeLegacyDocuments($kycSubject);
+            $kycOnboardingState = $this->kycOnboardingState($user, $kycSubject, $needsDocumentUpgrade);
         }
 
         // UI do “painel aluno” só nas URLs de comprador; não misturar com sessão panel_context
@@ -262,16 +265,10 @@ class HandleInertiaRequests extends Middleware
                     'is_merchant_operationally_approved' => $kycSubject !== null
                         && $user->isMerchantOperationallyApproved(),
                     'needs_kyc_attention' => $kycSubject !== null
-                        && ($needsDocumentUpgrade || ! $user->isMerchantOperationallyApproved()),
-                    'kyc_onboarding_state' => $kycSubject === null
-                        ? null
-                        : ($needsDocumentUpgrade
-                            ? 'needs_document_upgrade'
-                            : ($user->mustCompleteKycOnboarding()
-                            ? 'needs_upload'
-                            : ($user->isAwaitingKycReview()
-                                ? 'awaiting_review'
-                                : (! $user->isMerchantOperationallyApproved() ? 'pending_account' : null)))),
+                        && ($needsDocumentUpgrade
+                            || ! $user->isMerchantOperationallyApproved()
+                            || $kycOnboardingState === 'kyc_for_withdrawal'),
+                    'kyc_onboarding_state' => $kycOnboardingState,
                     'panel_switch' => [
                         'customer' => $user->canAccessCustomerPanel(),
                         'seller' => $user->canSwitchToSellerPanel() || $user->needsOnboardingAsSeller(),
@@ -443,5 +440,42 @@ class HandleInertiaRequests extends Middleware
             'panel_color_scheme' => PanelColorScheme::current(),
             'login_template' => LoginTemplate::current(),
         ]);
+    }
+
+    private function kycOnboardingState(User $user, ?User $subject, bool $needsDocumentUpgrade): ?string
+    {
+        if ($subject === null) {
+            return null;
+        }
+
+        if (! KycEnforcement::requiresKycBeforeSelling()) {
+            $accountStatus = (string) ($subject->account_status ?? 'approved');
+            if ($accountStatus !== 'approved') {
+                return 'pending_basic_approval';
+            }
+            if ($needsDocumentUpgrade) {
+                return 'needs_document_upgrade';
+            }
+            if (! $subject->hasApprovedKyc()) {
+                return 'kyc_for_withdrawal';
+            }
+
+            return null;
+        }
+
+        if ($needsDocumentUpgrade) {
+            return 'needs_document_upgrade';
+        }
+        if ($user->mustCompleteKycOnboarding()) {
+            return 'needs_upload';
+        }
+        if ($user->isAwaitingKycReview()) {
+            return 'awaiting_review';
+        }
+        if (! $user->isMerchantOperationallyApproved()) {
+            return 'pending_account';
+        }
+
+        return null;
     }
 }

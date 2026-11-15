@@ -25,6 +25,7 @@ import {
     Code2,
     Trophy,
     BadgeCheck,
+    Clock,
     Package,
     Puzzle,
     Plug,
@@ -94,6 +95,7 @@ const navGroupsCore = [
         label: 'Pessoas',
         items: [
             { name: 'Infoprodutores', href: '/plataforma/usuarios', icon: Users },
+            { name: 'Aguardando aprovação', href: '/plataforma/usuarios/aguardando-aprovacao', icon: Clock, badgeKey: 'aprovacao' },
             { name: 'Gerentes de Conta', href: '/plataforma/gerentes-conta', icon: ContactRound },
             { name: 'Clientes', href: '/plataforma/clientes', icon: UserCircle2 },
             { name: 'Verificações KYC', href: '/plataforma/verificacoes-kyc', icon: BadgeCheck, badgeKey: 'kyc' },
@@ -224,8 +226,15 @@ function isActive(href) {
     if (href === '/plataforma/saldo') {
         return url === '/plataforma/saldo' || url.startsWith('/plataforma/saldo/');
     }
+    if (href === '/plataforma/usuarios/aguardando-aprovacao') {
+        return url === '/plataforma/usuarios/aguardando-aprovacao' || url.startsWith('/plataforma/usuarios/aguardando-aprovacao/');
+    }
     if (href === '/plataforma/usuarios') {
-        return url === '/plataforma/usuarios' || (url.startsWith('/plataforma/usuarios/') && !url.startsWith('/plataforma/usuarios/create'));
+        return url === '/plataforma/usuarios' || (
+            url.startsWith('/plataforma/usuarios/')
+            && !url.startsWith('/plataforma/usuarios/create')
+            && !url.startsWith('/plataforma/usuarios/aguardando-aprovacao')
+        );
     }
     if (href === '/plataforma/gerentes-conta') {
         return url === '/plataforma/gerentes-conta' || url.startsWith('/plataforma/gerentes-conta/');

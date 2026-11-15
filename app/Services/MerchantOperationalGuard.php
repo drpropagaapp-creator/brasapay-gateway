@@ -77,7 +77,10 @@ class MerchantOperationalGuard
         }
 
         if (! $owner->isMerchantOperationallyApproved()) {
-            abort(403, 'Conta do infoprodutor aguarda verificação de identidade (KYC).');
+            $message = \App\Support\KycEnforcement::requiresKycBeforeSelling()
+                ? 'Conta do infoprodutor aguarda verificação de identidade (KYC).'
+                : 'Conta do infoprodutor aguarda aprovação da plataforma.';
+            abort(403, $message);
         }
     }
 

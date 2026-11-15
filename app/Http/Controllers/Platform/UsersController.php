@@ -29,6 +29,7 @@ use App\Services\PlatformAdminDeletionService;
 use App\Services\PlatformAuditService;
 use App\Services\SalesAchievementsService;
 use App\Services\Withdrawal\WithdrawalPolicyService;
+use App\Support\KycEnforcement;
 use App\Support\BrazilianDocumentDigits;
 use App\Support\BrazilianDocuments;
 use App\Support\HtmlSanitizer;
@@ -271,6 +272,46 @@ class UsersController extends Controller
                 ->values()
                 ->all(),
         ]);
+    }
+
+    public function pendingApproval(): Response
+    {
+        $users = User::query()
+            ->where('role', User::ROLE_INFOPRODUTOR)
+            ->where('account_status', 'pending')
+            ->orderBy('created_at')
+            ->paginate(25)
+            ->withQueryString()
+            ->through(fn (User $user) => [
+                'id' => $user->id,
+                'name' => $user->name,
+                'email' => $user->email,
+                'created_at' => $user->created_at?->timezone(config('app.timezone'))->format('d/m/Y H:i'),
+                'kyc_status' => Schema::hasColumn('users', 'kyc_status') ? $user->kyc_status : null,
+            ]);
+
+        return Inertia::render('Platform/Users/PendingApproval', [
+            'users' => $users,
+            'kyc_enforcement' => KycEnforcement::mode(),
+            'pageTitle' => 'Aguardando aprovação',
+        ]);
+    }
+
+    public function approveBasic(Request $request, User $user): RedirectResponse
+    {
+        abort_unless($user->isInfoprodutor(), 404);
+
+        if ((string) ($user->account_status ?? '') !== 'pending') {
+            return back()->with('error', 'Esta conta não está aguardando aprovação.');
+        }
+
+        $user->forceFill(['account_status' => 'approved'])->save();
+
+        PlatformAuditService::log('platform.merchant.basic_approved', [
+            'user_id' => $user->id,
+        ], $request);
+
+        return back()->with('success', 'Conta aprovada para vender. O saque continua exigindo KYC aprovado.');
     }
 
     public function edit(User $user): Response
