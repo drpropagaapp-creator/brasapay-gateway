@@ -117,6 +117,11 @@ class UsersController extends Controller
             $this->applyInfoprodutorSearch($usersQuery, $search);
         }
 
+        $featureFilter = $this->resolveFeatureFilter($request->query('feature'));
+        if ($featureFilter !== null) {
+            $this->applyInfoprodutorFeatureFilter($usersQuery, $featureFilter);
+        }
+
         $dirSql = $sortDirection === 'desc' ? 'desc' : 'asc';
 
         if ($sortBy === 'created_at') {
@@ -238,6 +243,8 @@ class UsersController extends Controller
             'users' => $paginator,
             'q' => $search,
             'status' => $statusFilter,
+            'feature' => $featureFilter,
+            'feature_groups' => $this->featureFilterGroups(),
             'sort_by' => $sortBy,
             'sort_direction' => $sortBy !== null ? $sortDirection : null,
             'per_page' => $perPage,
@@ -1353,23 +1360,25 @@ class UsersController extends Controller
 
     /**
      * Busca por nome, e-mail, nome fantasia, CPF/CNPJ (com ou sem máscara) e ID.
+     * Nome, e-mail e nome fantasia ignoram maiúsculas e minúsculas.
      *
      * @param  \Illuminate\Database\Eloquent\Builder<User>  $usersQuery
      */
     private function applyInfoprodutorSearch($usersQuery, string $search): void
     {
-        $like = '%'.str_replace(['%', '_'], ['\\%', '\\_'], $search).'%';
+        $like = '%'.$this->escapeLike($search).'%';
+        $folded = '%'.$this->escapeLike(mb_strtolower($search, 'UTF-8')).'%';
         $digits = BrazilianDocumentDigits::onlyDigits($search);
         $digitLike = $digits !== ''
-            ? '%'.str_replace(['%', '_'], ['\\%', '\\_'], $digits).'%'
+            ? '%'.$this->escapeLike($digits).'%'
             : null;
 
-        $usersQuery->where(function ($q) use ($like, $search, $digitLike) {
-            $q->where('users.name', 'like', $like)
-                ->orWhere('users.email', 'like', $like);
+        $usersQuery->where(function ($q) use ($like, $folded, $search, $digitLike) {
+            $q->whereRaw('LOWER(users.name) LIKE ?', [$folded])
+                ->orWhereRaw('LOWER(users.email) LIKE ?', [$folded]);
 
             if (Schema::hasColumn('users', 'trade_name')) {
-                $q->orWhere('users.trade_name', 'like', $like);
+                $q->orWhereRaw('LOWER(users.trade_name) LIKE ?', [$folded]);
             }
 
             if (Schema::hasColumn('users', 'document')) {
@@ -1388,6 +1397,189 @@ class UsersController extends Controller
                 $id = (int) $search;
                 $q->orWhere('users.id', $id)->orWhere('users.tenant_id', $id);
             }
+        });
+    }
+
+    private function escapeLike(string $value): string
+    {
+        return str_replace(['%', '_'], ['\\%', '\\_'], $value);
+    }
+
+    /**
+     * @return list<array{label: string, options: list<array{value: string, label: string}>}>
+     */
+    private function featureFilterGroups(): array
+    {
+        $personalizacoes = [];
+        if (Schema::hasColumn('users', 'merchant_fees')) {
+            $personalizacoes[] = ['value' => 'taxas_custom', 'label' => 'Taxas custom'];
+        }
+        if (Schema::hasColumn('users', 'merchant_settlement_overrides')) {
+            $personalizacoes[] = ['value' => 'liquidacao_custom', 'label' => 'Liquidação custom'];
+        }
+        if (Schema::hasColumn('users', 'referral_commission_percent')) {
+            $personalizacoes[] = ['value' => 'indique_custom', 'label' => 'Indique e Ganhe custom'];
+        }
+        if (Schema::hasTable('settings')) {
+            $personalizacoes[] = ['value' => 'ticket_minimo', 'label' => 'Ticket mínimo custom'];
+        }
+        if (Schema::hasColumn('users', 'merchant_gateway_order')) {
+            $personalizacoes[] = ['value' => 'adquirente_custom', 'label' => 'Adquirente custom'];
+        }
+        if (Schema::hasColumn('users', 'cajupay_account_id')) {
+            $personalizacoes[] = ['value' => 'cajupay', 'label' => 'Conta CajuPay'];
+        }
+
+        $recursos = [];
+        if (Schema::hasTable('settings')) {
+            $recursos[] = ['value' => 'api_pix', 'label' => 'API PIX'];
+            $recursos[] = ['value' => 'med_zero', 'label' => 'MED Zero'];
+        }
+
+        $integracoes = [];
+        if (Schema::hasTable('settings')) {
+            foreach (SellerIntegrationVisibility::catalog() as $item) {
+                $integracoes[] = [
+                    'value' => 'integration_'.$item['id'],
+                    'label' => $item['label'],
+                ];
+            }
+        }
+
+        return array_values(array_filter([
+            ['label' => 'Personalizações', 'options' => $personalizacoes],
+            ['label' => 'Recursos', 'options' => $recursos],
+            ['label' => 'Integrações ativas', 'options' => $integracoes],
+        ], fn (array $group) => $group['options'] !== []));
+    }
+
+    private function resolveFeatureFilter(mixed $raw): ?string
+    {
+        $value = is_string($raw) ? trim($raw) : '';
+        if ($value === '') {
+            return null;
+        }
+
+        foreach ($this->featureFilterGroups() as $group) {
+            foreach ($group['options'] as $option) {
+                if ($option['value'] === $value) {
+                    return $value;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * @param  \Illuminate\Database\Eloquent\Builder<User>  $usersQuery
+     */
+    private function applyInfoprodutorFeatureFilter($usersQuery, string $feature): void
+    {
+        if (str_starts_with($feature, 'integration_')) {
+            $id = substr($feature, strlen('integration_'));
+            if (SellerIntegrationVisibility::isKnown($id)) {
+                $this->whereEffectiveTenantSetting(
+                    $usersQuery,
+                    SellerIntegrationVisibility::settingKey($id),
+                    SellerIntegrationVisibility::globalEnabled($id)
+                );
+            }
+
+            return;
+        }
+
+        match ($feature) {
+            'taxas_custom' => $this->whereJsonNotEmpty($usersQuery, 'users.merchant_fees'),
+            'liquidacao_custom' => $this->whereJsonNotEmpty($usersQuery, 'users.merchant_settlement_overrides'),
+            'indique_custom' => $usersQuery->whereNotNull('users.referral_commission_percent'),
+            'ticket_minimo' => $this->whereTenantHasSetting($usersQuery, [
+                MinimumChargeService::SETTING_API_PIX,
+                MinimumChargeService::SETTING_PLATFORM,
+            ]),
+            'adquirente_custom' => $this->whereJsonNotEmpty($usersQuery, 'users.merchant_gateway_order'),
+            'cajupay' => $usersQuery->whereNotNull('users.cajupay_account_id'),
+            'api_pix' => $this->whereEffectiveTenantSetting(
+                $usersQuery,
+                'api_pix_enabled',
+                ApiPixAccess::globalEnabled()
+            ),
+            'med_zero' => $this->whereEffectiveTenantSetting($usersQuery, MedPolicyService::SETTING_MED_ZERO, false),
+            default => null,
+        };
+    }
+
+    /**
+     * @param  \Illuminate\Database\Eloquent\Builder<User>  $query
+     */
+    private function whereJsonNotEmpty($query, string $column): void
+    {
+        $driver = Schema::getConnection()->getDriverName();
+        $cast = match ($driver) {
+            'pgsql' => $column.'::text',
+            'mysql', 'mariadb' => 'CAST('.$column.' AS CHAR)',
+            default => 'CAST('.$column.' AS TEXT)',
+        };
+
+        $query->whereNotNull($column)
+            ->whereRaw("TRIM({$cast}) NOT IN ('[]', '{}', 'null', '')");
+    }
+
+    /**
+     * Recurso ligado para o infoprodutor: override verdadeiro, ou ausência de override quando o padrão global está ligado.
+     *
+     * @param  \Illuminate\Database\Eloquent\Builder<User>  $query
+     */
+    private function whereEffectiveTenantSetting($query, string $key, bool $globalEnabled): void
+    {
+        if (! Schema::hasTable('settings')) {
+            if (! $globalEnabled) {
+                $query->whereRaw('0 = 1');
+            }
+
+            return;
+        }
+
+        $tenantMatch = 'settings.tenant_id = COALESCE(users.tenant_id, users.id)';
+        $truthy = "LOWER(TRIM(settings.value)) IN ('1', 'true', 'yes', 'on')";
+
+        $query->where(function ($q) use ($key, $globalEnabled, $tenantMatch, $truthy) {
+            $q->whereExists(function ($sub) use ($key, $tenantMatch, $truthy) {
+                $sub->selectRaw('1')
+                    ->from('settings')
+                    ->where('settings.key', $key)
+                    ->whereRaw($tenantMatch)
+                    ->whereRaw($truthy);
+            });
+
+            if ($globalEnabled) {
+                $q->orWhereNotExists(function ($sub) use ($key, $tenantMatch) {
+                    $sub->selectRaw('1')
+                        ->from('settings')
+                        ->where('settings.key', $key)
+                        ->whereRaw($tenantMatch);
+                });
+            }
+        });
+    }
+
+    /**
+     * @param  \Illuminate\Database\Eloquent\Builder<User>  $query
+     * @param  list<string>  $keys
+     */
+    private function whereTenantHasSetting($query, array $keys): void
+    {
+        if (! Schema::hasTable('settings') || $keys === []) {
+            $query->whereRaw('0 = 1');
+
+            return;
+        }
+
+        $query->whereExists(function ($sub) use ($keys) {
+            $sub->selectRaw('1')
+                ->from('settings')
+                ->whereIn('settings.key', $keys)
+                ->whereRaw('settings.tenant_id = COALESCE(users.tenant_id, users.id)');
         });
     }
 
