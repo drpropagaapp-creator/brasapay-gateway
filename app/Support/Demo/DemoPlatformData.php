@@ -73,6 +73,17 @@ class DemoPlatformData
                 'produtos_criados' => $produtosCriados,
                 'taxa_aprovacao' => 72.4,
             ],
+            'census' => [
+                'clientes_totais' => 860 + ($seed % 40),
+                'clientes_recompraram' => 150 + ($seed % 20),
+                'clientes_recompra_percent' => 18.4,
+                'infoprodutores_totais' => 128 + ($seed % 15),
+                'infoprodutores_ativos' => 96 + ($seed % 8),
+                'infoprodutores_bloqueados' => 3 + ($seed % 4),
+                'pedidos_totais' => 2400 + ($seed % 200),
+                'pedidos_pagos' => 1720 + ($seed % 80),
+                'pedidos_nao_pagos' => 510 + ($seed % 40),
+            ],
             'comparisons' => $compare ? [
                 'vendas_totais' => ['current' => $vendasTotais, 'previous' => round($vendasTotais * 0.86, 2), 'delta_percent' => 16.3],
                 'quantidade_vendas' => ['current' => $quantidadeVendas, 'previous' => (int) round($quantidadeVendas * 0.9), 'delta_percent' => 11.1],

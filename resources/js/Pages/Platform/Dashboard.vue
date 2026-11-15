@@ -15,7 +15,6 @@ import {
     Receipt,
     UserPlus,
     UserCheck,
-    Repeat,
     Package,
     TrendingUp,
     CreditCard,
@@ -64,6 +63,20 @@ const props = defineProps({
             compradores_recorrentes: 0,
             produtos_criados: 0,
             taxa_aprovacao: 0,
+        }),
+    },
+    census: {
+        type: Object,
+        default: () => ({
+            clientes_totais: 0,
+            clientes_recompraram: 0,
+            clientes_recompra_percent: 0,
+            infoprodutores_totais: 0,
+            infoprodutores_ativos: 0,
+            infoprodutores_bloqueados: 0,
+            pedidos_totais: 0,
+            pedidos_pagos: 0,
+            pedidos_nao_pagos: 0,
         }),
     },
     comparisons: { type: Object, default: null },
@@ -542,6 +555,98 @@ const paymentMax = computed(() => Math.max(1, ...props.payment_methods.map((m) =
             </div>
         </section>
 
+        <section class="space-y-3">
+            <div>
+                <h3 class="text-xs font-semibold uppercase tracking-wide text-zinc-500">Cadastro</h3>
+                <p class="mt-1 text-xs text-zinc-500">Estado atual. Não segue o filtro de data.</p>
+            </div>
+            <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                <div class="rounded-2xl border border-zinc-200 bg-zinc-50/50 p-4 dark:border-zinc-700 dark:bg-zinc-900/40">
+                    <div class="flex items-center gap-2 text-sm font-medium text-zinc-600 dark:text-zinc-400">
+                        <Users class="h-4 w-4 text-[var(--color-primary)]" />
+                        Clientes totais
+                    </div>
+                    <p class="mt-2 text-2xl font-bold tabular-nums text-zinc-900 dark:text-white">
+                        {{ displayNumber(census.clientes_totais) }}
+                    </p>
+                    <p class="mt-1 text-xs text-zinc-500">
+                        Recompraram {{ displayNumber(census.clientes_recompraram) }} · {{ valuesVisible ? census.clientes_recompra_percent + '%' : '••••' }}
+                    </p>
+                </div>
+                <div class="rounded-2xl border border-zinc-200 bg-zinc-50/50 p-4 dark:border-zinc-700 dark:bg-zinc-900/40">
+                    <div class="flex items-center gap-2 text-sm font-medium text-zinc-600 dark:text-zinc-400">
+                        <UserCheck class="h-4 w-4 text-[var(--color-primary)]" />
+                        Infoprodutores totais
+                    </div>
+                    <p class="mt-2 text-2xl font-bold tabular-nums text-zinc-900 dark:text-white">
+                        {{ displayNumber(census.infoprodutores_totais) }}
+                    </p>
+                    <p class="mt-1 text-xs text-zinc-500">
+                        Ativos {{ displayNumber(census.infoprodutores_ativos) }} · Bloqueados {{ displayNumber(census.infoprodutores_bloqueados) }}
+                    </p>
+                </div>
+                <div class="rounded-2xl border border-zinc-200 bg-zinc-50/50 p-4 dark:border-zinc-700 dark:bg-zinc-900/40">
+                    <div class="flex items-center gap-2 text-sm font-medium text-zinc-600 dark:text-zinc-400">
+                        <ShoppingCart class="h-4 w-4 text-[var(--color-primary)]" />
+                        Pedidos totais
+                    </div>
+                    <p class="mt-2 text-2xl font-bold tabular-nums text-zinc-900 dark:text-white">
+                        {{ displayNumber(census.pedidos_totais) }}
+                    </p>
+                    <p class="mt-1 text-xs text-zinc-500">
+                        Pagos {{ displayNumber(census.pedidos_pagos) }} · Não pagos {{ displayNumber(census.pedidos_nao_pagos) }}
+                    </p>
+                </div>
+            </div>
+        </section>
+
+        <section class="space-y-3">
+            <h3 class="text-xs font-semibold uppercase tracking-wide text-zinc-500">Crescimento da plataforma</h3>
+            <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                <div class="rounded-2xl border border-zinc-200 bg-zinc-50/50 p-4 dark:border-zinc-700 dark:bg-zinc-900/40">
+                    <div class="flex items-center gap-2 text-sm font-medium text-zinc-600 dark:text-zinc-400">
+                        <UserPlus class="h-4 w-4 text-[var(--color-primary)]" />
+                        Novos infoprodutores
+                    </div>
+                    <p class="mt-2 text-2xl font-bold tabular-nums text-zinc-900 dark:text-white">+{{ displayNumber(growth.novos_infoprodutores) }}</p>
+                    <p v-if="comparisons?.novos_infoprodutores" class="mt-1 text-xs font-medium" :class="deltaClass(comparisons.novos_infoprodutores)">
+                        {{ deltaLabel(comparisons.novos_infoprodutores) }}
+                    </p>
+                </div>
+                <div class="rounded-2xl border border-zinc-200 bg-zinc-50/50 p-4 dark:border-zinc-700 dark:bg-zinc-900/40">
+                    <div class="flex items-center gap-2 text-sm font-medium text-zinc-600 dark:text-zinc-400">
+                        <Users class="h-4 w-4 text-[var(--color-primary)]" />
+                        Com vendas
+                    </div>
+                    <p class="mt-2 text-2xl font-bold tabular-nums text-zinc-900 dark:text-white">{{ displayNumber(growth.infoprodutores_com_vendas) }}</p>
+                    <p class="mt-1 text-xs text-zinc-500">Sellers com venda aprovada no período</p>
+                </div>
+                <div class="rounded-2xl border border-zinc-200 bg-zinc-50/50 p-4 dark:border-zinc-700 dark:bg-zinc-900/40">
+                    <div class="flex items-center gap-2 text-sm font-medium text-zinc-600 dark:text-zinc-400">
+                        <UserPlus class="h-4 w-4 text-[var(--color-primary)]" />
+                        Novos compradores
+                    </div>
+                    <p class="mt-2 text-2xl font-bold tabular-nums text-zinc-900 dark:text-white">{{ displayNumber(growth.novos_compradores) }}</p>
+                    <p v-if="comparisons?.novos_compradores" class="mt-1 text-xs font-medium" :class="deltaClass(comparisons.novos_compradores)">
+                        {{ deltaLabel(comparisons.novos_compradores) }}
+                    </p>
+                </div>
+                <div class="rounded-2xl border border-zinc-200 bg-zinc-50/50 p-4 dark:border-zinc-700 dark:bg-zinc-900/40">
+                    <div class="flex items-center gap-2 text-sm font-medium text-zinc-600 dark:text-zinc-400">
+                        <Filter class="h-4 w-4 text-[var(--color-primary)]" />
+                        Taxa de aprovação
+                    </div>
+                    <p class="mt-2 text-2xl font-bold tabular-nums text-zinc-900 dark:text-white">{{ growth.taxa_aprovacao }}%</p>
+                    <p class="mt-1 text-xs text-zinc-500">Aprovadas / eventos do período</p>
+                    <p v-if="comparisons?.produtos_criados" class="mt-1 text-xs text-zinc-500">
+                        +{{ displayNumber(growth.produtos_criados) }} produtos criados
+                        <span v-if="comparisons.produtos_criados" :class="deltaClass(comparisons.produtos_criados)"> · {{ deltaLabel(comparisons.produtos_criados) }}</span>
+                    </p>
+                    <p v-else class="mt-1 text-xs text-zinc-500">+{{ displayNumber(growth.produtos_criados) }} produtos criados</p>
+                </div>
+            </div>
+        </section>
+
         <section class="rounded-2xl border border-zinc-200 bg-white p-4 dark:border-zinc-700 dark:bg-zinc-900/60">
             <div class="mb-3 flex items-start justify-between gap-3">
                 <div>
@@ -583,69 +688,6 @@ const paymentMax = computed(() => Math.max(1, ...props.payment_methods.map((m) =
                 </li>
             </ul>
             <p v-if="!acquirer_wallets.length" class="py-4 text-center text-sm text-zinc-500">Nenhuma adquirente cadastrada.</p>
-        </section>
-
-        <section class="space-y-3">
-            <h3 class="text-xs font-semibold uppercase tracking-wide text-zinc-500">Crescimento da plataforma</h3>
-            <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-6">
-                <div class="rounded-2xl border border-zinc-200 bg-zinc-50/50 p-4 dark:border-zinc-700 dark:bg-zinc-900/40">
-                    <div class="flex items-center gap-2 text-sm font-medium text-zinc-600 dark:text-zinc-400">
-                        <UserPlus class="h-4 w-4 text-[var(--color-primary)]" />
-                        Novos infoprodutores
-                    </div>
-                    <p class="mt-2 text-2xl font-bold tabular-nums text-zinc-900 dark:text-white">+{{ displayNumber(growth.novos_infoprodutores) }}</p>
-                    <p v-if="comparisons?.novos_infoprodutores" class="mt-1 text-xs font-medium" :class="deltaClass(comparisons.novos_infoprodutores)">
-                        {{ deltaLabel(comparisons.novos_infoprodutores) }}
-                    </p>
-                </div>
-                <div class="rounded-2xl border border-zinc-200 bg-zinc-50/50 p-4 dark:border-zinc-700 dark:bg-zinc-900/40">
-                    <div class="flex items-center gap-2 text-sm font-medium text-zinc-600 dark:text-zinc-400">
-                        <UserCheck class="h-4 w-4 text-[var(--color-primary)]" />
-                        Infoprodutores ativos
-                    </div>
-                    <p class="mt-2 text-2xl font-bold tabular-nums text-zinc-900 dark:text-white">{{ displayNumber(growth.infoprodutores_ativos) }}</p>
-                    <p class="mt-1 text-xs text-zinc-500">Estado atual · {{ displayNumber(growth.infoprodutores_total) }} no cadastro</p>
-                </div>
-                <div class="rounded-2xl border border-zinc-200 bg-zinc-50/50 p-4 dark:border-zinc-700 dark:bg-zinc-900/40">
-                    <div class="flex items-center gap-2 text-sm font-medium text-zinc-600 dark:text-zinc-400">
-                        <Users class="h-4 w-4 text-[var(--color-primary)]" />
-                        Com vendas
-                    </div>
-                    <p class="mt-2 text-2xl font-bold tabular-nums text-zinc-900 dark:text-white">{{ displayNumber(growth.infoprodutores_com_vendas) }}</p>
-                    <p class="mt-1 text-xs text-zinc-500">Sellers com venda aprovada no período</p>
-                </div>
-                <div class="rounded-2xl border border-zinc-200 bg-zinc-50/50 p-4 dark:border-zinc-700 dark:bg-zinc-900/40">
-                    <div class="flex items-center gap-2 text-sm font-medium text-zinc-600 dark:text-zinc-400">
-                        <UserPlus class="h-4 w-4 text-[var(--color-primary)]" />
-                        Novos compradores
-                    </div>
-                    <p class="mt-2 text-2xl font-bold tabular-nums text-zinc-900 dark:text-white">{{ displayNumber(growth.novos_compradores) }}</p>
-                    <p v-if="comparisons?.novos_compradores" class="mt-1 text-xs font-medium" :class="deltaClass(comparisons.novos_compradores)">
-                        {{ deltaLabel(comparisons.novos_compradores) }}
-                    </p>
-                </div>
-                <div class="rounded-2xl border border-zinc-200 bg-zinc-50/50 p-4 dark:border-zinc-700 dark:bg-zinc-900/40">
-                    <div class="flex items-center gap-2 text-sm font-medium text-zinc-600 dark:text-zinc-400">
-                        <Repeat class="h-4 w-4 text-[var(--color-primary)]" />
-                        Compradores recorrentes
-                    </div>
-                    <p class="mt-2 text-2xl font-bold tabular-nums text-zinc-900 dark:text-white">{{ displayNumber(growth.compradores_recorrentes) }}</p>
-                    <p class="mt-1 text-xs text-zinc-500">Já tinham compra aprovada antes do período</p>
-                </div>
-                <div class="rounded-2xl border border-zinc-200 bg-zinc-50/50 p-4 dark:border-zinc-700 dark:bg-zinc-900/40">
-                    <div class="flex items-center gap-2 text-sm font-medium text-zinc-600 dark:text-zinc-400">
-                        <Filter class="h-4 w-4 text-[var(--color-primary)]" />
-                        Taxa de aprovação
-                    </div>
-                    <p class="mt-2 text-2xl font-bold tabular-nums text-zinc-900 dark:text-white">{{ growth.taxa_aprovacao }}%</p>
-                    <p class="mt-1 text-xs text-zinc-500">Aprovadas / eventos do período</p>
-                    <p v-if="comparisons?.produtos_criados" class="mt-1 text-xs text-zinc-500">
-                        +{{ displayNumber(growth.produtos_criados) }} produtos criados
-                        <span v-if="comparisons.produtos_criados" :class="deltaClass(comparisons.produtos_criados)"> · {{ deltaLabel(comparisons.produtos_criados) }}</span>
-                    </p>
-                    <p v-else class="mt-1 text-xs text-zinc-500">+{{ displayNumber(growth.produtos_criados) }} produtos criados</p>
-                </div>
-            </div>
         </section>
 
         <section class="rounded-2xl border border-zinc-200 bg-white p-4 dark:border-zinc-700 dark:bg-zinc-900/60">
