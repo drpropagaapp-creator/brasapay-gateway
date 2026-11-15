@@ -80,6 +80,7 @@ class PlatformDashboardAnalytics
             'top_products' => self::topProducts($start, $end),
             'alerts' => self::alerts(),
             'grafico' => self::chart($period, $start, $end, $prevStart, $prevEnd, $compare),
+            'census' => self::census(),
         ];
     }
 
@@ -210,6 +211,58 @@ class PlatformDashboardAnalytics
             'produtos_criados' => $produtosCriados,
             'taxa_aprovacao' => $funnel['taxa_aprovacao'],
         ];
+    }
+
+    /**
+     * Totais do cadastro, independentes do filtro de data da dashboard.
+     *
+     * @return array<string, int|float>
+     */
+    private static function census(): array
+    {
+        $clientes = 0;
+        $recompraram = 0;
+        $pedidos = 0;
+        $pagos = 0;
+        $naoPagos = 0;
+
+        if (Schema::hasTable('orders')) {
+            $clientes = (int) Order::query()
+                ->where('status', 'completed')
+                ->whereNotNull('user_id')
+                ->selectRaw('COUNT(DISTINCT user_id) as c')
+                ->value('c');
+            $recompraram = self::returningBuyersCount(null, null);
+            $pedidos = (int) Order::query()->count();
+            $pagos = (int) Order::query()->where('status', 'completed')->count();
+            $naoPagos = (int) Order::query()
+                ->whereIn('status', ['pending', 'cancelled', 'rejected'])
+                ->count();
+        }
+
+        return [
+            'clientes_totais' => $clientes,
+            'clientes_recompraram' => $recompraram,
+            'clientes_recompra_percent' => $clientes > 0 ? round(($recompraram / $clientes) * 100, 1) : 0.0,
+            'infoprodutores_totais' => (int) User::query()->where('role', User::ROLE_INFOPRODUTOR)->count(),
+            'infoprodutores_ativos' => self::activeInfoprodutoresCount(),
+            'infoprodutores_bloqueados' => self::blockedInfoprodutoresCount(),
+            'pedidos_totais' => $pedidos,
+            'pedidos_pagos' => $pagos,
+            'pedidos_nao_pagos' => $naoPagos,
+        ];
+    }
+
+    private static function blockedInfoprodutoresCount(): int
+    {
+        if (! Schema::hasColumn('users', 'account_status')) {
+            return 0;
+        }
+
+        return (int) User::query()
+            ->where('role', User::ROLE_INFOPRODUTOR)
+            ->where('account_status', 'blocked')
+            ->count();
     }
 
     private static function activeInfoprodutoresCount(): int

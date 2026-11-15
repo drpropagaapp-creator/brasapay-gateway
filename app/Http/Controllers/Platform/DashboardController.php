@@ -68,7 +68,7 @@ class DashboardController extends Controller
         if (defined('PHPUNIT_COMPOSER_INSTALL')) {
             $payload = $resolver();
         } else {
-            $cacheKey = 'platform-dashboard:v3:'.$period.':'.md5((string) $start.'|'.(string) $end);
+            $cacheKey = 'platform-dashboard:v4:'.$period.':'.md5((string) $start.'|'.(string) $end);
             $payload = Cache::remember($cacheKey, self::CACHE_TTL_SECONDS, $resolver);
         }
 
