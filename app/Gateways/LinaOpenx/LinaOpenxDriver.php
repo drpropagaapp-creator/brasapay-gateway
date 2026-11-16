@@ -101,6 +101,24 @@ class LinaOpenxDriver implements GatewayDriver
                 return 'paid';
             }
 
+            $consentId = trim((string) ($automatic['consent_id'] ?? ''));
+            if ($consentId === '' && str_contains(strtolower($transactionId), 'consent')) {
+                $consentId = $transactionId;
+            }
+            if ($consentId !== '') {
+                $consent = $this->client->getRecurringConsent($credentials, $consentId);
+                if (($consent['status'] ?? '') === 'paid') {
+                    return 'paid';
+                }
+                $consentPaymentId = trim((string) ($consent['payment_id'] ?? ''));
+                if ($consentPaymentId !== '' && $consentPaymentId !== $transactionId) {
+                    $fromConsentPayment = $this->client->getRecurringPayment($credentials, $consentPaymentId);
+                    if (($fromConsentPayment['status'] ?? '') === 'paid') {
+                        return 'paid';
+                    }
+                }
+            }
+
             $recurring = $this->client->getRecurringPayment($credentials, $transactionId);
             $recStatus = $recurring['status'] ?? 'pending';
             foreach ([$autoStatus, $recStatus, $status] as $candidate) {
