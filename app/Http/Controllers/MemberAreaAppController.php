@@ -205,6 +205,8 @@ class MemberAreaAppController extends Controller
                 'module' => $currentLesson->module ? ['id' => $currentLesson->module->id, 'title' => $currentLesson->module->title] : null,
                 'section' => $currentLesson->module && $currentLesson->module->section ? ['id' => $currentLesson->module->section->id, 'title' => $currentLesson->module->section->title] : null,
                 'watermark_enabled' => (bool) ($currentLesson->watermark_enabled ?? false),
+                'watermark_header_footer' => (bool) ($currentLesson->watermark_header_footer ?? true),
+                'watermark_center' => (bool) ($currentLesson->watermark_center ?? true),
             ];
             if ($currentLessonData['watermark_enabled']) {
                 $currentLessonData['student'] = $this->getStudentWatermarkData($user, $product);
@@ -323,6 +325,8 @@ class MemberAreaAppController extends Controller
             'module' => $lesson->module ? ['id' => $lesson->module->id, 'title' => $lesson->module->title] : null,
             'section' => $lesson->module && $lesson->module->section ? ['id' => $lesson->module->section->id, 'title' => $lesson->module->section->title] : null,
             'watermark_enabled' => (bool) ($lesson->watermark_enabled ?? false),
+            'watermark_header_footer' => (bool) ($lesson->watermark_header_footer ?? true),
+            'watermark_center' => (bool) ($lesson->watermark_center ?? true),
         ];
         if ($lessonPayload['watermark_enabled']) {
             $lessonPayload['student'] = $this->getStudentWatermarkData($user, $product);
@@ -441,7 +445,7 @@ class MemberAreaAppController extends Controller
             abort(404, 'Material não encontrado.');
         }
 
-        if ((bool) ($lesson->watermark_enabled ?? false) && $this->lessonMaterialIsPdf($file)) {
+        if ($lesson->appliesPdfDrm() && $this->lessonMaterialIsPdf($file)) {
             return $this->downloadWatermarkedLessonPdf(
                 $request,
                 $user,
@@ -496,7 +500,11 @@ class MemberAreaAppController extends Controller
 
         try {
             $binary = $pdfSource->read((string) ($file['url'] ?? ''), $tenantId);
-            $stamped = $pdfWatermarker->stamp($binary, $this->getStudentWatermarkData($user, $product));
+            $stamped = $pdfWatermarker->stamp(
+                $binary,
+                $this->getStudentWatermarkData($user, $product),
+                $lesson->pdfDrmMarks(),
+            );
         } catch (MemberPdfWatermarkException $e) {
             return response()->json([
                 'message' => $e->getMessage(),

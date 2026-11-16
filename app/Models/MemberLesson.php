@@ -28,6 +28,8 @@ class MemberLesson extends Model
         'duration_seconds',
         'is_free',
         'watermark_enabled',
+        'watermark_header_footer',
+        'watermark_center',
     ];
 
     protected function casts(): array
@@ -37,10 +39,34 @@ class MemberLesson extends Model
             'duration_seconds' => 'integer',
             'is_free' => 'boolean',
             'watermark_enabled' => 'boolean',
+            'watermark_header_footer' => 'boolean',
+            'watermark_center' => 'boolean',
             'content_files' => 'array',
             'release_after_days' => 'integer',
             'release_at_date' => 'date:Y-m-d',
         ];
+    }
+
+    /**
+     * @return array{header_footer: bool, center: bool}
+     */
+    public function pdfDrmMarks(): array
+    {
+        return [
+            'header_footer' => (bool) ($this->watermark_header_footer ?? true),
+            'center' => (bool) ($this->watermark_center ?? true),
+        ];
+    }
+
+    public function appliesPdfDrm(): bool
+    {
+        if (! ($this->watermark_enabled ?? false)) {
+            return false;
+        }
+
+        $marks = $this->pdfDrmMarks();
+
+        return $marks['header_footer'] || $marks['center'];
     }
 
     public function module(): BelongsTo
