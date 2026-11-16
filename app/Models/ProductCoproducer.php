@@ -180,6 +180,69 @@ class ProductCoproducer extends Model
     }
 
     /**
+     * Aceite automático: ativa o convite pendente na conta do e-mail convidado, sem clique.
+     * Mesmas travas do aceite manual: infoprodutor, e-mail igual, não é o dono do produto,
+     * e não é co-produtor ativo do mesmo produto por outro convite.
+     */
+    public function tryAutoAccept(?User $user): bool
+    {
+        if ($this->status !== self::STATUS_PENDING || ! $user instanceof User || ! $user->isInfoprodutor()) {
+            return false;
+        }
+        if (self::normalizeEmail((string) $user->email) !== $this->email) {
+            return false;
+        }
+
+        $productTenantId = (int) ($this->product?->tenant_id ?? Product::query()->whereKey($this->product_id)->value('tenant_id') ?? 0);
+        if ($productTenantId === (int) $user->tenant_id) {
+            return false;
+        }
+
+        if (self::query()
+            ->where('product_id', $this->product_id)
+            ->where('co_producer_user_id', $user->id)
+            ->where('status', self::STATUS_ACTIVE)
+            ->where('id', '!=', $this->id)
+            ->exists()) {
+            return false;
+        }
+
+        $this->applyAcceptance($user);
+
+        return true;
+    }
+
+    /**
+     * Ativa todos os convites pendentes do e-mail da conta (ex.: logo após o cadastro,
+     * mesmo sem ter usado o link do convite).
+     *
+     * @return int quantos foram ativados
+     */
+    public static function autoAcceptPendingFor(User $user): int
+    {
+        if (! $user->isInfoprodutor()) {
+            return 0;
+        }
+
+        self::expireOverdue();
+
+        $count = 0;
+        $pending = self::query()
+            ->where('status', self::STATUS_PENDING)
+            ->whereRaw('LOWER(email) = ?', [self::normalizeEmail((string) $user->email)])
+            ->with('product')
+            ->orderBy('id')
+            ->get();
+        foreach ($pending as $invitation) {
+            if ($invitation->tryAutoAccept($user)) {
+                $count++;
+            }
+        }
+
+        return $count;
+    }
+
+    /**
      * Após cadastro via convite: ativa se token e e-mail batem.
      */
     public static function tryActivateAfterRegistration(User $user, ?string $token): bool

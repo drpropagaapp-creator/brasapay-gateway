@@ -463,6 +463,11 @@ class InfoprodutorRegistrationController extends Controller
         if (! empty($validated['coproducer_invite'])) {
             $inviteAccepted = ProductCoproducer::tryActivateAfterRegistration($user->fresh(), $validated['coproducer_invite']);
         }
+        // Aceite automático: qualquer convite pendente para este e-mail vira co-produção ativa,
+        // mesmo que a pessoa tenha se cadastrado sem usar o link do convite.
+        if (ProductCoproducer::autoAcceptPendingFor($user->fresh()) > 0) {
+            $inviteAccepted = true;
+        }
 
         $msg = $inviteAccepted
             ? 'Conta criada e co-produção ativada. Envie seus documentos de verificação (KYC) para acessar o painel.'
@@ -665,6 +670,11 @@ class InfoprodutorRegistrationController extends Controller
         $inviteAccepted = false;
         if (! empty($validated['coproducer_invite'])) {
             $inviteAccepted = ProductCoproducer::tryActivateAfterRegistration($user->fresh(), $validated['coproducer_invite']);
+        }
+        // Aceite automático: qualquer convite pendente para este e-mail vira co-produção ativa,
+        // mesmo que a pessoa tenha se cadastrado sem usar o link do convite.
+        if (ProductCoproducer::autoAcceptPendingFor($user->fresh()) > 0) {
+            $inviteAccepted = true;
         }
 
         $msg = $inviteAccepted

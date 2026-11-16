@@ -396,7 +396,7 @@ function resubmitForReview() {
 
 function coproducerStatusLabel(s) {
     const map = {
-        pending: 'Pendente',
+        pending: 'Aguardando cadastro',
         active: 'Ativo',
         declined: 'Recusado',
         revoked: 'Revogado',
@@ -3221,13 +3221,13 @@ function submit() {
                 <div class="rounded-xl border border-zinc-200 bg-white p-6 dark:border-zinc-700 dark:bg-zinc-800">
                     <h3 class="flex items-center gap-2 text-lg font-semibold text-zinc-900 dark:text-white">
                         <Handshake class="h-5 w-5" />
-                        {{ t('products.edit.coproduction_title', 'Convidar co-produtor') }}
+                        {{ t('products.edit.coproduction_title', 'Adicionar co-produtor') }}
                     </h3>
                     <p class="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
                         {{
                             t(
                                 'products.edit.coproduction_help',
-                                'O convidado deve ser infoprodutor. Ele receberá um e-mail para aceitar. Comissões são sobre o valor bruto da venda; taxas da plataforma aplicam-se na carteira de cada parte.'
+                                'Use o e-mail da conta de infoprodutor da pessoa: a co-produção fica ativa na hora, sem precisar de aceite. Se o e-mail ainda não tiver conta, ativa automaticamente quando ela se cadastrar. Comissões são sobre o valor bruto da venda; taxas da plataforma aplicam-se na carteira de cada parte.'
                             )
                         }}
                     </p>
@@ -3282,7 +3282,7 @@ function submit() {
                         </div>
                         <div class="sm:col-span-2">
                             <Button type="submit" :disabled="coproducerForm.processing">
-                                {{ coproducerForm.processing ? 'Enviando…' : 'Enviar convite' }}
+                                {{ coproducerForm.processing ? 'Adicionando…' : 'Adicionar co-produtor' }}
                             </Button>
                         </div>
                     </form>

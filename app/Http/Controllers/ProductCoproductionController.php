@@ -101,12 +101,33 @@ class ProductCoproductionController extends Controller
             'duration_preset' => $validated['duration_preset'],
         ]);
 
+        $this->logSellerActivity(SellerActivityLogService::COPRODUCTION_INVITED, $invitation, [
+            'email' => $email,
+            'product_id' => $produto->id,
+            'product_name' => $produto->name,
+        ]);
+
+        // Aceite automático: se o e-mail já é de uma conta de infoprodutor, a co-produção
+        // fica ativa na hora (sem o convidado precisar clicar). Sem conta, ativa no cadastro.
+        $invitation->setRelation('product', $produto);
+        $autoAccepted = $invitation->tryAutoAccept($existingUser);
+        if ($autoAccepted) {
+            $this->logSellerActivity(SellerActivityLogService::COPRODUCTION_ACCEPTED, $invitation, [
+                'email' => $email,
+                'product_id' => $produto->id,
+                'product_name' => $produto->name,
+                'auto_accepted' => true,
+            ]);
+        }
+
         $branding = [
             'app_name' => config('getfy.app_name', 'Getfy'),
             'theme_primary' => config('getfy.theme_primary', '#0050fc'),
         ];
 
-        $acceptUrl = \App\Support\PublicAppUrl::to('/coproducao/convite/'.$token);
+        $acceptUrl = $autoAccepted
+            ? \App\Support\PublicAppUrl::to('/coproducao?tab=participacoes')
+            : \App\Support\PublicAppUrl::to('/coproducao/convite/'.$token);
         $registerUrl = \App\Support\PublicAppUrl::to('/cadastro?coproducer_invite='.$token);
 
         $this->mailService->send(
@@ -116,18 +137,15 @@ class ProductCoproductionController extends Controller
                 $inviterUser,
                 $branding,
                 $acceptUrl,
-                $registerUrl
+                $registerUrl,
+                $autoAccepted,
             ),
             $email
         );
 
-        $this->logSellerActivity(SellerActivityLogService::COPRODUCTION_INVITED, $invitation, [
-            'email' => $email,
-            'product_id' => $produto->id,
-            'product_name' => $produto->name,
-        ]);
-
-        return back()->with('success', 'Convite enviado para '.$email.'.');
+        return back()->with('success', $autoAccepted
+            ? 'Co-produção ativada na conta '.$email.'. Ela já recebe a comissão nas próximas vendas.'
+            : 'Convite enviado para '.$email.'. Ainda não há conta com esse e-mail: a co-produção será ativada automaticamente quando a pessoa se cadastrar com ele.');
     }
 
     public function destroy(Product $produto, ProductCoproducer $coproducer): RedirectResponse
