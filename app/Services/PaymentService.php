@@ -594,7 +594,7 @@ class PaymentService
             'card' => ['id' => 'card', 'label' => 'Cartão'],
             'boleto' => ['id' => 'boleto', 'label' => 'Boleto'],
             'pix_auto' => ['id' => 'pix_auto', 'label' => 'PIX automático'],
-            'open_finance' => ['id' => 'open_finance', 'label' => 'Open Finance'],
+            'open_finance' => ['id' => 'open_finance', 'label' => 'Pix Automático'],
             'paypal' => ['id' => 'paypal', 'label' => 'PayPal'],
         ];
 

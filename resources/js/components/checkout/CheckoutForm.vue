@@ -532,7 +532,7 @@ const primarySubmitButtonLabel = computed(() => {
     if (pm === 'pix') return tf('checkout.gerar_pix', 'Gerar PIX');
     if (pm === 'pix_auto' && isLinaOpenxPixAuto.value) return tf('checkout.pagar_pix_auto_banco', 'Autorizar no banco');
     if (pm === 'pix_auto') return tf('checkout.gerar_pix_auto', 'Gerar PIX (renovação automática)');
-    if (pm === 'open_finance') return tf('checkout.pagar_open_finance', 'Pagar com Open Finance');
+    if (pm === 'open_finance') return tf('checkout.pagar_open_finance', 'Pix Automático');
     if (pm === 'boleto') return tf('checkout.gerar_boleto', 'Gerar boleto');
     if (pm === 'apple_pay' || pm === 'google_pay') return 'Continuar';
     if (pm === 'card') {
@@ -2828,7 +2828,7 @@ function submit() {
         if (cpfDigits.length < 11) {
             checkoutSubmitting.value = false;
             form.setError('cpf', paymentMethod === 'open_finance'
-                ? 'Informe um CPF válido para pagar com Open Finance.'
+                ? 'Informe um CPF válido para pagar com Pix Automático.'
                 : 'Informe um CPF válido para autorizar o PIX automático.');
             showEditForm.value = true;
             return;
@@ -2863,12 +2863,12 @@ function submit() {
                 }
                 form.setError('payment_method', data?.message || (isLinaOpenxPixAuto.value
                     ? 'Não foi possível iniciar o PIX automático.'
-                    : 'Não foi possível iniciar o Open Finance.'));
+                    : 'Não foi possível iniciar o Pix Automático.'));
             })
             .catch((err) => {
                 const fallback = isLinaOpenxPixAuto.value
                     ? 'Não foi possível iniciar o PIX automático. Tente novamente.'
-                    : 'Não foi possível iniciar o Open Finance. Tente novamente.';
+                    : 'Não foi possível iniciar o Pix Automático. Tente novamente.';
                 const msg = err?.response?.data?.message
                     || err?.response?.data?.errors?.payment_method?.[0]
                     || err?.response?.data?.errors?.cpf?.[0]
