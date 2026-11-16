@@ -14,6 +14,8 @@ class SocialWatermarkDocument extends Fpdi
 {
     private const MAX_PAGES = 250;
 
+    private const BAND_OPACITY = 0.30;
+
     /** @var array<int, array{ca: float, CA: float, BM: string, n: int}> */
     private array $extGStates = [];
 
@@ -24,8 +26,9 @@ class SocialWatermarkDocument extends Fpdi
 
     /**
      * @param  array{name: string, email: string, cpf: string, customer_number: string, has_cpf: bool}  $identity
+     * @param  array{header_footer?: bool, center?: bool}  $marks
      */
-    public function render(string $pdfBinary, array $identity): string
+    public function render(string $pdfBinary, array $identity, array $marks = []): string
     {
         if (! str_starts_with($pdfBinary, '%PDF')) {
             throw new MemberPdfWatermarkException('O arquivo não é um PDF válido. O original não foi enviado.');
@@ -72,7 +75,16 @@ class SocialWatermarkDocument extends Fpdi
             $height = (float) $size['height'];
             $this->AddPage($size['orientation'], [$width, $height]);
             $this->useTemplate($template);
-            $this->drawMarks($width, $height, $name, $diagonalSecondary, $header, $footer);
+            $this->drawMarks(
+                $width,
+                $height,
+                $name,
+                $diagonalSecondary,
+                $header,
+                $footer,
+                (bool) ($marks['header_footer'] ?? true),
+                (bool) ($marks['center'] ?? true),
+            );
         }
 
         $binary = $this->Output('S');
@@ -107,8 +119,16 @@ class SocialWatermarkDocument extends Fpdi
         string $diagonalSecondary,
         string $header,
         string $footer,
+        bool $headerFooter,
+        bool $center,
     ): void {
-        $this->drawDiagonal($pageW, $pageH, $diagonalPrimary, $diagonalSecondary);
+        if ($center) {
+            $this->drawDiagonal($pageW, $pageH, $diagonalPrimary, $diagonalSecondary);
+        }
+
+        if (! $headerFooter) {
+            return;
+        }
 
         $band = $pageH >= 80 ? 16.0 : 10.0;
         if (($band * 2) >= $pageH) {
@@ -116,8 +136,10 @@ class SocialWatermarkDocument extends Fpdi
         }
 
         $this->SetFillColor(255, 255, 255);
+        $this->applyAlpha(self::BAND_OPACITY);
         $this->Rect(0, 0, $pageW, $band, 'F');
         $this->Rect(0, $pageH - $band, $pageW, $band, 'F');
+        $this->applyAlpha(1);
 
         $this->SetTextColor(20, 20, 20);
         $this->SetFont('Arial', '', $pageW >= 140 ? 8 : 6);

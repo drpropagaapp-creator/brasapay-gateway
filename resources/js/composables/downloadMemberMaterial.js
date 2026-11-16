@@ -2,6 +2,11 @@ export function isProtectedPdf(lesson, file) {
     if (!lesson?.watermark_enabled) {
         return false;
     }
+    const headerFooter = lesson.watermark_header_footer !== false;
+    const center = lesson.watermark_center !== false;
+    if (!headerFooter && !center) {
+        return false;
+    }
     const name = String(file?.name || '').toLowerCase();
     const path = String(file?.url || '').split('?')[0].toLowerCase();
     return name.endsWith('.pdf') || path.endsWith('.pdf');

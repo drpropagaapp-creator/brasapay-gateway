@@ -86,7 +86,23 @@ class MemberBuilderController extends Controller
     }
 
     /**
+     * @return array{header_footer: bool, center: bool}
+     */
+    private function pdfDrmMarksFromRequest(Request $request, ?MemberLesson $lesson = null): array
+    {
+        return [
+            'header_footer' => $request->exists('watermark_header_footer')
+                ? $request->boolean('watermark_header_footer')
+                : (bool) ($lesson->watermark_header_footer ?? true),
+            'center' => $request->exists('watermark_center')
+                ? $request->boolean('watermark_center')
+                : (bool) ($lesson->watermark_center ?? true),
+        ];
+    }
+
+    /**
      * @param  list<array{url: string, name: string}>  $contentFiles
+     * @param  array{header_footer?: bool, center?: bool}  $marks
      */
     private function assertPdfDrmCompatibleWhenEnabled(
         Product $produto,
@@ -94,8 +110,11 @@ class MemberBuilderController extends Controller
         string $type,
         array $contentFiles,
         ?string $contentUrl = null,
+        array $marks = [],
     ): void {
-        if (! $watermarkEnabled || $type !== MemberLesson::TYPE_PDF) {
+        $headerFooter = (bool) ($marks['header_footer'] ?? true);
+        $center = (bool) ($marks['center'] ?? true);
+        if (! $watermarkEnabled || $type !== MemberLesson::TYPE_PDF || (! $headerFooter && ! $center)) {
             return;
         }
 
@@ -110,7 +129,10 @@ class MemberBuilderController extends Controller
             : null;
 
         try {
-            app(MemberLessonPdfDrmValidator::class)->assertFilesCompatible($files, $tenantId);
+            app(MemberLessonPdfDrmValidator::class)->assertFilesCompatible($files, $tenantId, [
+                'header_footer' => $headerFooter,
+                'center' => $center,
+            ]);
         } catch (MemberPdfWatermarkException $e) {
             throw ValidationException::withMessages([
                 'watermark_enabled' => [$e->getMessage()],
@@ -291,6 +313,8 @@ class MemberBuilderController extends Controller
                             'duration_seconds' => $l->duration_seconds,
                             'is_free' => $l->is_free,
                             'watermark_enabled' => (bool) ($l->watermark_enabled ?? false),
+                            'watermark_header_footer' => (bool) ($l->watermark_header_footer ?? true),
+                            'watermark_center' => (bool) ($l->watermark_center ?? true),
                         ])->values()->all(),
                     ];
                     $extra = array_filter([
@@ -907,6 +931,8 @@ class MemberBuilderController extends Controller
                     'duration_seconds' => $l->duration_seconds,
                     'is_free' => $l->is_free,
                     'watermark_enabled' => (bool) ($l->watermark_enabled ?? false),
+                    'watermark_header_footer' => (bool) ($l->watermark_header_footer ?? true),
+                    'watermark_center' => (bool) ($l->watermark_center ?? true),
                 ])->values()->all() : [],
             ];
             if ($module->related_product_id) {
@@ -1035,6 +1061,8 @@ class MemberBuilderController extends Controller
             'duration_seconds' => ['nullable', 'integer', 'min:0'],
             'is_free' => ['boolean'],
             'watermark_enabled' => ['boolean'],
+            'watermark_header_footer' => ['boolean'],
+            'watermark_center' => ['boolean'],
         ]);
         if (! empty($validated['release_at_date'] ?? null)) {
             $validated['release_after_days'] = null;
@@ -1049,12 +1077,14 @@ class MemberBuilderController extends Controller
             $validated['content_url'] = $contentFiles[0]['url'];
         }
         $watermarkEnabled = $request->boolean('watermark_enabled', false);
+        $marks = $this->pdfDrmMarksFromRequest($request);
         $this->assertPdfDrmCompatibleWhenEnabled(
             $produto,
             $watermarkEnabled,
             (string) ($validated['type'] ?? ''),
             $contentFiles,
             isset($validated['content_url']) ? (string) $validated['content_url'] : null,
+            $marks,
         );
         $max = MemberLesson::where('member_module_id', $module->id)->max('position') ?? 0;
         MemberLesson::create([
@@ -1074,6 +1104,8 @@ class MemberBuilderController extends Controller
             'duration_seconds' => $validated['duration_seconds'] ?? null,
             'is_free' => $request->boolean('is_free', false),
             'watermark_enabled' => $watermarkEnabled,
+            'watermark_header_footer' => $marks['header_footer'],
+            'watermark_center' => $marks['center'],
         ]);
         if ($request->expectsJson()) {
             return response()->json(['message' => 'Aula criada.']);
@@ -1102,6 +1134,8 @@ class MemberBuilderController extends Controller
             'duration_seconds' => ['nullable', 'integer', 'min:0'],
             'is_free' => ['boolean'],
             'watermark_enabled' => ['boolean'],
+            'watermark_header_footer' => ['boolean'],
+            'watermark_center' => ['boolean'],
         ]);
         if (isset($validated['is_free'])) {
             $validated['is_free'] = $request->boolean('is_free');
@@ -1152,6 +1186,9 @@ class MemberBuilderController extends Controller
         $watermarkEnabled = array_key_exists('watermark_enabled', $validated)
             ? (bool) $validated['watermark_enabled']
             : (bool) ($lesson->watermark_enabled ?? false);
+        $marks = $this->pdfDrmMarksFromRequest($request, $lesson);
+        $validated['watermark_header_footer'] = $marks['header_footer'];
+        $validated['watermark_center'] = $marks['center'];
         $filesForDrm = $contentFiles;
         if ($filesForDrm === [] && $type === MemberLesson::TYPE_PDF) {
             $filesForDrm = $this->normalizeLessonContentFiles($validated['content_files'] ?? $lesson->content_files);
@@ -1165,6 +1202,7 @@ class MemberBuilderController extends Controller
             (string) $type,
             $filesForDrm,
             $contentUrlForDrm,
+            $marks,
         );
 
         $lesson->update($validated);
