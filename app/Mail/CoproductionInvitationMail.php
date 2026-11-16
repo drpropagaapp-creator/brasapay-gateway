@@ -23,8 +23,9 @@ class CoproductionInvitationMail extends Mailable
         public array $branding,
         public string $acceptUrl,
         public string $registerUrl,
+        public bool $autoAccepted = false,
     ) {
-        $this->subject('Convite de co-produção: '.$product->name);
+        $this->subject(($autoAccepted ? 'Você agora é co-produtor: ' : 'Convite de co-produção: ').$product->name);
     }
 
     public function build(): self
@@ -37,6 +38,7 @@ class CoproductionInvitationMail extends Mailable
             'acceptUrl' => $this->acceptUrl,
             'registerUrl' => $this->registerUrl,
             'recipientEmail' => $this->invitation->email,
+            'autoAccepted' => $this->autoAccepted,
         ]);
     }
 }
