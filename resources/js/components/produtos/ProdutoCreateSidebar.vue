@@ -79,6 +79,7 @@ const form = useForm({
     category: '',
     type: '',
     billing_type: 'one_time',
+    subscription_recurrence_months: '',
     price: '',
     currency: 'BRL',
     is_active: true,
@@ -173,6 +174,9 @@ function submit() {
     fd.append('category', form.category ?? '');
     fd.append('type', form.type);
     fd.append('billing_type', form.billing_type);
+    if (form.billing_type === 'subscription') {
+        fd.append('subscription_recurrence_months', String(form.subscription_recurrence_months || ''));
+    }
     fd.append('price', String(normalizeMoneyInput(form.price)));
     fd.append('currency', form.currency);
     fd.append('is_active', form.is_active ? '1' : '0');
@@ -367,6 +371,29 @@ function safePluginSectionHtml(html) {
                                     {{ bt.label }}
                                 </button>
                             </div>
+                        </div>
+                        <div v-if="form.billing_type === 'subscription'">
+                            <label class="block text-sm font-medium text-zinc-700 dark:text-zinc-300" for="create-subscription-recurrence-months">
+                                Prazo da recorrência (meses) *
+                            </label>
+                            <input
+                                id="create-subscription-recurrence-months"
+                                v-model="form.subscription_recurrence_months"
+                                type="number"
+                                min="1"
+                                max="120"
+                                step="1"
+                                required
+                                inputmode="numeric"
+                                placeholder="12"
+                                class="mt-1 block w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-zinc-900 placeholder-zinc-400 focus:border-[var(--color-primary)] focus:outline-none focus:ring-1 focus:ring-[var(--color-primary)] dark:border-zinc-600 dark:bg-zinc-800 dark:text-white dark:placeholder-zinc-500"
+                            />
+                            <p class="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+                                Por quantos meses o banco autoriza as cobranças. Máximo de 120 meses.
+                            </p>
+                            <p v-if="form.errors.subscription_recurrence_months" class="mt-1 text-sm text-red-600 dark:text-red-400">
+                                {{ form.errors.subscription_recurrence_months }}
+                            </p>
                         </div>
                         <div>
                             <label class="block text-sm font-medium text-zinc-700 dark:text-zinc-300">

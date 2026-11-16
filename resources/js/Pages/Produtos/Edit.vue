@@ -218,6 +218,7 @@ const form = useForm({
     billing_type: props.produto.billing_type ?? 'one_time',
     price: formatPriceForInput(props.produto.price_brl ?? props.produto.price),
     base_interval: props.produto.base_interval ?? (props.produto.subscription_plans?.sort((a, b) => (a.position ?? 0) - (b.position ?? 0))[0]?.interval) ?? 'monthly',
+    subscription_recurrence_months: props.produto.subscription_recurrence_months ?? '',
     currency: props.produto.currency ?? 'BRL',
     is_active: props.produto.is_active,
     show_in_marketplace: Boolean(props.produto.show_in_marketplace),
@@ -1324,6 +1325,7 @@ function appendCoreProductFields(fd) {
     fd.append('price', String(normalizeMoneyInput(form.price)));
     if (form.billing_type === 'subscription') {
         fd.append('base_interval', form.base_interval || 'monthly');
+        fd.append('subscription_recurrence_months', String(form.subscription_recurrence_months || ''));
     }
     fd.append('currency', form.currency);
     fd.append('is_active', form.is_active ? '1' : '0');
@@ -1813,6 +1815,23 @@ function submit() {
                                     <option value="lifetime">{{ t('products.interval.lifetime', 'Vitalício') }}</option>
                                 </select>
                                 <p class="mt-1.5 text-xs text-zinc-500 dark:text-zinc-400">Intervalo da cobrança recorrente do preço base.</p>
+                            </div>
+                            <div v-if="form.billing_type === 'subscription'">
+                                <label class="mb-2 block text-sm font-medium text-zinc-700 dark:text-zinc-300" for="subscription-recurrence-months">Prazo da recorrência (meses) *</label>
+                                <input
+                                    id="subscription-recurrence-months"
+                                    v-model="form.subscription_recurrence_months"
+                                    type="number"
+                                    min="1"
+                                    max="120"
+                                    step="1"
+                                    required
+                                    inputmode="numeric"
+                                    placeholder="12"
+                                    :class="inputClass"
+                                />
+                                <p class="mt-1.5 text-xs text-zinc-500 dark:text-zinc-400">Por quantos meses o banco autoriza as cobranças. Ex.: 12 mantém a recorrência por um ano, no intervalo acima. Máximo de 120 meses.</p>
+                                <p v-if="form.errors.subscription_recurrence_months" class="mt-1.5 text-sm text-red-600 dark:text-red-400">{{ form.errors.subscription_recurrence_months }}</p>
                             </div>
                         </div>
 
