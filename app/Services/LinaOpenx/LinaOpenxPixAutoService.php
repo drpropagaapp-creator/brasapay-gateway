@@ -245,6 +245,24 @@ class LinaOpenxPixAutoService
 
         try {
             $result = $this->client->getAutomaticPaymentRequest($credentials, $requestId);
+            if (($result['status'] ?? '') === 'paid') {
+                return 'paid';
+            }
+
+            $consentId = trim((string) ($meta['linaopenx_pix_auto_consent_id'] ?? $result['consent_id'] ?? ''));
+            if ($consentId !== '') {
+                $consent = $this->client->getRecurringConsent($credentials, $consentId);
+                if (($consent['status'] ?? '') === 'paid') {
+                    return 'paid';
+                }
+                $consentPaymentId = trim((string) ($consent['payment_id'] ?? ''));
+                if ($consentPaymentId !== '' && $consentPaymentId !== $recurringPaymentId) {
+                    $payment = $this->client->getRecurringPayment($credentials, $consentPaymentId);
+                    if (($payment['status'] ?? '') === 'paid') {
+                        return 'paid';
+                    }
+                }
+            }
 
             return $result['status'] ?? 'pending';
         } catch (\Throwable $e) {
@@ -388,6 +406,16 @@ class LinaOpenxPixAutoService
             $meta['linaopenx_pix_auto_consent_status'] = $result['consent_status'];
         }
 
+        $raw = is_array($result['raw'] ?? null) ? $result['raw'] : [];
+        $signal = $this->client->paymentSignal($raw);
+        $this->rememberPaymentId($meta, (string) ($signal['payment_id'] ?? ''));
+        if (($result['status'] ?? '') === 'paid' || $this->client->isSettledPaymentStatus($signal['status'] ?? null)) {
+            $meta['linaopenx_pix_auto_first_payment_settled'] = true;
+            $order->update(['metadata' => $meta]);
+
+            return;
+        }
+
         $payments = $result['payments'] ?? [];
         if (is_array($payments) && $payments !== []) {
             $firstId = $this->firstPaymentId($payments);
@@ -397,6 +425,38 @@ class LinaOpenxPixAutoService
             $order->update(['metadata' => $meta]);
 
             return;
+        }
+
+        if ($this->client->isInflightPaymentStatus($signal['status'] ?? null)) {
+            $order->update(['metadata' => $meta]);
+
+            return;
+        }
+
+        if ($consentId !== '') {
+            try {
+                $consent = $this->client->getRecurringConsent($credentials, $consentId);
+            } catch (\Throwable $e) {
+                Log::debug('LinaOpenxPixAutoService: consent lookup failed', [
+                    'order_id' => $order->id,
+                    'message' => $e->getMessage(),
+                ]);
+                $consent = null;
+            }
+            if (is_array($consent)) {
+                $this->rememberPaymentId($meta, (string) ($consent['payment_id'] ?? ''));
+                if (($consent['status'] ?? '') === 'paid' || $this->client->isSettledPaymentStatus($consent['payment_status'] ?? null)) {
+                    $meta['linaopenx_pix_auto_first_payment_settled'] = true;
+                    $order->update(['metadata' => $meta]);
+
+                    return;
+                }
+                if ($this->client->isInflightPaymentStatus($consent['payment_status'] ?? null)) {
+                    $order->update(['metadata' => $meta]);
+
+                    return;
+                }
+            }
         }
 
         $consentStatus = strtoupper(trim((string) ($result['consent_status'] ?? '')));
@@ -473,6 +533,21 @@ class LinaOpenxPixAutoService
         $created = $this->client->createRecurringPayment($credentials, $body);
 
         return $created['recurring_payment_id'];
+    }
+
+    /**
+     * @param  array<string, mixed>  $meta
+     */
+    private function rememberPaymentId(array &$meta, string $paymentId): void
+    {
+        $paymentId = trim($paymentId);
+        if ($paymentId === '') {
+            return;
+        }
+        if (trim((string) ($meta['linaopenx_pix_auto_recurring_payment_id'] ?? '')) !== '') {
+            return;
+        }
+        $meta['linaopenx_pix_auto_recurring_payment_id'] = $paymentId;
     }
 
     /**

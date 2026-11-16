@@ -145,7 +145,7 @@ class LinaOpenxPixAutoLifecycleService
         try {
             $current = $this->client->getRecurringPayment($credentials, $paymentId);
             $status = strtoupper(trim((string) ($current['payment_status'] ?? $current['status'] ?? '')));
-            if (in_array($status, ['PAGO', 'PAID', 'ACSC', 'ACSP', 'SETTLED', 'COMPLETED', 'paid'], true)) {
+            if ($this->client->isSettledPaymentStatus($status)) {
                 return false;
             }
             if (! in_array($status, ['RJCT', 'REJECTED', 'REJEITADO', 'FAILED', 'EXPIRED', 'EXPIRADO', 'rejected', 'cancelled'], true)) {
