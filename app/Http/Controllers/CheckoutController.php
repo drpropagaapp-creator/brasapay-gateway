@@ -1201,8 +1201,8 @@ class CheckoutController extends Controller
                 return $this->idempotencyReturn($idempotencyKey, redirect()->away($portalUrl));
             } catch (\Throwable $e) {
                 $this->rollbackFailedOrder($order, $e);
-                $msg = $e->getMessage() ?: 'Não foi possível iniciar o pagamento Open Finance. Tente novamente.';
-                $msg = str_ireplace(['Lina OpenX', 'LinaOpenX', 'Lina'], 'Open Finance', $msg);
+                $msg = $e->getMessage() ?: 'Não foi possível iniciar o Pix Automático. Tente novamente.';
+                $msg = str_ireplace(['Lina OpenX', 'LinaOpenX', 'Lina'], 'Pix Automático', $msg);
                 if ($request->expectsJson()) {
                     return response()->json([
                         'success' => false,
@@ -2280,7 +2280,7 @@ class CheckoutController extends Controller
 
         $stored = session('lina_display.'.$token);
         if (! is_array($stored)) {
-            return redirect()->route('login')->with('error', 'Sessão Open Finance expirada. Tente novamente no checkout.');
+            return redirect()->route('login')->with('error', 'Sessão do Pix Automático expirada. Tente novamente no checkout.');
         }
 
         $orderId = (int) ($stored['order_id'] ?? 0);
