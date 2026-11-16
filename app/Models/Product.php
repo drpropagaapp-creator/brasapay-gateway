@@ -63,6 +63,7 @@ class Product extends Model
         'category',
         'type',
         'billing_type',
+        'subscription_recurrence_months',
         'image',
         'price',
         'currency',
@@ -110,6 +111,7 @@ class Product extends Model
             'affiliate_show_in_showcase' => 'boolean',
             'affiliate_hide_customer_data' => 'boolean',
             'refund_policy_days' => 'integer',
+            'subscription_recurrence_months' => 'integer',
             'physical_config' => 'array',
         ];
     }

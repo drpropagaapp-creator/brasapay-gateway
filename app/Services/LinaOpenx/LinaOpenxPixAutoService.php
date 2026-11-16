@@ -98,7 +98,7 @@ class LinaOpenxPixAutoService
                 'name' => $creditor['name'],
             ]],
             'redirectUri' => $returnUrl,
-            'expirationDateTime' => now()->addYears(10)->utc()->format('Y-m-d\TH:i:s\Z'),
+            'expirationDateTime' => self::consentExpiration($order),
             'additionalInformation' => mb_substr($info, 0, 140),
             'recurringConfiguration' => [
                 'automatic' => [
@@ -320,6 +320,21 @@ class LinaOpenxPixAutoService
 
         return ($meta['checkout_payment_method'] ?? null) === 'pix_auto'
             || trim((string) ($meta['linaopenx_pix_auto_consent_id'] ?? '')) !== '';
+    }
+
+    /**
+     * Fim da autorização na Lina. Sem prazo no produto, mantém 120 meses.
+     */
+    public static function consentExpiration(Order $order): string
+    {
+        $order->loadMissing('product');
+        $months = (int) ($order->product?->subscription_recurrence_months ?? 0);
+        if ($months < 1) {
+            $months = 120;
+        }
+        $months = min(120, $months);
+
+        return now()->addMonths($months)->utc()->format('Y-m-d\TH:i:s\Z');
     }
 
     public static function intervalFromPlan(?string $interval): string

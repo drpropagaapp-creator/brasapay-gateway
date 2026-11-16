@@ -13,6 +13,7 @@ use App\Services\LinaOpenx\LinaOpenxClient;
 use App\Services\LinaOpenx\LinaOpenxPixAutoLifecycleService;
 use App\Services\LinaOpenx\LinaOpenxPixAutoRenewalService;
 use App\Services\LinaOpenx\LinaOpenxPixAutoService;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Http;
@@ -59,6 +60,26 @@ class LinaOpenxPixAutoTest extends TestCase
         $this->assertSame('SEMESTRAL', LinaOpenxPixAutoService::intervalFromPlan(SubscriptionPlan::INTERVAL_SEMI_ANNUAL));
         $this->assertSame('ANUAL', LinaOpenxPixAutoService::intervalFromPlan(SubscriptionPlan::INTERVAL_ANNUAL));
         $this->assertSame('MENSAL', LinaOpenxPixAutoService::intervalFromPlan(null));
+    }
+
+    public function test_consent_expiration_uses_product_months(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-11-16 15:00:00', 'UTC'));
+        $product = new Product(['subscription_recurrence_months' => 18]);
+        $order = new Order;
+        $order->setRelation('product', $product);
+
+        $this->assertSame(
+            now()->addMonths(18)->utc()->format('Y-m-d\TH:i:s\Z'),
+            LinaOpenxPixAutoService::consentExpiration($order)
+        );
+
+        $product->subscription_recurrence_months = null;
+        $this->assertSame(
+            now()->addMonths(120)->utc()->format('Y-m-d\TH:i:s\Z'),
+            LinaOpenxPixAutoService::consentExpiration($order)
+        );
+        Carbon::setTestNow();
     }
 
     public function test_authorised_without_payment_is_pending(): void

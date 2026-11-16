@@ -240,6 +240,7 @@ class ProdutosController extends Controller
             'category' => ['nullable', 'string', 'in:'.implode(',', Product::categoryKeys())],
             'type' => ['required', 'string', 'in:'.implode(',', self::allowedProductTypes())],
             'billing_type' => ['required', 'string', 'in:'.implode(',', self::BILLING_TYPES)],
+            'subscription_recurrence_months' => ['exclude_unless:billing_type,'.Product::BILLING_SUBSCRIPTION, 'required', 'integer', 'min:1', 'max:120'],
             'price' => $this->platformPriceRules(),
             'currency' => ['nullable', 'string', 'in:BRL,EUR,USD'],
             'is_active' => ['boolean'],
@@ -298,6 +299,7 @@ class ProdutosController extends Controller
         $validated['is_active'] = $request->boolean('is_active', true);
         $validated['refund_policy_days'] = 7;
         $this->assertPhysicalProductRules($validated['type'] ?? '', $validated['billing_type'] ?? '');
+        $this->applySubscriptionRecurrenceMonths($validated);
 
         $telegramDelivery = app(TelegramProductDeliveryService::class);
         $telegramSalesOn = $telegramDelivery->automaticDeliveryOperational((int) $tenantId);
@@ -804,6 +806,7 @@ class ProdutosController extends Controller
             'category' => ['nullable', 'string', 'in:'.implode(',', Product::categoryKeys())],
             'type' => ['required', 'string', 'in:'.implode(',', self::allowedProductTypes($produto))],
             'billing_type' => ['required', 'string', 'in:'.implode(',', self::BILLING_TYPES)],
+            'subscription_recurrence_months' => ['exclude_unless:billing_type,'.Product::BILLING_SUBSCRIPTION, 'required', 'integer', 'min:1', 'max:120'],
             'price' => $this->platformPriceRules(),
             'currency' => ['nullable', 'string', 'in:BRL,EUR,USD'],
             'is_active' => ['boolean'],
@@ -886,6 +889,7 @@ class ProdutosController extends Controller
         ]);
 
         $this->assertPhysicalProductRules($validated['type'] ?? '', $validated['billing_type'] ?? '');
+        $this->applySubscriptionRecurrenceMonths($validated);
 
         // Texto puro (evita XSS armazenado em nome/descrição/template)
         $validated['name'] = HtmlSanitizer::plainText($validated['name'] ?? '', 255);
@@ -1751,6 +1755,7 @@ class ProdutosController extends Controller
             'type_label' => $typeLabel,
             'billing_type' => $billingType,
             'billing_type_label' => $billingLabels[$billingType] ?? $billingType,
+            'subscription_recurrence_months' => $p->subscription_recurrence_months,
             'image' => $p->image,
             'image_url' => $imageUrl,
             'price' => MoneyDecimal::toFloat($p->price),
@@ -1953,6 +1958,20 @@ class ProdutosController extends Controller
         ]);
 
         return redirect()->to(route('produtos.edit', $produto).'?tab=checkout')->with('success', 'Checkout exclusivo do plano removido; ele passará a usar o checkout principal.');
+    }
+
+    /**
+     * @param  array<string, mixed>  $validated
+     */
+    private function applySubscriptionRecurrenceMonths(array &$validated): void
+    {
+        if (($validated['billing_type'] ?? '') !== Product::BILLING_SUBSCRIPTION) {
+            $validated['subscription_recurrence_months'] = null;
+
+            return;
+        }
+
+        $validated['subscription_recurrence_months'] = (int) $validated['subscription_recurrence_months'];
     }
 
     /**
