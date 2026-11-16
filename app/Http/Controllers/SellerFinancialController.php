@@ -18,8 +18,8 @@ use App\Services\WithdrawalAutoPayoutService;
 use App\Services\WithdrawalPixReceiptService;
 use App\Support\BrazilianDocumentDigits;
 use App\Support\MerchantProfileSnapshot;
+use App\Support\PendingReceiveSchedule;
 use App\Support\HtmlSanitizer;
-use Carbon\Carbon;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Schema;
@@ -168,7 +168,7 @@ class SellerFinancialController extends Controller
             $cajuPixOwnerDocumentHint = BrazilianDocumentDigits::onlyDigits((string) ($subject->document ?? ''));
         }
 
-        $pendingReceiveByDate = $this->pendingReceiveByDate($tenantId);
+        $pendingReceiveByDate = PendingReceiveSchedule::forTenant($tenantId);
 
         $walletPayload = null;
         if ($wallet !== null) {
@@ -505,71 +505,6 @@ class SellerFinancialController extends Controller
 
         return redirect()->route('financeiro.seller.index')
             ->with('success', 'Solicitação de saque registrada. Aguarde a análise da plataforma.');
-    }
-
-    /**
-     * Valores em liquidação agrupados pela data prevista de liberação (clears_at).
-     *
-     * @return list<array{date: ?string, amount: float, count: int}>
-     */
-    private function pendingReceiveByDate(int $tenantId): array
-    {
-        if (! Schema::hasTable('wallet_transactions')) {
-            return [];
-        }
-
-        $byDate = [];
-
-        WalletTransaction::query()
-            ->where('tenant_id', $tenantId)
-            ->where('type', WalletTransaction::TYPE_CREDIT_SALE_PENDING)
-            ->orderBy('id')
-            ->get()
-            ->each(function (WalletTransaction $tx) use (&$byDate) {
-                $meta = is_array($tx->meta) ? $tx->meta : [];
-                if (! empty($meta['released_at'])) {
-                    return;
-                }
-
-                $dateKey = 'unknown';
-                $clearsAt = $meta['clears_at'] ?? null;
-                if (is_string($clearsAt) && $clearsAt !== '') {
-                    try {
-                        $dateKey = Carbon::parse($clearsAt)->format('Y-m-d');
-                    } catch (\Throwable) {
-                        $dateKey = 'unknown';
-                    }
-                }
-
-                if (! isset($byDate[$dateKey])) {
-                    $byDate[$dateKey] = [
-                        'date' => $dateKey === 'unknown' ? null : $dateKey,
-                        'amount' => 0.0,
-                        'count' => 0,
-                    ];
-                }
-
-                $byDate[$dateKey]['amount'] += (float) $tx->amount_net;
-                $byDate[$dateKey]['count']++;
-            });
-
-        $rows = array_values($byDate);
-        usort($rows, function (array $a, array $b) {
-            if ($a['date'] === null) {
-                return 1;
-            }
-            if ($b['date'] === null) {
-                return -1;
-            }
-
-            return strcmp($a['date'], $b['date']);
-        });
-
-        return array_map(function (array $row) {
-            $row['amount'] = round($row['amount'], 2);
-
-            return $row;
-        }, $rows);
     }
 
     /**
