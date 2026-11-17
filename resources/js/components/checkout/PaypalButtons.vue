@@ -36,7 +36,9 @@ function sdkUrl(clientId) {
         // Conta recebedora no Brasil só aceita BRL. A PayPal converte para o comprador.
         currency: 'BRL',
         intent: 'capture',
-        'disable-funding': 'card,credit,paylater,venmo',
+        // 'card' liberado: botão 'Cartão de débito ou crédito' (comprador sem conta PayPal).
+        // O PayPal só mostra esse botão quando a conta recebedora é elegível.
+        'disable-funding': 'credit,paylater,venmo',
         locale: paypalLocale(props.locale),
     });
     return `https://www.paypal.com/sdk/js?${params.toString()}`;
