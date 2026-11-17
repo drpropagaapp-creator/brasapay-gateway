@@ -587,6 +587,7 @@ return [
         'pagarme',
         'asaas',
         'stripe',
+        'cakto', // cartão (API pública Cakto)
         'paypal',
         'linaopenx',
         'versell', // Cash In + Cash Out (dict)

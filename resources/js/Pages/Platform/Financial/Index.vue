@@ -132,7 +132,7 @@ const ACQUIRER_GROUPS = [
     {
         id: 'acquirer',
         title: 'Adquirente',
-        slugs: ['stripe', 'paypal'],
+        slugs: ['stripe', 'cakto', 'paypal'],
         dotClass: 'bg-blue-500',
     },
     {
