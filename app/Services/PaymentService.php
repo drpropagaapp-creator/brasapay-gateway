@@ -749,7 +749,11 @@ class PaymentService
             }
         }
 
-        $methods = $this->withPaypalCardRow($methods, $productOnly['payment_methods_enabled'] ?? []);
+        $methods = $this->withPaypalCardRow(
+            $methods,
+            $productOnly['payment_methods_enabled'] ?? [],
+            fn (): bool => ($this->globallyAvailablePaymentMethodKeys($product, $plan)['card'] ?? false) === true
+        );
 
         $walletSlug = $this->getFirstAvailableWalletGateway($tenantId, $product);
         if ($walletSlug !== null) {
@@ -780,15 +784,20 @@ class PaymentService
     /**
      * Sem adquirente de cartão direto, o botão de cartão do PayPal vira a opção "Cartão" do checkout,
      * logo antes do PayPal. A cobrança segue o fluxo PayPal (pedido com payment_method 'paypal');
-     * 'paypal_card' existe só na tela. Exige o PayPal liberado (plataforma e produto) e o cartão
-     * não desligado pelo seller no produto. O interruptor de cartão da plataforma não conta aqui:
-     * ele desliga as adquirentes de cartão diretas (ex.: Stripe bloqueada), não o PayPal.
+     * 'paypal_card' existe só na tela. Exige o PayPal liberado (plataforma e produto). O interruptor
+     * de cartão da plataforma não conta aqui: ele desliga as adquirentes de cartão diretas
+     * (ex.: Stripe bloqueada), não o PayPal.
+     *
+     * O "Cartão" do produto só vale quando o seller consegue vê-lo na edição do produto, isto é,
+     * quando há adquirente de cartão ativa. Sem ela o interruptor fica escondido (e muitas vezes
+     * gravado como desligado), então o "Cartão" via PayPal segue o interruptor do PayPal.
      *
      * @param  list<array<string, mixed>>  $methods
      * @param  array<string, mixed>  $productEnabled
+     * @param  callable(): bool  $cardToggleVisible
      * @return list<array<string, mixed>>
      */
-    private function withPaypalCardRow(array $methods, array $productEnabled): array
+    private function withPaypalCardRow(array $methods, array $productEnabled, callable $cardToggleVisible): array
     {
         $paypalIndex = null;
         foreach ($methods as $i => $m) {
@@ -799,7 +808,11 @@ class PaymentService
                 $paypalIndex = $i;
             }
         }
-        if ($paypalIndex === null || ($productEnabled['card'] ?? true) === false) {
+        if ($paypalIndex === null) {
+            return $methods;
+        }
+        $cardOff = in_array($productEnabled['card'] ?? true, [false, '0', 0], true);
+        if ($cardOff && $cardToggleVisible()) {
             return $methods;
         }
 
