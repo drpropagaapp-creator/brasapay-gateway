@@ -489,7 +489,9 @@ const isCardGatewayPagarme = computed(() => isCardMethodSelected.value && curren
 const isCardGatewayCielo = computed(() => isCardMethodSelected.value && currentMethodGatewaySlug.value === 'cielo');
 const isCardGatewayCajupay = computed(() => isCardMethodSelected.value && currentMethodGatewaySlug.value === 'cajupay');
 const isCardPaymentFamily = computed(() => ['card', 'apple_pay', 'google_pay'].includes(form.payment_method));
-const isPaypalMethodSelected = computed(() => form.payment_method === 'paypal');
+const isPaypalMethodSelected = computed(() => form.payment_method === 'paypal' || form.payment_method === 'paypal_card');
+/** "Cartão" pelo PayPal (sem adquirente de cartão direto): mesmo fluxo PayPal, só o botão de cartão. */
+const paypalFundingSource = computed(() => (form.payment_method === 'paypal_card' ? 'card' : 'paypal'));
 const isLinaOpenxPixAuto = computed(() => form.payment_method === 'pix_auto' && currentMethodGatewaySlug.value === 'linaopenx');
 const linaPixAutoParticipants = computed(() => {
     const list = props.linaopenxPixAuto?.participants;
@@ -964,7 +966,7 @@ watch(
             } else {
                 showEditForm.value = true;
             }
-        } else if (method === 'pix' || method === 'boleto' || method === 'open_finance' || method === 'paypal') {
+        } else if (method === 'pix' || method === 'boleto' || method === 'open_finance' || method === 'paypal' || method === 'paypal_card') {
             showEditForm.value = true;
         } else if (method === 'card' || method === 'apple_pay' || method === 'google_pay') {
             if ((form.email || '').trim().length > 0 && (form.email || '').includes('@')) {
@@ -981,7 +983,7 @@ watch(
     () => Object.keys(form.errors || {}).length,
     (count) => {
         if (count > 0 && (form.payment_method === 'pix' || form.payment_method === 'pix_auto' || form.payment_method === 'boleto'
-            || form.payment_method === 'open_finance' || form.payment_method === 'paypal'
+            || form.payment_method === 'open_finance' || isPaypalMethodSelected.value
             || isCardGatewayPagarme.value)) {
             showEditForm.value = true;
         }
@@ -2448,7 +2450,7 @@ function submit() {
     }
     form.clearErrors('payment_method');
 
-    if (paymentMethod === 'paypal') {
+    if (paymentMethod === 'paypal' || paymentMethod === 'paypal_card') {
         return;
     }
 
@@ -3950,8 +3952,10 @@ function submit() {
                 :disabled="!paypalButtonsReady"
                 :build-payload="buildPaypalPayload"
                 :get-csrf-token="getCsrfToken"
-                :fill-hint="t('checkout.paypal_fill_data')"
-                :loading-hint="t('checkout.paypal_loading')"
+                :funding-source="paypalFundingSource"
+                :fill-hint="t(paypalFundingSource === 'card' ? 'checkout.paypal_card_fill_data' : 'checkout.paypal_fill_data')"
+                :loading-hint="t(paypalFundingSource === 'card' ? 'checkout.paypal_card_loading' : 'checkout.paypal_loading')"
+                :unavailable-hint="t('checkout.paypal_unavailable')"
                 @approved="onPaypalApproved"
                 @error="onPaypalError"
             />
