@@ -22,6 +22,7 @@ import {
     PlayCircle,
     Headset,
     ChartNoAxesCombined,
+    Sparkles,
     DatabaseBackup,
     Puzzle,
     Globe,
@@ -41,6 +42,7 @@ import DemoTab from '@/Pages/Settings/Tabs/DemoTab.vue';
 import LegalTab from '@/Pages/Settings/Tabs/LegalTab.vue';
 import SellerPanelSupportTab from '@/Pages/Settings/Tabs/SellerPanelSupportTab.vue';
 import GoogleAnalyticsTab from '@/Pages/Settings/Tabs/GoogleAnalyticsTab.vue';
+import AiReportTab from '@/Pages/Settings/Tabs/AiReportTab.vue';
 import BackupTab from '@/Pages/Settings/Tabs/BackupTab.vue';
 import PublicUrlTab from '@/Pages/Settings/Tabs/PublicUrlTab.vue';
 import PlatformDataTab from '@/Pages/Settings/Tabs/PlatformDataTab.vue';
@@ -127,7 +129,7 @@ const props = defineProps({
 });
 
 function allAllowedTabIds() {
-    const core = ['email', 'storage', 'backup', 'personalizacao', 'banners_dashboard', 'idiomas', 'traducoes', 'moedas', 'recursos', 'suporte_painel', 'google_analytics', 'seguranca', 'kyc', 'lgpd', 'integracoes', 'dados_plataforma', 'url_publica', 'cron', 'update', 'demo'];
+    const core = ['email', 'storage', 'backup', 'personalizacao', 'banners_dashboard', 'idiomas', 'traducoes', 'moedas', 'recursos', 'suporte_painel', 'google_analytics', 'relatorio_ia', 'seguranca', 'kyc', 'lgpd', 'integracoes', 'dados_plataforma', 'url_publica', 'cron', 'update', 'demo'];
     const extra = (props.settings_plugin_tabs || []).map((t) => t.id).filter(Boolean);
     return [...core, ...extra];
 }
@@ -282,6 +284,10 @@ const form = useForm({
     platform_ga4_measurement_id: props.settings.platform_ga4_measurement_id ?? '',
     platform_ga4_api_secret: '',
     platform_ga4_api_secret_configured: Boolean(props.settings.platform_ga4_api_secret_configured),
+    platform_ai_report_enabled: props.settings.platform_ai_report_enabled ?? '0',
+    platform_ai_report_provider: props.settings.platform_ai_report_provider ?? 'gemini',
+    platform_ai_report_api_key: '',
+    platform_ai_report_api_key_configured: Boolean(props.settings.platform_ai_report_api_key_configured),
     platform_legal_name: props.settings.platform_legal_name ?? '',
     platform_cnpj: props.settings.platform_cnpj ?? '',
     platform_checkout_notice_enabled: props.settings.platform_checkout_notice_enabled ?? '0',
@@ -293,6 +299,7 @@ const form = useForm({
     kyc_require_selfie_with_document: props.settings.kyc_require_selfie_with_document ?? '1',
     kyc_require_company_address_proof: props.settings.kyc_require_company_address_proof ?? '1',
     kyc_require_company_constitution: props.settings.kyc_require_company_constitution ?? '1',
+    kyc_enforcement: props.settings.kyc_enforcement ?? 'onboarding',
 });
 
 const showCloudR2Override = ref(false);
@@ -319,6 +326,7 @@ const coreTabsStatic = [
     { id: 'recursos', label: 'Recursos', icon: Truck, group: 'operacao' },
     { id: 'suporte_painel', label: 'Suporte do painel', icon: Headset, group: 'operacao' },
     { id: 'google_analytics', label: 'Google Analytics', icon: ChartNoAxesCombined, group: 'operacao' },
+    { id: 'relatorio_ia', label: 'Relatório com IA', icon: Sparkles, group: 'operacao' },
     { id: 'seguranca', label: 'Segurança', icon: Shield, group: 'seguranca' },
     { id: 'kyc', label: 'KYC', icon: BadgeCheck, group: 'seguranca' },
     { id: 'lgpd', label: 'LGPD', icon: Scale, group: 'seguranca' },
@@ -771,6 +779,7 @@ function applyKycSettingsFromSettings(s) {
     form.kyc_require_selfie_with_document = s.kyc_require_selfie_with_document ?? '1';
     form.kyc_require_company_address_proof = s.kyc_require_company_address_proof ?? '1';
     form.kyc_require_company_constitution = s.kyc_require_company_constitution ?? '1';
+    form.kyc_enforcement = s.kyc_enforcement ?? 'onboarding';
 }
 
 function syncKycSettingsFromProps() {
@@ -802,6 +811,18 @@ function applyGa4SettingsFromSettings(s) {
 
 function syncGa4SettingsFromProps() {
     applyGa4SettingsFromSettings(page.props.settings);
+}
+
+function applyAiReportSettingsFromSettings(s) {
+    if (!s) return;
+    form.platform_ai_report_enabled = s.platform_ai_report_enabled ?? '0';
+    form.platform_ai_report_provider = s.platform_ai_report_provider ?? 'gemini';
+    form.platform_ai_report_api_key = '';
+    form.platform_ai_report_api_key_configured = Boolean(s.platform_ai_report_api_key_configured);
+}
+
+function syncAiReportSettingsFromProps() {
+    applyAiReportSettingsFromSettings(page.props.settings);
 }
 
 function applyPlatformCompanySettingsFromSettings(s) {
@@ -867,6 +888,7 @@ function buildSettingsPayload() {
             kyc_require_selfie_with_document: data.kyc_require_selfie_with_document,
             kyc_require_company_address_proof: data.kyc_require_company_address_proof,
             kyc_require_company_constitution: data.kyc_require_company_constitution,
+            kyc_enforcement: data.kyc_enforcement,
         };
     }
     if (activeTab.value === 'suporte_painel') {
@@ -884,6 +906,13 @@ function buildSettingsPayload() {
             platform_ga4_enabled: data.platform_ga4_enabled,
             platform_ga4_measurement_id: data.platform_ga4_measurement_id,
             platform_ga4_api_secret: data.platform_ga4_api_secret,
+        };
+    }
+    if (activeTab.value === 'relatorio_ia') {
+        return {
+            platform_ai_report_enabled: data.platform_ai_report_enabled,
+            platform_ai_report_provider: data.platform_ai_report_provider,
+            platform_ai_report_api_key: data.platform_ai_report_api_key,
         };
     }
     if (activeTab.value === 'dados_plataforma') {
@@ -981,6 +1010,7 @@ function putSettings(payload, { onSuccess } = {}) {
                 syncKycSettingsFromProps();
                 syncSupportSettingsFromProps();
                 syncGa4SettingsFromProps();
+                syncAiReportSettingsFromProps();
                 syncPlatformCompanySettingsFromProps();
             },
             onFinish: () => {
@@ -1783,6 +1813,19 @@ const selectClass =
             >
                 <div v-show="activeTab === 'google_analytics'" class="space-y-6">
                     <GoogleAnalyticsTab :form="form" />
+                </div>
+            </Transition>
+
+            <Transition
+                enter-active-class="transition duration-200 ease-out"
+                enter-from-class="opacity-0"
+                enter-to-class="opacity-100"
+                leave-active-class="transition duration-150 ease-in"
+                leave-from-class="opacity-100"
+                leave-to-class="opacity-0"
+            >
+                <div v-show="activeTab === 'relatorio_ia'" class="space-y-6">
+                    <AiReportTab :form="form" />
                 </div>
             </Transition>
 

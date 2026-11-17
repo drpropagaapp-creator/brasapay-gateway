@@ -79,6 +79,7 @@ class MemberPdfWatermarkTest extends TestCase
         $this->assertStringContainsString('joao.pedido@example.com', $plain);
         $this->assertStringContainsString('A1B2C3D4E5', $plain);
         $this->assertStringContainsString('comprador identificado', $plain);
+        $this->assertStringContainsString('/ca 0.300', $body);
         $this->assertGreaterThanOrEqual(2, substr_count($plain, $this->latin('João Souza')));
 
         $this->assertDatabaseHas('member_student_activity_logs', [
@@ -131,6 +132,55 @@ class MemberPdfWatermarkTest extends TestCase
         $this->assertStringContainsString($this->latin('não informado'), $plain);
         $this->assertStringContainsString($student->email, $plain);
         $this->assertStringContainsString($this->latin('Nº do cliente: ').$student->id, $plain);
+    }
+
+    public function test_seller_can_choose_header_or_center_mark(): void
+    {
+        Storage::fake('public');
+        [$product, $student, $lesson] = $this->enrolledPdfLesson();
+        $student->forceFill(['name' => 'João Souza'])->save();
+        $path = 'member-area/'.$product->id.'/apostila.pdf';
+        Storage::disk('public')->put($path, $this->samplePdf());
+        $files = [
+            ['url' => '/storage/'.$path, 'name' => 'Apostila.pdf'],
+        ];
+
+        $lesson->update([
+            'watermark_enabled' => true,
+            'watermark_header_footer' => false,
+            'watermark_center' => true,
+            'content_files' => $files,
+        ]);
+
+        $centerOnly = $this->actingAs($student->fresh())->get(route('member-area-app.lesson.material', [
+            'slug' => $product->checkout_slug,
+            'lesson' => $lesson->id,
+            'index' => 0,
+        ]));
+        $centerOnly->assertOk();
+        $centerBody = $centerOnly->getContent();
+        $centerPlain = $this->pdfPlainText($centerBody);
+        $this->assertStringContainsString($this->latin('João Souza'), $centerPlain);
+        $this->assertStringNotContainsString('comprador identificado', $centerPlain);
+        $this->assertStringNotContainsString($this->latin('Nº do cliente'), $centerPlain);
+        $this->assertStringNotContainsString('/ca 0.300', $centerBody);
+
+        $lesson->update([
+            'watermark_header_footer' => true,
+            'watermark_center' => false,
+        ]);
+
+        $bandsOnly = $this->actingAs($student->fresh())->get(route('member-area-app.lesson.material', [
+            'slug' => $product->checkout_slug,
+            'lesson' => $lesson->id,
+            'index' => 0,
+        ]));
+        $bandsOnly->assertOk();
+        $bandsBody = $bandsOnly->getContent();
+        $bandsPlain = $this->pdfPlainText($bandsBody);
+        $this->assertStringContainsString('comprador identificado', $bandsPlain);
+        $this->assertStringContainsString($this->latin('Nº do cliente'), $bandsPlain);
+        $this->assertStringContainsString('/ca 0.300', $bandsBody);
     }
 
     public function test_non_pdf_material_keeps_redirect_when_protection_is_enabled(): void

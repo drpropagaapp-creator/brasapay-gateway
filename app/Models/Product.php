@@ -31,6 +31,8 @@ class Product extends Model
 
     public const TYPE_PRODUTO_FISICO = 'produto_fisico';
 
+    public const TYPE_TELEGRAM = 'telegram';
+
     public const BILLING_ONE_TIME = 'one_time';
 
     public const BILLING_SUBSCRIPTION = 'subscription';
@@ -52,6 +54,8 @@ class Product extends Model
         'name',
         'notification_name',
         'support_email',
+        'support_whatsapp',
+        'support_whatsapp_enabled',
         'slug',
         'checkout_slug',
         'checkout_config',
@@ -59,6 +63,7 @@ class Product extends Model
         'category',
         'type',
         'billing_type',
+        'subscription_recurrence_months',
         'image',
         'price',
         'currency',
@@ -92,6 +97,7 @@ class Product extends Model
         return [
             'price' => 'decimal:2',
             'is_active' => 'boolean',
+            'support_whatsapp_enabled' => 'boolean',
             'show_in_marketplace' => 'boolean',
             'marketplace_approved' => 'boolean',
             'admin_blocked' => 'boolean',
@@ -105,6 +111,7 @@ class Product extends Model
             'affiliate_show_in_showcase' => 'boolean',
             'affiliate_hide_customer_data' => 'boolean',
             'refund_policy_days' => 'integer',
+            'subscription_recurrence_months' => 'integer',
             'physical_config' => 'array',
         ];
     }
@@ -117,6 +124,16 @@ class Product extends Model
     public function isPhysical(): bool
     {
         return $this->type === self::TYPE_PRODUTO_FISICO;
+    }
+
+    public function isTelegram(): bool
+    {
+        return $this->type === self::TYPE_TELEGRAM;
+    }
+
+    public function telegramSetting(): HasOne
+    {
+        return $this->hasOne(ProductTelegramSetting::class, 'product_id');
     }
 
     public function requiresShippingAddress(): bool
@@ -493,6 +510,21 @@ class Product extends Model
     }
 
     /**
+     * Nome opcional do pixel Meta (rótulo na tela do infoprodutor).
+     */
+    public static function normalizePixelEntryName(mixed $raw): string
+    {
+        $name = trim((string) $raw);
+        $name = preg_replace('/[\x00-\x1F\x7F]/u', '', $name) ?? '';
+        $name = trim($name);
+        if (mb_strlen($name) > 80) {
+            $name = mb_substr($name, 0, 80);
+        }
+
+        return $name;
+    }
+
+    /**
      * Meta/TikTok pixel IDs: apenas dígitos (aceita colar "ID: 1234567890").
      */
     public static function normalizePixelIdString(string $raw): string
@@ -538,11 +570,15 @@ class Product extends Model
                     if ($pixelId === '') {
                         continue;
                     }
-                    $entries[] = [
+                    $row = [
                         'id' => $id,
                         'pixel_id' => $pixelId,
                         'access_token' => trim((string) ($e['access_token'] ?? '')),
-                    ] + $flags;
+                    ];
+                    if ($platform === 'meta') {
+                        $row['name'] = static::normalizePixelEntryName($e['name'] ?? '');
+                    }
+                    $entries[] = $row + $flags;
                 } elseif ($platform === 'google_ads') {
                     $convId = trim((string) ($e['conversion_id'] ?? ''));
                     if ($convId === '') {
@@ -577,11 +613,15 @@ class Product extends Model
                 $pixelId = static::normalizePixelIdString(trim((string) ($block['pixel_id'] ?? '')));
                 $accessToken = trim((string) ($block['access_token'] ?? ''));
                 if ($pixelId !== '' || $accessToken !== '') {
-                    $entries[] = [
+                    $row = [
                         'id' => $id,
                         'pixel_id' => $pixelId,
                         'access_token' => $accessToken,
-                    ] + $flags;
+                    ];
+                    if ($platform === 'meta') {
+                        $row['name'] = static::normalizePixelEntryName($block['name'] ?? '');
+                    }
+                    $entries[] = $row + $flags;
                 }
             } elseif ($platform === 'google_ads') {
                 $convId = trim((string) ($block['conversion_id'] ?? ''));
@@ -767,7 +807,13 @@ class Product extends Model
         if (\Illuminate\Support\Facades\Schema::hasColumn($this->getTable(), 'approval_status')) {
             $status = $this->approval_status ?? self::APPROVAL_APPROVED;
 
-            return $status === self::APPROVAL_APPROVED;
+            if ($status !== self::APPROVAL_APPROVED) {
+                return false;
+            }
+        }
+
+        if ($this->isTelegram()) {
+            return app(\App\Services\Telegram\TelegramProductDeliveryService::class)->canSellProduct($this);
         }
 
         return true;
@@ -779,6 +825,28 @@ class Product extends Model
 
         if (\Illuminate\Support\Facades\Schema::hasColumn((new static)->getTable(), 'approval_status')) {
             $query->where('approval_status', self::APPROVAL_APPROVED);
+        }
+
+        // Telegram no checkout: política do painel (global ou seller com vendas "Habilitada").
+        $delivery = app(\App\Services\Telegram\TelegramProductDeliveryService::class);
+        if (! $delivery->automaticDeliveryOperational()) {
+            $allowedTenants = \App\Services\Telegram\TelegramSellerPolicy::tenantIdsWithSalesForcedEnabled();
+            $envAllowlist = config('telegram.product_sales_tenant_ids', []);
+            if (is_array($envAllowlist) && $envAllowlist !== []) {
+                $allowedTenants = array_values(array_unique(array_merge(
+                    $allowedTenants,
+                    array_map('intval', $envAllowlist)
+                )));
+            }
+
+            if ($allowedTenants === []) {
+                $query->where('type', '!=', self::TYPE_TELEGRAM);
+            } else {
+                $query->where(function (Builder $inner) use ($allowedTenants) {
+                    $inner->where('type', '!=', self::TYPE_TELEGRAM)
+                        ->orWhereIn('tenant_id', $allowedTenants);
+                });
+            }
         }
 
         return $query;
@@ -1057,12 +1125,26 @@ class Product extends Model
                 'description' => 'Apenas gera link de checkout, sem entrega automática.',
                 'available' => true,
             ],
+            self::TYPE_TELEGRAM => [
+                'label' => 'Telegram',
+                'description' => 'Venda acesso a grupos e canais privados do Telegram com gerenciamento automático de assinantes.',
+                'available' => true,
+            ],
             self::TYPE_PRODUTO_FISICO => [
                 'label' => 'Produto físico',
                 'description' => 'Envio por correio/transportadora. Configure frete e endereço de entrega no checkout.',
                 'available' => true,
             ],
         ];
+    }
+
+    public static function typeLabel(?string $type): string
+    {
+        if ($type === null || $type === '') {
+            return '—';
+        }
+
+        return self::typeConfig()[$type]['label'] ?? $type;
     }
 
     /**
@@ -1094,6 +1176,7 @@ class Product extends Model
             'lifestyle_e_hobbies' => 'Lifestyle e Hobbies',
             'conteudo_e_recursos_digitais' => 'Conteúdo e Recursos Digitais',
             'automotivos' => 'Automotivos',
+            'religiao' => 'Religião',
             'outros' => 'Outros',
         ];
     }

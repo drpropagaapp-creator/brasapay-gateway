@@ -145,7 +145,7 @@ class LinaOpenxPixAutoLifecycleService
         try {
             $current = $this->client->getRecurringPayment($credentials, $paymentId);
             $status = strtoupper(trim((string) ($current['payment_status'] ?? $current['status'] ?? '')));
-            if (in_array($status, ['PAGO', 'PAID', 'ACSC', 'ACSP', 'SETTLED', 'COMPLETED', 'paid'], true)) {
+            if ($this->client->isSettledPaymentStatus($status)) {
                 return false;
             }
             if (! in_array($status, ['RJCT', 'REJECTED', 'REJEITADO', 'FAILED', 'EXPIRED', 'EXPIRADO', 'rejected', 'cancelled'], true)) {
@@ -154,7 +154,7 @@ class LinaOpenxPixAutoLifecycleService
 
             $retry = $this->client->retryRecurringPayment($credentials, $paymentId, [
                 'endToEndId' => $this->makeEndToEndId($ispb),
-                'date' => now()->toDateString(),
+                'date' => now()->addDays(LinaOpenxPixAutoRenewalService::MIN_DAYS_BEFORE_DUE)->toDateString(),
             ]);
             $meta['linaopenx_pix_auto_retry_count'] = $retries + 1;
             $meta['linaopenx_pix_auto_retry_at'] = now()->toIso8601String();

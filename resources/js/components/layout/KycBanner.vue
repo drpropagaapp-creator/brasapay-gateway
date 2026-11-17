@@ -13,8 +13,23 @@ const kycOnboardingState = computed(() => page.props.auth?.user?.kyc_onboarding_
 const show = computed(() => Boolean(page.props.auth?.user?.needs_kyc_attention));
 
 const message = computed(() => {
+    if (kycOnboardingState.value === 'pending_basic_approval') {
+        return 'Sua conta aguarda aprovação da plataforma para começar a vender. O KYC será pedido no saque.';
+    }
+    if (kycOnboardingState.value === 'kyc_for_withdrawal') {
+        if (kycStatus.value === 'pending_review') {
+            return 'Documentos em análise. Você já pode vender; o saque libera depois da aprovação.';
+        }
+        if (kycStatus.value === 'rejected') {
+            return 'O KYC foi recusado. Reenvie os documentos para liberar o saque. Vender continua permitido.';
+        }
+        return 'Você já pode criar e vender. O saque só libera depois do envio e da aprovação do KYC.';
+    }
     if (kycOnboardingState.value === 'awaiting_review' || kycStatus.value === 'pending_review') {
         return 'Seus documentos estão em análise. O painel completo, vendas e saques serão liberados após aprovação da plataforma.';
+    }
+    if (kycOnboardingState.value === 'needs_document_upgrade') {
+        return 'Sua conta foi criada antes da verificação atual. Envie os documentos na aba Seus dados para liberar o saque depois da aprovação.';
     }
     if (kycStatus.value === 'rejected') {
         return 'Sua verificação precisa de ajustes. Reenvie os documentos na aba Seus dados (Financeiro).';

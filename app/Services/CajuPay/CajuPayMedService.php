@@ -75,7 +75,7 @@ class CajuPayMedService
     }
 
     /**
-     * Checkout/card disputed — plataforma gerencia, sem retenção no infoprodutor.
+     * Checkout/card disputed — a plataforma conduz a defesa e o saldo do infoprodutor fica retido.
      *
      * @param  array<string, mixed>  $context
      */
@@ -100,6 +100,14 @@ class CajuPayMedService
                 'metadata' => ['checkout_dispute' => $context],
             ]
         );
+
+        if ($this->policy->shouldHoldTenantBalance($dispute) && ! in_array($order->fresh()->status, ['disputed'], true)) {
+            try {
+                PlatformOrderAdminService::markDisputed($order->fresh());
+            } catch (\InvalidArgumentException) {
+                //
+            }
+        }
 
         if ($dispute->wasRecentlyCreated) {
             $this->notifications->medOpened($dispute->fresh());
@@ -182,11 +190,12 @@ class CajuPayMedService
 
     public function openCountForTenant(int $tenantId): int
     {
-        return MedDispute::query()
+        $query = MedDispute::query()
             ->forTenant($tenantId)
-            ->tenantManaged()
-            ->open()
-            ->count();
+            ->open();
+        $this->policy->scopeDisputesVisibleToSeller($query);
+
+        return (int) $query->count();
     }
 
     /**
@@ -236,9 +245,9 @@ class CajuPayMedService
     {
         $q = MedDispute::query()
             ->forTenant($tenantId)
-            ->tenantManaged()
             ->with(['order.product'])
             ->orderByDesc('id');
+        $this->policy->scopeDisputesVisibleToSeller($q);
 
         if ($statusFilter === 'open') {
             $q->open();
@@ -269,7 +278,7 @@ class CajuPayMedService
             throw new \InvalidArgumentException('Disputa não encontrada.');
         }
 
-        if (! $dispute->isTenantManaged()) {
+        if (! $this->policy->sellerFollowsDispute($dispute)) {
             throw new \InvalidArgumentException('Disputa não encontrada.');
         }
 

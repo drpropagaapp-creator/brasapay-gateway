@@ -17,6 +17,7 @@ use App\Services\MemberProgressService;
 use App\Services\MemberAreaResolver;
 use App\Services\PhysicalProductAccess;
 use App\Services\SellerIntegrationVisibility;
+use App\Services\Telegram\TelegramSellerSubscribersService;
 use App\Support\BrandingAssetUrls;
 use App\Support\DemoMode;
 use App\Support\InfoproducerRegistrationSettings;
@@ -26,6 +27,8 @@ use App\Support\PublicAppUrl;
 use App\Support\SellerDashboardTemplate;
 use App\Support\PlatformGa4Settings;
 use App\Support\SellerPanelSupportSettings;
+use App\Support\KycEnforcement;
+use App\Support\KycRequiredDocuments;
 use App\Support\ReferralProgramSettings;
 use App\Support\ProductApprovalSettings;
 use App\Services\ProductApprovalService;
@@ -225,8 +228,13 @@ class HandleInertiaRequests extends Middleware
         }
 
         $kycSubject = null;
+        $needsDocumentUpgrade = false;
+        $kycOnboardingState = null;
         if ($user && $user->canAccessSellerPanel() && Schema::hasColumn('users', 'kyc_status')) {
             $kycSubject = $user->kycSubjectUser();
+            $needsDocumentUpgrade = $kycSubject !== null
+                && KycRequiredDocuments::mayUpgradeLegacyDocuments($kycSubject);
+            $kycOnboardingState = $this->kycOnboardingState($user, $kycSubject, $needsDocumentUpgrade);
         }
 
         // UI do “painel aluno” só nas URLs de comprador; não misturar com sessão panel_context
@@ -257,14 +265,10 @@ class HandleInertiaRequests extends Middleware
                     'is_merchant_operationally_approved' => $kycSubject !== null
                         && $user->isMerchantOperationallyApproved(),
                     'needs_kyc_attention' => $kycSubject !== null
-                        && ! $user->isMerchantOperationallyApproved(),
-                    'kyc_onboarding_state' => $kycSubject === null
-                        ? null
-                        : ($user->mustCompleteKycOnboarding()
-                            ? 'needs_upload'
-                            : ($user->isAwaitingKycReview()
-                                ? 'awaiting_review'
-                                : (! $user->isMerchantOperationallyApproved() ? 'pending_account' : null))),
+                        && ($needsDocumentUpgrade
+                            || ! $user->isMerchantOperationallyApproved()
+                            || $kycOnboardingState === 'kyc_for_withdrawal'),
+                    'kyc_onboarding_state' => $kycOnboardingState,
                     'panel_switch' => [
                         'customer' => $user->canAccessCustomerPanel(),
                         'seller' => $user->canSwitchToSellerPanel() || $user->needsOnboardingAsSeller(),
@@ -337,6 +341,9 @@ class HandleInertiaRequests extends Middleware
             'platform_minimum_charge_brl' => $user && $user->canAccessSellerPanel()
                 ? app(MinimumChargeService::class)->platformMinimumBrlForTenant($tenantId)
                 : 0,
+            'platform_maximum_charge_brl' => $user && $user->canAccessSellerPanel()
+                ? app(MinimumChargeService::class)->platformMaximumBrlForTenant($tenantId)
+                : 0,
             'platform_card_installments' => $user && $user->canAccessSellerPanel()
                 ? \App\Services\PlatformCardInstallments::publicConfig()
                 : ['enabled' => false, 'max' => 12],
@@ -344,7 +351,11 @@ class HandleInertiaRequests extends Middleware
                 ? PhysicalProductAccess::globalEnabled()
                 : false,
             'seller_integrations_any_visible' => $user && $user->canAccessSellerPanel()
-                ? SellerIntegrationVisibility::anyVisibleForTenant($tenantId !== null ? (int) $tenantId : null)
+                ? SellerIntegrationVisibility::anyVisibleForTenant(
+                    (int) ($user->tenant_id ?? $user->id) > 0
+                        ? (int) ($user->tenant_id ?? $user->id)
+                        : null
+                )
                 : false,
             'product_approval_required' => $user && $user->canAccessSellerPanel()
                 ? (ProductApprovalService::columnsReady() && ! ProductApprovalSettings::autoApproveEnabled())
@@ -366,6 +377,12 @@ class HandleInertiaRequests extends Middleware
             'pixgo_sidebar_label' => $user && $user->canAccessSellerPanel()
                 ? \App\Services\PixGoAccess::sidebarLabel()
                 : \App\Services\PixGoAccess::DEFAULT_SIDEBAR_LABEL,
+            'telegram_subscribers_menu_visible' => $user && $user->canAccessSellerPanel()
+                ? app(TelegramSellerSubscribersService::class)->tenantHasActiveTelegramProduct(
+                    (int) ($user->tenant_id ?? $user->id),
+                    $user
+                )
+                : false,
             'legal' => $sharedCache->legalPublicLinks(),
             'platform_ga4' => PlatformGa4Settings::inertiaConfig(),
         ];
@@ -442,5 +459,42 @@ class HandleInertiaRequests extends Middleware
             'panel_color_scheme' => PanelColorScheme::current(),
             'login_template' => LoginTemplate::current(),
         ]);
+    }
+
+    private function kycOnboardingState(User $user, ?User $subject, bool $needsDocumentUpgrade): ?string
+    {
+        if ($subject === null) {
+            return null;
+        }
+
+        if (! KycEnforcement::requiresKycBeforeSelling()) {
+            $accountStatus = (string) ($subject->account_status ?? 'approved');
+            if ($accountStatus !== 'approved') {
+                return 'pending_basic_approval';
+            }
+            if ($needsDocumentUpgrade) {
+                return 'needs_document_upgrade';
+            }
+            if (! $subject->hasApprovedKyc()) {
+                return 'kyc_for_withdrawal';
+            }
+
+            return null;
+        }
+
+        if ($needsDocumentUpgrade) {
+            return 'needs_document_upgrade';
+        }
+        if ($user->mustCompleteKycOnboarding()) {
+            return 'needs_upload';
+        }
+        if ($user->isAwaitingKycReview()) {
+            return 'awaiting_review';
+        }
+        if (! $user->isMerchantOperationallyApproved()) {
+            return 'pending_account';
+        }
+
+        return null;
     }
 }

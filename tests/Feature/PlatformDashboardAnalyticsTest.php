@@ -135,6 +135,45 @@ class PlatformDashboardAnalyticsTest extends TestCase
             );
     }
 
+    public function test_census_counts_the_whole_base_outside_the_date_filter(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-08-21 12:00:00'));
+        $admin = $this->platformAdmin();
+        $seller = $this->infoprodutor();
+        $blocked = User::factory()->create(['role' => User::ROLE_INFOPRODUTOR]);
+        $blocked->forceFill(['tenant_id' => $blocked->id, 'account_status' => 'blocked'])->save();
+
+        $repeat = User::factory()->create(['role' => User::ROLE_CLIENTE]);
+        $once = User::factory()->create(['role' => User::ROLE_CLIENTE]);
+        $product = $this->createTestProduct(['tenant_id' => $seller->id]);
+
+        $old = $this->createOrder($seller, $repeat, $product, ['status' => 'completed', 'amount' => 40]);
+        Order::query()->whereKey($old->id)->update([
+            'created_at' => Carbon::parse('2026-07-01 10:00:00'),
+            'updated_at' => Carbon::parse('2026-07-01 10:00:00'),
+        ]);
+        $this->createOrder($seller, $repeat, $product, ['status' => 'completed', 'amount' => 60]);
+        $this->createOrder($seller, $once, $product, ['status' => 'completed', 'amount' => 30]);
+        $this->createOrder($seller, $once, $product, ['status' => 'pending', 'amount' => 20]);
+        $this->createOrder($seller, $once, $product, ['status' => 'refunded', 'amount' => 15]);
+
+        $this->actingAs($admin)
+            ->get('/plataforma/dashboard?period=hoje')
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->where('kpis.quantidade_vendas', 2)
+                ->where('census.clientes_totais', 2)
+                ->where('census.clientes_recompraram', 1)
+                ->where('census.clientes_recompra_percent', 50)
+                ->where('census.infoprodutores_totais', 2)
+                ->where('census.infoprodutores_ativos', 1)
+                ->where('census.infoprodutores_bloqueados', 1)
+                ->where('census.pedidos_totais', 5)
+                ->where('census.pedidos_pagos', 3)
+                ->where('census.pedidos_nao_pagos', 1)
+            );
+    }
+
     public function test_total_omits_comparison(): void
     {
         $admin = $this->platformAdmin();

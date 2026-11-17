@@ -2,7 +2,10 @@
 
 @section('content')
     <p style="margin:0 0 16px 0;font-size:18px;font-weight:600;color:#18181b;">Disputa MED encerrada</p>
-    <p style="margin:0 0 16px 0;">A disputa MED do pedido #{{ $order->public_reference ?? $order->id }} foi encerrada com resultado: <strong>{{ $dispute->outcome ?? $dispute->status }}</strong>.</p>
+    <p style="margin:0 0 16px 0;">A disputa MED do pedido #{{ $order->public_reference ?? $order->id }} foi encerrada com resultado: <strong>{{ $outcomeLabel }}</strong>.</p>
+    @if($walletNote)
+        <p style="margin:0 0 16px 0;">{{ $walletNote }}</p>
+    @endif
     @if($productName)
         <p style="margin:0 0 8px 0;color:#52525b;">Produto: {{ $productName }}</p>
     @endif

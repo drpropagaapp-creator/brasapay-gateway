@@ -84,7 +84,8 @@ class VersellMedServiceTest extends TestCase
         $this->assertSame(MedDispute::STATUS_OPEN, $dispute->status);
         $this->assertSame('versell:infraction-uuid-1', $dispute->cajupay_dispute_id);
         $this->assertSame((int) $order->id, (int) $dispute->order_id);
-        // Hold/disputed só quando a policy atribui responsabilidade ao tenant (mesma regra CajuPay).
+        $this->assertSame(MedDispute::PARTY_PLATFORM, $dispute->responsible_party);
+        $this->assertSame('disputed', $order->fresh()->status);
     }
 
     public function test_reconcile_recent_logs_http_rejection_instead_of_failing_silently(): void

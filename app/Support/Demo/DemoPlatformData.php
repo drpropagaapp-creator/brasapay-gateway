@@ -73,6 +73,17 @@ class DemoPlatformData
                 'produtos_criados' => $produtosCriados,
                 'taxa_aprovacao' => 72.4,
             ],
+            'census' => [
+                'clientes_totais' => 860 + ($seed % 40),
+                'clientes_recompraram' => 150 + ($seed % 20),
+                'clientes_recompra_percent' => 18.4,
+                'infoprodutores_totais' => 128 + ($seed % 15),
+                'infoprodutores_ativos' => 96 + ($seed % 8),
+                'infoprodutores_bloqueados' => 3 + ($seed % 4),
+                'pedidos_totais' => 2400 + ($seed % 200),
+                'pedidos_pagos' => 1720 + ($seed % 80),
+                'pedidos_nao_pagos' => 510 + ($seed % 40),
+            ],
             'comparisons' => $compare ? [
                 'vendas_totais' => ['current' => $vendasTotais, 'previous' => round($vendasTotais * 0.86, 2), 'delta_percent' => 16.3],
                 'quantidade_vendas' => ['current' => $quantidadeVendas, 'previous' => (int) round($quantidadeVendas * 0.9), 'delta_percent' => 11.1],
@@ -163,10 +174,17 @@ class DemoPlatformData
     }
 
     /**
-     * @return array{orders: LengthAwarePaginator, filters: array{status: string, q: string}}
+     * @return array{orders: LengthAwarePaginator, filters: array{status: string, q: string, per_page: int, gateway: string, method: string}}
      */
-    public static function transactions(string $status, string $q, string $path, array $query, int $perPage = 25): array
-    {
+    public static function transactions(
+        string $status,
+        string $q,
+        string $path,
+        array $query,
+        int $perPage = 25,
+        ?string $gateway = null,
+        ?string $method = null,
+    ): array {
         $seed = crc32($status.'|'.$q);
         $items = [];
 
@@ -193,6 +211,7 @@ class DemoPlatformData
                 'amount_fee' => $fee,
                 'amount_net' => round($amount - $fee, 2),
                 'gateway' => self::GATEWAYS[($seed + $i) % count(self::GATEWAYS)],
+                'payment_method' => ($i % 2 === 0) ? 'pix' : 'card',
                 'gateway_label' => 'PIX',
                 'recebedor' => match (self::GATEWAYS[($seed + $i) % count(self::GATEWAYS)]) {
                     'cajupay' => 'CajuPay',
@@ -201,11 +220,12 @@ class DemoPlatformData
                     'mercadopago' => 'Mercado Pago',
                     default => '—',
                 },
-                'payment_method_label' => 'PIX',
+                'payment_method_label' => ($i % 2 === 0) ? 'PIX' : 'Cartão',
                 'product_display_name' => self::PRODUCT_NAMES[$idx],
                 'product_label' => self::PRODUCT_NAMES[$idx],
                 'product_name' => self::PRODUCT_NAMES[$idx],
                 'payment_type_label' => ($i % 4 === 0) ? 'Pagamento recorrente' : 'Pagamento único',
+                'sale_type_label' => ($i % 4 === 0) ? 'Assinatura' : 'Único',
                 'customer_name' => 'Cliente Demo '.($i + 1),
                 'customer_email' => 'cliente'.($i + 1).'@demo.exemplo',
                 'infoprodutor_name' => 'Vendedor Demo',
@@ -232,6 +252,20 @@ class DemoPlatformData
             $items = array_values(array_filter(
                 $items,
                 fn (array $row) => ! empty($row['pending_refund_request'])
+            ));
+        }
+
+        if ($gateway !== null && $gateway !== '') {
+            $items = array_values(array_filter(
+                $items,
+                fn (array $row) => ($row['gateway'] ?? '') === $gateway
+            ));
+        }
+
+        if ($method !== null && $method !== '') {
+            $items = array_values(array_filter(
+                $items,
+                fn (array $row) => ($row['payment_method'] ?? '') === $method
             ));
         }
 
@@ -266,6 +300,8 @@ class DemoPlatformData
                 'status' => $status,
                 'q' => $q,
                 'per_page' => $perPage,
+                'gateway' => $gateway ?? '',
+                'method' => $method ?? '',
             ],
         ];
     }

@@ -53,6 +53,68 @@ function toggleIdentity(value, checked) {
             </div>
         </div>
 
+        <div class="rounded-xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-700 dark:bg-zinc-900">
+            <h3 class="text-sm font-semibold text-zinc-900 dark:text-white">Quando pedir o KYC</h3>
+            <p class="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+                O padrão é pedir no cadastro. Só no saque, a conta nova fica aguardando aprovação e só vende depois dela.
+            </p>
+            <div class="mt-4 grid gap-3 sm:grid-cols-2">
+                <label
+                    class="flex cursor-pointer items-start gap-3 rounded-xl border p-4"
+                    :class="form.kyc_enforcement !== 'withdrawal'
+                        ? 'border-[var(--color-primary)] bg-[var(--color-primary)]/10'
+                        : 'border-zinc-200 bg-zinc-50/80 dark:border-zinc-600 dark:bg-zinc-800/80'"
+                >
+                    <input
+                        type="radio"
+                        class="mt-0.5 h-4 w-4 border-zinc-300 text-[var(--color-primary)] focus:ring-[var(--color-primary)]"
+                        name="kyc_enforcement"
+                        value="onboarding"
+                        :checked="form.kyc_enforcement !== 'withdrawal'"
+                        @change="form.kyc_enforcement = 'onboarding'"
+                    />
+                    <span>
+                        <span class="block text-sm font-medium text-zinc-900 dark:text-white">Pedir no cadastro</span>
+                        <span class="mt-1 block text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">
+                            Sem KYC aprovado o infoprodutor não vende nem saca.
+                        </span>
+                    </span>
+                </label>
+                <label
+                    class="flex cursor-pointer items-start gap-3 rounded-xl border p-4"
+                    :class="form.kyc_enforcement === 'withdrawal'
+                        ? 'border-[var(--color-primary)] bg-[var(--color-primary)]/10'
+                        : 'border-zinc-200 bg-zinc-50/80 dark:border-zinc-600 dark:bg-zinc-800/80'"
+                >
+                    <input
+                        type="radio"
+                        class="mt-0.5 h-4 w-4 border-zinc-300 text-[var(--color-primary)] focus:ring-[var(--color-primary)]"
+                        name="kyc_enforcement"
+                        value="withdrawal"
+                        :checked="form.kyc_enforcement === 'withdrawal'"
+                        @change="form.kyc_enforcement = 'withdrawal'"
+                    />
+                    <span>
+                        <span class="block text-sm font-medium text-zinc-900 dark:text-white">Pedir só no saque</span>
+                        <span class="mt-1 block text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">
+                            Depois da aprovação básica pode criar e vender. O saque exige KYC enviado e aprovado.
+                        </span>
+                    </span>
+                </label>
+            </div>
+            <div
+                v-if="form.kyc_enforcement === 'withdrawal'"
+                class="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-100"
+            >
+                <p class="font-medium">Aprovação manual</p>
+                <p class="mt-1 text-xs leading-relaxed">
+                    Ao aceitar contas sem KYC, cada uma precisa ser aprovada em Infoprodutores &gt; Aguardando aprovação
+                    antes de vender. Voltar para “Pedir no cadastro” exige KYC de novo para quem foi aprovado sem documentos.
+                    Contas suspensas, bloqueadas ou rejeitadas continuam sem vender e sem sacar.
+                </p>
+            </div>
+        </div>
+
         <div class="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-100">
             <p class="font-medium">Escopo desta configuração</p>
             <p class="mt-1 text-xs leading-relaxed">

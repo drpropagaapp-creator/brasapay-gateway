@@ -28,6 +28,8 @@ class SellerIntegrationVisibility
 
     public const MCP = 'mcp';
 
+    public const TELEGRAM = 'telegram';
+
     /**
      * Catálogo das apps da aba Integrações do infoprodutor.
      * Novas integrações entram aqui; use default false para manter fora de uso até o teste.
@@ -78,6 +80,12 @@ class SellerIntegrationVisibility
                 'label' => 'MCP',
                 'description' => 'Conecte Claude, ChatGPT ou outro cliente MCP para montar produtos, cupons e funis. Fica oculto até o teste.',
                 'default' => false,
+            ],
+            [
+                'id' => self::TELEGRAM,
+                'label' => 'Telegram',
+                'description' => 'Bots, grupos e canais do infoprodutor. A entrega e as campanhas entram nas próximas etapas.',
+                'default' => true,
             ],
         ];
     }
@@ -237,7 +245,8 @@ class SellerIntegrationVisibility
             throw new InvalidArgumentException('Modo de integração inválido: '.$mode);
         }
 
-        Setting::set(self::settingKey($id), $mode === self::MODE_ENABLED, $tenantId);
+        // Persistir como '1'/'0' (igual ao global) para FILTER_VALIDATE_BOOLEAN estável.
+        Setting::set(self::settingKey($id), $mode === self::MODE_ENABLED ? '1' : '0', $tenantId);
     }
 
     public static function effectiveForTenant(string $id, ?int $tenantId): bool

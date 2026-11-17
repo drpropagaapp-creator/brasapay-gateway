@@ -35,6 +35,7 @@ import {
 import axios from 'axios';
 import EmailTemplatePreview from '@/components/produtos/EmailTemplatePreview.vue';
 import CoproductionSplitSimulator from '@/components/coproducao/CoproductionSplitSimulator.vue';
+import TelegramDeliveryConfig from '@/components/produtos/TelegramDeliveryConfig.vue';
 import { useI18n } from '@/composables/useI18n';
 import {
     mergeConversionPixels,
@@ -111,7 +112,59 @@ const props = defineProps({
     wallet_acquirer_label: { type: String, default: '' },
     shipping_stores: { type: Array, default: () => [] },
     coproduction_readonly: { type: Boolean, default: false },
+    telegram_delivery: { type: Object, default: () => ({}) },
+    reusable_meta_pixels: { type: Array, default: () => [] },
 });
+
+const reusableMetaPixels = computed(() =>
+    (props.reusable_meta_pixels || []).filter((pixel) => pixel && pixel.pixel_id && pixel.key)
+);
+const metaPixelReuseHint = ref({});
+
+function reusableMetaPixelLabel(opt) {
+    const product = String(opt.product_name || 'produto').trim() || 'produto';
+    const named = String(opt.name || '').trim();
+    if (named) {
+        return `Usar "${named}" do produto "${product}"`;
+    }
+    const id = String(opt.pixel_id || '');
+    const tail = id.length > 4 ? id.slice(-4) : id;
+    return tail ? `Usar pixel do produto "${product}" (…${tail})` : `Usar pixel do produto "${product}"`;
+}
+
+function applyReusableMetaPixel(item, event) {
+    const select = event?.target;
+    const key = select?.value ?? '';
+    if (select) {
+        select.value = '';
+    }
+    if (!key) {
+        return;
+    }
+    const opt = reusableMetaPixels.value.find((pixel) => pixel.key === key);
+    if (!opt) {
+        return;
+    }
+    item.pixel_id = opt.pixel_id || '';
+    item.access_token = opt.access_token || '';
+    if (!String(item.name || '').trim() && opt.name) {
+        item.name = opt.name;
+    }
+    metaPixelReuseHint.value = {
+        ...metaPixelReuseHint.value,
+        [item.id]: `Pixel ID e token copiados do produto "${opt.product_name || 'produto'}".`,
+    };
+}
+
+function addReusableMetaPixel(event) {
+    const key = event?.target?.value ?? '';
+    if (!key) {
+        return;
+    }
+    const entry = newMetaEntry();
+    form.conversion_pixels.meta.entries.push(entry);
+    applyReusableMetaPixel(entry, event);
+}
 
 const page = usePage();
 const visibleProductTypes = computed(() => (props.productTypes || []).filter((type) => type.available));
@@ -158,12 +211,15 @@ const form = useForm({
     name: props.produto.name,
     notification_name: props.produto.notification_name ?? '',
     support_email: props.produto.support_email ?? '',
+    support_whatsapp_enabled: Boolean(props.produto.support_whatsapp_enabled),
+    support_whatsapp: props.produto.support_whatsapp ?? '',
     description: props.produto.description ?? '',
     category: props.produto.category ?? '',
     type: props.produto.type,
     billing_type: props.produto.billing_type ?? 'one_time',
     price: formatPriceForInput(props.produto.price_brl ?? props.produto.price),
     base_interval: props.produto.base_interval ?? (props.produto.subscription_plans?.sort((a, b) => (a.position ?? 0) - (b.position ?? 0))[0]?.interval) ?? 'monthly',
+    subscription_recurrence_months: props.produto.subscription_recurrence_months ?? '',
     currency: props.produto.currency ?? 'BRL',
     is_active: props.produto.is_active,
     show_in_marketplace: Boolean(props.produto.show_in_marketplace),
@@ -172,7 +228,7 @@ const form = useForm({
     deliverable_link: props.produto.checkout_config?.deliverable_link ?? '',
     card_installments: {
         enabled: Boolean(ci.enabled),
-        max: Math.min(12, Math.max(1, parseInt(ci.max, 10) || 1)),
+        max: Math.min(18, Math.max(1, parseInt(ci.max, 10) || 1)),
     },
     payment_methods_enabled: {
         pix: pme.pix !== false && pme.pix !== '0',
@@ -197,6 +253,19 @@ const form = useForm({
     shipping_store_id: props.produto.shipping_store_id ?? null,
     physical_free_shipping: Boolean(props.produto.physical_config?.free_shipping),
     bundle_product_ids: [...(props.produto.bundle_product_ids ?? [])].map(String),
+    telegram: (() => {
+        const s = props.telegram_delivery?.setting;
+        return {
+            bot_id: s?.bot_id ?? null,
+            community_ids: [...(s?.community_ids ?? [])],
+            access_duration_preset: s?.access_duration_preset ?? '30',
+            access_duration_days: s?.access_duration ?? 30,
+            is_lifetime: Boolean(s?.is_lifetime),
+            invite_expiration_hours: s?.invite_expiration_hours ?? 24,
+            welcome_message: s?.welcome_message ?? '',
+            auto_remove_on_expiry: s?.auto_remove_on_expiry !== false,
+        };
+    })(),
 });
 
 watch(
@@ -205,6 +274,9 @@ watch(
         if (t === 'produto_fisico') {
             form.billing_type = 'one_time';
             form.currency = 'BRL';
+        }
+        if (t === 'telegram') {
+            form.is_active = false;
         }
     }
 );
@@ -216,9 +288,6 @@ const marketplaceToggleLabel = computed(() => {
 });
 const showCardInstallments = computed(
     () => !isSubscriptionBilling.value && Boolean(props.checkout_gateway_ui?.card_show_installments)
-);
-const cardInstallmentsGatewayName = computed(
-    () => String(props.checkout_gateway_ui?.card_installments_gateway_name || '').trim()
 );
 
 watch(
@@ -428,9 +497,15 @@ function toggleBundleProduct(id) {
     form.bundle_product_ids = [...current, key];
 }
 const platformMinCharge = computed(() => Number(page.props.platform_minimum_charge_brl ?? 0));
+const platformMaxCharge = computed(() => Number(page.props.platform_maximum_charge_brl ?? 0));
 const platformMinChargeLabel = computed(() =>
     platformMinCharge.value > 0
         ? new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(platformMinCharge.value)
+        : null
+);
+const platformMaxChargeLabel = computed(() =>
+    platformMaxCharge.value > 0
+        ? new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(platformMaxCharge.value)
         : null
 );
 
@@ -440,14 +515,14 @@ const platformInstallmentMax = computed(() => {
     const fromUi = Number(props.checkout_gateway_ui?.platform_card_installments_max);
     const fromShared = Number(page.props.platform_card_installments?.max);
     const raw = Number.isFinite(fromUi) && fromUi > 0 ? fromUi : fromShared;
-    return Math.min(12, Math.max(2, raw || 12));
+    return Math.min(18, Math.max(2, raw || 12));
 });
 /** Máximo de parcelas permitido pelo preço atual e pelo teto da plataforma. */
 const maxAllowedInstallments = computed(() => {
     if (form.billing_type === 'subscription') return 1;
     const p = priceNum.value;
     if (!p || p < MIN_PARCELA_BRL) return 1;
-    const byAmount = Math.min(12, Math.max(1, Math.floor(p / MIN_PARCELA_BRL)));
+    const byAmount = Math.min(18, Math.max(1, Math.floor(p / MIN_PARCELA_BRL)));
     return Math.min(byAmount, platformInstallmentMax.value);
 });
 const installmentMaxOptions = computed(() => {
@@ -494,10 +569,9 @@ const paymentMethodMeta = {
 /** Somente métodos com gateway ativo na plataforma (configuração admin + credencial conectada). */
 const paymentMethodCardsList = computed(() => {
     const avail = props.global_payment_methods_available ?? {};
-    const order = ['pix', 'open_finance', 'card', 'apple_pay', 'google_pay', 'paypal', 'boleto'];
-    if (form.billing_type === 'subscription') {
-        order.push('pix_auto');
-    }
+    const order = form.billing_type === 'subscription'
+        ? ['pix', 'card', 'apple_pay', 'google_pay', 'paypal', 'boleto', 'pix_auto']
+        : ['pix', 'open_finance', 'card', 'apple_pay', 'google_pay', 'paypal', 'boleto'];
     const walletHint = props.wallet_acquirer_label
         ? `Wallet via ${props.wallet_acquirer_label}`
         : 'Wallet via CajuPay ou Stripe';
@@ -507,6 +581,12 @@ const paymentMethodCardsList = computed(() => {
             const meta = { ...paymentMethodMeta[key] };
             if (key === 'apple_pay' || key === 'google_pay') {
                 meta.hint = walletHint;
+            }
+            if (form.billing_type === 'subscription' && key === 'pix') {
+                meta.hint = 'Cobra o período. O cliente recebe aviso para renovar';
+            }
+            if (form.billing_type === 'subscription' && key === 'card') {
+                meta.hint = 'Assinatura no cartão de crédito';
             }
             return { key, ...meta };
         });
@@ -1216,6 +1296,7 @@ const typeIcons = {
     area_membros_externa: Users,
     link: Link2,
     link_pagamento: CreditCard,
+    telegram: 'telegram-img',
     produto_fisico: Truck,
 };
 
@@ -1242,6 +1323,8 @@ function appendCoreProductFields(fd) {
     fd.append('name', form.name);
     fd.append('notification_name', form.notification_name ?? '');
     fd.append('support_email', form.support_email ?? '');
+    fd.append('support_whatsapp_enabled', form.support_whatsapp_enabled ? '1' : '0');
+    fd.append('support_whatsapp', form.support_whatsapp ?? '');
     fd.append('description', form.description ?? '');
     fd.append('category', form.category ?? '');
     fd.append('type', form.type);
@@ -1249,6 +1332,7 @@ function appendCoreProductFields(fd) {
     fd.append('price', String(normalizeMoneyInput(form.price)));
     if (form.billing_type === 'subscription') {
         fd.append('base_interval', form.base_interval || 'monthly');
+        fd.append('subscription_recurrence_months', String(form.subscription_recurrence_months || ''));
     }
     fd.append('currency', form.currency);
     fd.append('is_active', form.is_active ? '1' : '0');
@@ -1256,6 +1340,19 @@ function appendCoreProductFields(fd) {
     if (form.type === 'produto_fisico') {
         if (form.shipping_store_id) fd.append('shipping_store_id', String(form.shipping_store_id));
         fd.append('physical_free_shipping', form.physical_free_shipping ? '1' : '0');
+    }
+    if (form.type === 'telegram' && form.telegram) {
+        const tg = form.telegram;
+        if (tg.bot_id) fd.append('telegram[bot_id]', String(tg.bot_id));
+        (tg.community_ids || []).forEach((id) => fd.append('telegram[community_ids][]', String(id)));
+        fd.append('telegram[access_duration_preset]', tg.access_duration_preset || '30');
+        if (tg.access_duration_preset === 'custom') {
+            fd.append('telegram[access_duration_days]', String(tg.access_duration_days || 30));
+        }
+        fd.append('telegram[is_lifetime]', tg.access_duration_preset === 'lifetime' || tg.is_lifetime ? '1' : '0');
+        fd.append('telegram[invite_expiration_hours]', String(tg.invite_expiration_hours || 24));
+        fd.append('telegram[welcome_message]', tg.welcome_message || '');
+        fd.append('telegram[auto_remove_on_expiry]', tg.auto_remove_on_expiry ? '1' : '0');
     }
     if (form.refund_enabled) {
         fd.append('refund_policy_days', String(form.refund_policy_days ?? 7));
@@ -1515,12 +1612,39 @@ function submit() {
                                         :class="inputClass"
                                     />
                                     <p class="mt-1 text-xs text-zinc-500">
-                                        Este e-mail será informado ao comprador para entrar em contato
-                                        (se deixado em branco será usado o padrão do infoprodutor).
+                                        Se deixado em branco, o aluno vê o e-mail cadastrado na sua conta.
                                     </p>
                                     <p v-if="form.errors.support_email" class="mt-1.5 text-sm text-red-600 dark:text-red-400">
                                         {{ form.errors.support_email }}
                                     </p>
+                                </div>
+                                <div class="rounded-xl border border-zinc-200 p-4 dark:border-zinc-700">
+                                    <Toggle
+                                        v-model="form.support_whatsapp_enabled"
+                                        label="Ativar suporte por WhatsApp"
+                                    />
+                                    <p class="mt-2 text-xs text-zinc-500">
+                                        Desligado, o aluno vê só o e-mail. O WhatsApp da sua conta não é enviado.
+                                    </p>
+                                    <div v-if="form.support_whatsapp_enabled" class="mt-4">
+                                        <label class="mb-1.5 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                                            WhatsApp para Suporte
+                                        </label>
+                                        <input
+                                            v-model="form.support_whatsapp"
+                                            type="tel"
+                                            inputmode="tel"
+                                            maxlength="32"
+                                            placeholder="11999999999"
+                                            :class="inputClass"
+                                        />
+                                        <p class="mt-1 text-xs text-zinc-500">
+                                            Este número aparece para o aluno quando o canal está ativo.
+                                        </p>
+                                        <p v-if="form.errors.support_whatsapp" class="mt-1.5 text-sm text-red-600 dark:text-red-400">
+                                            {{ form.errors.support_whatsapp }}
+                                        </p>
+                                    </div>
                                 </div>
                                 <div>
                                     <label class="mb-1.5 block text-sm font-medium text-zinc-700 dark:text-zinc-300">{{ t('common.description', 'Descrição') }}</label>
@@ -1559,13 +1683,20 @@ function submit() {
                                     <Toggle
                                         v-model="form.is_active"
                                         :label="t('products.create.active_product', 'Produto ativo')"
-                                        :disabled="produto.approval?.status && produto.approval.status !== 'approved'"
+                                        :disabled="(form.type === 'telegram' && !telegram_delivery?.sales_operational) || (produto.approval?.status && produto.approval.status !== 'approved')"
                                     />
                                 </div>
+                                <p
+                                    v-if="form.type === 'telegram' && !telegram_delivery?.sales_operational"
+                                    class="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-900 dark:border-amber-900/40 dark:bg-amber-950/30 dark:text-amber-100"
+                                >
+                                    Configure bot e comunidades abaixo. Publicação e checkout liberam quando a entrega automática estiver operacional para sua conta.
+                                </p>
                                 <div class="pt-1">
                                     <Checkbox
                                         v-model="form.show_in_marketplace"
                                         :label="marketplaceToggleLabel"
+                                        :disabled="form.type === 'telegram' && !telegram_delivery?.sales_operational"
                                         class="w-full"
                                     />
                                     <p class="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
@@ -1669,6 +1800,7 @@ function submit() {
                                     type="number"
                                     step="any"
                                     :min="platformMinCharge"
+                                    :max="platformMaxCharge > 0 ? platformMaxCharge : undefined"
                                     inputmode="decimal"
                                     required
                                     placeholder="0,00"
@@ -1676,6 +1808,9 @@ function submit() {
                                 />
                                 <p v-if="platformMinChargeLabel" class="mt-1.5 text-xs text-amber-700 dark:text-amber-300">
                                     Ticket mínimo da plataforma: {{ platformMinChargeLabel }}
+                                </p>
+                                <p v-if="platformMaxChargeLabel" class="mt-1.5 text-xs text-amber-700 dark:text-amber-300">
+                                    Ticket máximo da plataforma: {{ platformMaxChargeLabel }}
                                 </p>
                                 <p class="mt-1.5 text-xs text-zinc-500 dark:text-zinc-400">Aproximado: € {{ priceEur }} · US$ {{ priceUsd }}</p>
                                 <p v-if="form.errors.price" class="mt-1.5 text-sm text-red-600 dark:text-red-400">{{ form.errors.price }}</p>
@@ -1692,6 +1827,23 @@ function submit() {
                                 </select>
                                 <p class="mt-1.5 text-xs text-zinc-500 dark:text-zinc-400">Intervalo da cobrança recorrente do preço base.</p>
                             </div>
+                            <div v-if="form.billing_type === 'subscription'">
+                                <label class="mb-2 block text-sm font-medium text-zinc-700 dark:text-zinc-300" for="subscription-recurrence-months">Prazo da recorrência (meses) *</label>
+                                <input
+                                    id="subscription-recurrence-months"
+                                    v-model="form.subscription_recurrence_months"
+                                    type="number"
+                                    min="1"
+                                    max="120"
+                                    step="1"
+                                    required
+                                    inputmode="numeric"
+                                    placeholder="12"
+                                    :class="inputClass"
+                                />
+                                <p class="mt-1.5 text-xs text-zinc-500 dark:text-zinc-400">Por quantos meses o banco autoriza as cobranças. Ex.: 12 mantém a recorrência por um ano, no intervalo acima. Máximo de 120 meses.</p>
+                                <p v-if="form.errors.subscription_recurrence_months" class="mt-1.5 text-sm text-red-600 dark:text-red-400">{{ form.errors.subscription_recurrence_months }}</p>
+                            </div>
                         </div>
 
                         <div
@@ -1702,7 +1854,7 @@ function submit() {
                                 <div class="min-w-0">
                                     <p class="text-sm font-medium text-zinc-700 dark:text-zinc-300">Permitir pagamento parcelado neste produto</p>
                                     <p class="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
-                                        Produto vendido à vista se estiver desmarcado<span v-if="cardInstallmentsGatewayName"> · {{ cardInstallmentsGatewayName }}</span>
+                                        Produto vendido à vista se estiver desmarcado
                                     </p>
                                 </div>
                                 <Toggle
@@ -1788,9 +1940,12 @@ function submit() {
                                     <p class="mb-3 text-sm font-medium text-zinc-700 dark:text-zinc-300">{{ editingOffer ? t('products.edit.edit_offer', 'Editar oferta') : t('products.edit.new_offer', 'Nova oferta') }}</p>
                                     <div class="grid gap-3 sm:grid-cols-[1fr,1fr,auto]">
                                         <input v-model="offerForm.name" type="text" required :class="inputClass" placeholder="Nome (ex: Básico)" />
-                                        <input v-model="offerForm.price" type="number" step="any" :min="platformMinCharge" inputmode="decimal" required :class="inputClass" placeholder="Preço" />
+                                        <input v-model="offerForm.price" type="number" step="any" :min="platformMinCharge" :max="platformMaxCharge > 0 ? platformMaxCharge : undefined" inputmode="decimal" required :class="inputClass" placeholder="Preço" />
                                         <p v-if="platformMinChargeLabel" class="mt-1 text-xs text-amber-700 dark:text-amber-300">
                                             Ticket mínimo: {{ platformMinChargeLabel }}
+                                        </p>
+                                        <p v-if="platformMaxChargeLabel" class="mt-1 text-xs text-amber-700 dark:text-amber-300">
+                                            Ticket máximo: {{ platformMaxChargeLabel }}
                                         </p>
                                         <select v-model="offerForm.currency" :class="inputClass + ' min-w-0'">
                                             <option value="BRL">BRL</option>
@@ -1847,9 +2002,12 @@ function submit() {
                                     <p class="mb-3 text-sm font-medium text-zinc-700 dark:text-zinc-300">{{ editingPlan ? t('products.edit.edit_plan', 'Editar plano') : t('products.edit.new_plan', 'Novo plano') }}</p>
                                     <div class="grid gap-3 sm:grid-cols-2">
                                         <input v-model="planForm.name" type="text" required :class="inputClass" placeholder="Nome (ex: Mensal)" />
-                                        <input v-model="planForm.price" type="number" step="any" :min="platformMinCharge" inputmode="decimal" required :class="inputClass" placeholder="Preço" />
+                                        <input v-model="planForm.price" type="number" step="any" :min="platformMinCharge" :max="platformMaxCharge > 0 ? platformMaxCharge : undefined" inputmode="decimal" required :class="inputClass" placeholder="Preço" />
                                         <p v-if="platformMinChargeLabel" class="mt-1 text-xs text-amber-700 dark:text-amber-300">
                                             Ticket mínimo: {{ platformMinChargeLabel }}
+                                        </p>
+                                        <p v-if="platformMaxChargeLabel" class="mt-1 text-xs text-amber-700 dark:text-amber-300">
+                                            Ticket máximo: {{ platformMaxChargeLabel }}
                                         </p>
                                         <select v-model="planForm.currency" :class="inputClass">
                                             <option value="BRL">BRL</option>
@@ -2096,7 +2254,17 @@ function submit() {
                                 ]"
                                 @click="form.type = t.value"
                             >
-                                <component :is="typeIcons[t.value] || Package" class="mt-0.5 h-5 w-5 shrink-0 text-zinc-500 dark:text-zinc-400" />
+                                <img
+                                    v-if="typeIcons[t.value] === 'telegram-img'"
+                                    src="/images/integrations/telegram.svg"
+                                    alt=""
+                                    class="mt-0.5 h-5 w-5 shrink-0"
+                                />
+                                <component
+                                    v-else
+                                    :is="typeIcons[t.value] || Package"
+                                    class="mt-0.5 h-5 w-5 shrink-0 text-zinc-500 dark:text-zinc-400"
+                                />
                                 <div class="min-w-0 flex-1">
                                     <span class="font-medium text-zinc-900 dark:text-white">{{ t.label }}</span>
                                 </div>
@@ -2123,6 +2291,25 @@ function submit() {
                             </button>
                         </div>
                         <p v-if="form.errors.type" class="mt-2 text-sm text-red-600 dark:text-red-400">{{ form.errors.type }}</p>
+                    </div>
+                </section>
+
+                <section
+                    v-if="form.type === 'telegram'"
+                    class="overflow-hidden rounded-2xl border border-zinc-200/80 bg-white shadow-sm dark:border-zinc-700/80 dark:bg-zinc-800/95"
+                >
+                    <div class="border-b border-zinc-200/80 bg-zinc-50/80 px-6 py-4 dark:border-zinc-700/80 dark:bg-zinc-800/50">
+                        <h2 class="text-base font-semibold text-zinc-900 dark:text-white">Configuração de entrega Telegram</h2>
+                        <p class="mt-0.5 text-sm text-zinc-500 dark:text-zinc-400">
+                            Vincule bot e comunidades. A duração configura o direito de acesso do comprador; a validade do convite é separada.
+                        </p>
+                    </div>
+                    <div class="p-6">
+                        <TelegramDeliveryConfig
+                            v-model="form.telegram"
+                            :delivery="telegram_delivery"
+                            :errors="form.errors"
+                        />
                     </div>
                 </section>
 
@@ -2391,11 +2578,22 @@ function submit() {
                             </div>
                             <template v-if="form.conversion_pixels.meta.enabled">
                                 <div v-for="(item, idx) in form.conversion_pixels.meta.entries" :key="item.id" class="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-700 dark:bg-zinc-800 space-y-3">
-                                    <div class="flex items-center justify-between gap-2">
-                                        <span class="text-xs font-medium text-zinc-500 dark:text-zinc-400">Pixel {{ idx + 1 }}</span>
-                                        <button type="button" class="rounded-lg p-2 text-zinc-500 hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-700 dark:hover:text-zinc-300" @click="form.conversion_pixels.meta.entries.splice(idx, 1)">
+                                    <div class="flex items-start justify-between gap-2">
+                                        <div class="min-w-0 flex-1">
+                                            <label class="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">Nome do pixel</label>
+                                            <input v-model="item.name" type="text" maxlength="80" :placeholder="`Pixel ${idx + 1}`" :class="inputClass" />
+                                        </div>
+                                        <button type="button" class="mt-7 rounded-lg p-2 text-zinc-500 hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-700 dark:hover:text-zinc-300" @click="form.conversion_pixels.meta.entries.splice(idx, 1)">
                                             <Trash2 class="h-4 w-4" />
                                         </button>
+                                    </div>
+                                    <div v-if="reusableMetaPixels.length">
+                                        <label class="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">Reutilizar pixel</label>
+                                        <select :class="inputClass" @change="applyReusableMetaPixel(item, $event)">
+                                            <option value="">Usar pixel de outro produto…</option>
+                                            <option v-for="opt in reusableMetaPixels" :key="opt.key" :value="opt.key">{{ reusableMetaPixelLabel(opt) }}</option>
+                                        </select>
+                                        <p v-if="metaPixelReuseHint[item.id]" class="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">{{ metaPixelReuseHint[item.id] }}</p>
                                     </div>
                                     <div>
                                         <label class="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">Pixel ID</label>
@@ -2414,7 +2612,16 @@ function submit() {
                                         <Checkbox v-model="item.disable_order_bump_events" label="Desativar eventos de order bumps?" />
                                     </div>
                                 </div>
-                                <p v-if="form.conversion_pixels.meta.entries.length === 0" class="text-sm text-zinc-500 dark:text-zinc-400">{{ t('products.edit.no_pixels', 'Nenhum pixel. Clique em «Adicionar pixel» ou desative a integração.') }}</p>
+                                <div v-if="form.conversion_pixels.meta.entries.length === 0" class="space-y-3">
+                                    <p class="text-sm text-zinc-500 dark:text-zinc-400">{{ t('products.edit.no_pixels', 'Nenhum pixel. Clique em «Adicionar pixel» ou desative a integração.') }}</p>
+                                    <div v-if="reusableMetaPixels.length">
+                                        <label class="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">Reutilizar pixel</label>
+                                        <select :class="inputClass" @change="addReusableMetaPixel($event)">
+                                            <option value="">Usar pixel de outro produto…</option>
+                                            <option v-for="opt in reusableMetaPixels" :key="opt.key" :value="opt.key">{{ reusableMetaPixelLabel(opt) }}</option>
+                                        </select>
+                                    </div>
+                                </div>
                             </template>
                         </div>
 

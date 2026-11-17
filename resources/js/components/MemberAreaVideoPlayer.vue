@@ -10,10 +10,11 @@ import {
 import {
     createEmbedPlaybackController,
     providerNeedsOpenEmbedClick,
+    providerPinsUnifiedControls,
     providerUsesUnifiedEmbedControls,
 } from '@/lib/memberVideoPlayback';
 import { ensureVidstackLoaded } from '@/lib/vidstackLoader';
-import { Maximize2, Minimize2, Play, Pause, Monitor, Gauge, RotateCcw, RotateCw } from 'lucide-vue-next';
+import { Maximize2, Minimize2, Play, Pause, Monitor, Gauge, RotateCcw, RotateCw, Captions } from 'lucide-vue-next';
 
 const props = defineProps({
     src: { type: String, default: '' },
@@ -46,10 +47,11 @@ const useLegacyYoutube = computed(() => isYoutube.value && !useVidstackFallback.
 const useUnifiedEmbedControls = computed(
     () => providerUsesUnifiedEmbedControls(providerType.value) && !!iframeSrc.value,
 );
-/** Wistia no iOS: veil impede o 1º play nativo — manter iframe clicável. */
+/** Wistia/Panda: veil impede o 1º play nativo — manter iframe clicável. */
 const showEmbedVeil = computed(
     () => useUnifiedEmbedControls.value && !providerNeedsOpenEmbedClick(providerType.value),
 );
+const pinEmbedControls = computed(() => providerPinsUnifiedControls(providerType.value));
 const showVidstackPlayer = computed(
     () => !!props.src?.trim() && !isIframeProvider.value && (!isYoutube.value || useVidstackFallback.value),
 );
@@ -112,6 +114,8 @@ let ytApiPromise = null;
 let ytApplyQualityTimer = null;
 let ytProgressTimer = null;
 let ytControlsHideTimer = null;
+let ytCaptionTimers = [];
+let ytCaptionPoll = 0;
 
 const QUALITY_STORAGE_KEY = 'member-area-youtube-quality';
 const SPEED_STORAGE_KEY = 'member-area-youtube-speed';
@@ -134,6 +138,8 @@ const ytScrubbing = ref(false);
 const ytMaskActive = ref(false);
 let ytMaskTimer = null;
 const ytReady = ref(false);
+/** Legenda começa desligada em cada vídeo. O aluno liga só se quiser. */
+const captionsOn = ref(false);
 const ytLoading = ref(false);
 const ytLoadError = ref(false);
 let ytFallbackTimer = null;
@@ -265,6 +271,79 @@ function closeYtMenus() {
     speedMenuOpen.value = false;
 }
 
+function clearCaptionTimers() {
+    ytCaptionTimers.forEach((id) => clearTimeout(id));
+    ytCaptionTimers = [];
+}
+
+function youtubeCaptionTracks() {
+    try {
+        const tracks = ytPlayer?.getOption?.('captions', 'tracklist');
+        return Array.isArray(tracks) ? tracks : [];
+    } catch (_) {
+        return [];
+    }
+}
+
+function preferredCaptionTrack(tracks) {
+    const list = tracks.filter((track) => track && track.languageCode);
+    if (!list.length) return null;
+    const rank = (track) => {
+        const lang = String(track.languageCode || '').toLowerCase();
+        const auto = String(track.kind || '').toLowerCase() === 'asr' ? 1 : 0;
+        if (lang.startsWith('pt')) return auto;
+        return 10 + auto;
+    };
+    return [...list].sort((a, b) => rank(a) - rank(b))[0];
+}
+
+function applyYoutubeCaptions() {
+    if (!ytPlayer) return;
+    try {
+        if (!captionsOn.value) {
+            if (typeof ytPlayer.setOption === 'function') {
+                ytPlayer.setOption('captions', 'track', {});
+            }
+            return;
+        }
+        if (typeof ytPlayer.loadModule === 'function') {
+            ytPlayer.loadModule('captions');
+        }
+        const track = preferredCaptionTrack(youtubeCaptionTracks());
+        if (!track || typeof ytPlayer.setOption !== 'function') return;
+        const option = { languageCode: track.languageCode };
+        if (track.kind) option.kind = track.kind;
+        ytPlayer.setOption('captions', 'track', option);
+    } catch (_) {}
+}
+
+function enforceCaptionsOff() {
+    if (captionsOn.value) return;
+    applyYoutubeCaptions();
+    clearCaptionTimers();
+    for (const ms of [200, 700, 1500]) {
+        ytCaptionTimers.push(setTimeout(() => {
+            if (!captionsOn.value) applyYoutubeCaptions();
+        }, ms));
+    }
+}
+
+function toggleCaptions() {
+    captionsOn.value = !captionsOn.value;
+    closeYtMenus();
+    showControls();
+    clearCaptionTimers();
+    if (!captionsOn.value) {
+        try {
+            ytPlayer?.unloadModule?.('captions');
+        } catch (_) {}
+    }
+    applyYoutubeCaptions();
+    if (captionsOn.value) {
+        ytCaptionTimers.push(setTimeout(() => applyYoutubeCaptions(), 400));
+    }
+}
+
 function toggleQualityMenu() {
     const next = !qualityMenuOpen.value;
     closeYtMenus();
@@ -310,6 +389,9 @@ function destroyYoutubePlayer() {
         clearTimeout(ytControlsHideTimer);
         ytControlsHideTimer = null;
     }
+    clearCaptionTimers();
+    ytCaptionPoll = 0;
+    captionsOn.value = false;
     try {
         if (ytPlayer && typeof ytPlayer.destroy === 'function') ytPlayer.destroy();
     } catch (_) {}
@@ -407,6 +489,7 @@ async function initYoutubePlayer() {
             playsinline: 1,
             rel: 0,
             modestbranding: 1,
+            cc_load_policy: 0,
             iv_load_policy: 3,
             disablekb: 1,
             fs: 0,
@@ -424,6 +507,7 @@ async function initYoutubePlayer() {
                 selectedSpeed.value = speedToApply;
                 saveSpeed(speedToApply);
                 applyYoutubeSpeed(speedToApply);
+                enforceCaptionsOff();
                 // Aplicar qualidade em diferentes momentos melhora a chance de pegar (como na antiga).
                 applyYoutubeQuality(selectedQuality.value);
                 ytApplyQualityTimer = setTimeout(() => applyYoutubeQuality(selectedQuality.value), 800);
@@ -436,8 +520,16 @@ async function initYoutubePlayer() {
                         if (typeof d === 'number' && d > 0) ytDuration.value = d;
                         const t = ytPlayer.getCurrentTime?.();
                         if (typeof t === 'number' && t >= 0) ytCurrentTime.value = t;
+                        ytCaptionPoll += 1;
+                        if (!captionsOn.value && ytCaptionPoll % 4 === 0) {
+                            applyYoutubeCaptions();
+                        }
                     } catch (_) {}
                 }, 350);
+            },
+            onApiChange: () => {
+                if (captionsOn.value) applyYoutubeCaptions();
+                else enforceCaptionsOff();
             },
             onStateChange: (e) => {
                 // PLAYING
@@ -446,6 +538,8 @@ async function initYoutubePlayer() {
                     ytPosterVisible.value = false;
                     scheduleHideControls();
                     applyYoutubeSpeed(selectedSpeed.value);
+                    if (captionsOn.value) applyYoutubeCaptions();
+                    else enforceCaptionsOff();
                     if (ytApplyQualityTimer) clearTimeout(ytApplyQualityTimer);
                     ytApplyQualityTimer = setTimeout(() => applyYoutubeQuality(selectedQuality.value), 500);
                     markUserPlayed();
@@ -606,7 +700,8 @@ function destroyEmbedPlayback() {
 
 function scheduleHideEmbedControls() {
     if (embedControlsHideTimer) clearTimeout(embedControlsHideTimer);
-    if (!embedIsPlaying.value) {
+    // Panda: barra sempre visível — era o caso em que o aluno “não via controles”.
+    if (pinEmbedControls.value || !embedIsPlaying.value) {
         embedControlsVisible.value = true;
         return;
     }
@@ -1194,6 +1289,17 @@ function onContextMenu(e) {
                         <Minimize2 v-else class="h-4 w-4" aria-hidden="true" />
                     </button>
 
+                    <button
+                        type="button"
+                        class="yt-icon-btn"
+                        :class="{ 'is-on': captionsOn }"
+                        :aria-pressed="captionsOn"
+                        :aria-label="captionsOn ? 'Desligar legendas' : 'Ligar legendas'"
+                        @click="toggleCaptions"
+                    >
+                        <Captions class="h-4 w-4" aria-hidden="true" />
+                    </button>
+
                     <div class="yt-menu-wrap">
                         <button
                             type="button"
@@ -1276,7 +1382,7 @@ function onContextMenu(e) {
                 allowfullscreen
                 referrerpolicy="strict-origin-when-cross-origin"
             />
-            <!-- Camada transparente: toque/clique no vídeo = play/pause (exceto Wistia no mobile). -->
+            <!-- Camada transparente: toque/clique no vídeo = play/pause (exceto Wistia/Panda). -->
             <button
                 v-if="showEmbedVeil"
                 type="button"
@@ -1285,9 +1391,19 @@ function onContextMenu(e) {
                 @click.stop.prevent="toggleEmbedPlay"
             />
 
+            <button
+                v-if="!embedIsPlaying"
+                type="button"
+                class="embed-center-play"
+                aria-label="Reproduzir vídeo"
+                @click.stop.prevent="toggleEmbedPlay"
+            >
+                <Play class="h-8 w-8" aria-hidden="true" />
+            </button>
+
             <div
                 class="yt-progress-overlay"
-                :class="{ hidden: !embedControlsVisible && !embedScrubbing }"
+                :class="{ hidden: !pinEmbedControls && !embedControlsVisible && !embedScrubbing }"
                 @pointerdown.stop="onEmbedScrubStart"
                 @pointerup.stop="onEmbedScrubEnd"
                 @pointercancel.stop="onEmbedScrubEnd"
@@ -1306,7 +1422,11 @@ function onContextMenu(e) {
                 />
             </div>
 
-            <div class="yt-legacy-controls" :class="{ hidden: !embedControlsVisible }" @pointerdown.stop>
+            <div
+                class="yt-legacy-controls"
+                :class="{ hidden: !pinEmbedControls && !embedControlsVisible }"
+                @pointerdown.stop
+            >
                 <div class="yt-controlbar">
                     <button type="button" class="yt-icon-btn" aria-label="Voltar 10 segundos" @click="seekEmbedBy(-UNIFIED_SEEK_STEP_SEC)">
                         <RotateCcw class="h-4 w-4" aria-hidden="true" />
@@ -1412,6 +1532,30 @@ function onContextMenu(e) {
     position: relative;
     width: 100%;
     height: 100%;
+}
+.embed-center-play {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    z-index: 4;
+    transform: translate(-50%, -50%);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    height: 64px;
+    width: 64px;
+    border-radius: 9999px;
+    border: 1px solid rgba(255, 255, 255, 0.28);
+    background: rgba(0, 0, 0, 0.62);
+    color: rgba(255, 255, 255, 0.95);
+    backdrop-filter: blur(6px);
+}
+.embed-center-play:active {
+    transform: translate(-50%, -50%) scale(0.96);
+}
+.embed-center-play:focus-visible {
+    outline: 2px solid rgba(78, 156, 246, 0.9);
+    outline-offset: 2px;
 }
 .member-embed-iframe {
     width: 100%;
@@ -1607,6 +1751,11 @@ function onContextMenu(e) {
 }
 .yt-icon-btn:active {
     transform: scale(0.98);
+}
+.yt-icon-btn.is-on {
+    background: rgba(255, 255, 255, 0.28);
+    border-color: rgba(255, 255, 255, 0.4);
+    color: #fff;
 }
 .yt-time {
     font-size: 12px;

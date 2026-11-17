@@ -72,7 +72,60 @@ class MedPolicyService
 
     public function shouldHoldTenantBalance(MedDispute $dispute): bool
     {
-        return $dispute->responsible_party === MedDispute::PARTY_TENANT;
+        if ($dispute->responsible_party === MedDispute::PARTY_TENANT) {
+            return true;
+        }
+
+        if ($dispute->responsible_party !== MedDispute::PARTY_PLATFORM) {
+            return false;
+        }
+
+        $order = $dispute->relationLoaded('order') ? $dispute->order : null;
+        if (! $order instanceof Order && $dispute->order_id) {
+            $order = $dispute->order()->first();
+        }
+
+        if (! $order instanceof Order || $this->isApiPixRestOrder($order)) {
+            return false;
+        }
+
+        // BrasaPay: com "MED Zero" a plataforma absorve o MED de PIX — não retém o saldo do infoprodutor.
+        if ($order->payment_method === 'pix' && $this->medZeroForTenant((int) $order->tenant_id)) {
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
+     * O infoprodutor acompanha a disputa no painel: API PIX sob a responsabilidade dele
+     * e MED de infoproduto, cujo saldo fica retido até a solução.
+     */
+    public function sellerFollowsDispute(MedDispute $dispute): bool
+    {
+        return $this->shouldHoldTenantBalance($dispute);
+    }
+
+    /**
+     * @param  Builder<MedDispute>  $query
+     * @return Builder<MedDispute>
+     */
+    public function scopeDisputesVisibleToSeller(Builder $query): Builder
+    {
+        return $query->where(function (Builder $visible) {
+            $visible->where('responsible_party', MedDispute::PARTY_TENANT)
+                ->orWhere(function (Builder $product) {
+                    $product->where('responsible_party', MedDispute::PARTY_PLATFORM)
+                        ->whereHas('order', function (Builder $order) {
+                            $order->where(function (Builder $notApiPix) {
+                                $notApiPix->whereNull('api_application_id')
+                                    ->orWhere('payment_method', '!=', 'pix')
+                                    ->orWhereNull('metadata->source')
+                                    ->orWhere('metadata->source', '!=', 'api');
+                            });
+                        });
+                });
+        });
     }
 
     public function orderOriginLabel(Order $order): string

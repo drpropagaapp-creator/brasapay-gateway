@@ -364,9 +364,16 @@ class CheckoutController extends Controller
             $isSubscriptionCheckout
         );
         $installmentsEnabled = $resolvedInstallments['enabled'];
+        $cardGatewaySlug = null;
+        foreach ($payload['available_payment_methods'] as $methodRow) {
+            if (($methodRow['id'] ?? '') === 'card') {
+                $cardGatewaySlug = is_string($methodRow['gateway_slug'] ?? null) ? $methodRow['gateway_slug'] : null;
+                break;
+            }
+        }
         $payload['card_installments_enabled'] = $installmentsEnabled;
         $payload['card_max_installments'] = $installmentsEnabled
-            ? $resolvedInstallments['max']
+            ? min($resolvedInstallments['max'], CardInstallments::ceilingForGateway($cardGatewaySlug))
             : 1;
 
         $orderBumps = $product->orderBumps()->with(['targetProduct', 'targetProductOffer'])->get()
@@ -498,6 +505,9 @@ class CheckoutController extends Controller
         $payload['meta_tracking_debug'] = config('meta_tracking.debug');
         $payload['turnstile'] = CheckoutTurnstileSettings::publicConfig();
         $payload['platform_checkout_notice'] = PlatformCompanySettings::resolvedCheckoutNoticeForTenant($product->tenant_id, $product);
+        $payload['telegram_access_notice'] = $product->isTelegram()
+            ? (string) config('telegram.access_starts_notice', \App\Models\TelegramAccessGrant::accessStartsNotice())
+            : null;
 
         return Inertia::render('Checkout/Show', $payload);
     }
@@ -738,7 +748,8 @@ class CheckoutController extends Controller
             } else {
                 $rules['payment_token'] = ['required', 'string', 'max:10000'];
             }
-            $rules['installments'] = ['nullable', 'integer', 'min:1', 'max:12'];
+            $installmentCeiling = CardInstallments::ceilingForGateway(is_string($firstCardGateway) ? $firstCardGateway : null);
+            $rules['installments'] = ['nullable', 'integer', 'min:1', 'max:'.$installmentCeiling];
         }
         if ($request->input('payment_method') === 'boleto') {
             $rules['address_zipcode'] = ['required', 'string', 'max:9'];
@@ -901,6 +912,7 @@ class CheckoutController extends Controller
         $tenantId = $product->tenant_id;
 
         $plainPassword = null;
+        $needsProvisionalPassword = in_array($product->type, [Product::TYPE_AREA_MEMBROS, Product::TYPE_TELEGRAM], true);
         if ($product->type === Product::TYPE_AREA_MEMBROS) {
             $loginConfig = $product->member_area_config['login'] ?? [];
             $passwordMode = $loginConfig['password_mode'] ?? 'auto';
@@ -910,6 +922,8 @@ class CheckoutController extends Controller
             } else {
                 $plainPassword = Str::random(12);
             }
+        } elseif ($product->type === Product::TYPE_TELEGRAM) {
+            $plainPassword = Str::random(12);
         } else {
             $plainPassword = Str::random(32);
         }
@@ -919,11 +933,11 @@ class CheckoutController extends Controller
             $validated['email'],
             (string) ($validated['name'] ?? $validated['email']),
             $passwordHash,
-            $product->type === Product::TYPE_AREA_MEMBROS,
+            $needsProvisionalPassword,
         );
         $user = $buyerAccount['user'];
         $orderMetadata = [];
-        if ($product->type === Product::TYPE_AREA_MEMBROS && $plainPassword !== null) {
+        if ($needsProvisionalPassword && $plainPassword !== null) {
             Cache::put('access_password.'.$user->id.'.'.$product->id, $plainPassword, now()->addHours(2));
             $orderMetadata['access_password_temp'] = encrypt($plainPassword);
         }
@@ -1193,8 +1207,8 @@ class CheckoutController extends Controller
                 return $this->idempotencyReturn($idempotencyKey, redirect()->away($portalUrl));
             } catch (\Throwable $e) {
                 $this->rollbackFailedOrder($order, $e);
-                $msg = $e->getMessage() ?: 'Não foi possível iniciar o pagamento Open Finance. Tente novamente.';
-                $msg = str_ireplace(['Lina OpenX', 'LinaOpenX', 'Lina'], 'Open Finance', $msg);
+                $msg = $e->getMessage() ?: 'Não foi possível iniciar o Pix Automático. Tente novamente.';
+                $msg = str_ireplace(['Lina OpenX', 'LinaOpenX', 'Lina'], 'Pix Automático', $msg);
                 if ($request->expectsJson()) {
                     return response()->json([
                         'success' => false,
@@ -1795,7 +1809,8 @@ class CheckoutController extends Controller
                 $installmentsEnabled,
                 $maxInstallments,
                 (float) $order->amount,
-                $plan !== null
+                $plan !== null,
+                is_string($firstCardGwForSdk) ? $firstCardGwForSdk : null
             );
             $card = CardInstallments::applyToCardPayload($card, $installments);
             $order->update([
@@ -2271,7 +2286,7 @@ class CheckoutController extends Controller
 
         $stored = session('lina_display.'.$token);
         if (! is_array($stored)) {
-            return redirect()->route('login')->with('error', 'Sessão Open Finance expirada. Tente novamente no checkout.');
+            return redirect()->route('login')->with('error', 'Sessão do Pix Automático expirada. Tente novamente no checkout.');
         }
 
         $orderId = (int) ($stored['order_id'] ?? 0);
@@ -3248,6 +3263,7 @@ class CheckoutController extends Controller
         $tenantId = $product->tenant_id;
 
         $plainPassword = null;
+        $needsProvisionalPassword = in_array($product->type, [Product::TYPE_AREA_MEMBROS, Product::TYPE_TELEGRAM], true);
         if ($product->type === Product::TYPE_AREA_MEMBROS) {
             $loginConfig = $product->member_area_config['login'] ?? [];
             $passwordMode = $loginConfig['password_mode'] ?? 'auto';
@@ -3257,6 +3273,8 @@ class CheckoutController extends Controller
             } else {
                 $plainPassword = Str::random(12);
             }
+        } elseif ($product->type === Product::TYPE_TELEGRAM) {
+            $plainPassword = Str::random(12);
         } else {
             $plainPassword = Str::random(32);
         }
@@ -3266,7 +3284,7 @@ class CheckoutController extends Controller
             $validated['email'],
             (string) ($validated['name'] ?? $validated['email']),
             $passwordHash,
-            $product->type === Product::TYPE_AREA_MEMBROS,
+            $needsProvisionalPassword,
         );
         $user = $buyerAccount['user'];
         if (! $buyerAccount['was_recently_created'] && ! empty($validated['name']) && trim((string) $user->name) !== trim((string) $validated['name'])) {
@@ -3294,7 +3312,7 @@ class CheckoutController extends Controller
                 ! empty($draft['subscription_plan_id'])
             );
         }
-        if ($product->type === Product::TYPE_AREA_MEMBROS && $plainPassword !== null) {
+        if ($needsProvisionalPassword && $plainPassword !== null) {
             Cache::put('access_password.'.$user->id.'.'.$product->id, $plainPassword, now()->addHours(2));
             $orderMetadata['access_password_temp'] = encrypt($plainPassword);
         }

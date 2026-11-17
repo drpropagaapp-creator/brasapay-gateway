@@ -28,7 +28,15 @@ const props = defineProps({
     },
     filters: {
         type: Object,
-        default: () => ({ status: 'all', q: '', per_page: 25 }),
+        default: () => ({ status: 'all', q: '', per_page: 25, gateway: '', method: '' }),
+    },
+    gateway_options: {
+        type: Array,
+        default: () => [],
+    },
+    payment_method_options: {
+        type: Array,
+        default: () => [],
     },
     refund_requests_pending_count: {
         type: Number,
@@ -39,6 +47,8 @@ const props = defineProps({
 const filterStatus = ref(props.filters?.status ?? 'all');
 const filterQ = ref(props.filters?.q ?? '');
 const filterPerPage = ref(String(props.filters?.per_page ?? 25));
+const filterGateway = ref(props.filters?.gateway ?? '');
+const filterMethod = ref(props.filters?.method ?? '');
 
 const sidebarOpen = ref(false);
 const selectedVenda = ref(null);
@@ -72,6 +82,8 @@ watch(
         filterStatus.value = f?.status ?? 'all';
         filterQ.value = f?.q ?? '';
         filterPerPage.value = String(f?.per_page ?? 25);
+        filterGateway.value = f?.gateway ?? '';
+        filterMethod.value = f?.method ?? '';
     },
     { deep: true }
 );
@@ -116,6 +128,8 @@ function listQueryParams(extra = {}) {
         status: filterStatus.value,
         q: filterQ.value?.trim() || undefined,
         per_page: Number(filterPerPage.value) || 25,
+        gateway: filterGateway.value || undefined,
+        method: filterMethod.value || undefined,
         ...extra,
     };
 }
@@ -204,6 +218,8 @@ function approveQuerySuffix() {
     if (filterStatus.value && filterStatus.value !== 'all') params.set('status', filterStatus.value);
     if (filterQ.value?.trim()) params.set('q', filterQ.value.trim());
     if (filterPerPage.value) params.set('per_page', filterPerPage.value);
+    if (filterGateway.value) params.set('gateway', filterGateway.value);
+    if (filterMethod.value) params.set('method', filterMethod.value);
     const s = params.toString();
     return s ? `?${s}` : '';
 }
@@ -380,6 +396,8 @@ function submitBulkDelete() {
             status: filterStatus.value,
             q: filterQ.value?.trim() || undefined,
             per_page: Number(filterPerPage.value) || 25,
+            gateway: filterGateway.value || undefined,
+            method: filterMethod.value || undefined,
         },
         {
             preserveScroll: true,
@@ -579,6 +597,38 @@ const tableColCount = computed(() => (isRefundRequestsFilter.value ? 12 : 11));
                         autocomplete="off"
                     />
                 </div>
+                <div class="w-full sm:w-56">
+                    <label for="tx-gateway" class="mb-1 block text-xs font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+                        Recebedor
+                    </label>
+                    <select
+                        id="tx-gateway"
+                        v-model="filterGateway"
+                        class="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-600 dark:bg-zinc-900"
+                        @change="applyFilters"
+                    >
+                        <option value="">Todos</option>
+                        <option v-for="opt in gateway_options" :key="opt.value" :value="opt.value">
+                            {{ opt.label }}
+                        </option>
+                    </select>
+                </div>
+                <div class="w-full sm:w-48">
+                    <label for="tx-method" class="mb-1 block text-xs font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+                        Método
+                    </label>
+                    <select
+                        id="tx-method"
+                        v-model="filterMethod"
+                        class="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-600 dark:bg-zinc-900"
+                        @change="applyFilters"
+                    >
+                        <option value="">Todos</option>
+                        <option v-for="opt in payment_method_options" :key="opt.value" :value="opt.value">
+                            {{ opt.label }}
+                        </option>
+                    </select>
+                </div>
                 <div class="w-full sm:w-36">
                     <label for="tx-per-page" class="mb-1 block text-xs font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
                         Por página
@@ -727,6 +777,14 @@ const tableColCount = computed(() => (isRefundRequestsFilter.value ? 12 : 11));
                     <div class="min-w-0 space-y-3 border-l border-zinc-100 pl-3 dark:border-zinc-700">
                         <div>
                             <dt class="text-[11px] font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+                                Tipo
+                            </dt>
+                            <dd class="mt-0.5 text-sm text-zinc-800 dark:text-zinc-200">
+                                {{ o.sale_type_label || 'Único' }}
+                            </dd>
+                        </div>
+                        <div>
+                            <dt class="text-[11px] font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
                                 Método
                             </dt>
                             <dd class="mt-0.5 break-words text-sm text-zinc-800 dark:text-zinc-200">
@@ -797,6 +855,7 @@ const tableColCount = computed(() => (isRefundRequestsFilter.value ? 12 : 11));
                             <th class="min-w-0 px-2 py-2.5">Infoprodutor</th>
                             <th class="min-w-0 px-2 py-2.5">Produto</th>
                             <th class="w-[6.75rem] px-2 py-2.5">Status</th>
+                            <th class="w-[5.5rem] px-2 py-2.5">Tipo</th>
                             <th v-if="isRefundRequestsFilter" class="min-w-0 px-2 py-2.5">Solicitação</th>
                             <th class="w-[5.25rem] px-2 py-2.5">Método</th>
                             <th class="w-[6.25rem] px-2 py-2.5">Recebedor</th>
@@ -880,6 +939,16 @@ const tableColCount = computed(() => (isRefundRequestsFilter.value ? 12 : 11));
                                         Aprovação manual
                                     </span>
                                 </div>
+                            </td>
+                            <td class="px-2 py-2.5 align-top">
+                                <span
+                                    class="inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium"
+                                    :class="o.sale_type_label === 'Assinatura'
+                                        ? 'bg-[var(--color-primary)]/15 text-[var(--color-primary)]'
+                                        : 'bg-zinc-100 text-zinc-700 dark:bg-zinc-700 dark:text-zinc-200'"
+                                >
+                                    {{ o.sale_type_label || 'Único' }}
+                                </span>
                             </td>
                             <td v-if="isRefundRequestsFilter" class="min-w-0 px-2 py-2.5 align-top">
                                 <div class="leading-tight text-zinc-500 dark:text-zinc-400">

@@ -1,5 +1,6 @@
 <script setup>
 import { ref, computed } from 'vue';
+import { Link } from '@inertiajs/vue3';
 import { X, ExternalLink } from 'lucide-vue-next';
 import { buildWhatsAppUrl, formatCustomerPhone } from '@/lib/whatsappUrl';
 
@@ -217,6 +218,18 @@ const shippingDeliveryLabel = computed(() => {
                                 <p class="text-sm text-zinc-900 dark:text-white">{{ statusLabel(venda.status) }}</p>
                             </div>
                             <div
+                                v-if="venda.status === 'disputed'"
+                                class="space-y-2 rounded-xl border border-orange-200 bg-orange-50/80 px-3 py-3 dark:border-orange-900/50 dark:bg-orange-950/30"
+                            >
+                                <p class="text-xs font-medium uppercase tracking-wide text-orange-800 dark:text-orange-200">Disputa MED</p>
+                                <p class="text-sm text-orange-950 dark:text-orange-100">
+                                    Este pedido está em disputa. O saldo desta venda fica retido até a solução. Se a disputa for ganha, o valor volta para a carteira. Se for perdida, o valor sai da carteira.
+                                </p>
+                                <Link href="/vendas/disputas" class="text-sm font-medium text-[var(--color-primary)] hover:underline">
+                                    Acompanhar em Disputas MED
+                                </Link>
+                            </div>
+                            <div
                                 v-if="venda.status === 'refunded' && venda.manual_refund"
                                 class="space-y-2 rounded-xl border border-red-200 bg-red-50/80 px-3 py-3 dark:border-red-900/50 dark:bg-red-950/30"
                             >
@@ -282,6 +295,10 @@ const shippingDeliveryLabel = computed(() => {
                                         class="ml-1 inline-flex rounded-full bg-lime-100 px-1.5 py-0.5 text-[10px] font-medium uppercase text-lime-900 dark:bg-lime-900/40 dark:text-lime-200"
                                     >{{ venda.sale_channel_label || 'PixGO' }}</span>
                                 </p>
+                            </div>
+                            <div v-if="venda.product_type_label" class="space-y-1">
+                                <p class="text-xs font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Tipo</p>
+                                <p class="text-sm text-zinc-900 dark:text-white">{{ venda.product_type_label }}</p>
                             </div>
                             <div
                                 v-if="hasShipping"

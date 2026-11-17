@@ -7,12 +7,15 @@ use App\Models\OrderItem;
 use App\Models\Product;
 use App\Models\RefundRequest;
 use App\Models\User;
+use App\Models\TelegramAccessGrant;
 use App\Services\DeliverableAccessLinkService;
 use App\Services\MemberAreaResolver;
 use App\Services\PlatformI18nService;
 use App\Services\RefundRequestService;
 use App\Services\StorageService;
+use App\Services\Telegram\TelegramAccessGrantService;
 use App\Support\RefundEligibility;
+use App\Support\WhatsappPhoneNormalizer;
 use App\Support\SaleOrigin;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -117,9 +120,13 @@ class CustomerPanelController extends Controller
         ?OrderItem $line = null,
     ): array {
         $productId = $product?->id ?? $order->product_id;
-        $accessUrl = $this->productAccessUrl($product, $resolver, $user);
+        $accessUrl = $this->productAccessUrl($product, $resolver, $user, $order);
         $isBundle = $line?->isBundleItem() ?? false;
         $isBump = ! $isBundle && ($line?->source === OrderItem::SOURCE_ORDER_BUMP || $position > 0);
+        $telegramGrant = null;
+        if ($product?->isTelegram()) {
+            $telegramGrant = app(TelegramAccessGrantService::class)->findByOrderProduct((int) $order->id, (string) $product->id);
+        }
 
         return [
             'purchase_key' => $order->id.'-'.($productId ?? 'main').'-'.$position,
@@ -133,12 +140,14 @@ class CustomerPanelController extends Controller
             'product_image_url' => $this->productImageUrl($product),
             'access_url' => $accessUrl,
             'access_cta' => $this->accessCta($product, $accessUrl),
-            'access_hint' => $this->accessHint($product, $accessUrl),
+            'access_hint' => $this->accessHint($product, $accessUrl, $telegramGrant),
+            'telegram_delivery_status' => $telegramGrant?->delivery_status,
+            'telegram_access_notice' => $product?->isTelegram() ? TelegramAccessGrant::accessStartsNotice() : null,
             'purchased_at' => $this->dateIso($order->created_at),
             'purchased_at_label' => $this->dateLabel($order->created_at),
             'payment_method_label' => $this->paymentMethodLabel($order),
             'seller_name' => $this->sellerName($product),
-            'support_email' => $this->supportEmail($product),
+            ...$this->supportContacts($product),
             'shipping' => $this->shippingSummary($order, $product),
             'refund_status' => $position === 0 && ! $isBundle ? $this->latestRefundStatus($order) : null,
             'is_order_bump' => $isBump,
@@ -179,7 +188,7 @@ class CustomerPanelController extends Controller
             'purchased_at_label' => $this->dateLabel($grantedAt),
             'payment_method_label' => null,
             'seller_name' => $this->sellerName($product),
-            'support_email' => $this->supportEmail($product),
+            ...$this->supportContacts($product),
             'shipping' => null,
             'refund_status' => null,
             'is_order_bump' => false,
@@ -262,10 +271,28 @@ class CustomerPanelController extends Controller
         return ($item['sale_origin'] ?? null) === SaleOrigin::MEMBER_MODULE_RENEWAL;
     }
 
-    private function productAccessUrl(?Product $product, MemberAreaResolver $resolver, User $user): ?string
+    private function productAccessUrl(?Product $product, MemberAreaResolver $resolver, User $user, ?Order $order = null): ?string
     {
         if ($product === null) {
             return null;
+        }
+
+        if ($product->type === Product::TYPE_TELEGRAM) {
+            $grant = null;
+            if ($order) {
+                $grant = app(TelegramAccessGrantService::class)->findByOrderProduct((int) $order->id, (string) $product->id);
+            }
+            if (! $grant) {
+                $grant = TelegramAccessGrant::query()
+                    ->where('user_id', $user->id)
+                    ->where('product_id', (string) $product->id)
+                    ->orderByDesc('id')
+                    ->first();
+            }
+
+            return $grant
+                ? route('painel-cliente.telegram.show', ['grant' => $grant->id])
+                : null;
         }
 
         if ($product->type === Product::TYPE_AREA_MEMBROS && $product->checkout_slug) {
@@ -317,12 +344,21 @@ class CustomerPanelController extends Controller
             Product::TYPE_AREA_MEMBROS_EXTERNA => 'Acessar plataforma',
             Product::TYPE_LINK => 'Abrir conteúdo',
             Product::TYPE_APLICATIVO => 'Abrir aplicativo',
+            Product::TYPE_TELEGRAM => 'Abrir acesso Telegram',
             default => 'Acessar',
         };
     }
 
-    private function accessHint(?Product $product, ?string $accessUrl): ?string
+    private function accessHint(?Product $product, ?string $accessUrl, ?TelegramAccessGrant $telegramGrant = null): ?string
     {
+        if ($product?->isTelegram()) {
+            if ($accessUrl) {
+                return TelegramAccessGrant::accessStartsNotice();
+            }
+
+            return 'O direito de acesso Telegram será liberado após a confirmação do pagamento.';
+        }
+
         if ($accessUrl !== null && $accessUrl !== '') {
             return null;
         }
@@ -361,11 +397,33 @@ class CustomerPanelController extends Controller
         return $name !== '' ? $name : null;
     }
 
-    private function supportEmail(?Product $product): ?string
+    /**
+     * E-mail do produto, com fallback no cadastro do dono.
+     * WhatsApp só entra se o vendedor ativar o canal e informar o número no produto.
+     *
+     * @return array{support_email: ?string, support_whatsapp: ?string}
+     */
+    private function supportContacts(?Product $product): array
     {
-        $email = trim((string) ($product?->support_email ?? ''));
+        $owner = $product?->tenantOwner;
 
-        return $email !== '' && filter_var($email, FILTER_VALIDATE_EMAIL) ? $email : null;
+        $email = trim((string) ($product?->support_email ?? ''));
+        if ($email === '' || ! filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            $email = trim((string) ($owner?->email ?? ''));
+        }
+        if ($email === '' || ! filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            $email = null;
+        }
+
+        $whatsapp = null;
+        if ($product !== null && $product->support_whatsapp_enabled) {
+            $whatsapp = WhatsappPhoneNormalizer::normalize($product->support_whatsapp);
+        }
+
+        return [
+            'support_email' => $email,
+            'support_whatsapp' => $whatsapp,
+        ];
     }
 
     /**

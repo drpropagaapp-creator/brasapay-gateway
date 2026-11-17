@@ -17,8 +17,9 @@ class MemberLessonPdfDrmValidator
 
     /**
      * @param  list<array{url?: string, name?: string}>  $files
+     * @param  array{header_footer?: bool, center?: bool}  $marks
      */
-    public function assertFilesCompatible(array $files, ?int $tenantId): void
+    public function assertFilesCompatible(array $files, ?int $tenantId, array $marks = []): void
     {
         foreach ($files as $file) {
             if (! $this->isPdf($file)) {
@@ -32,7 +33,7 @@ class MemberLessonPdfDrmValidator
 
             try {
                 $binary = $this->pdfSource->read($url, $tenantId);
-                $this->pdfWatermarker->stamp($binary, $this->probeIdentity());
+                $this->pdfWatermarker->stamp($binary, $this->probeIdentity(), $marks);
             } catch (MemberPdfWatermarkException $e) {
                 throw new MemberPdfWatermarkException(
                     $this->isReadFailure($e) ? self::PRODUCER_READ_MESSAGE : self::PRODUCER_REJECT_MESSAGE

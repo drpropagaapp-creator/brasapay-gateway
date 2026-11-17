@@ -12,6 +12,7 @@ use Carbon\Carbon;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Validation\ValidationException;
 use Tests\TestCase;
 
 class WithdrawalPolicyTest extends TestCase
@@ -56,6 +57,65 @@ class WithdrawalPolicyTest extends TestCase
 
         $this->assertFalse(WithdrawalPolicyService::allowsRequestAt($blocked));
         $this->assertTrue(WithdrawalPolicyService::allowsRequestAt($allowed));
+    }
+
+    public function test_interval_blocks_a_second_withdrawal_until_hours_pass(): void
+    {
+        if (! Schema::hasTable('withdrawals')) {
+            $this->markTestSkipped('withdrawals table');
+        }
+
+        WithdrawalPolicyService::setInterval(true, 6);
+
+        $seller = User::factory()->create(['role' => User::ROLE_INFOPRODUTOR]);
+        $seller->forceFill(['tenant_id' => $seller->id])->save();
+
+        Withdrawal::query()->create([
+            'tenant_id' => $seller->id,
+            'user_id' => $seller->id,
+            'amount' => 40,
+            'fee_amount' => 0,
+            'net_amount' => 40,
+            'bucket' => 'pix',
+            'status' => 'paid',
+            'currency' => 'BRL',
+        ]);
+
+        try {
+            WithdrawalPolicyService::assertIntervalAllows((int) $seller->id);
+            $this->fail('O intervalo entre saques deveria bloquear a nova solicitação.');
+        } catch (ValidationException $e) {
+            $this->assertArrayHasKey('amount', $e->errors());
+        }
+
+        Carbon::setTestNow(now()->addHours(6));
+        WithdrawalPolicyService::assertIntervalAllows((int) $seller->id);
+        Carbon::setTestNow();
+    }
+
+    public function test_rejected_withdrawal_does_not_start_the_interval(): void
+    {
+        if (! Schema::hasTable('withdrawals')) {
+            $this->markTestSkipped('withdrawals table');
+        }
+
+        WithdrawalPolicyService::setInterval(true, 24);
+
+        $seller = User::factory()->create(['role' => User::ROLE_INFOPRODUTOR]);
+        $seller->forceFill(['tenant_id' => $seller->id])->save();
+
+        Withdrawal::query()->create([
+            'tenant_id' => $seller->id,
+            'user_id' => $seller->id,
+            'amount' => 40,
+            'fee_amount' => 0,
+            'net_amount' => 40,
+            'bucket' => 'pix',
+            'status' => 'rejected',
+            'currency' => 'BRL',
+        ]);
+
+        WithdrawalPolicyService::assertIntervalAllows((int) $seller->id);
     }
 
     public function test_platform_admin_can_update_withdrawal_policy(): void
