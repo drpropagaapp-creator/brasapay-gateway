@@ -29,7 +29,14 @@ class MedPolicyServiceTest extends TestCase
 
         $this->assertFalse($this->policy->isApiPixRestOrder($order));
         $this->assertSame(MedDispute::PARTY_PLATFORM, $this->policy->responsiblePartyForOrder($order));
-        $this->assertFalse($this->policy->shouldHoldTenantBalance(new MedDispute(['responsible_party' => MedDispute::PARTY_PLATFORM])));
+
+        $dispute = new MedDispute([
+            'responsible_party' => MedDispute::PARTY_PLATFORM,
+            'tenant_id' => 1,
+        ]);
+        $dispute->setRelation('order', $order);
+        $this->assertTrue($this->policy->shouldHoldTenantBalance($dispute));
+        $this->assertTrue($this->policy->sellerFollowsDispute($dispute));
     }
 
     public function test_api_pix_rest_order_is_tenant_managed_without_med_zero(): void
@@ -58,6 +65,14 @@ class MedPolicyServiceTest extends TestCase
 
         $this->assertTrue($this->policy->medZeroForTenant(7));
         $this->assertSame(MedDispute::PARTY_PLATFORM, $this->policy->responsiblePartyForOrder($order));
+
+        $dispute = new MedDispute([
+            'responsible_party' => MedDispute::PARTY_PLATFORM,
+            'tenant_id' => 7,
+        ]);
+        $dispute->setRelation('order', $order);
+        $this->assertFalse($this->policy->shouldHoldTenantBalance($dispute));
+        $this->assertFalse($this->policy->sellerFollowsDispute($dispute));
     }
 
     public function test_set_med_zero_clears_setting_when_disabled(): void

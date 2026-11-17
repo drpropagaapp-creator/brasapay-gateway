@@ -35,6 +35,17 @@ function submitDefense() {
 function generateDossier() {
     router.post(`/vendas/disputas/${props.dispute.id}/gerar-dossie`, {}, { preserveScroll: true });
 }
+
+function statusLabel(status) {
+    const map = {
+        open: 'Aberta',
+        defense_submitted: 'Defesa enviada',
+        resolved_won: 'Ganha',
+        resolved_lost: 'Perdida',
+        cancelled: 'Cancelada',
+    };
+    return map[status] ?? status;
+}
 </script>
 
 <template>
@@ -67,8 +78,12 @@ function generateDossier() {
                     <dd class="font-medium">{{ formatBRL(dispute.amount_cents) }}</dd>
                 </div>
                 <div class="flex justify-between gap-4">
+                    <dt class="text-zinc-500">Origem</dt>
+                    <dd>{{ dispute.origin_label || 'Infoproduto' }}</dd>
+                </div>
+                <div class="flex justify-between gap-4">
                     <dt class="text-zinc-500">Status</dt>
-                    <dd>{{ dispute.status }}</dd>
+                    <dd>{{ statusLabel(dispute.status) }}</dd>
                 </div>
                 <div v-if="dispute.txid" class="flex justify-between gap-4">
                     <dt class="text-zinc-500">TXID</dt>
@@ -79,6 +94,15 @@ function generateDossier() {
                     <dd>{{ new Date(dispute.defended_at).toLocaleString('pt-BR') }}</dd>
                 </div>
             </dl>
+            <p
+                v-if="dispute.balance_held"
+                class="mt-4 rounded-lg border border-orange-200 bg-orange-50 px-3 py-2 text-sm text-orange-950 dark:border-orange-900/50 dark:bg-orange-950/30 dark:text-orange-100"
+            >
+                O saldo desta venda está retido até a solução. Se a disputa for ganha, o valor volta para a carteira. Se for perdida, o valor sai da carteira.
+            </p>
+            <p v-if="dispute.managed_by_platform" class="mt-3 text-sm text-zinc-600 dark:text-zinc-400">
+                A plataforma conduz a defesa. Você acompanha o resultado nesta tela.
+            </p>
             <p v-if="dispute.defense_text" class="mt-4 rounded-lg bg-zinc-50 p-3 text-sm dark:bg-zinc-800">
                 {{ dispute.defense_text }}
             </p>
@@ -97,7 +121,7 @@ function generateDossier() {
         </div>
 
         <form
-            v-if="dispute.is_open"
+            v-if="dispute.is_open && !dispute.managed_by_platform"
             class="space-y-4 rounded-2xl border border-orange-200 bg-orange-50/50 p-6 dark:border-orange-900/50 dark:bg-orange-950/20"
             @submit.prevent="submitDefense"
         >
@@ -126,6 +150,6 @@ function generateDossier() {
             <Button type="submit" :disabled="form.processing">Enviar defesa</Button>
         </form>
 
-        <p v-else class="text-sm text-zinc-500">Esta disputa não aceita mais defesa.</p>
+        <p v-else-if="!dispute.is_open" class="text-sm text-zinc-500">Esta disputa não aceita mais defesa.</p>
     </div>
 </template>

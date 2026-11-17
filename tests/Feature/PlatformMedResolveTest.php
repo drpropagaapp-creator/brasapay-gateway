@@ -208,4 +208,55 @@ class PlatformMedResolveTest extends TestCase
         $walletAfterRelease = TenantWallet::query()->where('tenant_id', $seller->id)->first();
         $this->assertGreaterThan($availableAfterHold, (float) ($walletAfterRelease->available_pix ?? 0));
     }
+
+    public function test_platform_product_med_lost_removes_wallet_balance(): void
+    {
+        if (! Schema::hasTable('wallet_transactions') || ! Schema::hasTable('tenant_wallets')) {
+            $this->markTestSkipped('wallet tables');
+        }
+
+        Setting::set('merchant_settlement_rules', [
+            'pix' => ['days_to_available' => 0, 'reserve_percent' => 0],
+            'card' => ['days_to_available' => 0, 'reserve_percent' => 0],
+            'boleto' => ['days_to_available' => 0, 'reserve_percent' => 0],
+        ], null);
+
+        $seller = User::factory()->create(['role' => User::ROLE_INFOPRODUTOR]);
+        $seller->forceFill(['tenant_id' => $seller->id])->save();
+
+        $buyer = User::factory()->create(['role' => User::ROLE_ALUNO]);
+        $product = $this->createTestProduct(['tenant_id' => (int) $seller->id]);
+        $order = Order::create([
+            'tenant_id' => (int) $seller->id,
+            'user_id' => $buyer->id,
+            'product_id' => $product->id,
+            'status' => 'completed',
+            'amount' => 80,
+            'email' => 'platform-med-lost@example.com',
+            'payment_method' => 'pix',
+            'gateway' => 'cajupay',
+        ]);
+
+        OrderCompletedWalletCreditor::credit($order->fresh());
+        PlatformOrderAdminService::markDisputed($order->fresh());
+
+        $walletAfterHold = TenantWallet::query()->where('tenant_id', $seller->id)->first();
+        $availableAfterHold = (float) ($walletAfterHold->available_pix ?? 0);
+
+        $dispute = MedDispute::create([
+            'order_id' => $order->id,
+            'tenant_id' => (int) $seller->id,
+            'responsible_party' => MedDispute::PARTY_PLATFORM,
+            'cajupay_dispute_id' => 'checkout-lost-'.$order->id,
+            'status' => MedDispute::STATUS_OPEN,
+            'amount_cents' => 8000,
+            'opened_at' => now(),
+        ]);
+
+        app(MedResolutionService::class)->applyWalletOutcome($dispute, 'lost');
+
+        $this->assertSame('refunded', $order->fresh()->status);
+        $walletAfterLoss = TenantWallet::query()->where('tenant_id', $seller->id)->first();
+        $this->assertLessThanOrEqual($availableAfterHold, (float) ($walletAfterLoss->available_pix ?? 0));
+    }
 }

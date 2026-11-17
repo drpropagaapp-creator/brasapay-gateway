@@ -2,7 +2,7 @@
 
 @section('content')
     <p style="margin:0 0 16px 0;font-size:18px;font-weight:600;color:#18181b;">Disputa MED aberta</p>
-    <p style="margin:0 0 16px 0;">Uma disputa MED (Mecanismo Especial de Devolução) foi aberta sobre um pagamento PIX via API. O valor pode estar retido até a resolução.</p>
+    <p style="margin:0 0 16px 0;">Uma disputa MED foi aberta neste pedido. O saldo da venda fica retido até a solução: se a disputa for ganha, o valor volta para a carteira; se for perdida, o valor sai da carteira.</p>
     <table role="presentation" cellspacing="0" cellpadding="0" style="width:100%;margin:0 0 24px 0;background-color:#fafafa;border-radius:8px;border:1px solid #e4e4e7;">
         <tr>
             <td style="padding:16px 20px;">
@@ -24,7 +24,7 @@
     <table role="presentation" cellspacing="0" cellpadding="0" style="margin:0 auto;">
         <tr>
             <td style="border-radius:8px;background-color:{{ $branding['theme_primary'] }};">
-                <a href="{{ $disputeUrl }}" style="display:inline-block;padding:14px 28px;font-size:15px;font-weight:600;color:#ffffff;text-decoration:none;">Ver disputa e enviar defesa</a>
+                <a href="{{ $disputeUrl }}" style="display:inline-block;padding:14px 28px;font-size:15px;font-weight:600;color:#ffffff;text-decoration:none;">{{ $dispute->responsible_party === 'tenant' ? 'Ver disputa e enviar defesa' : 'Acompanhar disputa' }}</a>
             </td>
         </tr>
     </table>
