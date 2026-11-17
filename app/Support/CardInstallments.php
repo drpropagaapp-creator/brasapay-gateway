@@ -13,7 +13,7 @@ final class CardInstallments
     public const MAX_ALLOWED = 12;
 
     /** @var list<string> */
-    public const GATEWAY_SLUGS = ['pagarme', 'efi', 'asaas', 'cielo', 'cajupay', 'mercadopago'];
+    public const GATEWAY_SLUGS = ['pagarme', 'efi', 'asaas', 'cielo', 'cajupay', 'mercadopago', 'cakto'];
 
     public static function gatewaySupports(?string $slug): bool
     {

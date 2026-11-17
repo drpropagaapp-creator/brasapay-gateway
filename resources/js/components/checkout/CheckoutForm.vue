@@ -21,6 +21,7 @@ import {
 } from '@/composables/usePagarmeTokenizecard.js';
 import { requestCieloPaymentToken, formatCieloSopHolderName } from '@/composables/useCieloSilentOrderPost.js';
 import { loadCajuPaySdk } from '@/composables/useCajuPaySdk';
+import { initCaktoAntifraud, requestCaktoPaymentToken } from '@/composables/useCaktoSdk.js';
 import { isValidCpf } from '@/utils/brazilianDocuments.js';
 import { navigateAfterCheckout } from '@/lib/checkoutRedirect.js';
 import { trackCheckoutAddPaymentInfo, trackCheckoutPurchase } from '@/composables/useCheckoutPurchaseTracking.js';
@@ -488,6 +489,17 @@ const isCardGatewayAsaas = computed(() => isCardMethodSelected.value && currentM
 const isCardGatewayPagarme = computed(() => isCardMethodSelected.value && currentMethodGatewaySlug.value === 'pagarme');
 const isCardGatewayCielo = computed(() => isCardMethodSelected.value && currentMethodGatewaySlug.value === 'cielo');
 const isCardGatewayCajupay = computed(() => isCardMethodSelected.value && currentMethodGatewaySlug.value === 'cajupay');
+const isCardGatewayCakto = computed(() => isCardMethodSelected.value && currentMethodGatewaySlug.value === 'cakto');
+/** client_id público da Cakto (o SDK tokeniza o cartão só com ele). */
+const caktoClientId = computed(() => {
+    const k = props.cardGatewayKeys?.cakto;
+    return (k && typeof k.client_id === 'string' ? k.client_id : '').trim();
+});
+// Antifraude Cakto: começa a coletar sinais assim que o cartão Cakto é escolhido.
+watch([isCardGatewayCakto, caktoClientId], ([active, clientId]) => {
+    if (!active || !clientId) return;
+    initCaktoAntifraud(clientId).catch(() => {});
+}, { immediate: true });
 const isCardPaymentFamily = computed(() => ['card', 'apple_pay', 'google_pay'].includes(form.payment_method));
 const isPaypalMethodSelected = computed(() => form.payment_method === 'paypal');
 const isLinaOpenxPixAuto = computed(() => form.payment_method === 'pix_auto' && currentMethodGatewaySlug.value === 'linaopenx');
@@ -2409,6 +2421,18 @@ async function getCieloPaymentToken() {
     });
 }
 
+async function getCaktoPaymentToken() {
+    return requestCaktoPaymentToken({
+        clientId: caktoClientId.value,
+        holderName: (cardHolderName.value || form.name || '').trim(),
+        cardNumber: cardNumberDigits.value,
+        cvv: cardCvv.value,
+        expMonth: cardExpMonth.value,
+        expYear: cardExpYear.value,
+        installments: currentInstallments(),
+    });
+}
+
 async function getEfiPaymentToken() {
     const EfiPay = (await import('payment-token-efi')).default;
     const env = props.cardEfiSandbox ? 'sandbox' : 'production';
@@ -2588,7 +2612,11 @@ function submit() {
                 cardFormError.value = 'Preencha o endereço de cobrança completo (CEP, rua, número, bairro, cidade e UF).';
                 return;
             }
-        } else if (isCardGatewayCielo.value) {
+        } else if (isCardGatewayCielo.value || isCardGatewayCakto.value) {
+            if (isCardGatewayCakto.value && !caktoClientId.value) {
+                cardFormError.value = props.t('checkout.card_not_configured') || 'Pagamento por cartão não está configurado.';
+                return;
+            }
             const nameOk = (cardHolderName.value || form.name || '').trim().length >= 3;
             const numberOk = cardNumberDigits.value.length >= 13 && cardNumberDigits.value.length <= 19;
             const expOk = cardExpMonth.value.length === 2 && parseInt(cardExpMonth.value, 10) >= 1 && parseInt(cardExpMonth.value, 10) <= 12
@@ -2621,7 +2649,9 @@ function submit() {
                 ? getPagarmePaymentToken()
                 : isCardGatewayCielo.value
                     ? getCieloPaymentToken()
-                    : getEfiPaymentToken();
+                    : isCardGatewayCakto.value
+                        ? getCaktoPaymentToken()
+                        : getEfiPaymentToken();
         getTokenPromise
             .then(({ payment_token, card_mask }) => {
                 const payload = {
@@ -3656,8 +3686,8 @@ function submit() {
                         Aguardando confirmação do pagamento…
                     </p>
                 </div>
-                <!-- Efí / Cielo: campos manuais (Cielo tokeniza via Silent Order Post, sem PAN no backend) -->
-                <div v-else-if="isCardGatewayEfi || isCardGatewayCielo" class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <!-- Efí / Cielo / Cakto: campos manuais (Cielo via Silent Order Post e Cakto via SDK tokenizam sem PAN no backend) -->
+                <div v-else-if="isCardGatewayEfi || isCardGatewayCielo || isCardGatewayCakto" class="grid grid-cols-1 gap-4 sm:grid-cols-2">
                     <template v-if="isCardGatewayCielo">
                         <input type="hidden" class="bp-sop-cardholdername" :value="formatCieloSopHolderName(cardHolderName || form.name)" />
                         <input type="hidden" class="bp-sop-cardnumber" :value="cardNumberDigits" />

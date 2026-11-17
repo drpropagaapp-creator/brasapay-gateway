@@ -29,6 +29,7 @@ final class GatewayWebhookUrl
             'mercadopago' => '/webhooks/gateways/mercadopago',
             'pagarme' => '/webhooks/gateways/pagarme',
             'cielo' => '/webhooks/gateways/cielo',
+            'cakto' => '/webhooks/gateways/cakto',
             'xflow' => '/webhooks/gateways/xflow',
             'xflow.payout' => '/webhooks/gateways/xflow/payout',
             'xflow.disputes' => '/webhooks/gateways/xflow/disputes',
