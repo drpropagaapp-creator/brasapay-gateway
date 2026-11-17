@@ -7,6 +7,7 @@ use App\Models\MedDispute;
 use App\Services\Bspay\BspayMedService;
 use App\Services\CajuPay\CajuPayMedService;
 use App\Services\Med\MedDefenseDossierService;
+use App\Services\Med\MedPolicyService;
 use App\Services\SellerActivityLogService;
 use App\Services\Versell\VersellMedService;
 use App\Services\Xflow\XflowMedService;
@@ -26,6 +27,7 @@ class SellerMedDisputesController extends Controller
         protected BspayMedService $bspayMedService,
         protected XflowMedService $xflowMedService,
         protected MedDefenseDossierService $dossierService,
+        protected MedPolicyService $policy,
     ) {}
 
     public function index(Request $request): Response
@@ -45,7 +47,7 @@ class SellerMedDisputesController extends Controller
     public function show(Request $request, MedDispute $dispute): Response
     {
         $tenantId = (int) $request->user()->tenant_id;
-        if ((int) $dispute->tenant_id !== $tenantId || ! $dispute->isTenantManaged()) {
+        if ((int) $dispute->tenant_id !== $tenantId || ! $this->policy->sellerFollowsDispute($dispute)) {
             abort(404);
         }
         $dispute = $this->medService->getForTenant($tenantId, $dispute);
@@ -61,6 +63,10 @@ class SellerMedDisputesController extends Controller
         $tenantId = (int) $request->user()->tenant_id;
         if ((int) $dispute->tenant_id !== $tenantId) {
             abort(403);
+        }
+
+        if ($dispute->isPlatformManaged()) {
+            return back()->with('error', 'A plataforma conduz a defesa desta disputa. Acompanhe o resultado por aqui.');
         }
 
         $validated = $request->validate([
@@ -116,7 +122,7 @@ class SellerMedDisputesController extends Controller
     public function generateDossier(Request $request, MedDispute $dispute): RedirectResponse
     {
         $tenantId = (int) $request->user()->tenant_id;
-        if ((int) $dispute->tenant_id !== $tenantId || ! $dispute->isTenantManaged()) {
+        if ((int) $dispute->tenant_id !== $tenantId || ! $this->policy->sellerFollowsDispute($dispute)) {
             abort(403);
         }
 
@@ -139,7 +145,7 @@ class SellerMedDisputesController extends Controller
     public function downloadDossier(Request $request, MedDispute $dispute): BinaryFileResponse|RedirectResponse
     {
         $tenantId = (int) $request->user()->tenant_id;
-        if ((int) $dispute->tenant_id !== $tenantId || ! $dispute->isTenantManaged()) {
+        if ((int) $dispute->tenant_id !== $tenantId || ! $this->policy->sellerFollowsDispute($dispute)) {
             abort(403);
         }
 
@@ -188,6 +194,9 @@ class SellerMedDisputesController extends Controller
             'opened_at' => $dispute->opened_at?->toIso8601String(),
             'resolved_at' => $dispute->resolved_at?->toIso8601String(),
             'is_open' => $dispute->isOpen(),
+            'managed_by_platform' => $dispute->isPlatformManaged(),
+            'balance_held' => $dispute->isOpen() && $this->policy->shouldHoldTenantBalance($dispute),
+            'origin_label' => $order !== null && $this->policy->isApiPixRestOrder($order) ? 'API PIX' : 'Infoproduto',
             'defense_via_acquirer_panel' => XflowMedService::isXflowDispute($dispute),
             'reason' => $dispute->reason,
             'has_dossier' => $this->dossierService->isAvailable($dispute),
