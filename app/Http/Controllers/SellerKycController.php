@@ -56,7 +56,7 @@ class SellerKycController extends Controller
         }
 
         $subject = $user->kycSubjectUser();
-        if ($subject->kyc_status === User::KYC_APPROVED) {
+        if ($subject->kyc_status === User::KYC_APPROVED && ! KycRequiredDocuments::mayUpgradeLegacyDocuments($subject)) {
             return redirect()->route('dashboard')->with('success', 'Sua conta já está verificada.');
         }
 
@@ -387,6 +387,9 @@ class SellerKycController extends Controller
 
     private function kycMutationBlockedMessage(User $subject): ?string
     {
+        if ($subject->kyc_status === User::KYC_BLOCKED) {
+            return 'Esta conta está bloqueada e não pode enviar documentos.';
+        }
         if ($subject->kyc_status === User::KYC_PENDING_REVIEW) {
             return 'Documentos em análise. Aguarde a conclusão.';
         }
@@ -397,6 +400,9 @@ class SellerKycController extends Controller
             return 'A migração para CNPJ está em análise. Aguarde a conclusão.';
         }
         if (PjConversion::allowsDocumentUpload($subject)) {
+            return null;
+        }
+        if (KycRequiredDocuments::mayUpgradeLegacyDocuments($subject)) {
             return null;
         }
 
@@ -427,6 +433,9 @@ class SellerKycController extends Controller
         ];
         if (Schema::hasColumn('users', 'kyc_requirements_version')) {
             $attrs['kyc_requirements_version'] = KycRequiredDocuments::VERSION_CURRENT;
+        }
+        if (Schema::hasColumn('users', 'kyc_needs_document_review')) {
+            $attrs['kyc_needs_document_review'] = false;
         }
 
         $subject->forceFill($attrs)->save();

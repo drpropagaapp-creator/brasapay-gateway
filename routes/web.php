@@ -101,6 +101,10 @@ Route::get('/firebase-messaging-sw.js', function () {
     ]);
 })->name('panel.pwa.firebase-sw');
 
+Route::get('/marketplace', [\App\Http\Controllers\PublicMarketplaceController::class, 'index'])
+    ->middleware('throttle:60,1')
+    ->name('marketplace.public');
+
 Route::get('/politica-privacidade', [\App\Http\Controllers\LegalPagesController::class, 'privacy'])->name('legal.privacy');
 Route::get('/termos-de-uso', [\App\Http\Controllers\LegalPagesController::class, 'terms'])->name('legal.terms');
 
@@ -182,6 +186,11 @@ Route::post('/webhooks/platform-whatsapp/{secret}', [\App\Http\Controllers\Webho
     ->middleware('throttle:120,1')
     ->where('secret', '[A-Za-z0-9]{32,64}')
     ->name('webhooks.platform-whatsapp');
+
+Route::post('/webhooks/telegram/{secret}', [\App\Http\Controllers\Webhooks\TelegramWebhookController::class, 'handle'])
+    ->middleware('throttle:120,1')
+    ->where('secret', '[A-Za-z0-9]{32,64}')
+    ->name('webhooks.telegram');
 
 Route::middleware(['throttle:60,1', \App\Http\Middleware\LogInboundGatewayWebhook::class])->group(function () {
     Route::post('/webhooks/gateways/linaopenx', [\App\Http\Controllers\Webhooks\LinaOpenxWebhookController::class, 'handle'])->name('webhooks.linaopenx');
@@ -408,6 +417,9 @@ Route::prefix('plataforma')->name('plataforma.')->group(function () {
     });
     Route::middleware(['auth', 'platform.admin', 'stacker.license'])->group(function () {
         Route::get('/dashboard', [\App\Http\Controllers\Platform\DashboardController::class, '__invoke'])->name('dashboard');
+        Route::post('/dashboard/relatorio-ia', [\App\Http\Controllers\Platform\DashboardController::class, 'aiReport'])
+            ->middleware('throttle:6,1')
+            ->name('dashboard.ai-report');
         Route::get('/meu-perfil', [\App\Http\Controllers\Platform\ProfileController::class, 'index'])->name('profile.index');
         Route::post('/meu-perfil', [\App\Http\Controllers\Platform\ProfileController::class, 'update'])->name('profile.update');
         Route::put('/meu-perfil/senha', [\App\Http\Controllers\Platform\ProfileController::class, 'updatePassword'])->name('profile.update-password');
@@ -459,6 +471,10 @@ Route::prefix('plataforma')->name('plataforma.')->group(function () {
             Route::post('/excluir-em-massa', [\App\Http\Controllers\Platform\UsersController::class, 'bulkDestroy'])
                 ->middleware('throttle:5,1')
                 ->name('bulk-destroy');
+            Route::get('/aguardando-aprovacao', [\App\Http\Controllers\Platform\UsersController::class, 'pendingApproval'])->name('pending-approval');
+            Route::post('/{user}/aprovacao-basica', [\App\Http\Controllers\Platform\UsersController::class, 'approveBasic'])
+                ->middleware('throttle:30,1')
+                ->name('basic-approve');
             Route::get('/{user}/edit', [\App\Http\Controllers\Platform\UsersController::class, 'edit'])->name('edit');
             Route::get('/{user}', [\App\Http\Controllers\Platform\UsersController::class, 'show'])->name('show');
             Route::get('/{user}/taxas-efetivas', [\App\Http\Controllers\Platform\UsersController::class, 'effectiveFees'])->name('effective-fees');
@@ -681,6 +697,7 @@ Route::prefix('plataforma')->name('plataforma.')->group(function () {
         Route::post('/financeiro/gateways/{slug}/test', [\App\Http\Controllers\GatewaysController::class, 'test'])->name('financeiro.gateways.test');
         Route::post('/financeiro/gateways/{slug}/certificate', [\App\Http\Controllers\GatewaysController::class, 'updateCertificate'])->name('financeiro.gateways.certificate');
         Route::put('/financeiro/gateways/{slug}/certificate', [\App\Http\Controllers\GatewaysController::class, 'updateCertificate']);
+        Route::put('/financeiro/cajupay/gross-up-payout-fee', [\App\Http\Controllers\Platform\CajuPayAccountsController::class, 'updateGrossUp'])->name('financeiro.cajupay.gross-up');
         Route::post('/financeiro/cajupay-contas', [\App\Http\Controllers\Platform\CajuPayAccountsController::class, 'store'])->name('financeiro.cajupay-contas.store');
         Route::get('/financeiro/cajupay-contas/{cajuPayAccount}', [\App\Http\Controllers\Platform\CajuPayAccountsController::class, 'show'])->name('financeiro.cajupay-contas.show');
         Route::put('/financeiro/cajupay-contas/{cajuPayAccount}', [\App\Http\Controllers\Platform\CajuPayAccountsController::class, 'update'])->name('financeiro.cajupay-contas.update');
@@ -711,6 +728,9 @@ Route::prefix('plataforma')->name('plataforma.')->group(function () {
         Route::get('/marketplace', [\App\Http\Controllers\Platform\PlatformMarketplaceController::class, 'index'])->name('marketplace.index');
         Route::post('/marketplace/aceitacao-automatica', [\App\Http\Controllers\Platform\PlatformMarketplaceController::class, 'updateAutoAccept'])
             ->name('marketplace.auto-accept')
+            ->middleware('throttle:30,1');
+        Route::post('/marketplace/link-publico', [\App\Http\Controllers\Platform\PlatformMarketplaceController::class, 'updatePublic'])
+            ->name('marketplace.public.update')
             ->middleware('throttle:30,1');
         Route::post('/marketplace/{product}/autorizar', [\App\Http\Controllers\Platform\PlatformMarketplaceController::class, 'authorizeProduct'])
             ->name('marketplace.authorize')
@@ -756,6 +776,7 @@ Route::prefix('plataforma')->name('plataforma.')->group(function () {
             ->name('indique-ganhe.saques.reject');
 
         Route::get('/transacoes', [\App\Http\Controllers\Platform\TransactionsController::class, 'index'])->name('transacoes.index');
+        Route::get('/assinaturas', [\App\Http\Controllers\Platform\SubscriptionsController::class, 'index'])->name('assinaturas.index');
         Route::get('/transacoes-api', [\App\Http\Controllers\Platform\TransactionsController::class, 'apiIndex'])->name('transacoes-api.index');
         Route::post('/transacoes/pedidos/excluir-em-massa', [\App\Http\Controllers\Platform\TransactionsController::class, 'bulkDestroyPending'])
             ->name('transacoes.pedidos.bulk-destroy')
@@ -768,6 +789,12 @@ Route::prefix('plataforma')->name('plataforma.')->group(function () {
         Route::post('/clientes/{user}/acessar', [\App\Http\Controllers\Platform\CustomerImpersonationController::class, 'start'])
             ->name('clientes.impersonate')
             ->middleware('throttle:20,1');
+        Route::post('/clientes/{user}/email', [\App\Http\Controllers\Platform\CustomersController::class, 'updateEmail'])
+            ->name('clientes.email.update')
+            ->middleware('throttle:10,1');
+        Route::post('/clientes/{user}/senha', [\App\Http\Controllers\Platform\CustomersController::class, 'resetPassword'])
+            ->name('clientes.password.reset')
+            ->middleware('throttle:10,1');
         Route::get('/clientes/{user}/produtos/{produto}/dossie', [\App\Http\Controllers\Platform\CustomersController::class, 'dossier'])
             ->name('clientes.acessos.dossie');
         Route::get('/clientes/{user}/produtos/{produto}/dossie/exportar', [\App\Http\Controllers\Platform\CustomersController::class, 'exportDossier'])
@@ -823,6 +850,7 @@ Route::prefix('plataforma')->name('plataforma.')->group(function () {
         Route::get('/verificacoes-kyc/usuario/{user}', [\App\Http\Controllers\Platform\KycVerificationsController::class, 'show'])->name('kyc.show');
         Route::post('/verificacoes-kyc/usuario/{user}/aprovar', [\App\Http\Controllers\Platform\KycVerificationsController::class, 'approve'])->name('kyc.approve')->middleware('throttle:30,1');
         Route::post('/verificacoes-kyc/usuario/{user}/rejeitar', [\App\Http\Controllers\Platform\KycVerificationsController::class, 'reject'])->name('kyc.reject')->middleware('throttle:30,1');
+        Route::post('/verificacoes-kyc/usuario/{user}/rejeitar-bloquear', [\App\Http\Controllers\Platform\KycVerificationsController::class, 'rejectAndBlock'])->name('kyc.reject-block')->middleware('throttle:30,1');
         Route::post('/verificacoes-kyc/usuario/{user}/aprovar-migracao-pj', [\App\Http\Controllers\Platform\KycVerificationsController::class, 'approvePjConversion'])->name('kyc.approve-pj-conversion')->middleware('throttle:30,1');
         Route::post('/verificacoes-kyc/usuario/{user}/rejeitar-migracao-pj', [\App\Http\Controllers\Platform\KycVerificationsController::class, 'rejectPjConversion'])->name('kyc.reject-pj-conversion')->middleware('throttle:30,1');
         Route::post('/verificacoes-kyc/usuario/{user}/consultar-cnpj', [\App\Http\Controllers\Platform\KycVerificationsController::class, 'refreshCnpj'])->name('kyc.refresh-cnpj')->middleware('throttle:20,1');
@@ -858,6 +886,14 @@ Route::prefix('plataforma')->name('plataforma.')->group(function () {
         Route::post('/integrax/test', [\App\Http\Controllers\Platform\IntegraxController::class, 'test'])->name('integrax.test');
 
         Route::get('/uazapi', [\App\Http\Controllers\Platform\UazapiController::class, 'index'])->name('uazapi.index');
+
+        Route::get('/telegram', [\App\Http\Controllers\Platform\TelegramController::class, 'index'])->name('telegram.index');
+        Route::put('/telegram', [\App\Http\Controllers\Platform\TelegramController::class, 'update'])
+            ->middleware('throttle:30,1')
+            ->name('telegram.update');
+        Route::put('/telegram/sellers/{user}', [\App\Http\Controllers\Platform\TelegramController::class, 'updateSeller'])
+            ->middleware('throttle:30,1')
+            ->name('telegram.sellers.update');
 
         Route::put('/whatsapp-canal/channel', [\App\Http\Controllers\Platform\PlatformWhatsappController::class, 'updateChannel'])->name('whatsapp-canal.channel.update');
         Route::post('/whatsapp-canal/channel/connect', [\App\Http\Controllers\Platform\PlatformWhatsappController::class, 'connect'])->name('whatsapp-canal.channel.connect');
@@ -1154,6 +1190,8 @@ Route::middleware(['auth', 'admin.tenant', 'seller.panel', 'stacker.license', 'r
         Route::post('/produtos/cupons', [\App\Http\Controllers\CuponsController::class, 'store'])->name('cupons.store');
         Route::put('/produtos/cupons/{coupon}', [\App\Http\Controllers\CuponsController::class, 'update'])->name('cupons.update');
         Route::delete('/produtos/cupons/{coupon}', [\App\Http\Controllers\CuponsController::class, 'destroy'])->name('cupons.destroy');
+        Route::get('/produtos/telegram/assinantes', [\App\Http\Controllers\TelegramSubscribersController::class, 'index'])
+            ->name('telegram.subscribers.index');
         Route::get('/produtos/alunos', [\App\Http\Controllers\AlunosController::class, 'index'])->name('alunos.index');
         Route::get('/produtos/alunos/{aluno}', [\App\Http\Controllers\AlunosController::class, 'show'])->name('alunos.show')->where('aluno', '[0-9]+');
         Route::post('/produtos/alunos', [\App\Http\Controllers\AlunosController::class, 'store'])->name('alunos.store');
@@ -1399,6 +1437,41 @@ Route::middleware(['auth', 'admin.tenant', 'seller.panel', 'stacker.license', 'r
                 ->name('integrations.mcp.destroy');
         });
 
+        Route::middleware('seller.integration:telegram')->group(function () {
+            Route::get('/integracoes/telegram', [\App\Http\Controllers\TelegramIntegrationController::class, 'index'])
+                ->name('integrations.telegram.index');
+            Route::post('/integracoes/telegram/bots/preview', [\App\Http\Controllers\TelegramIntegrationController::class, 'previewBot'])
+                ->middleware('throttle:20,1')
+                ->name('integrations.telegram.bots.preview');
+            Route::post('/integracoes/telegram/bots', [\App\Http\Controllers\TelegramIntegrationController::class, 'storeBot'])
+                ->middleware('throttle:20,1')
+                ->name('integrations.telegram.bots.store');
+            Route::post('/integracoes/telegram/bots/{bot}/test', [\App\Http\Controllers\TelegramIntegrationController::class, 'testBot'])
+                ->middleware('throttle:20,1')
+                ->name('integrations.telegram.bots.test');
+            Route::put('/integracoes/telegram/bots/{bot}/token', [\App\Http\Controllers\TelegramIntegrationController::class, 'updateBotToken'])
+                ->middleware('throttle:20,1')
+                ->name('integrations.telegram.bots.token');
+            Route::delete('/integracoes/telegram/bots/{bot}', [\App\Http\Controllers\TelegramIntegrationController::class, 'destroyBot'])
+                ->middleware('throttle:20,1')
+                ->name('integrations.telegram.bots.destroy');
+            Route::post('/integracoes/telegram/communities', [\App\Http\Controllers\TelegramIntegrationController::class, 'storeCommunity'])
+                ->middleware('throttle:20,1')
+                ->name('integrations.telegram.communities.store');
+            Route::post('/integracoes/telegram/communities/{community}/confirm', [\App\Http\Controllers\TelegramIntegrationController::class, 'confirmDiscoveredCommunity'])
+                ->middleware('throttle:20,1')
+                ->name('integrations.telegram.communities.confirm');
+            Route::post('/integracoes/telegram/communities/{community}/refresh', [\App\Http\Controllers\TelegramIntegrationController::class, 'refreshCommunity'])
+                ->middleware('throttle:20,1')
+                ->name('integrations.telegram.communities.refresh');
+            Route::post('/integracoes/telegram/communities/{community}/verify', [\App\Http\Controllers\TelegramIntegrationController::class, 'verifyCommunity'])
+                ->middleware('throttle:20,1')
+                ->name('integrations.telegram.communities.verify');
+            Route::delete('/integracoes/telegram/communities/{community}', [\App\Http\Controllers\TelegramIntegrationController::class, 'destroyCommunity'])
+                ->middleware('throttle:20,1')
+                ->name('integrations.telegram.communities.destroy');
+        });
+
         Route::middleware('seller.integration:webhook')->group(function () {
             Route::get('/integracoes/webhooks', [\App\Http\Controllers\WebhookController::class, 'index'])->name('integrations.webhooks.index');
             Route::post('/integracoes/webhooks', [\App\Http\Controllers\WebhookController::class, 'store'])->name('integrations.webhooks.store');
@@ -1440,6 +1513,13 @@ Route::middleware(['auth', 'customer.panel'])->group(function () {
     Route::get('/area-membros', [\App\Http\Controllers\MemberAreaController::class, 'index'])->name('member-area.index');
     Route::get('/painel-cliente', [\App\Http\Controllers\CustomerPanelController::class, 'index'])->name('painel-cliente.index');
     Route::get('/painel-cliente/marketplace', [\App\Http\Controllers\CustomerMarketplaceController::class, 'index'])->name('painel-cliente.marketplace');
+    Route::get('/painel-cliente/telegram/{grant}', [\App\Http\Controllers\TelegramAccessController::class, 'show'])
+        ->whereNumber('grant')
+        ->name('painel-cliente.telegram.show');
+    Route::post('/painel-cliente/telegram/{grant}/refresh-invites', [\App\Http\Controllers\TelegramAccessController::class, 'refreshInvites'])
+        ->whereNumber('grant')
+        ->middleware('throttle:20,1')
+        ->name('painel-cliente.telegram.refresh');
     Route::post('/painel-cliente/reembolso', [\App\Http\Controllers\CustomerPanelController::class, 'requestRefund'])->name('painel-cliente.refund')->middleware('throttle:20,1');
     Route::get('/painel-cliente/assinaturas', [\App\Http\Controllers\CustomerSubscriptionsController::class, 'index'])->name('painel-cliente.subscriptions');
     Route::post('/painel-cliente/assinaturas/{subscription}/cancelar', [\App\Http\Controllers\CustomerSubscriptionsController::class, 'cancel'])

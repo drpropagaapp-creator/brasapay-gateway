@@ -13,6 +13,7 @@ import {
 } from 'lucide-vue-next';
 import Button from '@/components/ui/Button.vue';
 import Toggle from '@/components/ui/Toggle.vue';
+import TelegramDeliveryConfig from '@/components/produtos/TelegramDeliveryConfig.vue';
 import { useI18n } from '@/composables/useI18n';
 import { sanitizeHtmlAllowlist } from '@/lib/sanitizeHtml';
 import { normalizeMoneyInput } from '@/lib/moneyDecimal';
@@ -34,6 +35,7 @@ const props = defineProps({
         }),
     },
     bundleCandidates: { type: Array, default: () => [] },
+    telegramDelivery: { type: Object, default: () => ({}) },
 });
 
 const emit = defineEmits(['close', 'success']);
@@ -41,9 +43,15 @@ const { t } = useI18n();
 const page = usePage();
 
 const platformMinCharge = computed(() => Number(page.props.platform_minimum_charge_brl ?? 0));
+const platformMaxCharge = computed(() => Number(page.props.platform_maximum_charge_brl ?? 0));
 const platformMinChargeLabel = computed(() =>
     platformMinCharge.value > 0
         ? new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(platformMinCharge.value)
+        : null
+);
+const platformMaxChargeLabel = computed(() =>
+    platformMaxCharge.value > 0
+        ? new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(platformMaxCharge.value)
         : null
 );
 
@@ -53,10 +61,23 @@ const selectedType = ref(null);
 const typeIcons = {
     aplicativo: Smartphone,
     area_membros: Users,
+    area_membros_externa: Users,
     link: Link,
     link_pagamento: CreditCard,
+    telegram: 'telegram-img',
     produto_fisico: Truck,
 };
+
+const defaultTelegramForm = () => ({
+    bot_id: null,
+    community_ids: [],
+    access_duration_preset: '30',
+    access_duration_days: 30,
+    is_lifetime: false,
+    invite_expiration_hours: 24,
+    welcome_message: '',
+    auto_remove_on_expiry: true,
+});
 
 const form = useForm({
     name: '',
@@ -64,6 +85,7 @@ const form = useForm({
     category: '',
     type: '',
     billing_type: 'one_time',
+    subscription_recurrence_months: '',
     price: '',
     currency: 'BRL',
     is_active: true,
@@ -74,6 +96,7 @@ const form = useForm({
         max: 2,
     },
     bundle_product_ids: [],
+    telegram: defaultTelegramForm(),
 });
 
 const priceNum = computed(() => parseFloat(form.price) || 0);
@@ -87,13 +110,13 @@ const platformInstallmentMax = computed(() => {
     const fromUi = Number(props.checkoutGatewayUi?.platform_card_installments_max);
     const fromShared = Number(page.props.platform_card_installments?.max);
     const raw = Number.isFinite(fromUi) && fromUi > 0 ? fromUi : fromShared;
-    return Math.min(12, Math.max(2, raw || 12));
+    return Math.min(18, Math.max(2, raw || 12));
 });
 const maxAllowedInstallments = computed(() => {
     if (form.billing_type === 'subscription') return 1;
     const p = priceNum.value;
     if (!p || p < MIN_PARCELA_BRL) return 1;
-    const byAmount = Math.min(12, Math.max(1, Math.floor(p / MIN_PARCELA_BRL)));
+    const byAmount = Math.min(18, Math.max(1, Math.floor(p / MIN_PARCELA_BRL)));
     return Math.min(byAmount, platformInstallmentMax.value);
 });
 const installmentMaxOptions = computed(() => {
@@ -128,6 +151,12 @@ function selectType(type) {
     if (!type.available) return;
     selectedType.value = type.value;
     form.type = type.value;
+    if (type.value === 'telegram') {
+        if (!props.telegramDelivery?.sales_operational) {
+            form.is_active = false;
+        }
+        form.telegram = defaultTelegramForm();
+    }
     step.value = 2;
 }
 
@@ -151,6 +180,9 @@ function submit() {
     fd.append('category', form.category ?? '');
     fd.append('type', form.type);
     fd.append('billing_type', form.billing_type);
+    if (form.billing_type === 'subscription') {
+        fd.append('subscription_recurrence_months', String(form.subscription_recurrence_months || ''));
+    }
     fd.append('price', String(normalizeMoneyInput(form.price)));
     fd.append('currency', form.currency);
     fd.append('is_active', form.is_active ? '1' : '0');
@@ -168,6 +200,19 @@ function submit() {
             'card_installments[max]',
             String(enabled ? Math.min(platformInstallmentMax.value, Math.max(2, form.card_installments.max || 2)) : 1)
         );
+    }
+    if (form.type === 'telegram' && form.telegram) {
+        const tg = form.telegram;
+        if (tg.bot_id) fd.append('telegram[bot_id]', String(tg.bot_id));
+        (tg.community_ids || []).forEach((id) => fd.append('telegram[community_ids][]', String(id)));
+        fd.append('telegram[access_duration_preset]', tg.access_duration_preset || '30');
+        if (tg.access_duration_preset === 'custom') {
+            fd.append('telegram[access_duration_days]', String(tg.access_duration_days || 30));
+        }
+        fd.append('telegram[is_lifetime]', tg.access_duration_preset === 'lifetime' || tg.is_lifetime ? '1' : '0');
+        fd.append('telegram[invite_expiration_hours]', String(tg.invite_expiration_hours || 24));
+        fd.append('telegram[welcome_message]', tg.welcome_message || '');
+        fd.append('telegram[auto_remove_on_expiry]', tg.auto_remove_on_expiry ? '1' : '0');
     }
 
     form.transform(() => fd).post('/produtos', {
@@ -255,7 +300,14 @@ function safePluginSectionHtml(html) {
                                 <span
                                     class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-white dark:bg-zinc-700"
                                 >
+                                    <img
+                                        v-if="typeIcons[typeOption.value] === 'telegram-img'"
+                                        src="/images/integrations/telegram.svg"
+                                        alt=""
+                                        class="h-5 w-5"
+                                    />
                                     <component
+                                        v-else
                                         :is="typeIcons[typeOption.value] || BookOpen"
                                         class="h-5 w-5 text-zinc-600 dark:text-zinc-300"
                                     />
@@ -326,6 +378,29 @@ function safePluginSectionHtml(html) {
                                 </button>
                             </div>
                         </div>
+                        <div v-if="form.billing_type === 'subscription'">
+                            <label class="block text-sm font-medium text-zinc-700 dark:text-zinc-300" for="create-subscription-recurrence-months">
+                                Prazo da recorrência (meses) *
+                            </label>
+                            <input
+                                id="create-subscription-recurrence-months"
+                                v-model="form.subscription_recurrence_months"
+                                type="number"
+                                min="1"
+                                max="120"
+                                step="1"
+                                required
+                                inputmode="numeric"
+                                placeholder="12"
+                                class="mt-1 block w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-zinc-900 placeholder-zinc-400 focus:border-[var(--color-primary)] focus:outline-none focus:ring-1 focus:ring-[var(--color-primary)] dark:border-zinc-600 dark:bg-zinc-800 dark:text-white dark:placeholder-zinc-500"
+                            />
+                            <p class="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+                                Por quantos meses o banco autoriza as cobranças. Máximo de 120 meses.
+                            </p>
+                            <p v-if="form.errors.subscription_recurrence_months" class="mt-1 text-sm text-red-600 dark:text-red-400">
+                                {{ form.errors.subscription_recurrence_months }}
+                            </p>
+                        </div>
                         <div>
                             <label class="block text-sm font-medium text-zinc-700 dark:text-zinc-300">
                                 {{ t('common.description', 'Descrição') }}
@@ -378,6 +453,20 @@ function safePluginSectionHtml(html) {
                                 {{ form.errors.deliverable_link }}
                             </p>
                         </div>
+                        <div
+                            v-if="form.type === 'telegram'"
+                            class="space-y-2 rounded-xl border border-zinc-200 p-3 dark:border-zinc-700"
+                        >
+                            <h3 class="text-sm font-semibold text-zinc-900 dark:text-white">
+                                Configuração de entrega Telegram
+                            </h3>
+                            <TelegramDeliveryConfig
+                                v-model="form.telegram"
+                                :delivery="telegramDelivery"
+                                :errors="form.errors"
+                                compact
+                            />
+                        </div>
                         <div>
                             <label class="block text-sm font-medium text-zinc-700 dark:text-zinc-300">
                                 {{ t('products.create.price_brl', 'Preço (BRL)') }} *
@@ -387,6 +476,7 @@ function safePluginSectionHtml(html) {
                                 type="number"
                                 step="any"
                                 :min="platformMinCharge"
+                                :max="platformMaxCharge > 0 ? platformMaxCharge : undefined"
                                 inputmode="decimal"
                                 required
                                 class="mt-1 block w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-zinc-900 placeholder-zinc-400 focus:border-[var(--color-primary)] focus:outline-none focus:ring-1 focus:ring-[var(--color-primary)] dark:border-zinc-600 dark:bg-zinc-800 dark:text-white dark:placeholder-zinc-500"
@@ -394,6 +484,9 @@ function safePluginSectionHtml(html) {
                             />
                             <p v-if="platformMinChargeLabel" class="mt-1 text-xs text-amber-700 dark:text-amber-300">
                                 Ticket mínimo da plataforma: {{ platformMinChargeLabel }}
+                            </p>
+                            <p v-if="platformMaxChargeLabel" class="mt-1 text-xs text-amber-700 dark:text-amber-300">
+                                Ticket máximo da plataforma: {{ platformMaxChargeLabel }}
                             </p>
                             <p class="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
                                 ≈ € {{ priceEur }} · $ {{ priceUsd }}
@@ -490,11 +583,17 @@ function safePluginSectionHtml(html) {
                             <Toggle
                                 v-model="form.is_active"
                                 :label="t('products.create.active_product', 'Produto ativo')"
-                                :disabled="page.props.product_approval_required === true"
+                                :disabled="page.props.product_approval_required === true || (form.type === 'telegram' && !telegramDelivery?.sales_operational)"
                             />
                         </div>
                         <p
-                            v-if="page.props.product_approval_required"
+                            v-if="form.type === 'telegram' && !telegramDelivery?.sales_operational"
+                            class="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-900 dark:border-amber-900/40 dark:bg-amber-950/30 dark:text-amber-100"
+                        >
+                            Você já pode configurar bot e comunidades. Publicação e checkout liberam quando a entrega automática estiver operacional para sua conta.
+                        </p>
+                        <p
+                            v-else-if="page.props.product_approval_required"
                             class="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-900 dark:border-amber-900/40 dark:bg-amber-950/30 dark:text-amber-100"
                         >
                             <span class="font-semibold">Entra em análise da plataforma.</span>

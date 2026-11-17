@@ -850,6 +850,8 @@ function fillModulosLessonForm(lesson) {
             ...lesson,
             content_text: lesson.content_text ?? '',
             watermark_enabled: !!lesson.watermark_enabled,
+            watermark_header_footer: lesson.watermark_header_footer !== false,
+            watermark_center: lesson.watermark_center !== false,
             content_files: normalizedFiles,
             release_mode: lesson.release_at_date ? 'date' : (lesson.release_after_days ? 'days' : 'none'),
             release_after_days: lesson.release_after_days ? String(lesson.release_after_days) : '',
@@ -864,6 +866,8 @@ function fillModulosLessonForm(lesson) {
             content_files: [],
             content_text: '',
             watermark_enabled: false,
+            watermark_header_footer: true,
+            watermark_center: true,
             release_mode: 'none',
             release_after_days: '',
             release_at_date: '',
@@ -975,6 +979,15 @@ function removeLessonPdfAt(index) {
     modulosLessonForm.value.content_url = first || '';
 }
 
+function setPdfWatermarkEnabled(enabled) {
+    if (!modulosLessonForm.value) return;
+    modulosLessonForm.value.watermark_enabled = enabled;
+    if (enabled && !modulosLessonForm.value.watermark_header_footer && !modulosLessonForm.value.watermark_center) {
+        modulosLessonForm.value.watermark_header_footer = true;
+        modulosLessonForm.value.watermark_center = true;
+    }
+}
+
 function lessonPayload(form) {
     const contentFiles = Array.isArray(form.content_files)
         ? form.content_files
@@ -1005,6 +1018,8 @@ function lessonPayload(form) {
         duration_seconds: 0,
         is_free: false,
         watermark_enabled: !!form.watermark_enabled,
+        watermark_header_footer: form.watermark_header_footer !== false,
+        watermark_center: form.watermark_center !== false,
     };
 }
 
@@ -3989,10 +4004,18 @@ const inputClass = 'block w-full rounded-lg border border-zinc-300 bg-white px-3
                         </div>
                         <div v-if="modulosLessonForm.type === 'pdf'" class="mt-4 rounded-lg border border-zinc-200 bg-white p-3 dark:border-zinc-700 dark:bg-zinc-800/50">
                             <div class="flex items-center">
-                                <Toggle v-model="modulosLessonForm.watermark_enabled" label="Proteger PDF com dados do comprador" />
+                                <Toggle
+                                    :model-value="!!modulosLessonForm.watermark_enabled"
+                                    label="Proteger PDF com dados do comprador"
+                                    @update:model-value="setPdfWatermarkEnabled"
+                                />
+                            </div>
+                            <div v-if="modulosLessonForm.watermark_enabled" class="mt-3 space-y-2 border-t border-zinc-200 pt-3 dark:border-zinc-700">
+                                <Toggle v-model="modulosLessonForm.watermark_header_footer" label="Cabeçalho e rodapé" />
+                                <Toggle v-model="modulosLessonForm.watermark_center" label="Proteção no meio da página" />
                             </div>
                             <p class="mt-2 text-xs text-zinc-500 dark:text-zinc-400">
-                                Cada download de PDF leva nome, e-mail, CPF (quando existir no pedido) e número do cliente no cabeçalho, nome e CPF cruzando o meio da página, e um aviso de licença no rodapé. Word, Excel e os demais formatos seguem como foram enviados. Ao salvar com a proteção ativa, o sistema testa o PDF: se não aceitar DRM (senha ou formato incompatível), a aula não é salva e você precisa remover a senha, exportar de novo (Imprimir → Salvar como PDF) ou usar uma ferramenta de reparo/conversão antes de enviar outra vez.
+                                O cabeçalho leva nome, e-mail, CPF (quando existir no pedido) e número do cliente. O rodapé leva o aviso de licença. Essa faixa fica branca com 30% de opacidade, então o texto da página continua visível. A proteção do meio cruza nome e CPF em marca d'água. Os dois podem ficar ligados juntos. Se os dois ficarem desligados, o PDF sai sem DRM. Word, Excel e os demais formatos seguem como foram enviados. Ao salvar com alguma proteção ativa, o sistema testa o PDF: se não aceitar DRM (senha ou formato incompatível), a aula não é salva e você precisa remover a senha, exportar de novo (Imprimir → Salvar como PDF) ou usar uma ferramenta de reparo/conversão antes de enviar outra vez.
                             </p>
                         </div>
                     </div>

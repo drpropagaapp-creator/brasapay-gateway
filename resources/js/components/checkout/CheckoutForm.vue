@@ -555,7 +555,7 @@ const primarySubmitButtonLabel = computed(() => {
     if (pm === 'pix') return tf('checkout.gerar_pix', 'Gerar PIX');
     if (pm === 'pix_auto' && isLinaOpenxPixAuto.value) return tf('checkout.pagar_pix_auto_banco', 'Autorizar no banco');
     if (pm === 'pix_auto') return tf('checkout.gerar_pix_auto', 'Gerar PIX (renovação automática)');
-    if (pm === 'open_finance') return tf('checkout.pagar_open_finance', 'Pagar com Open Finance');
+    if (pm === 'open_finance') return tf('checkout.pagar_open_finance', 'Pix Automático');
     if (pm === 'boleto') return tf('checkout.gerar_boleto', 'Gerar boleto');
     if (pm === 'apple_pay' || pm === 'google_pay') return 'Continuar';
     if (pm === 'card') {
@@ -1234,7 +1234,8 @@ const cieloExpirationDate = computed(() => {
 const MIN_PARCELA_BRL = 5;
 const effectiveCardMaxInstallments = computed(() => {
     if (!props.cardInstallmentsEnabled) return 1;
-    const configured = Math.min(12, Math.max(1, Number(props.cardMaxInstallments) || 1));
+    const hardCap = isCardGatewayMercadopago.value ? 18 : 12;
+    const configured = Math.min(hardCap, Math.max(1, Number(props.cardMaxInstallments) || 1));
     const total = Number(props.checkoutTotalBrl) || 0;
     if (total < MIN_PARCELA_BRL) return 1;
     return Math.min(configured, Math.max(1, Math.floor(total / MIN_PARCELA_BRL)));
@@ -1387,10 +1388,10 @@ watch(
 );
 
 watch(
-    () => [form.payment_method, isCardGatewayStripe.value, props.cardStripePublishableKey, props.cardStripeLinkEnabled],
+    () => [form.payment_method, isCardGatewayStripe.value, props.cardStripePublishableKey, props.cardStripeLinkEnabled, props.checkoutLocale],
     async ([method, isStripe]) => {
+        destroyStripeCardElement();
         if (method !== 'card' || !isStripe) {
-            destroyStripeCardElement();
             return;
         }
         await nextTick();
@@ -1400,8 +1401,8 @@ watch(
 );
 
 watch(
-    () => [form.payment_method, isCardGatewayMercadopago.value, props.cardMercadopagoPublicKey, props.checkoutTotalBrl, effectiveCardMaxInstallments.value],
-    async ([method, isMP, , totalBrl, maxInst], previous) => {
+    () => [form.payment_method, isCardGatewayMercadopago.value, props.cardMercadopagoPublicKey, props.checkoutTotalBrl, effectiveCardMaxInstallments.value, props.checkoutLocale],
+    async ([method, isMP, , totalBrl, maxInst, locale], previous) => {
         if (method !== 'card' || !isMP) {
             destroyMercadopagoBrick();
             return;
@@ -1409,10 +1410,12 @@ watch(
         await nextTick();
         const amount = Math.max(0.01, Number(totalBrl) || 0);
         const prevMax = Array.isArray(previous) ? previous[4] : undefined;
+        const prevLocale = Array.isArray(previous) ? previous[5] : undefined;
+        const localeChanged = Array.isArray(previous) && prevLocale !== locale;
         const ctrl = mercadopagoBrickController.value
             ?? (typeof window !== 'undefined' ? window.cardPaymentBrickController : null);
         // Preferir update() (doc Brick) em vez de remount quando só o valor muda.
-        if (ctrl && typeof ctrl.update === 'function' && mercadopagoBrickReady.value && prevMax === maxInst) {
+        if (!localeChanged && ctrl && typeof ctrl.update === 'function' && mercadopagoBrickReady.value && prevMax === maxInst) {
             try {
                 await ctrl.update({ amount });
                 return;
@@ -1498,6 +1501,12 @@ const cajuPayPayer = computed(() => ({
     phone: currentCheckoutPhone(),
 }));
 
+function cajupayPayerKey() {
+    const payer = cajuPayPayer.value;
+
+    return [payer.name, payer.email, payer.document, payer.phone].join('|');
+}
+
 function buildCajuPaySessionPayload() {
     const payload = {
         product_id: form.product_id,
@@ -1576,9 +1585,35 @@ function onPaypalError(message) {
     form.setError('payment_method', msg);
 }
 
+function cajupayMissingCustomerLabels() {
+    const email = (form.email || '').trim();
+    const emailOk = email.length >= 5 && /.+@.+\..+/.test(email);
+    const nameOk = !showName.value || (form.name || '').trim().length >= 2;
+    const cpfDigits = (form.cpf || '').replace(/\D/g, '');
+    const cpfOk = !showCpf.value || (cpfDigits.length === 11 && isValidCpf(cpfDigits));
+    const phoneOk = !showPhone.value || isCheckoutPhoneComplete();
+    const missing = [];
+    if (showName.value && !nameOk) missing.push('nome');
+    if (!emailOk) missing.push('e-mail');
+    if (showCpf.value && !cpfOk) missing.push('CPF');
+    if (showPhone.value && !phoneOk) missing.push('telefone');
+
+    return missing;
+}
+
 function cajupayMinimumFieldsReady() {
-    cajupayMissingFieldsHint.value = '';
-    return true;
+    const missing = cajupayMissingCustomerLabels();
+    if (missing.length === 0) {
+        cajupayMissingFieldsHint.value = '';
+
+        return true;
+    }
+    const list = missing.length === 1
+        ? missing[0]
+        : `${missing.slice(0, -1).join(', ')} e ${missing[missing.length - 1]}`;
+    cajupayMissingFieldsHint.value = `Preencha ${list} acima para carregar o pagamento.`;
+
+    return false;
 }
 
 function validateCajuPayCustomerFields() {
@@ -1616,6 +1651,7 @@ async function ensureCajuPaySession({ silent = false } = {}) {
 
     cajupaySessionLoading.value = true;
     if (!silent) cajupayError.value = '';
+    const payerKeyAtRequest = cajupayPayerKey();
     try {
         const res = await axios.post('/checkout/cajupay/session', buildCajuPaySessionPayload(), {
             headers: {
@@ -1628,6 +1664,11 @@ async function ensureCajuPaySession({ silent = false } = {}) {
         const data = res?.data || {};
         if (!data.success || !data.token) {
             cajupayError.value = data?.message || 'Não foi possível iniciar o pagamento na CajuPay.';
+            return null;
+        }
+        if (cajupayPayerKey() !== payerKeyAtRequest) {
+            scheduleEnsureCajuPaySession();
+
             return null;
         }
         cajupaySessionToken.value = data.token;
@@ -1706,11 +1747,21 @@ watch(() => form.payment_method, () => {
         resetCajuPaySessionState();
     }
     if (isCajuPaySdkFlow.value) {
+        cajupayMinimumFieldsReady();
         scheduleEnsureCajuPaySession();
     } else {
         cajupayMissingFieldsHint.value = '';
     }
 });
+
+watch(
+    () => [form.email, form.name, form.cpf, form.country_code, phoneDigits.value],
+    () => {
+        if (!isCajuPaySdkFlow.value || cajupaySessionToken.value) return;
+        cajupayMinimumFieldsReady();
+        scheduleEnsureCajuPaySession();
+    },
+);
 
 watch(
     () => [form.coupon_code, props.orderBumpIds, props.productOfferId, props.subscriptionPlanId],
@@ -1873,11 +1924,31 @@ function onRefusedOtherPaymentMethod(e) {
     if (other) form.payment_method = other.id;
 }
 
+function checkoutLocaleTag() {
+    return String(props.checkoutLocale || 'pt_BR').replace('_', '-');
+}
+
+function stripeLocale() {
+    const tag = checkoutLocaleTag().toLowerCase();
+    if (tag.startsWith('en')) return 'en';
+    if (tag.startsWith('es')) return 'es';
+    if (tag.startsWith('it')) return 'it';
+    return 'pt-BR';
+}
+
+function mercadoPagoLocale() {
+    const tag = checkoutLocaleTag().toLowerCase();
+    if (tag.startsWith('en')) return 'en-US';
+    if (tag.startsWith('es')) return 'es-AR';
+    if (tag.startsWith('it')) return 'en-US';
+    return 'pt-BR';
+}
+
 async function initStripeCardElement() {
     if (!props.cardStripePublishableKey?.trim() || !stripeCardRef.value) return;
     try {
         const { loadStripe } = await import('@stripe/stripe-js');
-        const stripe = await loadStripe(props.cardStripePublishableKey.trim());
+        const stripe = await loadStripe(props.cardStripePublishableKey.trim(), { locale: stripeLocale() });
         if (!stripe) return;
         stripeInstance.value = stripe;
         const elements = stripe.elements();
@@ -2112,7 +2183,7 @@ async function loadMercadopagoBrick() {
 }
 
 async function initMercadopagoBrick() {
-    const mp = new window.MercadoPago(props.cardMercadopagoPublicKey.trim(), { locale: 'pt-BR' });
+    const mp = new window.MercadoPago(props.cardMercadopagoPublicKey.trim(), { locale: mercadoPagoLocale() });
     const bricksBuilder = mp.bricks();
     const amount = Math.max(0.01, Number(props.checkoutTotalBrl) || 0);
     const email = (form.email || '').trim() || undefined;
@@ -2247,7 +2318,7 @@ async function getMercadoPagoCardToken() {
     if (!publicKey) throw new Error('Mercado Pago não configurado (Public Key).');
 
     await loadMercadoPagoScript();
-    const mp = new window.MercadoPago(publicKey, { locale: 'pt-BR' });
+    const mp = new window.MercadoPago(publicKey, { locale: mercadoPagoLocale() });
 
     const cardNumber = cardNumberDigits.value.replace(/\D/g, '');
     const month = cardExpMonth.value.padStart(2, '0');
@@ -2843,13 +2914,18 @@ function submit() {
         if (cpfDigits.length < 11) {
             checkoutSubmitting.value = false;
             form.setError('cpf', paymentMethod === 'open_finance'
-                ? 'Informe um CPF válido para pagar com Open Finance.'
+                ? 'Informe um CPF válido para pagar com Pix Automático.'
                 : 'Informe um CPF válido para autorizar o PIX automático.');
             showEditForm.value = true;
             return;
         }
         if (isLinaOpenxPixAuto.value) {
-            if (linaPixAutoParticipants.value.length > 1 && (!linaOrganisationId.value || !linaAuthorisationServerId.value)) {
+            if (linaPixAutoParticipants.value.length === 0) {
+                checkoutSubmitting.value = false;
+                form.setError('payment_method', 'Não foi possível carregar os bancos para o PIX automático. Recarregue a página e tente novamente.');
+                return;
+            }
+            if (!linaOrganisationId.value || !linaAuthorisationServerId.value) {
                 checkoutSubmitting.value = false;
                 form.setError('payment_method', 'Selecione o banco para autorizar o PIX automático.');
                 return;
@@ -2873,12 +2949,12 @@ function submit() {
                 }
                 form.setError('payment_method', data?.message || (isLinaOpenxPixAuto.value
                     ? 'Não foi possível iniciar o PIX automático.'
-                    : 'Não foi possível iniciar o Open Finance.'));
+                    : 'Não foi possível iniciar o Pix Automático.'));
             })
             .catch((err) => {
                 const fallback = isLinaOpenxPixAuto.value
                     ? 'Não foi possível iniciar o PIX automático. Tente novamente.'
-                    : 'Não foi possível iniciar o Open Finance. Tente novamente.';
+                    : 'Não foi possível iniciar o Pix Automático. Tente novamente.';
                 const msg = err?.response?.data?.message
                     || err?.response?.data?.errors?.payment_method?.[0]
                     || err?.response?.data?.errors?.cpf?.[0]
@@ -3393,7 +3469,7 @@ function submit() {
                 v-if="isLinaOpenxPixAuto && linaPixAutoParticipants.length > 1"
                 class="mt-3 space-y-2"
             >
-                <label for="lina-pix-auto-bank" class="block text-sm font-medium text-gray-700">Banco para o débito</label>
+                <label for="lina-pix-auto-bank" class="block text-sm font-medium text-gray-700">Banco para autorizar o PIX automático</label>
                 <select
                     id="lina-pix-auto-bank"
                     v-model="linaBankKey"
@@ -3409,6 +3485,12 @@ function submit() {
                     </option>
                 </select>
             </div>
+            <p
+                v-else-if="isLinaOpenxPixAuto && linaPixAutoParticipants.length === 0"
+                class="mt-3 text-sm font-medium text-amber-700"
+            >
+                Não foi possível carregar os bancos para o PIX automático. Recarregue a página e tente novamente.
+            </p>
             <p v-if="form.errors.payment_method" class="text-sm font-medium text-red-600">{{ form.errors.payment_method }}</p>
 
             <!-- Formulário de cartão (Stripe Elements ou campos Efí) -->
@@ -3476,7 +3558,7 @@ function submit() {
                 <!-- Asaas: 2 etapas (cartão + endereço com CEP) -->
                 <div v-else-if="isCardGatewayAsaas" class="space-y-4">
                     <AsaasCard
-                        :method="checkoutPaymentMethodsForDevice.find((m) => m.id === 'card') || { id: 'card', label: 'Cartão' }"
+                        :method="checkoutPaymentMethodsForDevice.find((m) => m.id === 'card') || { id: 'card', label: t('checkout.method_card') || 'Cartão' }"
                         :selected="true"
                         :primary-color="primaryColor"
                         :card-data="asaasCardData"
@@ -3540,7 +3622,7 @@ function submit() {
                             </div>
                         </div>
                         <div class="relative sm:col-span-2">
-                            <label for="card-number-pagarme" class="mb-2 block text-sm font-medium text-gray-700">{{ t('checkout.card_number') || 'Número do cartão' }}</label>
+                            <label for="card-number-pagarme" class="mb-2 block text-sm font-medium text-gray-700">{{ t('checkout.card_pan_placeholder') || t('checkout.card_number') || 'Número do cartão' }}</label>
                             <div class="flex flex-nowrap items-stretch overflow-hidden rounded-xl border-2 border-gray-100 bg-gray-50/80 transition focus-within:border-gray-200 focus-within:bg-white focus-within:ring-2 focus-within:ring-offset-0">
                                 <span class="pointer-events-none flex h-full min-h-[3.25rem] w-10 shrink-0 items-center justify-center text-gray-400">
                                     <img
@@ -3561,7 +3643,7 @@ function submit() {
                                         autocomplete="cc-number"
                                         maxlength="23"
                                         class="min-w-0 flex-1 border-0 bg-transparent py-3.5 pr-4 pl-2 text-base font-medium text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-0"
-                                        :placeholder="t('checkout.card_number_placeholder') || '0000 0000 0000 0000'"
+                                        :placeholder="t('checkout.card_pan_placeholder') || t('checkout.card_number') || 'Número do cartão'"
                                         @input="onCardNumberInput"
                                         @blur="onCardNumberBlur"
                                     />
@@ -3714,7 +3796,7 @@ function submit() {
                         </div>
                     </div>
                     <div class="relative sm:col-span-2">
-                        <label for="card-number" class="mb-2 block text-sm font-medium text-gray-700">{{ t('checkout.card_number') || 'Número do cartão' }}</label>
+                        <label for="card-number" class="mb-2 block text-sm font-medium text-gray-700">{{ t('checkout.card_pan_placeholder') || t('checkout.card_number') || 'Número do cartão' }}</label>
                         <div class="flex flex-nowrap items-stretch overflow-hidden rounded-xl border-2 border-gray-100 bg-gray-50/80 transition focus-within:border-gray-200 focus-within:bg-white focus-within:ring-2 focus-within:ring-offset-0">
                             <span class="pointer-events-none flex h-full min-h-[3.25rem] w-10 shrink-0 items-center justify-center text-gray-400">
                                 <img
@@ -3735,7 +3817,7 @@ function submit() {
                                     autocomplete="cc-number"
                                     maxlength="19"
                                     class="min-w-0 flex-1 border-0 bg-transparent py-3.5 pr-4 pl-2 text-base font-medium text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-0"
-                                    :placeholder="t('checkout.card_number_placeholder') || '0000 0000 0000 0000'"
+                                    :placeholder="t('checkout.card_pan_placeholder') || t('checkout.card_number') || 'Número do cartão'"
                                     @input="onCardNumberInput"
                                     @blur="onCardNumberBlur"
                                 />
@@ -4009,6 +4091,7 @@ function submit() {
                 :logo-url="platformLogoUrl"
                 :app-name="appName"
                 :notice="platformCheckoutNotice"
+                :t="t"
                 :secure-purchase-text="t('checkout.secure_purchase')"
             />
         </footer>

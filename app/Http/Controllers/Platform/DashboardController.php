@@ -7,15 +7,19 @@ use App\Models\Order;
 use App\Services\Platform\AcquirerWalletBalanceService;
 use App\Services\Platform\PlatformCashReconciliation;
 use App\Services\Platform\PayoutFundingNeed;
+use App\Services\Platform\PlatformAiReportService;
 use App\Services\Platform\PlatformDashboardAnalytics;
 use App\Support\Demo\DemoPlatformData;
 use App\Support\DemoMode;
+use App\Support\PlatformAiReportSettings;
 use App\Support\PlatformDashboardPeriod;
 use Carbon\Carbon;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Inertia\Inertia;
 use Inertia\Response;
+use RuntimeException;
 
 class DashboardController extends Controller
 {
@@ -41,6 +45,7 @@ class DashboardController extends Controller
             $payload = DemoPlatformData::dashboard($period);
             $payload['from'] = $from;
             $payload['to'] = $to;
+            $payload['ai_report_available'] = PlatformAiReportSettings::isReady();
 
             return Inertia::render('Platform/Dashboard', $payload);
         }
@@ -65,13 +70,14 @@ class DashboardController extends Controller
         if (defined('PHPUNIT_COMPOSER_INSTALL')) {
             $payload = $resolver();
         } else {
-            $cacheKey = 'platform-dashboard:v3:'.$period.':'.md5((string) $start.'|'.(string) $end);
+            $cacheKey = 'platform-dashboard:v4:'.$period.':'.md5((string) $start.'|'.(string) $end);
             $payload = Cache::remember($cacheKey, self::CACHE_TTL_SECONDS, $resolver);
         }
 
         $payload['from'] = $from;
         $payload['to'] = $to;
         $payload['acquirer_wallets'] = $acquirerWallets->list();
+        $payload['ai_report_available'] = PlatformAiReportSettings::isReady();
 
         // Caixa x obrigações: calculado ao vivo (o payload do período fica em cache por alguns minutos).
         // Os cards de saldo dos sellers e saques pendentes usam os mesmos números para não divergirem da conciliação.
@@ -87,6 +93,25 @@ class DashboardController extends Controller
         ]);
 
         return Inertia::render('Platform/Dashboard', $payload);
+    }
+
+    public function aiReport(Request $request, PlatformAiReportService $reports): JsonResponse
+    {
+        $period = PlatformDashboardPeriod::normalize($request->input('period', 'hoje'));
+        $from = PlatformDashboardPeriod::normalizeDate($request->input('from'));
+        $to = PlatformDashboardPeriod::normalizeDate($request->input('to'));
+
+        try {
+            $analysis = $reports->analyze($period, $from, $to);
+        } catch (RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+
+        return response()->json([
+            'analysis' => $analysis,
+            'provider' => PlatformAiReportSettings::provider(),
+            'provider_label' => PlatformAiReportSettings::providerLabel(),
+        ]);
     }
 
     /**

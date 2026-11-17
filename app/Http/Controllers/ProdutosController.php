@@ -31,10 +31,14 @@ use App\Services\SellerActivityLogService;
 use App\Services\SellerIntegrationVisibility;
 use App\Services\StorageService;
 use App\Services\TeamAccessService;
+use App\Services\Telegram\TelegramPolicy;
+use App\Services\Telegram\TelegramProductDeliveryService;
 use App\Support\CardInstallments;
 use App\Support\EmailLogoImage;
 use App\Support\HtmlSanitizer;
 use App\Support\MarketplaceSettings;
+use App\Support\WhatsappPhoneNormalizer;
+use Illuminate\Validation\ValidationException;
 use App\Support\MoneyDecimal;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\Request;
@@ -60,6 +64,7 @@ class ProdutosController extends Controller
             Product::TYPE_AREA_MEMBROS_EXTERNA,
             Product::TYPE_LINK,
             Product::TYPE_LINK_PAGAMENTO,
+            Product::TYPE_TELEGRAM,
             Product::TYPE_PRODUTO_FISICO,
         ];
 
@@ -70,6 +75,20 @@ class ProdutosController extends Controller
             ));
             if ($existing !== null && $existing->isPhysical()) {
                 $types[] = Product::TYPE_PRODUTO_FISICO;
+            }
+        }
+
+        $tenantId = auth()->user()?->tenant_id;
+        $telegramOk = app(TelegramPolicy::class)->moduleAvailable(
+            $tenantId !== null ? (int) $tenantId : null
+        );
+        if (! $telegramOk) {
+            $types = array_values(array_filter(
+                $types,
+                fn (string $t) => $t !== Product::TYPE_TELEGRAM
+            ));
+            if ($existing !== null && $existing->isTelegram()) {
+                $types[] = Product::TYPE_TELEGRAM;
             }
         }
 
@@ -129,7 +148,12 @@ class ProdutosController extends Controller
             return $arr;
         });
 
-        $productTypes = collect(PhysicalProductAccess::filterTypeConfig(Product::typeConfig()))->map(fn ($config, $value) => [
+        $typeConfig = PhysicalProductAccess::filterTypeConfig(Product::typeConfig());
+        $typeConfig = app(TelegramProductDeliveryService::class)->filterTypeConfig(
+            $typeConfig,
+            $tenantId !== null ? (int) $tenantId : null
+        );
+        $productTypes = collect($typeConfig)->map(fn ($config, $value) => [
             'value' => $value,
             'label' => $config['label'],
             'description' => $config['description'],
@@ -137,6 +161,18 @@ class ProdutosController extends Controller
         ])->values()->all();
 
         $billingTypes = collect(Product::billingTypeLabels())->map(fn ($label, $value) => ['value' => $value, 'label' => $label])->values()->all();
+
+        $telegramDelivery = $tenantId !== null
+            ? app(TelegramProductDeliveryService::class)->sellerDeliveryPayload((int) $tenantId)
+            : [
+                'module_available' => false,
+                'bots' => [],
+                'integrations_url' => '/integracoes/telegram',
+                'access_duration_options' => [],
+                'invite_expiration_options' => [],
+                'setting' => null,
+                'readiness' => ['configured' => false, 'ready_for_sale' => false, 'blocking_reasons' => [], 'sales_operational' => false],
+            ];
 
         $data = new \ArrayObject([
             'produtos' => $products,
@@ -148,6 +184,7 @@ class ProdutosController extends Controller
             'plugin_form_sections' => [],
             'checkout_gateway_ui' => $this->checkoutGatewayUiForTenant($tenantId),
             'bundle_candidates' => app(ProductBundleService::class)->candidatesPayload((int) $tenantId),
+            'telegram_delivery' => $telegramDelivery,
         ]);
         event(new ProductIndexLoading($data));
         $payload = $data->getArrayCopy();
@@ -196,11 +233,14 @@ class ProdutosController extends Controller
             'name' => ['required', 'string', 'max:255'],
             'notification_name' => ['nullable', 'string', 'max:80'],
             'support_email' => ['nullable', 'email', 'max:255'],
+            'support_whatsapp_enabled' => ['sometimes', 'boolean'],
+            'support_whatsapp' => ['nullable', 'string', 'max:32'],
             'slug' => ['nullable', 'string', 'max:255'],
             'description' => ['nullable', 'string'],
             'category' => ['nullable', 'string', 'in:'.implode(',', Product::categoryKeys())],
             'type' => ['required', 'string', 'in:'.implode(',', self::allowedProductTypes())],
             'billing_type' => ['required', 'string', 'in:'.implode(',', self::BILLING_TYPES)],
+            'subscription_recurrence_months' => ['exclude_unless:billing_type,'.Product::BILLING_SUBSCRIPTION, 'required', 'integer', 'min:1', 'max:120'],
             'price' => $this->platformPriceRules(),
             'currency' => ['nullable', 'string', 'in:BRL,EUR,USD'],
             'is_active' => ['boolean'],
@@ -208,9 +248,19 @@ class ProdutosController extends Controller
             'deliverable_link' => ['nullable', 'string', 'url', 'max:500'],
             'card_installments' => ['nullable', 'array'],
             'card_installments.enabled' => ['nullable', 'boolean'],
-            'card_installments.max' => ['nullable', 'integer', 'min:1', 'max:12'],
+            'card_installments.max' => ['nullable', 'integer', 'min:1', 'max:'.\App\Services\PlatformCardInstallments::selectableCeiling()],
             'bundle_product_ids' => ['sometimes', 'array', 'max:'.ProductBundleService::MAX_INCLUDED],
             'bundle_product_ids.*' => ['nullable', 'string', 'max:36'],
+            'telegram' => ['nullable', 'array'],
+            'telegram.bot_id' => ['nullable', 'integer'],
+            'telegram.community_ids' => ['nullable', 'array'],
+            'telegram.community_ids.*' => ['integer', 'min:1'],
+            'telegram.access_duration_preset' => ['nullable', 'string', 'max:32'],
+            'telegram.access_duration_days' => ['nullable', 'integer', 'min:1', 'max:3650'],
+            'telegram.is_lifetime' => ['nullable', 'boolean'],
+            'telegram.invite_expiration_hours' => ['nullable', 'integer', 'min:1', 'max:720'],
+            'telegram.welcome_message' => ['nullable', 'string', 'max:4000'],
+            'telegram.auto_remove_on_expiry' => ['nullable', 'boolean'],
         ]);
 
         // Texto puro (evita XSS armazenado em nome/descrição)
@@ -225,6 +275,7 @@ class ProdutosController extends Controller
                 ? $supportEmail
                 : null;
         }
+        $this->normalizeSupportWhatsapp($validated);
         if (array_key_exists('description', $validated)) {
             $validated['description'] = HtmlSanitizer::plainTextMultiline($validated['description'], 20000) ?: null;
         }
@@ -248,11 +299,22 @@ class ProdutosController extends Controller
         $validated['is_active'] = $request->boolean('is_active', true);
         $validated['refund_policy_days'] = 7;
         $this->assertPhysicalProductRules($validated['type'] ?? '', $validated['billing_type'] ?? '');
+        $this->applySubscriptionRecurrenceMonths($validated);
+
+        $telegramDelivery = app(TelegramProductDeliveryService::class);
+        $telegramSalesOn = $telegramDelivery->automaticDeliveryOperational((int) $tenantId);
+        // Sem flag/allowlist: só rascunho. Com liberação: pode ativar se readiness ok (assert após sync).
+        if (($validated['type'] ?? '') === Product::TYPE_TELEGRAM && ! $telegramSalesOn) {
+            $validated['is_active'] = false;
+        }
 
         $approvalService = app(ProductApprovalService::class);
         $approvalAttrs = $approvalService->attributesForNewProduct((bool) $validated['is_active']);
         if ($approvalAttrs !== []) {
             $validated = array_merge($validated, $approvalAttrs);
+        }
+        if (($validated['type'] ?? '') === Product::TYPE_TELEGRAM && ! $telegramSalesOn) {
+            $validated['is_active'] = false;
         }
 
         $product = new Product($validated);
@@ -269,12 +331,14 @@ class ProdutosController extends Controller
         unset($validated['card_installments']);
         $bundleIds = $request->exists('bundle_product_ids') ? array_values($validated['bundle_product_ids'] ?? []) : null;
         unset($validated['bundle_product_ids']);
+        $telegramInput = is_array($validated['telegram'] ?? null) ? $validated['telegram'] : null;
+        unset($validated['telegram']);
         if (($validated['type'] ?? '') === Product::TYPE_PRODUTO_FISICO) {
             $bundleIds = [];
         }
 
         try {
-            $product = DB::transaction(function () use ($request, $validated, $deliverableLink, $cardInstallmentsInput, $bundleIds) {
+            $product = DB::transaction(function () use ($request, $validated, $deliverableLink, $cardInstallmentsInput, $bundleIds, $telegramInput, $tenantId) {
                 $product = $this->createProductRecord($validated);
 
                 if ($request->has('deliverable_link')) {
@@ -294,10 +358,23 @@ class ProdutosController extends Controller
                     app(ProductBundleService::class)->syncIncluded($product, $bundleIds);
                 }
 
+                if ($product->isTelegram() && $telegramInput !== null) {
+                    $delivery = app(TelegramProductDeliveryService::class);
+                    $delivery->syncForProduct(
+                        $product,
+                        (int) $tenantId,
+                        $telegramInput,
+                        $request
+                    );
+                    if ($product->is_active) {
+                        $delivery->assertCanPublish($product->fresh());
+                    }
+                }
+
                 return $product;
             });
         } catch (InvalidArgumentException $e) {
-            return back()->withErrors(['bundle_product_ids' => $e->getMessage()])->with('error', $e->getMessage())->withInput();
+            return back()->withErrors(['telegram' => $e->getMessage()])->with('error', $e->getMessage())->withInput();
         } catch (\RuntimeException $e) {
             return back()
                 ->withErrors(['image' => $e->getMessage()])
@@ -307,7 +384,7 @@ class ProdutosController extends Controller
             if ($this->isDuplicateProductSlugException($e)) {
                 $validated['slug'] = Product::uniqueSlugForTenant($tenantId, $baseSlug !== '' ? $baseSlug : 'produto');
                 try {
-                    $product = DB::transaction(function () use ($request, $validated, $deliverableLink, $cardInstallmentsInput, $bundleIds) {
+                    $product = DB::transaction(function () use ($request, $validated, $deliverableLink, $cardInstallmentsInput, $bundleIds, $telegramInput, $tenantId) {
                         $product = $this->createProductRecord($validated);
 
                         if ($request->has('deliverable_link')) {
@@ -327,12 +404,27 @@ class ProdutosController extends Controller
                             app(ProductBundleService::class)->syncIncluded($product, $bundleIds);
                         }
 
+                        if ($product->isTelegram() && $telegramInput !== null) {
+                            $delivery = app(TelegramProductDeliveryService::class);
+                            $delivery->syncForProduct(
+                                $product,
+                                (int) $tenantId,
+                                $telegramInput,
+                                $request
+                            );
+                            if ($product->is_active) {
+                                $delivery->assertCanPublish($product->fresh());
+                            }
+                        }
+
                         return $product;
                     });
                 } catch (QueryException) {
                     return back()
                         ->withErrors(['name' => 'Já existe um produto com este nome. Escolha outro nome.'])
                         ->withInput();
+                } catch (InvalidArgumentException $e) {
+                    return back()->withErrors(['telegram' => $e->getMessage()])->with('error', $e->getMessage())->withInput();
                 }
             } else {
                 throw $e;
@@ -361,7 +453,13 @@ class ProdutosController extends Controller
         $produto->load('users:id,name,email', 'offers', 'subscriptionPlans', 'orderBumps');
 
         $rates = config('products.rates', ['brl_eur' => 0.16, 'brl_usd' => 0.18]);
-        $productTypes = collect(PhysicalProductAccess::filterTypeConfig(Product::typeConfig()))->map(fn ($config, $value) => [
+        $editTypeConfig = PhysicalProductAccess::filterTypeConfig(Product::typeConfig());
+        $editTypeConfig = app(TelegramProductDeliveryService::class)->filterTypeConfig(
+            $editTypeConfig,
+            auth()->user()->tenant_id !== null ? (int) auth()->user()->tenant_id : null,
+            $produto
+        );
+        $productTypes = collect($editTypeConfig)->map(fn ($config, $value) => [
             'value' => $value,
             'label' => $config['label'],
             'description' => $config['description'],
@@ -593,6 +691,18 @@ class ProdutosController extends Controller
         $coproductionReadonly = ProductCoproducer::isActiveCoproducerOf((int) auth()->id(), (string) $produto->id)
             && (int) $produto->tenant_id !== (int) $tenantId;
 
+        $telegramDelivery = $tenantId !== null
+            ? app(TelegramProductDeliveryService::class)->sellerDeliveryPayload((int) $tenantId, $produto)
+            : [
+                'module_available' => false,
+                'bots' => [],
+                'integrations_url' => '/integracoes/telegram',
+                'access_duration_options' => [],
+                'invite_expiration_options' => [],
+                'setting' => null,
+                'readiness' => ['configured' => false, 'ready_for_sale' => false, 'blocking_reasons' => [], 'sales_operational' => false],
+            ];
+
         return Inertia::render('Produtos/Edit', [
             'produto' => $produtoArray,
             'coproduction_readonly' => $coproductionReadonly,
@@ -606,6 +716,8 @@ class ProdutosController extends Controller
             'cademi_integrations' => $cademiIntegrations,
             'cademi_available' => $cademiAvailable,
             'shipping_stores' => PhysicalProductAccess::globalEnabled() ? $shippingStores : [],
+            'telegram_delivery' => $telegramDelivery,
+            'reusable_meta_pixels' => $this->reusableMetaPixelsForEdit($produto, $coproductionReadonly),
             'layoutContentFlushLeft' => true,
             'pageTitleBadge' => $produto->name,
         ]);
@@ -688,10 +800,13 @@ class ProdutosController extends Controller
             'name' => ['required', 'string', 'max:255'],
             'notification_name' => ['nullable', 'string', 'max:80'],
             'support_email' => ['nullable', 'email', 'max:255'],
+            'support_whatsapp_enabled' => ['sometimes', 'boolean'],
+            'support_whatsapp' => ['nullable', 'string', 'max:32'],
             'description' => ['nullable', 'string'],
             'category' => ['nullable', 'string', 'in:'.implode(',', Product::categoryKeys())],
             'type' => ['required', 'string', 'in:'.implode(',', self::allowedProductTypes($produto))],
             'billing_type' => ['required', 'string', 'in:'.implode(',', self::BILLING_TYPES)],
+            'subscription_recurrence_months' => ['exclude_unless:billing_type,'.Product::BILLING_SUBSCRIPTION, 'required', 'integer', 'min:1', 'max:120'],
             'price' => $this->platformPriceRules(),
             'currency' => ['nullable', 'string', 'in:BRL,EUR,USD'],
             'is_active' => ['boolean'],
@@ -701,6 +816,7 @@ class ProdutosController extends Controller
             'conversion_pixels.meta.enabled' => ['nullable', 'boolean'],
             'conversion_pixels.meta.entries' => ['nullable', 'array'],
             'conversion_pixels.meta.entries.*.id' => ['nullable', 'string', 'max:64'],
+            'conversion_pixels.meta.entries.*.name' => ['nullable', 'string', 'max:80'],
             'conversion_pixels.meta.entries.*.pixel_id' => ['nullable', 'string', 'max:64'],
             'conversion_pixels.meta.entries.*.access_token' => ['nullable', 'string', 'max:500'],
             'conversion_pixels.meta.entries.*.fire_purchase_on_pix' => ['nullable', 'boolean'],
@@ -738,7 +854,7 @@ class ProdutosController extends Controller
             'conversion_pixels.custom_script.*.script' => ['nullable', 'string', 'max:65535'],
             'card_installments' => ['nullable', 'array'],
             'card_installments.enabled' => ['nullable', 'boolean'],
-            'card_installments.max' => ['nullable', 'integer', 'min:1', 'max:12'],
+            'card_installments.max' => ['nullable', 'integer', 'min:1', 'max:'.\App\Services\PlatformCardInstallments::selectableCeiling()],
             'payment_methods_enabled' => ['nullable', 'array'],
             'payment_methods_enabled.pix' => ['nullable', 'boolean'],
             'payment_methods_enabled.card' => ['nullable', 'boolean'],
@@ -760,9 +876,20 @@ class ProdutosController extends Controller
             'physical_free_shipping' => ['nullable', 'boolean'],
             'bundle_product_ids' => ['sometimes', 'array', 'max:'.ProductBundleService::MAX_INCLUDED],
             'bundle_product_ids.*' => ['nullable', 'string', 'max:36'],
+            'telegram' => ['nullable', 'array'],
+            'telegram.bot_id' => ['nullable', 'integer'],
+            'telegram.community_ids' => ['nullable', 'array'],
+            'telegram.community_ids.*' => ['integer', 'min:1'],
+            'telegram.access_duration_preset' => ['nullable', 'string', 'max:32'],
+            'telegram.access_duration_days' => ['nullable', 'integer', 'min:1', 'max:3650'],
+            'telegram.is_lifetime' => ['nullable', 'boolean'],
+            'telegram.invite_expiration_hours' => ['nullable', 'integer', 'min:1', 'max:720'],
+            'telegram.welcome_message' => ['nullable', 'string', 'max:4000'],
+            'telegram.auto_remove_on_expiry' => ['nullable', 'boolean'],
         ]);
 
         $this->assertPhysicalProductRules($validated['type'] ?? '', $validated['billing_type'] ?? '');
+        $this->applySubscriptionRecurrenceMonths($validated);
 
         // Texto puro (evita XSS armazenado em nome/descrição/template)
         $validated['name'] = HtmlSanitizer::plainText($validated['name'] ?? '', 255);
@@ -776,6 +903,7 @@ class ProdutosController extends Controller
                 ? $supportEmail
                 : null;
         }
+        $this->normalizeSupportWhatsapp($validated);
         if (array_key_exists('description', $validated)) {
             $validated['description'] = HtmlSanitizer::plainTextMultiline($validated['description'], 20000) ?: null;
         }
@@ -816,10 +944,26 @@ class ProdutosController extends Controller
             ? (int) $validated['refund_policy_days']
             : null;
 
-        try {
-            app(ProductApprovalService::class)->guardSellerActivation($produto, (bool) $validated['is_active']);
-        } catch (InvalidArgumentException $e) {
-            return back()->with('error', $e->getMessage())->withInput();
+        $effectiveType = (string) ($validated['type'] ?? $produto->type);
+        $telegramDelivery = app(TelegramProductDeliveryService::class);
+        $telegramSalesOn = $telegramDelivery->automaticDeliveryOperational((int) ($produto->tenant_id ?? auth()->user()->tenant_id ?? 0));
+        if ($effectiveType === Product::TYPE_TELEGRAM && ! $telegramSalesOn) {
+            if ($request->boolean('is_active', false)) {
+                return back()->with(
+                    'error',
+                    'Produtos Telegram ainda não podem ser publicados nesta conta. Peça ao admin para liberar Novas vendas em Plataforma → Telegram.'
+                )->withInput();
+            }
+            $validated['is_active'] = false;
+            if (array_key_exists('show_in_marketplace', $validated)) {
+                $validated['show_in_marketplace'] = false;
+            }
+        } else {
+            try {
+                app(ProductApprovalService::class)->guardSellerActivation($produto, (bool) $validated['is_active']);
+            } catch (InvalidArgumentException $e) {
+                return back()->with('error', $e->getMessage())->withInput();
+            }
         }
 
         $beforeEvent = new ProductBeforeSave($produto, $validated, false);
@@ -847,7 +991,11 @@ class ProdutosController extends Controller
         unset($validated['physical_free_shipping'], $validated['shipping_store_id']);
         $bundleIds = $request->exists('bundle_product_ids') ? array_values($validated['bundle_product_ids'] ?? []) : null;
         unset($validated['bundle_product_ids']);
-        if (($validated['type'] ?? $produto->type) === Product::TYPE_PRODUTO_FISICO) {
+        $telegramInput = $request->exists('telegram') && is_array($validated['telegram'] ?? null)
+            ? $validated['telegram']
+            : null;
+        unset($validated['telegram']);
+        if ($effectiveType === Product::TYPE_PRODUTO_FISICO) {
             $bundleIds = [];
         }
 
@@ -895,7 +1043,9 @@ class ProdutosController extends Controller
                 $emailTemplate,
                 $paymentMethodsPm,
                 $oldImage,
-                $bundleIds
+                $bundleIds,
+                $telegramInput,
+                $effectiveType
             ) {
                 $produto->update($validated);
 
@@ -988,9 +1138,26 @@ class ProdutosController extends Controller
                 if ($bundleIds !== null) {
                     app(ProductBundleService::class)->syncIncluded($produto, $bundleIds);
                 }
+
+                $delivery = app(TelegramProductDeliveryService::class);
+                if ($effectiveType === Product::TYPE_TELEGRAM) {
+                    if ($telegramInput !== null) {
+                        $delivery->syncForProduct(
+                            $produto->fresh(),
+                            (int) auth()->user()->tenant_id,
+                            $telegramInput,
+                            $request
+                        );
+                    }
+                    if ($produto->fresh()->is_active) {
+                        $delivery->assertCanPublish($produto->fresh());
+                    }
+                } else {
+                    $delivery->clearForProduct($produto);
+                }
             });
         } catch (InvalidArgumentException $e) {
-            return back()->withErrors(['bundle_product_ids' => $e->getMessage()])->with('error', $e->getMessage())->withInput();
+            return back()->withErrors(['telegram' => $e->getMessage()])->with('error', $e->getMessage())->withInput();
         } catch (\RuntimeException $e) {
             return back()
                 ->withErrors(['image' => $e->getMessage()])
@@ -1045,6 +1212,10 @@ class ProdutosController extends Controller
         $newProduct = Product::create([
             'tenant_id' => $tenantId,
             'name' => $baseName,
+            'notification_name' => $produto->notification_name,
+            'support_email' => $produto->support_email,
+            'support_whatsapp' => $produto->support_whatsapp,
+            'support_whatsapp_enabled' => (bool) $produto->support_whatsapp_enabled,
             'slug' => $uniqueSlug,
             'description' => $produto->description,
             'category' => $produto->category,
@@ -1446,6 +1617,64 @@ class ProdutosController extends Controller
         ];
     }
 
+    /**
+     * Pixels Meta de outros produtos do mesmo infoprodutor, para copiar Pixel ID e token.
+     *
+     * @return list<array{key: string, product_name: string, name: string, pixel_id: string, access_token: string}>
+     */
+    private function reusableMetaPixelsForEdit(Product $produto, bool $coproductionReadonly): array
+    {
+        if ($coproductionReadonly) {
+            return [];
+        }
+
+        $user = auth()->user();
+        $tenantId = $user?->tenant_id;
+        if ($user === null || $tenantId === null || (int) $produto->tenant_id !== (int) $tenantId) {
+            return [];
+        }
+
+        $allowed = array_values(array_filter(
+            app(TeamAccessService::class)->allowedProductIdsFor($user),
+            fn ($id) => (string) $id !== (string) $produto->id
+        ));
+        if ($allowed === []) {
+            return [];
+        }
+
+        $rows = [];
+        $others = Product::forTenant((int) $tenantId)
+            ->whereIn('id', $allowed)
+            ->orderBy('name')
+            ->get(['id', 'name', 'conversion_pixels']);
+
+        foreach ($others as $other) {
+            $entries = $other->conversion_pixels['meta']['entries'] ?? [];
+            if (! is_array($entries)) {
+                continue;
+            }
+            foreach ($entries as $entry) {
+                if (! is_array($entry)) {
+                    continue;
+                }
+                $pixelId = trim((string) ($entry['pixel_id'] ?? ''));
+                if ($pixelId === '') {
+                    continue;
+                }
+                $entryId = trim((string) ($entry['id'] ?? ''));
+                $rows[] = [
+                    'key' => (string) $other->id.':'.($entryId !== '' ? $entryId : $pixelId),
+                    'product_name' => (string) $other->name,
+                    'name' => trim((string) ($entry['name'] ?? '')),
+                    'pixel_id' => $pixelId,
+                    'access_token' => trim((string) ($entry['access_token'] ?? '')),
+                ];
+            }
+        }
+
+        return $rows;
+    }
+
     private function authorizeProduct(Product $produto, bool $manage = true): void
     {
         $user = auth()->user();
@@ -1515,6 +1744,8 @@ class ProdutosController extends Controller
             'name' => $p->name,
             'notification_name' => $p->notification_name,
             'support_email' => $p->support_email,
+            'support_whatsapp' => $p->support_whatsapp,
+            'support_whatsapp_enabled' => (bool) $p->support_whatsapp_enabled,
             'slug' => $p->slug,
             'checkout_slug' => $p->checkout_slug,
             'description' => $p->description,
@@ -1524,6 +1755,7 @@ class ProdutosController extends Controller
             'type_label' => $typeLabel,
             'billing_type' => $billingType,
             'billing_type_label' => $billingLabels[$billingType] ?? $billingType,
+            'subscription_recurrence_months' => $p->subscription_recurrence_months,
             'image' => $p->image,
             'image_url' => $imageUrl,
             'price' => MoneyDecimal::toFloat($p->price),
@@ -1544,9 +1776,8 @@ class ProdutosController extends Controller
     private function platformPriceRules(): array
     {
         $tenantId = (int) (auth()->user()?->tenant_id ?? 0);
-        $min = app(MinimumChargeService::class)->platformMinimumBrlForTenant($tenantId > 0 ? $tenantId : null);
 
-        return ['required', 'numeric', 'min:'.$min];
+        return app(MinimumChargeService::class)->platformPriceRules($tenantId > 0 ? $tenantId : null);
     }
 
     /**
@@ -1731,6 +1962,20 @@ class ProdutosController extends Controller
     /**
      * @param  array<string, mixed>  $validated
      */
+    private function applySubscriptionRecurrenceMonths(array &$validated): void
+    {
+        if (($validated['billing_type'] ?? '') !== Product::BILLING_SUBSCRIPTION) {
+            $validated['subscription_recurrence_months'] = null;
+
+            return;
+        }
+
+        $validated['subscription_recurrence_months'] = (int) $validated['subscription_recurrence_months'];
+    }
+
+    /**
+     * @param  array<string, mixed>  $validated
+     */
     private function createProductRecord(array $validated): Product
     {
         $product = Product::create($validated);
@@ -1805,7 +2050,7 @@ class ProdutosController extends Controller
                 'card_installments_gateway_name' => '',
                 'digital_wallets_at_checkout' => false,
                 'platform_card_installments_enabled' => $platformEnabled,
-                'platform_card_installments_max' => $platformMax,
+                'platform_card_installments_max' => min($platformMax, CardInstallments::MAX_ALLOWED),
             ];
         }
 
@@ -1834,7 +2079,7 @@ class ProdutosController extends Controller
                 : '',
             'digital_wallets_at_checkout' => $primaryConnectedCardSlug === 'cajupay',
             'platform_card_installments_enabled' => $platformEnabled,
-            'platform_card_installments_max' => $platformMax,
+            'platform_card_installments_max' => min($platformMax, CardInstallments::ceilingForGateway($primaryConnectedCardSlug)),
         ];
     }
 
@@ -1850,5 +2095,50 @@ class ProdutosController extends Controller
         $config = $product->checkout_config ?? [];
         $config['card_installments'] = $normalized;
         $product->update(['checkout_config' => $config]);
+    }
+
+    /**
+     * @param  array<string, mixed>  $validated
+     */
+    private function normalizeSupportWhatsapp(array &$validated): void
+    {
+        $hasEnabled = array_key_exists('support_whatsapp_enabled', $validated);
+        $hasNumber = array_key_exists('support_whatsapp', $validated);
+        if (! $hasEnabled && ! $hasNumber) {
+            return;
+        }
+
+        $enabled = $hasEnabled && filter_var($validated['support_whatsapp_enabled'], FILTER_VALIDATE_BOOLEAN);
+        if ($hasEnabled) {
+            $validated['support_whatsapp_enabled'] = $enabled;
+        }
+
+        if (! $hasNumber && ! $enabled) {
+            return;
+        }
+
+        $raw = trim((string) ($validated['support_whatsapp'] ?? ''));
+        if (! $enabled) {
+            if ($hasNumber) {
+                $validated['support_whatsapp'] = $raw === '' ? null : (WhatsappPhoneNormalizer::normalize($raw) ?? null);
+            }
+
+            return;
+        }
+
+        if ($raw === '') {
+            throw ValidationException::withMessages([
+                'support_whatsapp' => 'Informe o WhatsApp de suporte para ativar este canal.',
+            ]);
+        }
+
+        $normalized = WhatsappPhoneNormalizer::normalize($raw);
+        if ($normalized === null) {
+            throw ValidationException::withMessages([
+                'support_whatsapp' => 'Informe um WhatsApp válido com DDI ou DDD.',
+            ]);
+        }
+
+        $validated['support_whatsapp'] = $normalized;
     }
 }

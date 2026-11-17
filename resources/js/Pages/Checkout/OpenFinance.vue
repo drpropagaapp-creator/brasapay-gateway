@@ -184,7 +184,7 @@ onUnmounted(() => {
 <template>
     <ConversionPixels ref="conversionPixelsRef" :pixels="props.conversion_pixels" />
     <Head>
-        <title>Open Finance</title>
+        <title>Pix Automático</title>
     </Head>
     <div class="min-h-screen bg-gray-100 px-4 py-6 sm:py-8 pb-12">
         <div class="mx-auto w-full max-w-md">
@@ -196,7 +196,7 @@ onUnmounted(() => {
                 </div>
                 <div class="px-5 sm:px-6 pb-6">
                     <h1 class="mb-1 text-center text-lg font-bold text-gray-900 sm:text-xl">
-                        Open Finance — {{ amount_formatted }}
+                        Pix Automático — {{ amount_formatted }}
                     </h1>
                     <p class="mb-5 text-center text-xs text-gray-500 sm:text-sm">
                         Autorize o pagamento no app do seu banco. Esta página atualiza automaticamente quando a instituição confirmar.

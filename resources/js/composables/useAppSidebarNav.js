@@ -35,6 +35,7 @@ import {
     Sparkles,
     MonitorPlay,
     Repeat,
+    Send,
     FlaskConical,
 } from 'lucide-vue-next';
 import { useI18n } from '@/composables/useI18n';
@@ -110,6 +111,7 @@ export function useAppSidebarNav() {
             { id: 'principal', label: null, items: [
                 canView('dashboard.view') && item(t('sidebar.dashboard', 'Dashboard'), '/dashboard', LayoutDashboard),
                 canView('vendas.view') && item(t('sidebar.sales', 'Vendas'), '/vendas', CircleDollarSign),
+                canView('vendas.view') && item(t('sales.tab_subscriptions', 'Assinaturas'), '/vendas/assinaturas', Repeat),
                 canView('vendas.view') && item(t('sidebar.crm', 'Clientes'), '/crm', Contact),
                 canView('financeiro.view') && item(t('sidebar.finance', 'Financeiro'), '/financeiro', Wallet),
             ] },
@@ -117,6 +119,7 @@ export function useAppSidebarNav() {
                 item(t('sidebar.products', 'Meus produtos'), '/produtos', Package),
                 item(t('sidebar.member_areas', 'Áreas de membros'), '/areas-de-membros', MonitorPlay),
                 item(t('sidebar.students', 'Alunos'), '/produtos/alunos', GraduationCap),
+                page.props.telegram_subscribers_menu_visible && item(t('sidebar.telegram_subscribers', 'Assinantes Telegram'), '/produtos/telegram/assinantes', Send),
                 item(t('sidebar.coupons', 'Cupons'), '/produtos/cupons', TicketPercent),
                 item(t('sidebar.affiliate_showcase', 'Vitrine'), '/produtos/vitrine-afiliacao', Store),
                 page.props.physical_products_enabled_effective && item(t('sidebar.shipping', 'Taxas e frete'), '/frete', Truck),
@@ -175,7 +178,13 @@ export function useAppSidebarNav() {
         if (href === '/painel-cliente') return url === '/painel-cliente';
         if (href === '/frete') return url === '/frete' || url.startsWith('/frete/');
         if (href === '/dashboard') return url === '/dashboard' || url === '/';
+        if (href === '/vendas/assinaturas') {
+            return url === '/vendas/assinaturas' || url.startsWith('/vendas/assinaturas/');
+        }
         if (href === '/vendas') {
+            if (url.startsWith('/vendas/assinaturas')) {
+                return false;
+            }
             return url === '/vendas' || url.startsWith('/vendas/');
         }
         if (href === '/transacoes-api') {
@@ -190,6 +199,9 @@ export function useAppSidebarNav() {
         if (href === '/produtos/alunos') {
             return url.startsWith('/produtos/alunos');
         }
+        if (href === '/produtos/telegram/assinantes') {
+            return url === '/produtos/telegram/assinantes' || url.startsWith('/produtos/telegram/assinantes/');
+        }
         if (href === '/afiliados') {
             return url === '/afiliados' || url.startsWith('/afiliados/');
         }
@@ -200,6 +212,7 @@ export function useAppSidebarNav() {
             if (
                 url.startsWith('/produtos/cupons') ||
                 url.startsWith('/produtos/alunos') ||
+                url.startsWith('/produtos/telegram/') ||
                 url.startsWith('/produtos/coproducao') ||
                 url.startsWith('/produtos/vitrine-afiliacao') ||
                 url.startsWith('/produtos/afiliados') ||

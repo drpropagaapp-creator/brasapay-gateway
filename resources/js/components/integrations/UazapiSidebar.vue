@@ -250,7 +250,11 @@ async function setDefault(accountId) {
 }
 
 async function deleteAccount(accountId) {
-    if (!confirm('Excluir esta conta WhatsApp? Os disparos passam a usar as outras contas ativas.')) return;
+    const isLast = accounts.value.length <= 1;
+    const message = isLast
+        ? 'Excluir esta conta WhatsApp? A recuperação de carrinho e PIX deixa de ser enviada até cadastrar outra conta.'
+        : 'Excluir esta conta WhatsApp? Os disparos passam a usar as outras contas ativas.';
+    if (!confirm(message)) return;
     try {
         const { data } = await axios.delete(`/integracoes/uazapi/${accountId}`);
         applyPayload(data, false);
@@ -538,7 +542,6 @@ function close() {
                                         Configurar
                                     </Button>
                                     <Button
-                                        v-if="accounts.length > 1"
                                         type="button"
                                         variant="outline"
                                         size="sm"

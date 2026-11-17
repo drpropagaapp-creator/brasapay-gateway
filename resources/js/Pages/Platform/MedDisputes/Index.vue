@@ -27,8 +27,36 @@ function formatBRL(cents) {
     return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format((Number(cents) || 0) / 100);
 }
 
+function formatDateTime(value) {
+    if (!value) return '—';
+    const d = new Date(value);
+    if (Number.isNaN(d.getTime())) return '—';
+    const date = d.toLocaleDateString('pt-BR');
+    const time = d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+    return `${date} · ${time}`;
+}
+
 function partyLabel(party) {
     return party === 'platform' ? 'Plataforma' : 'API PIX';
+}
+
+function statusLabel(status) {
+    const map = {
+        open: 'Aberta',
+        defense_submitted: 'Defesa enviada',
+        resolved_won: 'Ganha',
+        resolved_lost: 'Perdida',
+        cancelled: 'Cancelada',
+    };
+    return map[status] ?? status ?? '—';
+}
+
+function statusBadgeClass(status) {
+    if (status === 'open') return 'bg-orange-100 text-orange-900 dark:bg-orange-900/30 dark:text-orange-100';
+    if (status === 'defense_submitted') return 'bg-amber-100 text-amber-900 dark:bg-amber-900/30 dark:text-amber-100';
+    if (status === 'resolved_won') return 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200';
+    if (status === 'resolved_lost' || status === 'cancelled') return 'bg-zinc-200 text-zinc-800 dark:bg-zinc-700 dark:text-zinc-200';
+    return 'bg-zinc-100 text-zinc-800 dark:bg-zinc-800 dark:text-zinc-200';
 }
 
 function applyFilters() {
@@ -89,7 +117,79 @@ function setParty(party) {
             </button>
         </div>
 
-        <div class="overflow-hidden rounded-2xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900/60">
+        <div v-if="rows().length" class="space-y-3 lg:hidden">
+            <a
+                v-for="d in rows()"
+                :key="`mobile-${d.id}`"
+                :href="`/plataforma/disputas/${d.id}`"
+                class="block rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm transition hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800 dark:hover:bg-zinc-700/40"
+            >
+                <div class="flex items-start justify-between gap-3">
+                    <div class="min-w-0">
+                        <p class="font-mono text-sm font-semibold text-zinc-900 dark:text-white">
+                            Disputa #{{ d.id }}
+                        </p>
+                        <p class="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
+                            {{ formatDateTime(d.opened_at) }}
+                        </p>
+                    </div>
+                    <span class="shrink-0 text-sm font-semibold tabular-nums text-zinc-900 dark:text-white">
+                        {{ formatBRL(d.amount_cents) }}
+                    </span>
+                </div>
+
+                <div class="mt-2">
+                    <span
+                        :class="['inline-flex max-w-full rounded-full px-2 py-0.5 text-[11px] font-medium leading-tight', statusBadgeClass(d.status)]"
+                    >
+                        {{ statusLabel(d.status) }}
+                    </span>
+                </div>
+
+                <dl class="mt-4 grid grid-cols-2 gap-x-3 gap-y-3 border-t border-zinc-100 pt-3 dark:border-zinc-700">
+                    <div class="min-w-0">
+                        <dt class="text-[11px] font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+                            Responsável
+                        </dt>
+                        <dd class="mt-0.5 break-words text-sm text-zinc-800 dark:text-zinc-200">
+                            {{ partyLabel(d.responsible_party) }}
+                        </dd>
+                    </div>
+                    <div class="min-w-0">
+                        <dt class="text-[11px] font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+                            Pedido
+                        </dt>
+                        <dd class="mt-0.5 break-words text-sm font-medium text-zinc-900 dark:text-white">
+                            #{{ d.order?.id ?? '—' }}
+                        </dd>
+                    </div>
+                    <div class="min-w-0">
+                        <dt class="text-[11px] font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+                            Infoprodutor
+                        </dt>
+                        <dd class="mt-0.5 break-words text-sm font-medium text-zinc-900 dark:text-white">
+                            {{ d.tenant?.name ?? '—' }}
+                        </dd>
+                    </div>
+                    <div class="min-w-0">
+                        <dt class="text-[11px] font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+                            Origem
+                        </dt>
+                        <dd class="mt-0.5 break-words text-sm text-zinc-800 dark:text-zinc-200">
+                            {{ d.order_origin ?? '—' }}
+                        </dd>
+                    </div>
+                </dl>
+            </a>
+        </div>
+        <div
+            v-else
+            class="rounded-2xl border border-dashed border-zinc-200 px-4 py-12 text-center text-sm text-zinc-500 dark:border-zinc-700 lg:hidden"
+        >
+            Nenhuma disputa encontrada.
+        </div>
+
+        <div class="hidden overflow-hidden rounded-2xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900/60 lg:block">
             <table class="min-w-full divide-y divide-zinc-200 dark:divide-zinc-800">
                 <thead class="bg-zinc-50 dark:bg-zinc-800/80">
                     <tr>
@@ -111,7 +211,13 @@ function setParty(party) {
                         <td class="px-4 py-3 text-sm">#{{ d.order?.id }}</td>
                         <td class="px-4 py-3 text-sm">{{ d.order_origin ?? '—' }}</td>
                         <td class="px-4 py-3 text-sm">{{ formatBRL(d.amount_cents) }}</td>
-                        <td class="px-4 py-3 text-sm">{{ d.status }}</td>
+                        <td class="px-4 py-3 text-sm">
+                            <span
+                                :class="['inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium leading-tight', statusBadgeClass(d.status)]"
+                            >
+                                {{ statusLabel(d.status) }}
+                            </span>
+                        </td>
                         <td class="px-4 py-3 text-right">
                             <a :href="`/plataforma/disputas/${d.id}`" class="text-sm text-[var(--color-primary)] hover:underline">Ver</a>
                         </td>

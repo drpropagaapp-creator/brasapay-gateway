@@ -10,6 +10,7 @@ use App\Models\RefundRequest;
 use App\Models\User;
 use App\Models\Withdrawal;
 use App\Services\MerchantWithdrawalService;
+use App\Support\KycEnforcement;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -18,6 +19,8 @@ use Illuminate\Support\Facades\Schema;
 class PlatformAdminAlertCounts
 {
     public const KEY_KYC = 'kyc';
+
+    public const KEY_APROVACAO = 'aprovacao';
 
     public const KEY_PRODUTOS = 'produtos';
 
@@ -40,6 +43,7 @@ class PlatformAdminAlertCounts
     {
         return [
             self::KEY_KYC => $this->kycPendingCount($user),
+            self::KEY_APROVACAO => $this->pendingAccountApprovalCount($user),
             self::KEY_PRODUTOS => $this->productsPendingCount($user),
             self::KEY_SAQUES => $this->withdrawalsAttentionCount($user),
             self::KEY_FINANCEIRO => $this->withdrawalsPendingCount($user),
@@ -114,6 +118,22 @@ class PlatformAdminAlertCounts
             });
 
         return (int) $query->count();
+    }
+
+    public function pendingAccountApprovalCount(?User $user = null): int
+    {
+        if (KycEnforcement::mode() !== KycEnforcement::WITHDRAWAL) {
+            return 0;
+        }
+
+        if (! Schema::hasColumn('users', 'account_status')) {
+            return 0;
+        }
+
+        return (int) User::query()
+            ->where('role', User::ROLE_INFOPRODUTOR)
+            ->where('account_status', 'pending')
+            ->count();
     }
 
     public function productsPendingCount(?User $user = null): int

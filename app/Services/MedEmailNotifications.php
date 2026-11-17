@@ -8,6 +8,7 @@ use App\Mail\MedResolvedAdminMail;
 use App\Mail\MedResolvedSellerMail;
 use App\Models\MedDispute;
 use App\Models\User;
+use App\Services\Med\MedPolicyService;
 use App\Support\KycNotificationEmails;
 use App\Support\PublicAppUrl;
 use App\Models\Setting;
@@ -16,13 +17,14 @@ class MedEmailNotifications
 {
     public function __construct(
         protected PlatformTransactionalMailService $mail,
+        protected MedPolicyService $policy,
     ) {}
 
     public function medOpened(MedDispute $dispute): void
     {
         $dispute->loadMissing(['order.product', 'tenantOwner']);
 
-        if ($dispute->responsible_party === MedDispute::PARTY_TENANT) {
+        if ($this->policy->sellerFollowsDispute($dispute)) {
             $owner = $dispute->tenantOwner;
             if ($owner?->email) {
                 $branding = BrandingEmailData::forTenant($dispute->tenant_id);
@@ -50,7 +52,7 @@ class MedEmailNotifications
     {
         $dispute->loadMissing(['order.product', 'tenantOwner']);
 
-        if ($dispute->responsible_party === MedDispute::PARTY_TENANT) {
+        if ($this->policy->sellerFollowsDispute($dispute)) {
             $owner = $dispute->tenantOwner;
             if ($owner?->email) {
                 $branding = BrandingEmailData::forTenant($dispute->tenant_id);

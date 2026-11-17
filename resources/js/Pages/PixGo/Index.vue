@@ -10,6 +10,7 @@ defineOptions({ layout: LayoutInfoprodutor });
 const props = defineProps({
     sidebar_label: { type: String, default: 'PixGO' },
     minimum_charge_brl: { type: Number, default: 0 },
+    maximum_charge_brl: { type: Number, default: 0 },
 });
 
 const amountCents = ref(0);
@@ -25,12 +26,20 @@ const form = useForm({
 });
 
 const minimumCents = computed(() => Math.max(1, Math.round((props.minimum_charge_brl || 0) * 100)));
+const maximumCents = computed(() => Math.round((props.maximum_charge_brl || 0) * 100));
 
-const canCharge = computed(() => amountCents.value >= minimumCents.value);
+const canCharge = computed(() => {
+    if (amountCents.value < minimumCents.value) return false;
+    if (maximumCents.value > 0 && amountCents.value > maximumCents.value) return false;
+    return true;
+});
 
 const chargeHint = computed(() => {
     if (props.minimum_charge_brl > 0 && amountCents.value < minimumCents.value) {
         return `Valor mínimo: R$ ${props.minimum_charge_brl.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`;
+    }
+    if (props.maximum_charge_brl > 0 && amountCents.value > maximumCents.value) {
+        return `Valor máximo: R$ ${props.maximum_charge_brl.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`;
     }
     return '';
 });

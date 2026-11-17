@@ -20,9 +20,11 @@ use App\Support\RegistrationTurnstileSettings;
 use App\Support\InfoproducerRegistrationSettings;
 use App\Support\AccountManagerSettings;
 use App\Support\ProductApprovalSettings;
+use App\Support\KycEnforcement;
 use App\Support\KycRequirementSettings;
 use App\Support\SellerPanelSupportSettings;
 use App\Support\PlatformCompanySettings;
+use App\Support\PlatformAiReportSettings;
 use App\Support\PlatformGa4Settings;
 use App\Support\DatabaseBackupSettings;
 use App\Services\Platform\DatabaseBackupService;
@@ -159,9 +161,11 @@ class SettingsController extends Controller
                 ...($tenantId === null ? InfoproducerRegistrationSettings::forSettingsForm() : []),
                 ...($tenantId === null ? ProductApprovalSettings::forSettingsForm() : []),
                 ...($tenantId === null ? KycRequirementSettings::forSettingsForm() : []),
+                ...($tenantId === null ? KycEnforcement::forSettingsForm() : []),
                 ...($tenantId === null ? AccountManagerSettings::forSettingsForm() : []),
                 ...($tenantId === null ? SellerPanelSupportSettings::forSettingsForm() : []),
                 ...($tenantId === null ? PlatformGa4Settings::forSettingsForm() : []),
+                ...($tenantId === null ? PlatformAiReportSettings::forSettingsForm() : []),
                 ...($tenantId === null ? PlatformCompanySettings::forSettingsForm() : []),
                 ...($tenantId === null ? [
                     'legal_privacy_policy_html' => $legalForm['legal_privacy_policy_html'],
@@ -260,6 +264,9 @@ class SettingsController extends Controller
             'platform_ga4_enabled' => ['nullable', 'boolean'],
             'platform_ga4_measurement_id' => ['nullable', 'string', 'max:32'],
             'platform_ga4_api_secret' => ['nullable', 'string', 'max:128'],
+            'platform_ai_report_enabled' => ['nullable', 'boolean'],
+            'platform_ai_report_provider' => ['nullable', 'string', 'in:openai,gemini'],
+            'platform_ai_report_api_key' => ['nullable', 'string', 'max:512'],
             'legal_privacy_policy_html' => ['nullable', 'string', 'max:200000'],
             'legal_terms_of_use_html' => ['nullable', 'string', 'max:200000'],
             'legal_privacy_contact_email' => ['nullable', 'email', 'max:255'],
@@ -270,6 +277,7 @@ class SettingsController extends Controller
             'kyc_require_selfie_with_document' => ['nullable', 'boolean'],
             'kyc_require_company_address_proof' => ['nullable', 'boolean'],
             'kyc_require_company_constitution' => ['nullable', 'boolean'],
+            'kyc_enforcement' => ['nullable', 'string', 'in:onboarding,withdrawal'],
             'platform_legal_name' => ['nullable', 'string', 'max:255'],
             'platform_cnpj' => [
                 'nullable',
@@ -381,8 +389,10 @@ class SettingsController extends Controller
 
             SellerPanelSupportSettings::persistFromValidated($validated);
             PlatformGa4Settings::persistFromValidated($validated);
+            PlatformAiReportSettings::persistFromValidated($validated);
             PlatformCompanySettings::persistFromValidated($validated);
             KycRequirementSettings::persistFromValidated($validated);
+            KycEnforcement::persistFromValidated($validated);
             DatabaseBackupSettings::persistFromValidated($validated, $request);
         }
 
@@ -432,6 +442,7 @@ class SettingsController extends Controller
             'seller_panel_support_color',
         ];
         $platformGa4Keys = PlatformGa4Settings::FORM_KEYS;
+        $platformAiReportKeys = PlatformAiReportSettings::FORM_KEYS;
         $platformCompanyKeys = [
             'platform_legal_name',
             'platform_cnpj',
@@ -456,6 +467,7 @@ class SettingsController extends Controller
             'kyc_require_selfie_with_document',
             'kyc_require_company_address_proof',
             'kyc_require_company_constitution',
+            'kyc_enforcement',
         ];
         $backupKeys = DatabaseBackupSettings::FORM_KEYS;
         // Handle passwords separately (encrypt)
@@ -502,6 +514,9 @@ class SettingsController extends Controller
                 continue;
             }
             if (in_array($key, $platformGa4Keys, true)) {
+                continue;
+            }
+            if (in_array($key, $platformAiReportKeys, true)) {
                 continue;
             }
             if (in_array($key, $platformCompanyKeys, true)) {

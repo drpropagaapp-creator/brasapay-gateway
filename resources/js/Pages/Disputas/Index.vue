@@ -51,7 +51,7 @@ function setFilter(status) {
 
         <div class="flex flex-wrap items-center gap-3">
             <p class="text-sm text-zinc-600 dark:text-zinc-400">
-                Contestações PIX (MED) abertas pelo banco. Envie sua defesa antes do prazo.
+                Contestações MED de infoproduto e de API PIX, quando essa estiver ativa para você. O saldo da venda fica retido até a solução.
             </p>
             <span
                 v-if="open_count > 0"
@@ -91,6 +91,7 @@ function setFilter(status) {
                 <thead class="bg-zinc-50 dark:bg-zinc-800/80">
                     <tr>
                         <th class="px-4 py-3 text-left text-xs font-semibold uppercase text-zinc-600">Pedido</th>
+                        <th class="px-4 py-3 text-left text-xs font-semibold uppercase text-zinc-600">Origem</th>
                         <th class="px-4 py-3 text-left text-xs font-semibold uppercase text-zinc-600">Valor</th>
                         <th class="px-4 py-3 text-left text-xs font-semibold uppercase text-zinc-600">Status</th>
                         <th class="px-4 py-3 text-right text-xs font-semibold uppercase text-zinc-600">Ação</th>
@@ -102,6 +103,7 @@ function setFilter(status) {
                             <span class="font-medium">#{{ d.order?.public_reference ?? d.order?.id }}</span>
                             <p class="text-xs text-zinc-500">{{ d.order?.product_name }}</p>
                         </td>
+                        <td class="px-4 py-3 text-sm">{{ d.origin_label || 'Infoproduto' }}</td>
                         <td class="px-4 py-3 text-sm">{{ formatBRL(d.amount_cents) }}</td>
                         <td class="px-4 py-3 text-sm">{{ statusLabel(d.status) }}</td>
                         <td class="px-4 py-3 text-right">

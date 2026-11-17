@@ -22,7 +22,7 @@ class BspayMedWebhookTest extends TestCase
         ]);
     }
 
-    public function test_chargeback_opened_creates_platform_dispute_without_marking_checkout_order(): void
+    public function test_chargeback_opened_marks_checkout_order_disputed(): void
     {
         if (! Schema::hasTable('med_disputes')) {
             $this->markTestSkipped('med_disputes table');
@@ -34,7 +34,7 @@ class BspayMedWebhookTest extends TestCase
             ->assertOk()
             ->assertJson(['received' => true]);
 
-        $this->assertSame('completed', $order->fresh()->status);
+        $this->assertSame('disputed', $order->fresh()->status);
         $this->assertDatabaseHas('med_disputes', [
             'order_id' => $order->id,
             'cajupay_dispute_id' => 'bspay:abc-uuid-1234',

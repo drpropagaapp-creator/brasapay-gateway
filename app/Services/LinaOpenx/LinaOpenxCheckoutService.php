@@ -43,7 +43,7 @@ class LinaOpenxCheckoutService
         $consumer = CheckoutPaymentConsumer::build($validated, $order->id);
         $document = preg_replace('/\D+/', '', (string) ($consumer['document'] ?? $order->cpf ?? '')) ?? '';
         if ($document === '') {
-            throw new \RuntimeException('CPF/CNPJ é obrigatório para pagar com Open Finance.');
+            throw new \RuntimeException('CPF/CNPJ é obrigatório para pagar com Pix Automático.');
         }
         $consumer['document'] = $document;
 

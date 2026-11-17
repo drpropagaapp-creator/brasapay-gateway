@@ -10,8 +10,9 @@ class MemberLessonPdfWatermarker
 {
     /**
      * @param  array{name?: string, email?: string, cpf?: string|null, customer_number?: string}  $identity
+     * @param  array{header_footer?: bool, center?: bool}  $marks
      */
-    public function stamp(string $pdfBinary, array $identity): string
+    public function stamp(string $pdfBinary, array $identity, array $marks = []): string
     {
         $cpf = $this->formatDocument(isset($identity['cpf']) ? (string) $identity['cpf'] : null);
         $normalized = [
@@ -23,7 +24,10 @@ class MemberLessonPdfWatermarker
         ];
 
         try {
-            return (new SocialWatermarkDocument)->render($pdfBinary, $normalized);
+            return (new SocialWatermarkDocument)->render($pdfBinary, $normalized, [
+                'header_footer' => (bool) ($marks['header_footer'] ?? true),
+                'center' => (bool) ($marks['center'] ?? true),
+            ]);
         } catch (MemberPdfWatermarkException $e) {
             throw $e;
         } catch (\Throwable $e) {

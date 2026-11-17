@@ -12,6 +12,7 @@ import {
     Mail,
     MessageCircle,
     MessageSquare,
+    Send,
     Smartphone,
     Wallet,
     Landmark,
@@ -19,6 +20,7 @@ import {
     ShieldAlert,
     Activity,
     ArrowLeftRight,
+    Repeat,
     AlertTriangle,
     Banknote,
     CircleDollarSign,
@@ -26,6 +28,7 @@ import {
     Code2,
     Trophy,
     BadgeCheck,
+    Clock,
     Package,
     Puzzle,
     Plug,
@@ -90,6 +93,7 @@ const navGroupsCore = [
         label: 'Pessoas',
         items: [
             { name: 'Infoprodutores', href: '/plataforma/usuarios', icon: Users },
+            { name: 'Aguardando aprovação', href: '/plataforma/usuarios/aguardando-aprovacao', icon: Clock, badgeKey: 'aprovacao' },
             { name: 'Verificações KYC', href: '/plataforma/verificacoes-kyc', icon: BadgeCheck, badgeKey: 'kyc' },
             { name: 'Clientes', href: '/plataforma/clientes', icon: UserCircle2 },
             { name: 'Gerentes de conta', href: '/plataforma/gerentes-conta', icon: ContactRound },
@@ -101,6 +105,7 @@ const navGroupsCore = [
         label: 'Vendas e produtos',
         items: [
             { name: 'Transações', href: '/plataforma/transacoes', icon: ArrowLeftRight, badgeKey: 'transacoes' },
+            { name: 'Assinaturas', href: '/plataforma/assinaturas', icon: Repeat },
             { name: 'Disputas MED', href: '/plataforma/disputas', icon: AlertTriangle, badgeKey: 'disputas' },
             { name: 'Produtos', href: '/plataforma/produtos?filter=pending', icon: Package, badgeKey: 'produtos' },
             { name: 'Transações API', href: '/plataforma/transacoes-api', icon: Code2 },
@@ -126,6 +131,7 @@ const navGroupsCore = [
         items: [
             { name: 'Central de e-mails', href: '/plataforma/email-marketing', icon: Mail },
             { name: 'WhatsApp', href: '/plataforma/uazapi', icon: MessageCircle },
+            { name: 'Telegram', href: '/plataforma/telegram', icon: Send },
             { name: 'IntegraX SMS', href: '/plataforma/integrax', icon: MessageSquare },
             { name: 'App', href: '/plataforma/app', icon: Smartphone },
             { name: 'Conquistas', href: '/plataforma/conquistas', icon: Trophy },
@@ -208,6 +214,9 @@ function isActive(href) {
     if (href === '/plataforma/transacoes-api') {
         return url === '/plataforma/transacoes-api' || url.startsWith('/plataforma/transacoes-api/');
     }
+    if (href === '/plataforma/assinaturas') {
+        return url === '/plataforma/assinaturas' || url.startsWith('/plataforma/assinaturas/');
+    }
     if (href === '/plataforma/transacoes') {
         return (url === '/plataforma/transacoes' || url.startsWith('/plataforma/transacoes/'))
             && !url.startsWith('/plataforma/transacoes-api');
@@ -233,8 +242,15 @@ function isActive(href) {
     if (href === '/plataforma/saldo') {
         return url === '/plataforma/saldo' || url.startsWith('/plataforma/saldo/');
     }
+    if (href === '/plataforma/usuarios/aguardando-aprovacao') {
+        return url === '/plataforma/usuarios/aguardando-aprovacao' || url.startsWith('/plataforma/usuarios/aguardando-aprovacao/');
+    }
     if (href === '/plataforma/usuarios') {
-        return url === '/plataforma/usuarios' || (url.startsWith('/plataforma/usuarios/') && !url.startsWith('/plataforma/usuarios/create'));
+        return url === '/plataforma/usuarios' || (
+            url.startsWith('/plataforma/usuarios/')
+            && !url.startsWith('/plataforma/usuarios/create')
+            && !url.startsWith('/plataforma/usuarios/aguardando-aprovacao')
+        );
     }
     if (href === '/plataforma/gerentes-conta') {
         return url === '/plataforma/gerentes-conta' || url.startsWith('/plataforma/gerentes-conta/');
@@ -286,6 +302,9 @@ function isActive(href) {
     }
     if (href === '/plataforma/uazapi') {
         return url === '/plataforma/uazapi' || url.startsWith('/plataforma/uazapi/');
+    }
+    if (href === '/plataforma/telegram') {
+        return url === '/plataforma/telegram' || url.startsWith('/plataforma/telegram/');
     }
     return url === href || url.startsWith(`${href}/`);
 }

@@ -30,6 +30,7 @@ class PixGoController extends Controller
         return Inertia::render('PixGo/Index', [
             'sidebar_label' => PixGoAccess::sidebarLabel(),
             'minimum_charge_brl' => app(MinimumChargeService::class)->platformMinimumBrlForTenant($tenantId),
+            'maximum_charge_brl' => app(MinimumChargeService::class)->platformMaximumBrlForTenant($tenantId),
         ]);
     }
 

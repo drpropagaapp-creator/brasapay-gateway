@@ -28,12 +28,27 @@ class MedResolvedSellerMail extends Mailable
         $dispute = $this->dispute;
         $dispute->loadMissing('order.product');
 
+        $outcome = strtolower((string) ($dispute->outcome ?? ''));
+        $outcomeLabel = match ($outcome) {
+            'won', 'merchant_won' => 'ganha',
+            'lost', 'payer_won', 'customer_won' => 'perdida',
+            'cancelled', 'canceled' => 'cancelada',
+            default => $outcome !== '' ? $outcome : (string) $dispute->status,
+        };
+        $walletNote = match ($outcome) {
+            'won', 'merchant_won', 'cancelled', 'canceled' => 'O saldo retido voltou para a carteira.',
+            'lost', 'payer_won', 'customer_won' => 'O valor retido saiu da carteira.',
+            default => null,
+        };
+
         return $this->view('emails.med-resolved-seller', [
             'branding' => $this->branding,
             'dispute' => $dispute,
             'order' => $dispute->order,
             'productName' => $dispute->order?->product?->name,
             'disputeUrl' => $this->disputeUrl,
+            'outcomeLabel' => $outcomeLabel,
+            'walletNote' => $walletNote,
         ]);
     }
 }

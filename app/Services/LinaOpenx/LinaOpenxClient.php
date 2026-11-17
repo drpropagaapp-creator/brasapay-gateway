@@ -26,6 +26,36 @@ class LinaOpenxClient
     /** Embedded Payment Manager — produção. */
     public const DEFAULT_API_BASE_PROD = 'https://embedded-payment-manager.linaob.com.br';
 
+    /** Liquidação do débito. AUTHORISED no consentimento não entra aqui. */
+    public const SETTLED_PAYMENT_STATUSES = [
+        'PAGO',
+        'PAID',
+        'ACSC',
+        'ACSP',
+        'ACCC',
+        'SETTLED',
+        'COMPLETED',
+        'LIQUIDADO',
+        'EFETIVADO',
+        'CONCLUIDO',
+        'CONCLUIDA',
+    ];
+
+    /** Débito já criado e ainda não liquidado. Não gera outro recurring-payment. */
+    public const INFLIGHT_PAYMENT_STATUSES = [
+        'RCVD',
+        'PDNG',
+        'SCHD',
+        'ACCP',
+        'ACPD',
+        'PATC',
+        'PENDENTE',
+        'PENDING',
+        'EM_PROCESSAMENTO',
+        'AGENDADO',
+        'PROCESSING',
+    ];
+
     /**
      * @param  array<string, mixed>  $credentials
      */
@@ -196,9 +226,9 @@ class LinaOpenxClient
                 if (! is_array($row)) {
                     continue;
                 }
-                $s = strtoupper($this->firstString($row, ['status', 'paymentStatus', 'payment_status']));
-                if ($s === 'PAGO' || $s === 'PAID' || $s === 'ACSC' || $s === 'ACSP') {
-                    $paymentStatus = $this->firstString($row, ['status', 'paymentStatus', 'payment_status']);
+                $s = $this->firstString($row, ['status', 'paymentStatus', 'payment_status']);
+                if ($this->isSettledPaymentStatus($s)) {
+                    $paymentStatus = $s;
                     break;
                 }
             }
@@ -344,7 +374,8 @@ class LinaOpenxClient
         $consentStatus = $this->firstString($data, ['consentStatus', 'consent_status', 'status']);
         $consentId = $this->firstString($data, ['consentId', 'recurringConsentId', 'recurring_consent_id']);
         $payments = $this->extractPaymentsList($data);
-        $paymentStatus = $this->pickPaymentStatus($payments);
+        $signal = $this->paymentSignal($data);
+        $paymentStatus = $this->preferPaymentStatus($this->pickPaymentStatus($payments), (string) ($signal['status'] ?? ''));
 
         return [
             'status' => $this->normalizeAutomaticStatuses($consentStatus, $paymentStatus),
@@ -352,6 +383,57 @@ class LinaOpenxClient
             'consent_status' => $consentStatus !== '' ? $consentStatus : null,
             'payment_status' => $paymentStatus !== '' ? $paymentStatus : null,
             'payments' => $payments,
+            'raw' => is_array($data) ? $data : [],
+        ];
+    }
+
+    /**
+     * GET /automatic-payments/recurring-consents/{id}
+     * O firstPayment liquidado pelo banco fica neste recurso, não só em recurring-payments.
+     *
+     * @param  array<string, mixed>  $credentials
+     * @return array{
+     *     status: string,
+     *     consent_status: ?string,
+     *     payment_status: ?string,
+     *     payment_id: ?string,
+     *     raw: array<string, mixed>
+     * }
+     */
+    public function getRecurringConsent(array $credentials, string $consentId): array
+    {
+        $consentId = trim($consentId);
+        $empty = [
+            'status' => 'pending',
+            'consent_status' => null,
+            'payment_status' => null,
+            'payment_id' => null,
+            'raw' => [],
+        ];
+        if ($consentId === '') {
+            return $empty;
+        }
+
+        $path = '/api/v1/automatic-payments/recurring-consents/'.rawurlencode($consentId);
+        $response = $this->authenticatedGet($credentials, $path);
+        if (! $response->successful()) {
+            return $empty;
+        }
+
+        $data = $this->unwrapData($response->json());
+        $consentStatus = $this->firstString($data, ['status', 'consentStatus', 'consent_status']);
+        $signal = $this->paymentSignal($data);
+        $paymentStatus = (string) ($signal['status'] ?? '');
+        $paymentId = trim((string) ($signal['payment_id'] ?? ''));
+
+        return [
+            'status' => $this->normalizeAutomaticStatuses(
+                $consentStatus !== '' ? $consentStatus : null,
+                $paymentStatus !== '' ? $paymentStatus : null
+            ),
+            'consent_status' => $consentStatus !== '' ? $consentStatus : null,
+            'payment_status' => $paymentStatus !== '' ? $paymentStatus : null,
+            'payment_id' => $paymentId !== '' ? $paymentId : null,
             'raw' => is_array($data) ? $data : [],
         ];
     }
@@ -549,14 +631,15 @@ class LinaOpenxClient
     }
 
     /**
-     * AUTHORISED no consentimento ainda não é liquidação — só ACSC/PAGO.
+     * AUTHORISED no consentimento ainda não é liquidação.
+     * Pago só com status do débito (ACSC, ACCC, PAGO, LIQUIDADO).
      */
     public function normalizeAutomaticStatuses(?string $consentStatus, ?string $paymentStatus): string
     {
         $req = strtoupper(trim((string) $consentStatus));
         $pay = strtoupper(trim((string) $paymentStatus));
 
-        if (in_array($pay, ['PAGO', 'PAID', 'ACSC', 'ACSP', 'SETTLED', 'COMPLETED'], true)) {
+        if ($this->isSettledPaymentStatus($pay)) {
             return 'paid';
         }
         if (in_array($pay, ['REJEITADO', 'REJECTED', 'RJCT', 'FAILED'], true)
@@ -583,9 +666,8 @@ class LinaOpenxClient
         $req = strtoupper(trim((string) $requestStatus));
         $pay = strtoupper(trim((string) $paymentStatus));
 
-        // ACSP = aceito, liquidação em andamento (Pix Open Finance) — trata como pago no e-commerce.
-        if (in_array($pay, ['PAGO', 'PAID', 'ACSC', 'ACSP', 'SETTLED', 'COMPLETED'], true)
-            || in_array($req, ['PAGO', 'PAID', 'ACSC', 'ACSP', 'SETTLED', 'COMPLETED'], true)) {
+        // ACSP/ACCC = liquidação aceita no Pix Open Finance — trata como pago no e-commerce.
+        if ($this->isSettledPaymentStatus($pay) || $this->isSettledPaymentStatus($req)) {
             return 'paid';
         }
         if (in_array($pay, ['REJEITADO', 'REJECTED', 'RJCT', 'FAILED'], true)) {
@@ -720,6 +802,7 @@ class LinaOpenxClient
             'Authorization' => 'Bearer '.$token,
             'Accept' => 'application/json',
             'Content-Type' => 'application/json',
+            'User-Agent' => 'StackerGateway/1.0',
         ];
         $subTenantId = trim((string) ($credentials['sub_tenant_id'] ?? ''));
         if ($subTenantId === '') {
@@ -809,8 +892,7 @@ class LinaOpenxClient
      */
     private function firstString(array $data, array $keys): string
     {
-        foreach ($keys as $key) {
-            $v = $data[$key] ?? null;
+        foreach ($this->candidateValues($data, $keys) as $v) {
             if (is_string($v) && trim($v) !== '') {
                 return trim($v);
             }
@@ -820,6 +902,58 @@ class LinaOpenxClient
         }
 
         return '';
+    }
+
+    /**
+     * A API documentada devolve PascalCase (OrganisationId, AuthorisationServers).
+     * A busca exata vem primeiro; o fallback ignora maiúsculas.
+     *
+     * @param  array<string, mixed>  $data
+     * @param  list<string>  $keys
+     * @return list<mixed>
+     */
+    private function candidateValues(array $data, array $keys): array
+    {
+        $values = [];
+        foreach ($keys as $key) {
+            if (array_key_exists($key, $data)) {
+                $values[] = $data[$key];
+            }
+        }
+        if ($values !== []) {
+            return $values;
+        }
+
+        $lower = [];
+        foreach ($data as $k => $v) {
+            if (is_string($k)) {
+                $lower[strtolower($k)] = $v;
+            }
+        }
+        foreach ($keys as $key) {
+            $lk = strtolower($key);
+            if (array_key_exists($lk, $lower)) {
+                $values[] = $lower[$lk];
+            }
+        }
+
+        return $values;
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     * @param  list<string>  $keys
+     */
+    private function arrayValue(array $data, array $keys): mixed
+    {
+        $values = $this->candidateValues($data, $keys);
+        foreach ($values as $value) {
+            if (is_array($value)) {
+                return $value;
+            }
+        }
+
+        return $values[0] ?? null;
     }
 
     /**
@@ -963,12 +1097,34 @@ class LinaOpenxClient
             return [];
         }
         foreach (['data', 'content', 'participants', 'items'] as $key) {
-            if (isset($json[$key]) && is_array($json[$key]) && array_is_list($json[$key])) {
-                return $json[$key];
+            $rows = $this->participantList($this->arrayValue($json, [$key]));
+            if ($rows !== []) {
+                return $rows;
             }
         }
         if (array_is_list($json)) {
             return $json;
+        }
+
+        return [];
+    }
+
+    /**
+     * @return list<mixed>
+     */
+    private function participantList(mixed $block): array
+    {
+        if (! is_array($block)) {
+            return [];
+        }
+        if (array_is_list($block)) {
+            return $block;
+        }
+        foreach (['data', 'content', 'participants', 'items'] as $key) {
+            $inner = $this->arrayValue($block, [$key]);
+            if (is_array($inner) && array_is_list($inner)) {
+                return $inner;
+            }
         }
 
         return [];
@@ -980,26 +1136,29 @@ class LinaOpenxClient
      */
     private function expandParticipantRow(array $row): array
     {
-        $orgId = $this->firstString($row, ['organisationId', 'organisation_id', 'orgId', 'org_id']);
-        if ($orgId === '' && is_array($row['organisation'] ?? null)) {
-            $orgId = $this->firstString($row['organisation'], ['organisationId', 'id', 'orgId']);
+        $status = strtolower($this->firstString($row, ['status']));
+        if (in_array($status, ['inactive', 'disabled', 'inativo', 'blocked', 'suspended'], true)) {
+            return [];
         }
 
-        $servers = $row['authorisationServers'] ?? $row['authorisation_servers'] ?? null;
+        $orgId = $this->firstString($row, ['organisationId', 'organisation_id', 'orgId', 'org_id']);
+        $organisation = $this->arrayValue($row, ['organisation']);
+        if ($orgId === '' && is_array($organisation)) {
+            $orgId = $this->firstString($organisation, ['organisationId', 'id', 'orgId']);
+        }
+
+        $servers = $this->arrayValue($row, ['authorisationServers', 'authorisation_servers', 'authorizationServers']);
         if (is_array($servers) && $servers !== []) {
             $items = [];
             foreach ($servers as $server) {
                 if (! is_array($server)) {
                     continue;
                 }
-                $asId = $this->firstString($server, ['authorisationServerId', 'authorisation_server_id', 'asId', 'id']);
+                $asId = $this->firstString($server, ['authorisationServerId', 'authorisation_server_id', 'authorizationServerId', 'asId', 'id']);
                 if ($orgId === '' || $asId === '') {
                     continue;
                 }
-                $name = $this->firstString($server, ['customerFriendlyName', 'customer_friendly_name', 'name']);
-                if ($name === '') {
-                    $name = $this->firstString($row, ['customerFriendlyName', 'organisationName', 'organisation_name', 'name', 'tradeName']);
-                }
+                $name = $this->participantName($server, $row);
                 $items[] = [
                     'organisation_id' => $orgId,
                     'authorisation_server_id' => $asId,
@@ -1010,27 +1169,52 @@ class LinaOpenxClient
             return $items;
         }
 
-        $asId = $this->firstString($row, ['authorisationServerId', 'authorisation_server_id', 'asId', 'as_id']);
-        if ($asId === '' && is_array($row['authorisationServer'] ?? null)) {
-            $asId = $this->firstString($row['authorisationServer'], ['authorisationServerId', 'id', 'asId']);
+        $asId = $this->firstString($row, ['authorisationServerId', 'authorisation_server_id', 'authorizationServerId', 'asId', 'as_id']);
+        $authorisationServer = $this->arrayValue($row, ['authorisationServer', 'authorizationServer']);
+        if ($asId === '' && is_array($authorisationServer)) {
+            $asId = $this->firstString($authorisationServer, ['authorisationServerId', 'id', 'asId']);
         }
         if ($orgId === '' || $asId === '') {
             return [];
         }
-        $name = $this->firstString($row, [
-            'customerFriendlyName',
-            'customer_friendly_name',
-            'organisationName',
-            'organisation_name',
-            'name',
-            'tradeName',
-        ]);
+        $name = $this->participantName($row, $row);
 
         return [[
             'organisation_id' => $orgId,
             'authorisation_server_id' => $asId,
             'name' => $name !== '' ? $name : $orgId,
         ]];
+    }
+
+    /**
+     * @param  array<string, mixed>  $primary
+     * @param  array<string, mixed>  $fallback
+     */
+    private function participantName(array $primary, array $fallback): string
+    {
+        $name = $this->firstString($primary, [
+            'customerFriendlyName',
+            'customer_friendly_name',
+            'organisationName',
+            'organisation_name',
+            'registeredName',
+            'legalEntityName',
+            'name',
+            'tradeName',
+        ]);
+        if ($name !== '' || $primary === $fallback) {
+            return $name;
+        }
+
+        return $this->firstString($fallback, [
+            'customerFriendlyName',
+            'organisationName',
+            'organisation_name',
+            'registeredName',
+            'legalEntityName',
+            'name',
+            'tradeName',
+        ]);
     }
 
     /**
@@ -1061,13 +1245,116 @@ class LinaOpenxClient
                 continue;
             }
             $last = $s;
-            $upper = strtoupper($s);
-            if (in_array($upper, ['PAGO', 'PAID', 'ACSC', 'ACSP', 'SETTLED', 'COMPLETED'], true)) {
+            if ($this->isSettledPaymentStatus($s)) {
                 return $s;
             }
         }
 
         return $last;
+    }
+
+    public function isSettledPaymentStatus(?string $status): bool
+    {
+        return in_array(strtoupper(trim((string) $status)), self::SETTLED_PAYMENT_STATUSES, true);
+    }
+
+    public function isInflightPaymentStatus(?string $status): bool
+    {
+        $status = strtoupper(trim((string) $status));
+        if ($status === '' || $this->isSettledPaymentStatus($status)) {
+            return false;
+        }
+
+        return in_array($status, self::INFLIGHT_PAYMENT_STATUSES, true);
+    }
+
+    /**
+     * Status e id do firstPayment ou da lista de pagamentos, inclusive aninhados no consentimento.
+     *
+     * @param  array<string, mixed>  $data
+     * @return array{status: ?string, payment_id: ?string}
+     */
+    public function paymentSignal(array $data): array
+    {
+        $other = null;
+        $paymentId = null;
+        foreach ($this->paymentNodes($data) as $node) {
+            $id = $this->firstString($node, ['recurringPaymentId', 'recurring_payment_id', 'paymentId', 'payment_id', 'id']);
+            $status = $this->firstString($node, ['status', 'paymentStatus', 'payment_status']);
+            if ($this->isSettledPaymentStatus($status)) {
+                return [
+                    'status' => $status,
+                    'payment_id' => $id !== '' ? $id : $paymentId,
+                ];
+            }
+            if ($paymentId === null && $id !== '') {
+                $paymentId = $id;
+            }
+            if ($other === null && $status !== '') {
+                $other = $status;
+            }
+        }
+
+        return [
+            'status' => $other,
+            'payment_id' => $paymentId,
+        ];
+    }
+
+    private function preferPaymentStatus(string $primary, string $secondary): string
+    {
+        if ($this->isSettledPaymentStatus($primary)) {
+            return $primary;
+        }
+        if ($this->isSettledPaymentStatus($secondary)) {
+            return $secondary;
+        }
+
+        return $primary !== '' ? $primary : $secondary;
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     * @return list<array<string, mixed>>
+     */
+    private function paymentNodes(array $data): array
+    {
+        $nodes = [];
+        $stack = [[$data, 0]];
+        $seen = 0;
+        while ($stack !== [] && $seen < 40) {
+            [$node, $depth] = array_pop($stack);
+            $seen++;
+            if ($depth > 6 || ! is_array($node)) {
+                continue;
+            }
+            foreach (['firstPayment', 'first_payment', 'payment'] as $key) {
+                $child = $node[$key] ?? null;
+                if (is_array($child) && ! array_is_list($child)) {
+                    $nodes[] = $child;
+                    $stack[] = [$child, $depth + 1];
+                }
+            }
+            foreach (['payments', 'recurringPayments', 'recurring_payments'] as $key) {
+                $list = $node[$key] ?? null;
+                if (! is_array($list)) {
+                    continue;
+                }
+                foreach ($list as $row) {
+                    if (is_array($row)) {
+                        $nodes[] = $row;
+                    }
+                }
+            }
+            foreach (['data', 'recurringConsent', 'recurring_consent', 'recurringConfiguration', 'automatic'] as $key) {
+                $child = $node[$key] ?? null;
+                if (is_array($child) && ! array_is_list($child)) {
+                    $stack[] = [$child, $depth + 1];
+                }
+            }
+        }
+
+        return $nodes;
     }
 
     private function extractErrorMessage(Response $response): string

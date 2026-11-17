@@ -9,6 +9,7 @@ use App\Models\Withdrawal;
 use App\Services\MerchantWalletAdminBlockService;
 use App\Services\PanelPushService;
 use App\Services\Withdrawal\WithdrawalMinimumService;
+use App\Services\Withdrawal\WithdrawalPolicyService;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -84,6 +85,8 @@ class MerchantWithdrawalService
         if ($tenantId < 1) {
             throw ValidationException::withMessages(['amount' => 'Conta inválida.']);
         }
+
+        WithdrawalPolicyService::assertIntervalAllows($tenantId);
 
         $bucket = in_array($bucket, ['pix', 'card', 'boleto'], true) ? $bucket : 'pix';
         $col = 'available_'.$bucket;

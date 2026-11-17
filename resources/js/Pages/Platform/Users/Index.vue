@@ -13,6 +13,8 @@ const props = defineProps({
     users: { type: [Object, Array], default: () => ({ data: [], links: [], total: 0 }) },
     q: { type: String, default: null },
     status: { type: String, default: null },
+    feature: { type: String, default: null },
+    feature_groups: { type: Array, default: () => [] },
     sort_by: { type: String, default: null },
     sort_direction: { type: String, default: null },
     per_page: { type: Number, default: 25 },
@@ -22,6 +24,7 @@ const props = defineProps({
 const page = usePage();
 const searchQ = ref(props.q ?? '');
 const statusFilter = ref(props.status ?? '');
+const featureFilter = ref(props.feature ?? '');
 const perPage = ref(Number(props.per_page) || 25);
 const deletingId = ref(null);
 const selectedIds = ref([]);
@@ -32,6 +35,7 @@ const bulkDeleteForce = ref(false);
 
 watch(() => props.q, (value) => { searchQ.value = value ?? ''; });
 watch(() => props.status, (value) => { statusFilter.value = value ?? ''; });
+watch(() => props.feature, (value) => { featureFilter.value = value ?? ''; });
 watch(() => props.per_page, (value) => { perPage.value = Number(value) || 25; });
 
 const usersList = computed(() => Array.isArray(props.users?.data) ? props.users.data : (Array.isArray(props.users) ? props.users : []));
@@ -51,6 +55,7 @@ function listingQuery(overrides = {}) {
     const query = {
         q: overrides.q !== undefined ? overrides.q : searchQ.value.trim() || undefined,
         status: overrides.status !== undefined ? overrides.status : statusFilter.value || undefined,
+        feature: overrides.feature !== undefined ? overrides.feature : featureFilter.value || undefined,
         sort_by: sortBy,
         sort_direction: sortBy ? (overrides.sort_direction ?? props.sort_direction ?? 'asc') : undefined,
         per_page: Number(overrides.per_page ?? perPage.value) || 25,
@@ -66,7 +71,8 @@ function applySearch() {
 function clearFilters() {
     searchQ.value = '';
     statusFilter.value = '';
-    router.get('/plataforma/usuarios', listingQuery({ q: undefined, status: undefined, page: 1 }), { preserveState: true, replace: true });
+    featureFilter.value = '';
+    router.get('/plataforma/usuarios', listingQuery({ q: undefined, status: undefined, feature: undefined, page: 1 }), { preserveState: true, replace: true });
 }
 function changePerPage() {
     router.get('/plataforma/usuarios', listingQuery({ per_page: perPage.value, page: 1 }), { preserveState: true, replace: true });
@@ -139,6 +145,7 @@ function hasCustomFees(user) {
 function hasCustomSettlement(user) {
     return user?.merchant_settlement_overrides && Object.keys(user.merchant_settlement_overrides).length > 0;
 }
+const filtersActive = computed(() => Boolean(props.q || props.status || props.feature));
 function documentTypeLabel(user) {
     if (user?.document_type === 'CPF' || user?.document_type === 'CNPJ') return user.document_type;
     if (user?.person_type === 'pj') return 'CNPJ';
@@ -171,8 +178,14 @@ function documentTypeLabel(user) {
                 <option value="">Todos os status</option>
                 <option v-for="option in status_options" :key="option.value" :value="option.value">{{ option.label }}</option>
             </select>
+            <select v-model="featureFilter" class="min-w-[13rem] max-w-full rounded-xl border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-600 dark:bg-zinc-900" @change="applySearch">
+                <option value="">Todos os recursos</option>
+                <optgroup v-for="group in feature_groups" :key="group.label" :label="group.label">
+                    <option v-for="option in group.options" :key="option.value" :value="option.value">{{ option.label }}</option>
+                </optgroup>
+            </select>
             <button type="submit" class="rounded-xl bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-white">Pesquisar</button>
-            <button v-if="searchQ || statusFilter" type="button" class="rounded-xl border border-zinc-300 px-4 py-2 text-sm" @click="clearFilters">Limpar</button>
+            <button v-if="searchQ || statusFilter || featureFilter" type="button" class="rounded-xl border border-zinc-300 px-4 py-2 text-sm" @click="clearFilters">Limpar</button>
             <label class="ml-auto flex items-center gap-2 text-sm text-zinc-600 dark:text-zinc-400">
                 <span>Por página</span>
                 <select v-model="perPage" class="rounded-xl border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-600 dark:bg-zinc-900" @change="changePerPage">
@@ -251,6 +264,13 @@ function documentTypeLabel(user) {
                             >
                                 Liquidação custom
                             </span>
+                            <span
+                                v-if="user.api_pix_enabled_effective"
+                                class="rounded-md bg-lime-100 px-1.5 py-0.5 text-[10px] font-semibold text-lime-950 dark:bg-lime-700 dark:text-white"
+                                title="API PIX ativa"
+                            >
+                                API PIX
+                            </span>
                         </div>
                         <dl class="mt-3 grid grid-cols-2 gap-2 text-xs">
                             <div>
@@ -326,7 +346,7 @@ function documentTypeLabel(user) {
             v-if="!usersList.length"
             class="rounded-xl border border-dashed border-zinc-200 p-8 text-center text-sm text-zinc-500 md:hidden dark:border-zinc-700"
         >
-            {{ q ? 'Nenhum infoprodutor encontrado.' : 'Nenhum infoprodutor cadastrado.' }}
+            {{ filtersActive ? 'Nenhum infoprodutor encontrado.' : 'Nenhum infoprodutor cadastrado.' }}
         </div>
 
         <div class="hidden overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-700 dark:bg-zinc-900/60 md:block">
@@ -382,6 +402,13 @@ function documentTypeLabel(user) {
                                     >
                                         Liquidação custom
                                     </span>
+                                    <span
+                                        v-if="user.api_pix_enabled_effective"
+                                        class="rounded-md bg-lime-100 px-1.5 py-0.5 text-[10px] font-semibold text-lime-950 dark:bg-lime-700 dark:text-white"
+                                        title="API PIX ativa"
+                                    >
+                                        API PIX
+                                    </span>
                                 </div>
                             </td>
                             <td class="px-3 py-2.5">
@@ -400,7 +427,7 @@ function documentTypeLabel(user) {
                                 <button type="button" class="rounded-lg p-1.5 text-red-500 hover:bg-red-50" :disabled="deletingId === user.id" @click="destroyUser(user.id)"><Trash2 class="h-4 w-4" /></button>
                             </div></td>
                         </tr>
-                        <tr v-if="!usersList.length"><td colspan="10" class="px-3 py-10 text-center text-zinc-500">{{ q ? 'Nenhum infoprodutor encontrado.' : 'Nenhum infoprodutor cadastrado.' }}</td></tr>
+                        <tr v-if="!usersList.length"><td colspan="10" class="px-3 py-10 text-center text-zinc-500">{{ filtersActive ? 'Nenhum infoprodutor encontrado.' : 'Nenhum infoprodutor cadastrado.' }}</td></tr>
                     </tbody>
                 </table>
             </div>

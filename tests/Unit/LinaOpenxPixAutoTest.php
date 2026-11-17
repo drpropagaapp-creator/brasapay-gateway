@@ -13,6 +13,7 @@ use App\Services\LinaOpenx\LinaOpenxClient;
 use App\Services\LinaOpenx\LinaOpenxPixAutoLifecycleService;
 use App\Services\LinaOpenx\LinaOpenxPixAutoRenewalService;
 use App\Services\LinaOpenx\LinaOpenxPixAutoService;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Http;
@@ -61,11 +62,34 @@ class LinaOpenxPixAutoTest extends TestCase
         $this->assertSame('MENSAL', LinaOpenxPixAutoService::intervalFromPlan(null));
     }
 
+    public function test_consent_expiration_uses_product_months(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-11-16 15:00:00', 'UTC'));
+        $product = new Product(['subscription_recurrence_months' => 18]);
+        $order = new Order;
+        $order->setRelation('product', $product);
+
+        $this->assertSame(
+            now()->addMonths(18)->utc()->format('Y-m-d\TH:i:s\Z'),
+            LinaOpenxPixAutoService::consentExpiration($order)
+        );
+
+        $product->subscription_recurrence_months = null;
+        $this->assertSame(
+            now()->addMonths(120)->utc()->format('Y-m-d\TH:i:s\Z'),
+            LinaOpenxPixAutoService::consentExpiration($order)
+        );
+        Carbon::setTestNow();
+    }
+
     public function test_authorised_without_payment_is_pending(): void
     {
         $client = new LinaOpenxClient;
         $this->assertSame('pending', $client->normalizeAutomaticStatuses('AUTHORISED', null));
         $this->assertSame('paid', $client->normalizeAutomaticStatuses('AUTHORISED', 'ACSC'));
+        $this->assertSame('paid', $client->normalizeAutomaticStatuses('AUTHORISED', 'ACCC'));
+        $this->assertSame('paid', $client->normalizeAutomaticStatuses('AUTHORISED', 'LIQUIDADO'));
+        $this->assertSame('paid', $client->normalizeAutomaticStatuses('AUTHORISED', 'EFETIVADO'));
         $this->assertSame('rejected', $client->normalizeAutomaticStatuses('AUTHORISED', 'RJCT'));
         $this->assertSame('cancelled', $client->normalizeAutomaticStatuses('REVOKED', null));
     }
@@ -91,6 +115,41 @@ class LinaOpenxPixAutoTest extends TestCase
         $this->assertSame('org-1', $list[0]['organisation_id']);
         $this->assertSame('as-1', $list[0]['authorisation_server_id']);
         $this->assertSame('Banco Exemplo App', $list[0]['name']);
+    }
+
+    public function test_list_registered_participants_parses_documented_pascal_case(): void
+    {
+        Http::fake([
+            'iam.linaob.com.br/*' => Http::response(['access_token' => 'tok', 'expires_in' => 900], 200),
+            'embedded-payment-manager.linaob.com.br/api/v1/open-integration/participants/registered' => Http::response([
+                'data' => [[
+                    'OrganisationId' => '12345',
+                    'Status' => 'active',
+                    'OrganisationName' => 'ACME Corp',
+                    'AuthorisationServers' => [[
+                        'AuthorisationServerId' => 'server123',
+                        'CustomerFriendlyName' => 'ACME Bank',
+                    ]],
+                ], [
+                    'OrganisationId' => '999',
+                    'Status' => 'inactive',
+                    'OrganisationName' => 'Banco Inativo',
+                    'AuthorisationServers' => [[
+                        'AuthorisationServerId' => 'server-off',
+                        'CustomerFriendlyName' => 'Banco Inativo',
+                    ]],
+                ]],
+                'message' => 'OK',
+                'type' => 'success',
+                'statusCode' => 200,
+            ], 200),
+        ]);
+
+        $list = (new LinaOpenxClient)->listRegisteredParticipants($this->sampleCredentials());
+        $this->assertCount(1, $list);
+        $this->assertSame('12345', $list[0]['organisation_id']);
+        $this->assertSame('server123', $list[0]['authorisation_server_id']);
+        $this->assertSame('ACME Bank', $list[0]['name']);
     }
 
     public function test_create_recurring_consent_posts_collection_body(): void
@@ -192,6 +251,10 @@ class LinaOpenxPixAutoTest extends TestCase
                     'payments' => [],
                 ],
             ], 200),
+            'embedded-payment-manager.linaob.com.br/api/v1/automatic-payments/recurring-consents/*' => Http::response([
+                'status' => 'AUTHORISED',
+                'recurringConsentId' => 'urn:banco:consent:abc',
+            ], 200),
             'embedded-payment-manager.linaob.com.br/api/v1/automatic-payments/recurring-payments' => Http::response([
                 'data' => ['recurringPaymentId' => 'pay-1'],
             ], 201),
@@ -251,7 +314,7 @@ class LinaOpenxPixAutoTest extends TestCase
         $this->assertArrayNotHasKey('linaopenx_pix_auto_first_payment_posted', $order->fresh()->metadata ?? []);
     }
 
-    public function test_handle_return_ignora_id_de_outro_pedido_na_url(): void
+    public function test_handle_return_completes_when_first_payment_settled_on_request(): void
     {
         if (! Schema::hasTable('orders')) {
             $this->markTestSkipped('orders');
@@ -265,30 +328,153 @@ class LinaOpenxPixAutoTest extends TestCase
             'gateway_id' => 'pr-auto-1',
             'metadata' => [
                 'checkout_payment_method' => 'pix_auto',
+                'linaopenx_pix_auto_consent_id' => 'urn:banco:consent:abc',
                 'lina_payment_request_id' => 'pr-auto-1',
             ],
         ]);
 
-        // pr-outro é um pagamento já aprovado de outro pedido; o deste ainda aguarda o pagador.
         Http::fake([
             'iam.linaob.com.br/*' => Http::response(['access_token' => 'tok', 'expires_in' => 900], 200),
-            'embedded-payment-manager.linaob.com.br/api/v1/automatic-payments/request/pr-outro*' => Http::response([
-                'consentStatus' => 'AUTHORISED',
-                'payments' => [['recurringPaymentId' => 'pay-outro', 'status' => 'ACSC']],
+            'embedded-payment-manager.linaob.com.br/api/v1/payments/requests/*' => Http::response([
+                'status' => 'PENDENTE',
             ], 200),
             'embedded-payment-manager.linaob.com.br/api/v1/automatic-payments/request/*' => Http::response([
-                'consentStatus' => 'AWAITING_AUTHORISATION',
+                'consentStatus' => 'AUTHORISED',
+                'consentId' => 'urn:banco:consent:abc',
                 'payments' => [],
+                'recurringConfiguration' => [
+                    'automatic' => [
+                        'firstPayment' => [
+                            'type' => 'PIX',
+                            'status' => 'ACCC',
+                            'paymentId' => 'pay-first',
+                        ],
+                    ],
+                ],
             ], 200),
+            'embedded-payment-manager.linaob.com.br/api/v1/automatic-payments/recurring-consents/*' => Http::response([
+                'status' => 'AUTHORISED',
+            ], 200),
+            'embedded-payment-manager.linaob.com.br/api/v1/automatic-payments/recurring-payments' => Http::response([
+                'data' => ['recurringPaymentId' => 'should-not-post'],
+            ], 201),
             'embedded-payment-manager.linaob.com.br/api/v1/automatic-payments/recurring-payments/*' => Http::response([
-                'status' => 'ACSC',
+                'status' => 'ACCC',
             ], 200),
         ]);
 
-        $result = app(LinaOpenxPixAutoService::class)->handleReturn($order, 'pr-outro');
+        $result = app(LinaOpenxPixAutoService::class)->handleReturn($order);
+        $this->assertTrue($result['paid']);
+        $this->assertSame('completed', $order->fresh()->status);
+        $this->assertTrue((bool) ($order->fresh()->metadata['linaopenx_pix_auto_first_payment_settled'] ?? false));
+        Http::assertNotSent(fn ($r) => $r->method() === 'POST' && str_ends_with(parse_url($r->url(), PHP_URL_PATH) ?? '', '/recurring-payments'));
+    }
+
+    public function test_handle_return_completes_when_consent_first_payment_is_liquidado(): void
+    {
+        if (! Schema::hasTable('orders')) {
+            $this->markTestSkipped('orders');
+        }
+        $this->seedCredential();
+        $ctx = $this->makePixAutoContext();
+        $order = $ctx['order'];
+        $order->update([
+            'status' => 'pending',
+            'gateway' => 'linaopenx',
+            'gateway_id' => 'pr-auto-1',
+            'metadata' => [
+                'checkout_payment_method' => 'pix_auto',
+                'linaopenx_pix_auto_consent_id' => 'urn:banco:consent:abc',
+                'lina_payment_request_id' => 'pr-auto-1',
+            ],
+        ]);
+
+        Http::fake([
+            'iam.linaob.com.br/*' => Http::response(['access_token' => 'tok', 'expires_in' => 900], 200),
+            'embedded-payment-manager.linaob.com.br/api/v1/payments/requests/*' => Http::response([
+                'status' => 'PENDENTE',
+            ], 200),
+            'embedded-payment-manager.linaob.com.br/api/v1/automatic-payments/request/*' => Http::response([
+                'consentStatus' => 'AUTHORISED',
+                'consentId' => 'urn:banco:consent:abc',
+                'payments' => [],
+            ], 200),
+            'embedded-payment-manager.linaob.com.br/api/v1/automatic-payments/recurring-consents/*' => Http::response([
+                'status' => 'AUTHORISED',
+                'recurringConfiguration' => [
+                    'automatic' => [
+                        'firstPayment' => [
+                            'type' => 'PIX',
+                            'status' => 'LIQUIDADO',
+                            'paymentId' => 'pay-consent',
+                        ],
+                    ],
+                ],
+            ], 200),
+            'embedded-payment-manager.linaob.com.br/api/v1/automatic-payments/recurring-payments' => Http::response([
+                'data' => ['recurringPaymentId' => 'should-not-post'],
+            ], 201),
+            'embedded-payment-manager.linaob.com.br/api/v1/automatic-payments/recurring-payments/*' => Http::response([
+                'status' => 'LIQUIDADO',
+            ], 200),
+        ]);
+
+        $result = app(LinaOpenxPixAutoService::class)->handleReturn($order);
+        $this->assertTrue($result['paid']);
+        $this->assertSame('completed', $order->fresh()->status);
+        Http::assertNotSent(fn ($r) => $r->method() === 'POST' && str_ends_with(parse_url($r->url(), PHP_URL_PATH) ?? '', '/recurring-payments'));
+    }
+
+    public function test_handle_return_does_not_post_second_payment_while_first_is_inflight(): void
+    {
+        if (! Schema::hasTable('orders')) {
+            $this->markTestSkipped('orders');
+        }
+        $this->seedCredential();
+        $ctx = $this->makePixAutoContext();
+        $order = $ctx['order'];
+        $order->update([
+            'status' => 'pending',
+            'gateway' => 'linaopenx',
+            'gateway_id' => 'pr-auto-1',
+            'metadata' => [
+                'checkout_payment_method' => 'pix_auto',
+                'linaopenx_pix_auto_consent_id' => 'urn:banco:consent:abc',
+                'lina_payment_request_id' => 'pr-auto-1',
+            ],
+        ]);
+
+        Http::fake([
+            'iam.linaob.com.br/*' => Http::response(['access_token' => 'tok', 'expires_in' => 900], 200),
+            'embedded-payment-manager.linaob.com.br/api/v1/automatic-payments/request/*' => Http::response([
+                'consentStatus' => 'AUTHORISED',
+                'consentId' => 'urn:banco:consent:abc',
+                'payments' => [],
+            ], 200),
+            'embedded-payment-manager.linaob.com.br/api/v1/automatic-payments/recurring-consents/*' => Http::response([
+                'status' => 'AUTHORISED',
+                'recurringConfiguration' => [
+                    'automatic' => [
+                        'firstPayment' => [
+                            'status' => 'PDNG',
+                            'paymentId' => 'pay-pending',
+                        ],
+                    ],
+                ],
+            ], 200),
+            'embedded-payment-manager.linaob.com.br/api/v1/automatic-payments/recurring-payments/*' => Http::response([
+                'status' => 'PDNG',
+            ], 200),
+            'embedded-payment-manager.linaob.com.br/api/v1/automatic-payments/recurring-payments' => Http::response([
+                'data' => ['recurringPaymentId' => 'should-not-post'],
+            ], 201),
+        ]);
+
+        $result = app(LinaOpenxPixAutoService::class)->handleReturn($order);
+        $this->assertSame('pending', $result['status']);
         $this->assertFalse($result['paid']);
         $this->assertSame('pending', $order->fresh()->status);
-        $this->assertSame('pr-auto-1', $order->fresh()->gateway_id);
+        Http::assertNotSent(fn ($r) => $r->method() === 'POST' && str_ends_with(parse_url($r->url(), PHP_URL_PATH) ?? '', '/recurring-payments'));
     }
 
     public function test_ensure_next_payment_posts_recurring_payment(): void
@@ -298,6 +484,10 @@ class LinaOpenxPixAutoTest extends TestCase
         }
         $this->seedCredential();
         $ctx = $this->makePixAutoContext();
+        $due = now()->addDays(5)->startOfDay();
+        $ctx['subscription']->update([
+            'current_period_end' => $due,
+        ]);
 
         Http::fake([
             'iam.linaob.com.br/*' => Http::response(['access_token' => 'tok', 'expires_in' => 900], 200),
@@ -306,21 +496,40 @@ class LinaOpenxPixAutoTest extends TestCase
             ], 201),
         ]);
 
-        $created = app(LinaOpenxPixAutoRenewalService::class)->ensureNextPayment($ctx['subscription'], $ctx['order']);
+        $created = app(LinaOpenxPixAutoRenewalService::class)->ensureNextPayment($ctx['subscription']->fresh(), $ctx['order']);
         $this->assertNotNull($created);
         $this->assertTrue((bool) $created->is_renewal);
         $this->assertSame('pay-renew', $created->gateway_id);
         $this->assertSame('urn:banco:consent:abc', $created->metadata['linaopenx_pix_auto_consent_id'] ?? null);
-        Http::assertSent(function ($r) {
+        Http::assertSent(function ($r) use ($due) {
             if ($r->method() !== 'POST' || ! str_ends_with(parse_url($r->url(), PHP_URL_PATH) ?? '', '/recurring-payments')) {
                 return false;
             }
             $data = $r->data();
 
             return ($data['recurringConsentId'] ?? null) === 'urn:banco:consent:abc'
+                && ($data['date'] ?? null) === $due->toDateString()
                 && ($data['localInstrument'] ?? null) === 'AUTO'
                 && ($data['authorisationFlow'] ?? null) === 'HYBRID_FLOW';
         });
+    }
+
+    public function test_ensure_next_payment_waits_until_two_to_ten_days_before_due(): void
+    {
+        if (! Schema::hasTable('orders') || ! Schema::hasTable('subscriptions')) {
+            $this->markTestSkipped('tables');
+        }
+        $this->seedCredential();
+        $ctx = $this->makePixAutoContext();
+
+        Http::fake([
+            'iam.linaob.com.br/*' => Http::response(['access_token' => 'tok', 'expires_in' => 900], 200),
+            'embedded-payment-manager.linaob.com.br/*' => Http::response(['data' => ['recurringPaymentId' => 'pay-early']], 201),
+        ]);
+
+        $created = app(LinaOpenxPixAutoRenewalService::class)->ensureNextPayment($ctx['subscription'], $ctx['order']);
+        $this->assertNull($created);
+        Http::assertNothingSent();
     }
 
     public function test_cancel_remote_patches_consent_revoked(): void
@@ -488,5 +697,45 @@ class LinaOpenxPixAutoTest extends TestCase
         $cred->is_enabled = true;
         $cred->setEncryptedCredentials($this->sampleCredentials());
         $cred->save();
+    }
+
+    public function test_handle_return_ignora_id_de_outro_pedido_na_url(): void
+    {
+        if (! Schema::hasTable('orders')) {
+            $this->markTestSkipped('orders');
+        }
+        $this->seedCredential();
+        $ctx = $this->makePixAutoContext();
+        $order = $ctx['order'];
+        $order->update([
+            'status' => 'pending',
+            'gateway' => 'linaopenx',
+            'gateway_id' => 'pr-auto-1',
+            'metadata' => [
+                'checkout_payment_method' => 'pix_auto',
+                'lina_payment_request_id' => 'pr-auto-1',
+            ],
+        ]);
+
+        // pr-outro é um pagamento já aprovado de outro pedido; o deste ainda aguarda o pagador.
+        Http::fake([
+            'iam.linaob.com.br/*' => Http::response(['access_token' => 'tok', 'expires_in' => 900], 200),
+            'embedded-payment-manager.linaob.com.br/api/v1/automatic-payments/request/pr-outro*' => Http::response([
+                'consentStatus' => 'AUTHORISED',
+                'payments' => [['recurringPaymentId' => 'pay-outro', 'status' => 'ACSC']],
+            ], 200),
+            'embedded-payment-manager.linaob.com.br/api/v1/automatic-payments/request/*' => Http::response([
+                'consentStatus' => 'AWAITING_AUTHORISATION',
+                'payments' => [],
+            ], 200),
+            'embedded-payment-manager.linaob.com.br/api/v1/automatic-payments/recurring-payments/*' => Http::response([
+                'status' => 'ACSC',
+            ], 200),
+        ]);
+
+        $result = app(LinaOpenxPixAutoService::class)->handleReturn($order, 'pr-outro');
+        $this->assertFalse($result['paid']);
+        $this->assertSame('pending', $order->fresh()->status);
+        $this->assertSame('pr-auto-1', $order->fresh()->gateway_id);
     }
 }

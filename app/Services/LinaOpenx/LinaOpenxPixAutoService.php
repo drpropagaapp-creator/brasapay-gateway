@@ -56,19 +56,32 @@ class LinaOpenxPixAutoService
 
         $organisationId = trim((string) ($validated['lina_organisation_id'] ?? ''));
         $authorisationServerId = trim((string) ($validated['lina_authorisation_server_id'] ?? ''));
+        $participants = [];
         if ($organisationId === '' || $authorisationServerId === '') {
-            $picked = $this->autoPickParticipant($credentials);
-            $organisationId = $organisationId !== '' ? $organisationId : ($picked['organisation_id'] ?? '');
-            $authorisationServerId = $authorisationServerId !== '' ? $authorisationServerId : ($picked['authorisation_server_id'] ?? '');
+            try {
+                $participants = $this->client->listRegisteredParticipants($credentials);
+            } catch (\Throwable) {
+                $participants = [];
+            }
+            if (count($participants) === 1) {
+                $organisationId = $organisationId !== '' ? $organisationId : $participants[0]['organisation_id'];
+                $authorisationServerId = $authorisationServerId !== '' ? $authorisationServerId : $participants[0]['authorisation_server_id'];
+            }
         }
         if ($organisationId === '' || $authorisationServerId === '') {
-            throw new \RuntimeException('Selecione o banco para autorizar o PIX automático.');
+            throw new \RuntimeException(
+                $participants === []
+                    ? 'Não foi possível carregar os bancos para o PIX automático. Recarregue a página e tente novamente.'
+                    : 'Selecione o banco para autorizar o PIX automático.'
+            );
         }
 
         $plan = $order->subscriptionPlan;
         $interval = self::intervalFromPlan($plan?->interval);
         $amount = $this->formatAmount((float) $order->amount);
-        $firstDate = now()->addDay()->toDateString();
+        // Primeiro débito vai no contrato e pode liquidar no dia da autorização.
+        $firstDate = now()->toDateString();
+        $referenceStartDate = now()->utc()->startOfDay()->format('Y-m-d\TH:i:s\Z');
         $payerName = trim((string) ($consumer['name'] ?? '')) ?: 'Cliente';
         $returnUrl = $this->signedReturnUrl($order);
         $info = $description !== '' ? $description : ('Assinatura PIX automático - Pedido #'.($order->public_reference ?: $order->id));
@@ -88,9 +101,8 @@ class LinaOpenxPixAutoService
                 'cpfCnpj' => $creditor['cpfCnpj'],
                 'name' => $creditor['name'],
             ]],
-            'startDateTime' => $firstDate,
             'redirectUri' => $returnUrl,
-            'expirationDateTime' => now()->addYears(10)->utc()->format('Y-m-d\TH:i:s\Z'),
+            'expirationDateTime' => self::consentExpiration($order),
             'additionalInformation' => mb_substr($info, 0, 140),
             'recurringConfiguration' => [
                 'automatic' => [
@@ -110,13 +122,15 @@ class LinaOpenxPixAutoService
                         'creditorAccount' => $creditorAccount,
                     ],
                     'isRetryAccepted' => true,
-                    'referenceStartDate' => $firstDate,
+                    'referenceStartDate' => $referenceStartDate,
                 ],
             ],
         ];
-        if ($creditor['personType'] === 'PESSOA_JURIDICA') {
+        // businessEntity é a empresa do pagador. Conta PF não envia o campo.
+        // O CNPJ da plataforma fica só em creditors.
+        if (strlen($payerDocument) === 14) {
             $recurringConsent['businessEntity'] = [
-                'document' => $this->documentBlock($creditor['cpfCnpj']),
+                'document' => $this->documentBlock($payerDocument),
             ];
         }
 
@@ -239,6 +253,24 @@ class LinaOpenxPixAutoService
 
         try {
             $result = $this->client->getAutomaticPaymentRequest($credentials, $requestId);
+            if (($result['status'] ?? '') === 'paid') {
+                return 'paid';
+            }
+
+            $consentId = trim((string) ($meta['linaopenx_pix_auto_consent_id'] ?? $result['consent_id'] ?? ''));
+            if ($consentId !== '') {
+                $consent = $this->client->getRecurringConsent($credentials, $consentId);
+                if (($consent['status'] ?? '') === 'paid') {
+                    return 'paid';
+                }
+                $consentPaymentId = trim((string) ($consent['payment_id'] ?? ''));
+                if ($consentPaymentId !== '' && $consentPaymentId !== $recurringPaymentId) {
+                    $payment = $this->client->getRecurringPayment($credentials, $consentPaymentId);
+                    if (($payment['status'] ?? '') === 'paid') {
+                        return 'paid';
+                    }
+                }
+            }
 
             return $result['status'] ?? 'pending';
         } catch (\Throwable $e) {
@@ -264,9 +296,9 @@ class LinaOpenxPixAutoService
             return [];
         }
 
-        $cacheKey = 'linaopenx_pix_auto_participants:'.hash('sha256', (string) $tenantId.'|'.($credentials['client_id'] ?? ''));
+        $cacheKey = 'linaopenx_pix_auto_participants:v2:'.hash('sha256', (string) $tenantId.'|'.($credentials['client_id'] ?? ''));
         $cached = Cache::get($cacheKey);
-        if (is_array($cached)) {
+        if (is_array($cached) && $cached !== []) {
             return $cached;
         }
 
@@ -280,7 +312,9 @@ class LinaOpenxPixAutoService
 
             return [];
         }
-        Cache::put($cacheKey, $list, now()->addMinutes(5));
+        if ($list !== []) {
+            Cache::put($cacheKey, $list, now()->addMinutes(5));
+        }
 
         return $list;
     }
@@ -294,6 +328,21 @@ class LinaOpenxPixAutoService
 
         return ($meta['checkout_payment_method'] ?? null) === 'pix_auto'
             || trim((string) ($meta['linaopenx_pix_auto_consent_id'] ?? '')) !== '';
+    }
+
+    /**
+     * Fim da autorização na Lina. Sem prazo no produto, mantém 120 meses.
+     */
+    public static function consentExpiration(Order $order): string
+    {
+        $order->loadMissing('product');
+        $months = (int) ($order->product?->subscription_recurrence_months ?? 0);
+        if ($months < 1) {
+            $months = 120;
+        }
+        $months = min(120, $months);
+
+        return now()->addMonths($months)->utc()->format('Y-m-d\TH:i:s\Z');
     }
 
     public static function intervalFromPlan(?string $interval): string
@@ -380,6 +429,16 @@ class LinaOpenxPixAutoService
             $meta['linaopenx_pix_auto_consent_status'] = $result['consent_status'];
         }
 
+        $raw = is_array($result['raw'] ?? null) ? $result['raw'] : [];
+        $signal = $this->client->paymentSignal($raw);
+        $this->rememberPaymentId($meta, (string) ($signal['payment_id'] ?? ''));
+        if (($result['status'] ?? '') === 'paid' || $this->client->isSettledPaymentStatus($signal['status'] ?? null)) {
+            $meta['linaopenx_pix_auto_first_payment_settled'] = true;
+            $order->update(['metadata' => $meta]);
+
+            return;
+        }
+
         $payments = $result['payments'] ?? [];
         if (is_array($payments) && $payments !== []) {
             $firstId = $this->firstPaymentId($payments);
@@ -391,6 +450,38 @@ class LinaOpenxPixAutoService
             return;
         }
 
+        if ($this->client->isInflightPaymentStatus($signal['status'] ?? null)) {
+            $order->update(['metadata' => $meta]);
+
+            return;
+        }
+
+        if ($consentId !== '') {
+            try {
+                $consent = $this->client->getRecurringConsent($credentials, $consentId);
+            } catch (\Throwable $e) {
+                Log::debug('LinaOpenxPixAutoService: consent lookup failed', [
+                    'order_id' => $order->id,
+                    'message' => $e->getMessage(),
+                ]);
+                $consent = null;
+            }
+            if (is_array($consent)) {
+                $this->rememberPaymentId($meta, (string) ($consent['payment_id'] ?? ''));
+                if (($consent['status'] ?? '') === 'paid' || $this->client->isSettledPaymentStatus($consent['payment_status'] ?? null)) {
+                    $meta['linaopenx_pix_auto_first_payment_settled'] = true;
+                    $order->update(['metadata' => $meta]);
+
+                    return;
+                }
+                if ($this->client->isInflightPaymentStatus($consent['payment_status'] ?? null)) {
+                    $order->update(['metadata' => $meta]);
+
+                    return;
+                }
+            }
+        }
+
         $consentStatus = strtoupper(trim((string) ($result['consent_status'] ?? '')));
         $alreadyPosted = ! empty($meta['linaopenx_pix_auto_first_payment_posted']);
         if ($consentStatus !== 'AUTHORISED' || $alreadyPosted) {
@@ -400,7 +491,13 @@ class LinaOpenxPixAutoService
         }
 
         try {
-            $posted = $this->postRecurringPaymentForOrder($order, $credentials, $consentId !== '' ? $consentId : (string) ($meta['linaopenx_pix_auto_consent_id'] ?? ''));
+            $posted = $this->postRecurringPaymentForOrder(
+                $order,
+                $credentials,
+                $consentId !== '' ? $consentId : (string) ($meta['linaopenx_pix_auto_consent_id'] ?? ''),
+                now()->toDateString(),
+                true
+            );
             $meta['linaopenx_pix_auto_first_payment_posted'] = true;
             $meta['linaopenx_pix_auto_first_payment_posted_at'] = now()->toIso8601String();
             if ($posted !== '') {
@@ -419,7 +516,7 @@ class LinaOpenxPixAutoService
     /**
      * @param  array<string, mixed>  $credentials
      */
-    public function postRecurringPaymentForOrder(Order $order, array $credentials, string $consentId, ?string $date = null): string
+    public function postRecurringPaymentForOrder(Order $order, array $credentials, string $consentId, ?string $date = null, bool $keepDate = false): string
     {
         $consentId = trim($consentId);
         if ($consentId === '') {
@@ -430,8 +527,11 @@ class LinaOpenxPixAutoService
             throw new \RuntimeException('Lina OpenX: credor incompleto para o débito.');
         }
 
-        $payDate = $date ?: now()->addDay()->toDateString();
-        if ($payDate <= now()->toDateString()) {
+        $payDate = trim((string) $date);
+        if ($payDate === '') {
+            $payDate = $keepDate ? now()->toDateString() : now()->addDay()->toDateString();
+        }
+        if (! $keepDate && $payDate <= now()->toDateString()) {
             $payDate = now()->addDay()->toDateString();
         }
 
@@ -459,6 +559,21 @@ class LinaOpenxPixAutoService
     }
 
     /**
+     * @param  array<string, mixed>  $meta
+     */
+    private function rememberPaymentId(array &$meta, string $paymentId): void
+    {
+        $paymentId = trim($paymentId);
+        if ($paymentId === '') {
+            return;
+        }
+        if (trim((string) ($meta['linaopenx_pix_auto_recurring_payment_id'] ?? '')) !== '') {
+            return;
+        }
+        $meta['linaopenx_pix_auto_recurring_payment_id'] = $paymentId;
+    }
+
+    /**
      * @param  list<array<string, mixed>>  $payments
      */
     private function firstPaymentId(array $payments): string
@@ -473,27 +588,6 @@ class LinaOpenxPixAutoService
         }
 
         return '';
-    }
-
-    /**
-     * @param  array<string, mixed>  $credentials
-     * @return array{organisation_id: string, authorisation_server_id: string}|null
-     */
-    private function autoPickParticipant(array $credentials): ?array
-    {
-        try {
-            $list = $this->client->listRegisteredParticipants($credentials);
-        } catch (\Throwable) {
-            return null;
-        }
-        if (count($list) !== 1) {
-            return null;
-        }
-
-        return [
-            'organisation_id' => $list[0]['organisation_id'],
-            'authorisation_server_id' => $list[0]['authorisation_server_id'],
-        ];
     }
 
     private function contractIdForOrder(Order $order): string

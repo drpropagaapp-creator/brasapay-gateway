@@ -18,8 +18,8 @@ use App\Services\WithdrawalAutoPayoutService;
 use App\Services\WithdrawalPixReceiptService;
 use App\Support\BrazilianDocumentDigits;
 use App\Support\MerchantProfileSnapshot;
+use App\Support\PendingReceiveSchedule;
 use App\Support\HtmlSanitizer;
-use Carbon\Carbon;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Schema;
@@ -168,7 +168,7 @@ class SellerFinancialController extends Controller
             $cajuPixOwnerDocumentHint = BrazilianDocumentDigits::onlyDigits((string) ($subject->document ?? ''));
         }
 
-        $pendingReceiveByDate = $this->pendingReceiveByDate($tenantId);
+        $pendingReceiveByDate = PendingReceiveSchedule::forTenant($tenantId);
 
         $walletPayload = null;
         if ($wallet !== null) {
@@ -194,7 +194,10 @@ class SellerFinancialController extends Controller
         }
 
         $kycFinanceLocked = Schema::hasColumn('users', 'kyc_status')
-            && ! $subject->isMerchantOperationallyApproved();
+            && (
+                ! $subject->isMerchantOperationallyApproved()
+                || \App\Support\KycRequiredDocuments::mayUpgradeLegacyDocuments($subject)
+            );
 
         $requiredWithdrawalNet = WithdrawalMinimumService::effectiveRequiredMinNet();
         $withdrawalMinimumGross = $requiredWithdrawalNet > 0
@@ -211,6 +214,8 @@ class SellerFinancialController extends Controller
                 'document' => $user->document !== null && $user->document !== '' ? (string) $user->document : null,
             ],
             'kyc_status' => Schema::hasColumn('users', 'kyc_status') ? ($subject->kyc_status ?? User::KYC_NOT_SUBMITTED) : null,
+            'kyc_document_upgrade' => Schema::hasColumn('users', 'kyc_status')
+                && \App\Support\KycRequiredDocuments::mayUpgradeLegacyDocuments($subject),
             'kyc_person_type' => Schema::hasColumn('users', 'person_type') ? ($subject->person_type ?? 'pf') : 'pf',
             'kyc_rejection_reason' => Schema::hasColumn('users', 'kyc_rejection_reason')
                 ? ($subject->kyc_rejection_reason ?? null)
@@ -417,6 +422,10 @@ class SellerFinancialController extends Controller
             return redirect()->route('financeiro.seller.index')
                 ->with('error', 'Conclua a verificação de identidade (KYC) e aguarde aprovação da plataforma para solicitar saques.');
         }
+        if (Schema::hasColumn('users', 'kyc_status') && \App\Support\KycRequiredDocuments::mayUpgradeLegacyDocuments($user->kycSubjectUser())) {
+            return redirect()->route('financeiro.seller.index')
+                ->with('error', 'Envie os documentos de verificação atualizados e aguarde a aprovação da plataforma para solicitar saques.');
+        }
 
         if (! \App\Services\Withdrawal\WithdrawalPolicyService::allowsRequestAt()) {
             return redirect()->route('financeiro.seller.index')
@@ -496,92 +505,6 @@ class SellerFinancialController extends Controller
 
         return redirect()->route('financeiro.seller.index')
             ->with('success', 'Solicitação de saque registrada. Aguarde a análise da plataforma.');
-    }
-
-    /**
-     * Valores em liquidação agrupados pela data prevista de liberação (clears_at).
-     *
-     * @return list<array{date: ?string, amount: float, count: int}>
-     */
-    private function pendingReceiveByDate(int $tenantId): array
-    {
-        if (! Schema::hasTable('wallet_transactions')) {
-            return [];
-        }
-
-        $byDate = [];
-
-        WalletTransaction::query()
-            ->where('tenant_id', $tenantId)
-            ->where('type', WalletTransaction::TYPE_CREDIT_SALE_PENDING)
-            ->orderBy('id')
-            ->get()
-            ->each(function (WalletTransaction $tx) use (&$byDate) {
-                $meta = is_array($tx->meta) ? $tx->meta : [];
-                if (! empty($meta['released_at'])) {
-                    return;
-                }
-
-                $dateKey = 'unknown';
-                $clearsAt = $meta['clears_at'] ?? null;
-                if (is_string($clearsAt) && $clearsAt !== '') {
-                    try {
-                        $dateKey = Carbon::parse($clearsAt)->format('Y-m-d');
-                    } catch (\Throwable) {
-                        $dateKey = 'unknown';
-                    }
-                }
-
-                if (! isset($byDate[$dateKey])) {
-                    $byDate[$dateKey] = [
-                        'date' => $dateKey === 'unknown' ? null : $dateKey,
-                        'amount' => 0.0,
-                        'count' => 0,
-                        'reasons' => [],
-                    ];
-                }
-
-                $byDate[$dateKey]['amount'] += (float) $tx->amount_net;
-                $byDate[$dateKey]['count']++;
-
-                // Motivo da retenção: venda dentro do prazo da operadora ou reserva de segurança.
-                $portion = ($meta['portion'] ?? 'main') === 'reserve' ? 'reserve' : 'main';
-                $method = is_string($meta['payment_method'] ?? null) && $meta['payment_method'] !== ''
-                    ? $meta['payment_method']
-                    : (string) $tx->bucket;
-                $reasonKey = $portion.'|'.$method;
-                if (! isset($byDate[$dateKey]['reasons'][$reasonKey])) {
-                    $byDate[$dateKey]['reasons'][$reasonKey] = [
-                        'portion' => $portion,
-                        'method' => $method,
-                        'amount' => 0.0,
-                    ];
-                }
-                $byDate[$dateKey]['reasons'][$reasonKey]['amount'] += (float) $tx->amount_net;
-            });
-
-        $rows = array_values($byDate);
-        usort($rows, function (array $a, array $b) {
-            if ($a['date'] === null) {
-                return 1;
-            }
-            if ($b['date'] === null) {
-                return -1;
-            }
-
-            return strcmp($a['date'], $b['date']);
-        });
-
-        return array_map(function (array $row) {
-            $row['amount'] = round($row['amount'], 2);
-            $row['reasons'] = array_values(array_map(function (array $r) {
-                $r['amount'] = round($r['amount'], 2);
-
-                return $r;
-            }, $row['reasons'] ?? []));
-
-            return $row;
-        }, $rows);
     }
 
     /**

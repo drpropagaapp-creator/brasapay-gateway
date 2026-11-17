@@ -45,6 +45,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'webhooks/uazapi/*',
             'webhooks/evolution/*',
             'webhooks/platform-whatsapp/*',
+            'webhooks/telegram/*',
             'checkout/pixel/events',
             'checkout/pixel/purchase-ack',
             'api/metrics/collect',
@@ -210,6 +211,9 @@ return Application::configure(basePath: dirname(__DIR__))
         $schedule->job(new \App\Jobs\SendSubscriptionRemindersJob)->dailyAt('09:00');
         $schedule->job(new \App\Jobs\ChargeDueSubscriptionsWithSavedCardJob)->dailyAt('07:00');
         $schedule->command('subscriptions:expire-due')->dailyAt('00:10');
+        $schedule->command('telegram:expire-access')->everyFiveMinutes()->withoutOverlapping(10);
+        $schedule->command('telegram:reconcile-deliveries')->everyFiveMinutes()->withoutOverlapping(8);
+        $schedule->command('telegram:notify-expiring --days=3')->dailyAt('10:00');
         $schedule->command('coproduction:expire')->hourly();
         $schedule->command('currencies:sync-rates')
             ->dailyAt('14:00')

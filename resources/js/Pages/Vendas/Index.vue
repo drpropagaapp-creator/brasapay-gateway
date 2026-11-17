@@ -1080,6 +1080,10 @@ const exportJsonUrl = computed(() => `/vendas/export?${buildExportSearchParams('
                         <p class="mt-1 break-words text-sm font-semibold leading-snug text-zinc-900 dark:text-white">
                             {{ v.product_display_name ?? v.product?.name ?? '–' }}
                             <span
+                                v-if="v.product_type_label"
+                                class="ml-1 inline-flex rounded-full bg-zinc-100 px-1.5 py-0.5 text-[10px] font-medium text-zinc-700 dark:bg-zinc-700/60 dark:text-zinc-200"
+                            >{{ v.product_type_label }}</span>
+                            <span
                                 v-if="hasOrderBump(v)"
                                 class="ml-1 inline-flex rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium uppercase text-amber-800 dark:bg-amber-900/40 dark:text-amber-200"
                             >{{ t('sales.order_bump.badge', 'Bump') }}</span>
@@ -1204,6 +1208,11 @@ const exportJsonUrl = computed(() => `/vendas/export?${buildExportSearchParams('
                         <th
                             class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400"
                         >
+                            {{ t('sales.product_type', 'Tipo') }}
+                        </th>
+                        <th
+                            class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400"
+                        >
                             {{ t('sales.customer', 'Cliente') }}
                         </th>
                         <th
@@ -1253,6 +1262,9 @@ const exportJsonUrl = computed(() => `/vendas/export?${buildExportSearchParams('
                                 v-if="v.is_coproduction_commission"
                                 class="ml-1 inline-flex rounded-full bg-sky-100 px-1.5 py-0.5 text-[10px] font-medium uppercase text-sky-800 dark:bg-sky-900/40 dark:text-sky-200"
                             >Co-produção</span>
+                        </td>
+                        <td class="whitespace-nowrap px-4 py-3 text-sm text-zinc-700 dark:text-zinc-300">
+                            {{ v.product_type_label || '–' }}
                         </td>
                         <td class="px-4 py-3">
                             <div class="flex flex-col gap-0.5">
@@ -1314,7 +1326,7 @@ const exportJsonUrl = computed(() => `/vendas/export?${buildExportSearchParams('
                         </td>
                     </tr>
                     <tr v-if="!vendasList.length" class="dark:bg-zinc-800/60">
-                        <td colspan="6" class="px-4 py-12 text-center text-zinc-500 dark:text-zinc-400">
+                        <td colspan="7" class="px-4 py-12 text-center text-zinc-500 dark:text-zinc-400">
                             {{ t('sales.empty', 'Nenhuma venda encontrada.') }}
                         </td>
                     </tr>

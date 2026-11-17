@@ -4,7 +4,7 @@ namespace App\Services\Mcp;
 
 use App\Models\TenantWallet;
 use App\Models\WalletTransaction;
-use Carbon\Carbon;
+use App\Support\PendingReceiveSchedule;
 use Illuminate\Support\Facades\Schema;
 
 class McpFinanceService
@@ -93,7 +93,7 @@ class McpFinanceService
             'pending_boleto' => $pb,
             'pending_total' => round($pp + $pc + $pb, 2),
             'reserve_pending_total' => $this->reservePendingTotal($tenantId),
-            'pending_receive_by_date' => $this->pendingReceiveByDate($tenantId),
+            'pending_receive_by_date' => PendingReceiveSchedule::forTenant($tenantId),
         ];
     }
 
@@ -113,57 +113,6 @@ class McpFinanceService
                 return ($m['portion'] ?? '') === 'reserve' && empty($m['released_at'] ?? null);
             })
             ->sum(fn (WalletTransaction $t) => (float) $t->amount_net), 2);
-    }
-
-    /**
-     * @return list<array{date: ?string, amount: float, count: int}>
-     */
-    private function pendingReceiveByDate(int $tenantId): array
-    {
-        if (! Schema::hasTable('wallet_transactions')) {
-            return [];
-        }
-
-        $byDate = [];
-        WalletTransaction::query()
-            ->where('tenant_id', $tenantId)
-            ->where('type', WalletTransaction::TYPE_CREDIT_SALE_PENDING)
-            ->orderBy('id')
-            ->get()
-            ->each(function (WalletTransaction $tx) use (&$byDate): void {
-                $meta = is_array($tx->meta) ? $tx->meta : [];
-                if (! empty($meta['released_at'])) {
-                    return;
-                }
-                $dateKey = 'unknown';
-                $clearsAt = $meta['clears_at'] ?? null;
-                if (is_string($clearsAt) && $clearsAt !== '') {
-                    try {
-                        $dateKey = Carbon::parse($clearsAt)->format('Y-m-d');
-                    } catch (\Throwable) {
-                        $dateKey = 'unknown';
-                    }
-                }
-                if (! isset($byDate[$dateKey])) {
-                    $byDate[$dateKey] = [
-                        'date' => $dateKey === 'unknown' ? null : $dateKey,
-                        'amount' => 0.0,
-                        'count' => 0,
-                    ];
-                }
-                $byDate[$dateKey]['amount'] = round($byDate[$dateKey]['amount'] + (float) $tx->amount_net, 2);
-                $byDate[$dateKey]['count']++;
-            });
-
-        $rows = array_values($byDate);
-        usort($rows, static function (array $a, array $b): int {
-            $da = $a['date'] ?? '9999-12-31';
-            $db = $b['date'] ?? '9999-12-31';
-
-            return strcmp((string) $da, (string) $db);
-        });
-
-        return $rows;
     }
 
     /**

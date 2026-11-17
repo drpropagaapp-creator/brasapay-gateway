@@ -64,7 +64,7 @@ function submitResolve() {
 
         <div class="rounded-2xl border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900/60">
             <h1 class="text-lg font-semibold">Disputa #{{ dispute.id }}</h1>
-            <dl class="mt-4 space-y-2 text-sm">
+            <dl class="mt-4 space-y-2 break-words text-sm">
                 <div><span class="text-zinc-500">Responsável:</span> {{ dispute.responsible_party === 'platform' ? 'Plataforma' : 'Infoprodutor' }}</div>
                 <div><span class="text-zinc-500">Origem:</span> {{ dispute.order_origin ?? '—' }}</div>
                 <div><span class="text-zinc-500">Infoprodutor:</span> {{ dispute.tenant?.name }} ({{ dispute.tenant?.email }})</div>
@@ -79,7 +79,7 @@ function submitResolve() {
                 <div><span class="text-zinc-500">Status disputa:</span> {{ dispute.status }}</div>
                 <div v-if="dispute.reason"><span class="text-zinc-500">Motivo:</span> {{ dispute.reason }}</div>
                 <div v-if="dispute.outcome"><span class="text-zinc-500">Resultado:</span> {{ dispute.outcome }}</div>
-                <div v-if="dispute.cajupay_dispute_id" class="font-mono text-xs text-zinc-500">{{ dispute.cajupay_dispute_id }}</div>
+                <div v-if="dispute.cajupay_dispute_id" class="break-all font-mono text-xs text-zinc-500">{{ dispute.cajupay_dispute_id }}</div>
             </dl>
             <p v-if="dispute.defense_text" class="mt-4 rounded-lg bg-zinc-50 p-3 text-sm dark:bg-zinc-800">
                 <strong>Defesa:</strong> {{ dispute.defense_text }}
@@ -127,7 +127,7 @@ function submitResolve() {
             @submit.prevent="submitResolve"
         >
             <h2 class="font-medium">Resolver MED manualmente</h2>
-            <select v-model="resolveForm.outcome" class="rounded-lg border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-600 dark:bg-zinc-900">
+            <select v-model="resolveForm.outcome" class="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-600 dark:bg-zinc-900 sm:w-auto">
                 <option value="won">Vitória (won)</option>
                 <option value="lost">Derrota (lost)</option>
                 <option value="cancelled">Cancelada</option>
