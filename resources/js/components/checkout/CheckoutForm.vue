@@ -495,11 +495,6 @@ const caktoClientId = computed(() => {
     const k = props.cardGatewayKeys?.cakto;
     return (k && typeof k.client_id === 'string' ? k.client_id : '').trim();
 });
-// Antifraude Cakto: começa a coletar sinais assim que o cartão Cakto é escolhido.
-watch([isCardGatewayCakto, caktoClientId], ([active, clientId]) => {
-    if (!active || !clientId) return;
-    initCaktoAntifraud(clientId).catch(() => {});
-}, { immediate: true });
 const isCardPaymentFamily = computed(() => ['card', 'apple_pay', 'google_pay'].includes(form.payment_method));
 const isPaypalMethodSelected = computed(() => form.payment_method === 'paypal' || form.payment_method === 'paypal_card');
 /** "Cartão" pelo PayPal (sem adquirente de cartão direto): mesmo fluxo PayPal, só o botão de cartão. */
@@ -652,6 +647,14 @@ const form = useForm({
     shipping_city: '',
     shipping_state: '',
 });
+
+// Antifraude Cakto: começa a coletar sinais assim que o cartão Cakto é escolhido.
+// Fica depois do useForm: com immediate, o watcher lê form.payment_method na hora
+// e, declarado antes, quebrava o checkout inteiro (TDZ "Cannot access before initialization").
+watch([isCardGatewayCakto, caktoClientId], ([active, clientId]) => {
+    if (!active || !clientId) return;
+    initCaktoAntifraud(clientId).catch(() => {});
+}, { immediate: true });
 
 const turnstileActive = computed(() => {
     const cfg = props.turnstile || {};
