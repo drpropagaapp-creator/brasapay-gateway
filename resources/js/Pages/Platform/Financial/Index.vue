@@ -190,6 +190,23 @@ function connectedGatewaysForMethod(method) {
     );
 }
 
+/**
+ * Estado salvo em "Métodos" (não o formulário em edição). Com o cartão desligado lá, a ordem de
+ * adquirentes de cartão não vale no checkout; sem cartão direto, o checkout usa o cartão do PayPal.
+ */
+const platformCardOff = computed(() => props.platform_payment_methods_enabled?.card === false);
+const platformWalletOff = computed(
+    () => props.platform_payment_methods_enabled?.apple_pay === false
+        && props.platform_payment_methods_enabled?.google_pay === false
+);
+const paypalCardInCheckout = computed(
+    () => platformCardOff.value
+        && props.platform_payment_methods_enabled?.paypal !== false
+        && connectedGatewaysForMethod('paypal').some((g) => g.slug === 'paypal')
+);
+const cardAcquirersOutOfCheckout = computed(() => connectedGatewaysForMethod('card').map((g) => g.name).join(', '));
+const walletAcquirersOutOfCheckout = computed(() => walletPriorityOptions().map((o) => o.label).join(', '));
+
 function connectedCajuAccounts() {
     return (props.cajupay_accounts || []).filter((account) => account.is_connected && account.is_enabled);
 }
@@ -1273,8 +1290,27 @@ function submitSettlement() {
                                         </div>
                                     </div>
                                 </div>
+                                <div v-if="platformCardOff" class="space-y-2 text-xs leading-snug">
+                                    <p
+                                        v-if="paypalCardInCheckout"
+                                        class="rounded-xl border border-emerald-200 bg-emerald-50 px-3.5 py-2.5 text-sm font-medium text-emerald-800 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300"
+                                    >
+                                        Cartão no checkout: PayPal
+                                    </p>
+                                    <p
+                                        v-else
+                                        class="rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-2.5 text-sm font-medium text-zinc-600 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300"
+                                    >
+                                        Cartão fora do checkout
+                                    </p>
+                                    <p v-if="cardAcquirersOutOfCheckout" class="text-zinc-500 dark:text-zinc-400">
+                                        Fora do checkout: {{ cardAcquirersOutOfCheckout }}. O Cartão está desligado em
+                                        Métodos; ao religar, volta a valer a adquirente escolhida aqui.
+                                    </p>
+                                </div>
                                 <label class="sr-only" for="acq-primary-card">Adquirente principal cartão</label>
                                 <select
+                                    v-show="!platformCardOff"
                                     id="acq-primary-card"
                                     v-model="primaryCard"
                                     class="w-full cursor-pointer rounded-xl border border-zinc-200 bg-white px-3.5 py-2.5 text-sm font-medium text-zinc-900 shadow-sm outline-none transition focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20 disabled:cursor-not-allowed disabled:opacity-60 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-100"
@@ -1292,7 +1328,7 @@ function submitSettlement() {
                                     </option>
                                 </select>
                                 <p
-                                    v-if="priorityOptions('card').length === 0"
+                                    v-if="!platformCardOff && priorityOptions('card').length === 0"
                                     class="mt-2 text-xs leading-snug text-zinc-500 dark:text-zinc-400"
                                 >
                                     Conecte um adquirente com cartão nos cartões acima.
@@ -1316,8 +1352,20 @@ function submitSettlement() {
                                         </div>
                                     </div>
                                 </div>
+                                <div v-if="platformWalletOff" class="space-y-2 text-xs leading-snug">
+                                    <p
+                                        class="rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-2.5 text-sm font-medium text-zinc-600 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300"
+                                    >
+                                        Apple Pay e Google Pay fora do checkout
+                                    </p>
+                                    <p class="text-zinc-500 dark:text-zinc-400">
+                                        <template v-if="walletAcquirersOutOfCheckout">Fora do checkout: {{ walletAcquirersOutOfCheckout }}. </template>
+                                        Desligados em Métodos; ao religar, volta a valer a adquirente escolhida aqui.
+                                    </p>
+                                </div>
                                 <label class="sr-only" for="acq-primary-wallet">Adquirente da carteira</label>
                                 <select
+                                    v-show="!platformWalletOff"
                                     id="acq-primary-wallet"
                                     v-model="primaryWallet"
                                     class="w-full cursor-pointer rounded-xl border border-zinc-200 bg-white px-3.5 py-2.5 text-sm font-medium text-zinc-900 shadow-sm outline-none transition focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20 disabled:cursor-not-allowed disabled:opacity-60 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-100"
@@ -1334,7 +1382,7 @@ function submitSettlement() {
                                         {{ option.label }}
                                     </option>
                                 </select>
-                                <p class="mt-2 text-xs leading-snug text-zinc-500 dark:text-zinc-400">
+                                <p v-if="!platformWalletOff" class="mt-2 text-xs leading-snug text-zinc-500 dark:text-zinc-400">
                                     O primeiro entra no checkout. O outro fica como alternativa se o principal não estiver conectado.
                                 </p>
                             </div>
