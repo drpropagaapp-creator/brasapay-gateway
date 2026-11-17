@@ -80,7 +80,9 @@ const props = defineProps({
     pixgo_enabled: { type: Boolean, default: false },
     pixgo_sidebar_label: { type: String, default: 'PixGO' },
     api_pix_minimum_charge_brl: { type: Number, default: 0.01 },
+    api_pix_maximum_charge_brl: { type: Number, default: 0 },
     platform_minimum_charge_brl: { type: Number, default: 0 },
+    platform_maximum_charge_brl: { type: Number, default: 0 },
     platform_minimum_withdrawal_brl: { type: Number, default: 0 },
     effective_minimum_withdrawal_brl: { type: Number, default: 0 },
     payout_gateway_min_brl: { type: Number, default: 0 },
@@ -110,6 +112,8 @@ const props = defineProps({
             hours_end: '21:00',
             timezone: 'America/Sao_Paulo',
             has_manual_approval_pin: false,
+            interval_enabled: false,
+            interval_hours: 24,
         }),
     },
     platform_totp_enabled: { type: Boolean, default: false },
@@ -1037,8 +1041,12 @@ function submitPixGo() {
 
 const chargeLimitsForm = useForm({
     api_pix_minimum_charge_brl: props.api_pix_minimum_charge_brl ?? 0.01,
+    api_pix_maximum_charge_brl: props.api_pix_maximum_charge_brl ?? 0,
     platform_minimum_charge_brl: props.platform_minimum_charge_brl ?? 0,
+    platform_maximum_charge_brl: props.platform_maximum_charge_brl ?? 0,
     platform_minimum_withdrawal_brl: props.platform_minimum_withdrawal_brl ?? 0,
+    withdrawal_interval_enabled: !!props.withdrawal_policy?.interval_enabled,
+    withdrawal_interval_hours: Number(props.withdrawal_policy?.interval_hours ?? 24) || 24,
 });
 
 function submitChargeLimits() {
@@ -1047,8 +1055,12 @@ function submitChargeLimits() {
         onSuccess: () => {
             chargeLimitsForm.defaults({
                 api_pix_minimum_charge_brl: props.api_pix_minimum_charge_brl,
+                api_pix_maximum_charge_brl: props.api_pix_maximum_charge_brl,
                 platform_minimum_charge_brl: props.platform_minimum_charge_brl,
+                platform_maximum_charge_brl: props.platform_maximum_charge_brl,
                 platform_minimum_withdrawal_brl: props.platform_minimum_withdrawal_brl,
+                withdrawal_interval_enabled: !!props.withdrawal_policy?.interval_enabled,
+                withdrawal_interval_hours: Number(props.withdrawal_policy?.interval_hours ?? 24) || 24,
             });
             chargeLimitsForm.reset();
         },
@@ -1920,11 +1932,11 @@ function submitSettlement() {
             <div v-show="activeTab === 'limites'" class="space-y-6">
                 <section class="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm dark:border-zinc-700 dark:bg-zinc-800">
                     <h2 class="mb-2 text-sm font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
-                        Ticket mínimo de cobrança
+                        Tickets de cobrança
                     </h2>
                     <p class="mb-6 text-sm text-zinc-600 dark:text-zinc-400">
-                        Defina valores mínimos independentes para a API PIX externa e para o checkout próprio da plataforma
-                        (produtos, ofertas, planos e pagamentos no checkout infoprodutor). Valores padrão; cada infoprodutor pode
+                        Defina valores mínimos e máximos independentes para a API PIX externa e para o checkout próprio da plataforma
+                        (produtos, ofertas, planos e pagamentos no checkout infoprodutor). Use 0 no máximo para não impor teto. Valores padrão; cada infoprodutor pode
                         ter taxas, limites e API PIX personalizados em <strong>Infoprodutores → Editar</strong>.
                     </p>
                     <form class="space-y-6" @submit.prevent="submitChargeLimits">
@@ -1963,6 +1975,45 @@ function submitSettlement() {
                                 </p>
                                 <p v-if="chargeLimitsForm.errors.platform_minimum_charge_brl" class="mt-1 text-xs text-red-600">
                                     {{ chargeLimitsForm.errors.platform_minimum_charge_brl }}
+                                </p>
+                            </div>
+                        </div>
+
+                        <div class="grid gap-6 sm:grid-cols-2">
+                            <div>
+                                <label class="text-sm font-medium text-zinc-800 dark:text-zinc-200">
+                                    Ticket máximo API PIX (R$)
+                                </label>
+                                <input
+                                    v-model.number="chargeLimitsForm.api_pix_maximum_charge_brl"
+                                    type="number"
+                                    min="0"
+                                    step="0.01"
+                                    class="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-600 dark:bg-zinc-900"
+                                />
+                                <p class="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+                                    Teto das cobranças via API REST e checkout hospedado da API. Use 0 para sem limite.
+                                </p>
+                                <p v-if="chargeLimitsForm.errors.api_pix_maximum_charge_brl" class="mt-1 text-xs text-red-600">
+                                    {{ chargeLimitsForm.errors.api_pix_maximum_charge_brl }}
+                                </p>
+                            </div>
+                            <div>
+                                <label class="text-sm font-medium text-zinc-800 dark:text-zinc-200">
+                                    Ticket máximo plataforma (R$)
+                                </label>
+                                <input
+                                    v-model.number="chargeLimitsForm.platform_maximum_charge_brl"
+                                    type="number"
+                                    min="0"
+                                    step="0.01"
+                                    class="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-600 dark:bg-zinc-900"
+                                />
+                                <p class="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+                                    Teto de preços de produtos, ofertas, planos e do total pago no checkout. Use 0 para sem limite.
+                                </p>
+                                <p v-if="chargeLimitsForm.errors.platform_maximum_charge_brl" class="mt-1 text-xs text-red-600">
+                                    {{ chargeLimitsForm.errors.platform_maximum_charge_brl }}
                                 </p>
                             </div>
                         </div>
@@ -2031,6 +2082,41 @@ function submitSettlement() {
                                     </p>
                                     <p class="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
                                         Após salvar, este valor atualiza. Taxa de saque do merchant (aba Taxas) pode elevar o valor bruto solicitado.
+                                    </p>
+                                </div>
+                            </div>
+
+                            <div class="mt-6 border-t border-zinc-200 pt-6 dark:border-zinc-700">
+                                <label class="flex items-center gap-3">
+                                    <input
+                                        v-model="chargeLimitsForm.withdrawal_interval_enabled"
+                                        type="checkbox"
+                                        class="rounded border-zinc-300"
+                                    />
+                                    <span class="text-sm font-medium text-zinc-800 dark:text-zinc-200">
+                                        Limitar o intervalo entre saques
+                                    </span>
+                                </label>
+                                <p class="mt-2 text-sm text-zinc-600 dark:text-zinc-400">
+                                    Com esta opção ligada, o infoprodutor só pode pedir um novo saque depois do número de horas definido, contado a partir do último saque que não foi recusado ou falhou.
+                                </p>
+                                <div v-if="chargeLimitsForm.withdrawal_interval_enabled" class="mt-4 max-w-xs">
+                                    <label class="text-sm font-medium text-zinc-800 dark:text-zinc-200">
+                                        Horas entre saques
+                                    </label>
+                                    <input
+                                        v-model.number="chargeLimitsForm.withdrawal_interval_hours"
+                                        type="number"
+                                        min="1"
+                                        max="8760"
+                                        step="1"
+                                        class="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-600 dark:bg-zinc-900"
+                                    />
+                                    <p class="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+                                        De 1 a 8760 horas. Vale para o painel e para a API de saques.
+                                    </p>
+                                    <p v-if="chargeLimitsForm.errors.withdrawal_interval_hours" class="mt-1 text-xs text-red-600">
+                                        {{ chargeLimitsForm.errors.withdrawal_interval_hours }}
                                     </p>
                                 </div>
                             </div>

@@ -325,6 +325,9 @@ class HandleInertiaRequests extends Middleware
             'platform_minimum_charge_brl' => $user && $user->canAccessSellerPanel()
                 ? app(MinimumChargeService::class)->platformMinimumBrlForTenant($tenantId)
                 : 0,
+            'platform_maximum_charge_brl' => $user && $user->canAccessSellerPanel()
+                ? app(MinimumChargeService::class)->platformMaximumBrlForTenant($tenantId)
+                : 0,
             'platform_card_installments' => $user && $user->canAccessSellerPanel()
                 ? \App\Services\PlatformCardInstallments::publicConfig()
                 : ['enabled' => false, 'max' => 12],
