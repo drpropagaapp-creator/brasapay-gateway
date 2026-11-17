@@ -1210,6 +1210,10 @@ class McpCatalogService
             if ($priceBrl < $min) {
                 throw new McpCatalogException('Preço abaixo do mínimo da plataforma (R$ '.number_format($min, 2, ',', '.').').', 'validation');
             }
+            $max = $this->minimumCharge->platformMaximumBrlForTenant($tenantId);
+            if ($max > 0 && $priceBrl > $max) {
+                throw new McpCatalogException('Preço acima do máximo da plataforma (R$ '.number_format($max, 2, ',', '.').').', 'validation');
+            }
             $out['price'] = $price;
             $out['currency'] = $currency;
             $out['price_brl'] = $priceBrl;
@@ -1276,6 +1280,10 @@ class McpCatalogService
             $min = $this->minimumCharge->platformMinimumBrlForTenant($tenantId);
             if ($priceBrl < $min) {
                 throw new McpCatalogException('Preço abaixo do mínimo da plataforma.', 'validation');
+            }
+            $max = $this->minimumCharge->platformMaximumBrlForTenant($tenantId);
+            if ($max > 0 && $priceBrl > $max) {
+                throw new McpCatalogException('Preço acima do máximo da plataforma.', 'validation');
             }
             $out['price'] = $price;
             $out['currency'] = $currency;
@@ -1731,8 +1739,13 @@ class McpCatalogService
     private function priceRules(int $tenantId): array
     {
         $min = $this->minimumCharge->platformMinimumBrlForTenant($tenantId);
+        $rules = ['numeric', 'min:'.$min];
+        $max = $this->minimumCharge->platformMaximumBrlForTenant($tenantId);
+        if ($max > 0) {
+            $rules[] = 'max:'.$max;
+        }
 
-        return ['numeric', 'min:'.$min];
+        return $rules;
     }
 
     /**

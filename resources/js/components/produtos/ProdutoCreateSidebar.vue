@@ -43,9 +43,15 @@ const { t } = useI18n();
 const page = usePage();
 
 const platformMinCharge = computed(() => Number(page.props.platform_minimum_charge_brl ?? 0));
+const platformMaxCharge = computed(() => Number(page.props.platform_maximum_charge_brl ?? 0));
 const platformMinChargeLabel = computed(() =>
     platformMinCharge.value > 0
         ? new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(platformMinCharge.value)
+        : null
+);
+const platformMaxChargeLabel = computed(() =>
+    platformMaxCharge.value > 0
+        ? new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(platformMaxCharge.value)
         : null
 );
 
@@ -470,6 +476,7 @@ function safePluginSectionHtml(html) {
                                 type="number"
                                 step="any"
                                 :min="platformMinCharge"
+                                :max="platformMaxCharge > 0 ? platformMaxCharge : undefined"
                                 inputmode="decimal"
                                 required
                                 class="mt-1 block w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-zinc-900 placeholder-zinc-400 focus:border-[var(--color-primary)] focus:outline-none focus:ring-1 focus:ring-[var(--color-primary)] dark:border-zinc-600 dark:bg-zinc-800 dark:text-white dark:placeholder-zinc-500"
@@ -477,6 +484,9 @@ function safePluginSectionHtml(html) {
                             />
                             <p v-if="platformMinChargeLabel" class="mt-1 text-xs text-amber-700 dark:text-amber-300">
                                 Ticket mínimo da plataforma: {{ platformMinChargeLabel }}
+                            </p>
+                            <p v-if="platformMaxChargeLabel" class="mt-1 text-xs text-amber-700 dark:text-amber-300">
+                                Ticket máximo da plataforma: {{ platformMaxChargeLabel }}
                             </p>
                             <p class="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
                                 ≈ € {{ priceEur }} · $ {{ priceUsd }}

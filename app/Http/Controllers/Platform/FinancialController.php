@@ -89,7 +89,9 @@ class FinancialController extends Controller
             'merchant_settlement_rules' => EffectiveSettlementRules::platformDefaults(),
             'api_pix_enabled' => ApiPixAccess::globalEnabled(),
             'api_pix_minimum_charge_brl' => app(MinimumChargeService::class)->apiPixMinimumBrl(),
+            'api_pix_maximum_charge_brl' => app(MinimumChargeService::class)->apiPixMaximumBrl(),
             'platform_minimum_charge_brl' => app(MinimumChargeService::class)->platformMinimumBrl(),
+            'platform_maximum_charge_brl' => app(MinimumChargeService::class)->platformMaximumBrl(),
             'platform_minimum_withdrawal_brl' => WithdrawalMinimumService::platformMinimumBrl(),
             'effective_minimum_withdrawal_brl' => WithdrawalMinimumService::effectiveRequiredMinNet(),
             'payout_gateway_min_brl' => (float) (GatewayPayoutEconomics::forActiveGateway()['payout_min_brl'] ?? 0),
@@ -482,22 +484,62 @@ class FinancialController extends Controller
     {
         $validated = $request->validate([
             'api_pix_minimum_charge_brl' => ['required', 'numeric', 'min:0', 'max:999999'],
+            'api_pix_maximum_charge_brl' => ['nullable', 'numeric', 'min:0', 'max:999999'],
             'platform_minimum_charge_brl' => ['required', 'numeric', 'min:0', 'max:999999'],
+            'platform_maximum_charge_brl' => ['nullable', 'numeric', 'min:0', 'max:999999'],
             'platform_minimum_withdrawal_brl' => ['required', 'numeric', 'min:0', 'max:999999'],
+            'withdrawal_interval_enabled' => ['nullable', 'boolean'],
+            'withdrawal_interval_hours' => ['nullable', 'integer', 'min:1', 'max:8760'],
         ]);
 
         $apiMin = round((float) $validated['api_pix_minimum_charge_brl'], 2);
         $platformMin = round((float) $validated['platform_minimum_charge_brl'], 2);
         $withdrawalMin = round((float) $validated['platform_minimum_withdrawal_brl'], 2);
+        $apiMax = array_key_exists('api_pix_maximum_charge_brl', $validated) && $validated['api_pix_maximum_charge_brl'] !== null
+            ? round((float) $validated['api_pix_maximum_charge_brl'], 2)
+            : app(MinimumChargeService::class)->apiPixMaximumBrl();
+        $platformMax = array_key_exists('platform_maximum_charge_brl', $validated) && $validated['platform_maximum_charge_brl'] !== null
+            ? round((float) $validated['platform_maximum_charge_brl'], 2)
+            : app(MinimumChargeService::class)->platformMaximumBrl();
+
+        if ($apiMax > 0 && $apiMax + 0.0000001 < $apiMin) {
+            throw ValidationException::withMessages([
+                'api_pix_maximum_charge_brl' => 'O ticket máximo da API PIX precisa ser maior ou igual ao mínimo.',
+            ]);
+        }
+        if ($platformMax > 0 && $platformMax + 0.0000001 < $platformMin) {
+            throw ValidationException::withMessages([
+                'platform_maximum_charge_brl' => 'O ticket máximo da plataforma precisa ser maior ou igual ao mínimo.',
+            ]);
+        }
+
+        $intervalEnabled = $request->boolean('withdrawal_interval_enabled');
+        $intervalHours = (int) ($validated['withdrawal_interval_hours'] ?? 0);
+        if ($request->exists('withdrawal_interval_enabled') && $intervalEnabled && $intervalHours < 1) {
+            throw ValidationException::withMessages([
+                'withdrawal_interval_hours' => 'Informe quantas horas devem separar os saques.',
+            ]);
+        }
 
         Setting::set(MinimumChargeService::SETTING_API_PIX, (string) $apiMin, null);
+        Setting::set(MinimumChargeService::SETTING_API_PIX_MAX, (string) $apiMax, null);
         Setting::set(MinimumChargeService::SETTING_PLATFORM, (string) $platformMin, null);
+        Setting::set(MinimumChargeService::SETTING_PLATFORM_MAX, (string) $platformMax, null);
         WithdrawalMinimumService::setPlatformMinimumBrl($withdrawalMin);
+        if ($request->exists('withdrawal_interval_enabled')) {
+            WithdrawalPolicyService::setInterval($intervalEnabled, $intervalHours > 0 ? $intervalHours : 24);
+        }
 
         PlatformAuditService::log('platform.financial.charge_limits_updated', [
             'api_pix_minimum_charge_brl' => $apiMin,
+            'api_pix_maximum_charge_brl' => $apiMax,
             'platform_minimum_charge_brl' => $platformMin,
+            'platform_maximum_charge_brl' => $platformMax,
             'platform_minimum_withdrawal_brl' => $withdrawalMin,
+            'withdrawal_interval_enabled' => $request->exists('withdrawal_interval_enabled') ? $intervalEnabled : WithdrawalPolicyService::intervalEnabled(),
+            'withdrawal_interval_hours' => $request->exists('withdrawal_interval_enabled')
+                ? ($intervalHours > 0 ? $intervalHours : 24)
+                : WithdrawalPolicyService::intervalHours(),
         ], $request);
 
         return redirect()->route('plataforma.financeiro.index', ['tab' => 'limites'])

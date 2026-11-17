@@ -1776,9 +1776,8 @@ class ProdutosController extends Controller
     private function platformPriceRules(): array
     {
         $tenantId = (int) (auth()->user()?->tenant_id ?? 0);
-        $min = app(MinimumChargeService::class)->platformMinimumBrlForTenant($tenantId > 0 ? $tenantId : null);
 
-        return ['required', 'numeric', 'min:'.$min];
+        return app(MinimumChargeService::class)->platformPriceRules($tenantId > 0 ? $tenantId : null);
     }
 
     /**

@@ -4,6 +4,7 @@ namespace App\Services\Withdrawal;
 
 use App\Models\Setting;
 use App\Models\User;
+use App\Models\Withdrawal;
 use App\Services\Platform\PlatformTotpService;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Hash;
@@ -48,6 +49,69 @@ class WithdrawalPolicyService
         $v = Setting::get('platform_withdrawal_hours_end', '21:00', null);
 
         return is_string($v) && $v !== '' ? $v : '21:00';
+    }
+
+    public static function intervalEnabled(): bool
+    {
+        $v = Setting::get('platform_withdrawal_interval_enabled', false, null);
+
+        return filter_var($v, FILTER_VALIDATE_BOOLEAN);
+    }
+
+    public static function intervalHours(): int
+    {
+        $hours = (int) Setting::get('platform_withdrawal_interval_hours', 24, null);
+
+        return max(0, min(8760, $hours));
+    }
+
+    public static function setInterval(bool $enabled, int $hours): void
+    {
+        $hours = max(1, min(8760, $hours));
+        Setting::set('platform_withdrawal_interval_enabled', $enabled ? '1' : '0', null);
+        Setting::set('platform_withdrawal_interval_hours', (string) $hours, null);
+    }
+
+    /**
+     * @throws ValidationException
+     */
+    public static function assertIntervalAllows(int $tenantId): void
+    {
+        if (! self::intervalEnabled() || $tenantId < 1) {
+            return;
+        }
+
+        $hours = self::intervalHours();
+        if ($hours < 1) {
+            return;
+        }
+
+        $last = Withdrawal::query()
+            ->where('tenant_id', $tenantId)
+            ->whereNotIn('status', ['rejected', 'failed'])
+            ->latest('id')
+            ->first();
+
+        if ($last === null || $last->created_at === null) {
+            return;
+        }
+
+        $availableAt = $last->created_at->copy()->addHours($hours);
+        if (now()->greaterThanOrEqualTo($availableAt)) {
+            return;
+        }
+
+        throw ValidationException::withMessages([
+            'amount' => self::intervalBlockedMessage($availableAt, $hours),
+        ]);
+    }
+
+    public static function intervalBlockedMessage(Carbon $availableAt, int $hours): string
+    {
+        $when = $availableAt->copy()->timezone(self::timezone())->format('d/m/Y H:i');
+        $unit = $hours === 1 ? 'hora' : 'horas';
+
+        return "O intervalo mínimo entre saques é de {$hours} {$unit}. Você pode solicitar outro saque em {$when}.";
     }
 
     public static function allowsRequestAt(?Carbon $at = null): bool
@@ -142,6 +206,8 @@ class WithdrawalPolicyService
             'hours_end' => self::hoursEnd(),
             'timezone' => self::timezone(),
             'has_manual_approval_pin' => self::hasManualApprovalPin(),
+            'interval_enabled' => self::intervalEnabled(),
+            'interval_hours' => self::intervalHours() > 0 ? self::intervalHours() : 24,
         ];
     }
 

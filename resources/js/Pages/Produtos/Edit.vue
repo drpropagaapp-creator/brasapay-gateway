@@ -496,9 +496,15 @@ function toggleBundleProduct(id) {
     form.bundle_product_ids = [...current, key];
 }
 const platformMinCharge = computed(() => Number(page.props.platform_minimum_charge_brl ?? 0));
+const platformMaxCharge = computed(() => Number(page.props.platform_maximum_charge_brl ?? 0));
 const platformMinChargeLabel = computed(() =>
     platformMinCharge.value > 0
         ? new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(platformMinCharge.value)
+        : null
+);
+const platformMaxChargeLabel = computed(() =>
+    platformMaxCharge.value > 0
+        ? new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(platformMaxCharge.value)
         : null
 );
 
@@ -1793,6 +1799,7 @@ function submit() {
                                     type="number"
                                     step="any"
                                     :min="platformMinCharge"
+                                    :max="platformMaxCharge > 0 ? platformMaxCharge : undefined"
                                     inputmode="decimal"
                                     required
                                     placeholder="0,00"
@@ -1800,6 +1807,9 @@ function submit() {
                                 />
                                 <p v-if="platformMinChargeLabel" class="mt-1.5 text-xs text-amber-700 dark:text-amber-300">
                                     Ticket mínimo da plataforma: {{ platformMinChargeLabel }}
+                                </p>
+                                <p v-if="platformMaxChargeLabel" class="mt-1.5 text-xs text-amber-700 dark:text-amber-300">
+                                    Ticket máximo da plataforma: {{ platformMaxChargeLabel }}
                                 </p>
                                 <p class="mt-1.5 text-xs text-zinc-500 dark:text-zinc-400">Aproximado: € {{ priceEur }} · US$ {{ priceUsd }}</p>
                                 <p v-if="form.errors.price" class="mt-1.5 text-sm text-red-600 dark:text-red-400">{{ form.errors.price }}</p>
@@ -1929,9 +1939,12 @@ function submit() {
                                     <p class="mb-3 text-sm font-medium text-zinc-700 dark:text-zinc-300">{{ editingOffer ? t('products.edit.edit_offer', 'Editar oferta') : t('products.edit.new_offer', 'Nova oferta') }}</p>
                                     <div class="grid gap-3 sm:grid-cols-[1fr,1fr,auto]">
                                         <input v-model="offerForm.name" type="text" required :class="inputClass" placeholder="Nome (ex: Básico)" />
-                                        <input v-model="offerForm.price" type="number" step="any" :min="platformMinCharge" inputmode="decimal" required :class="inputClass" placeholder="Preço" />
+                                        <input v-model="offerForm.price" type="number" step="any" :min="platformMinCharge" :max="platformMaxCharge > 0 ? platformMaxCharge : undefined" inputmode="decimal" required :class="inputClass" placeholder="Preço" />
                                         <p v-if="platformMinChargeLabel" class="mt-1 text-xs text-amber-700 dark:text-amber-300">
                                             Ticket mínimo: {{ platformMinChargeLabel }}
+                                        </p>
+                                        <p v-if="platformMaxChargeLabel" class="mt-1 text-xs text-amber-700 dark:text-amber-300">
+                                            Ticket máximo: {{ platformMaxChargeLabel }}
                                         </p>
                                         <select v-model="offerForm.currency" :class="inputClass + ' min-w-0'">
                                             <option value="BRL">BRL</option>
@@ -1988,9 +2001,12 @@ function submit() {
                                     <p class="mb-3 text-sm font-medium text-zinc-700 dark:text-zinc-300">{{ editingPlan ? t('products.edit.edit_plan', 'Editar plano') : t('products.edit.new_plan', 'Novo plano') }}</p>
                                     <div class="grid gap-3 sm:grid-cols-2">
                                         <input v-model="planForm.name" type="text" required :class="inputClass" placeholder="Nome (ex: Mensal)" />
-                                        <input v-model="planForm.price" type="number" step="any" :min="platformMinCharge" inputmode="decimal" required :class="inputClass" placeholder="Preço" />
+                                        <input v-model="planForm.price" type="number" step="any" :min="platformMinCharge" :max="platformMaxCharge > 0 ? platformMaxCharge : undefined" inputmode="decimal" required :class="inputClass" placeholder="Preço" />
                                         <p v-if="platformMinChargeLabel" class="mt-1 text-xs text-amber-700 dark:text-amber-300">
                                             Ticket mínimo: {{ platformMinChargeLabel }}
+                                        </p>
+                                        <p v-if="platformMaxChargeLabel" class="mt-1 text-xs text-amber-700 dark:text-amber-300">
+                                            Ticket máximo: {{ platformMaxChargeLabel }}
                                         </p>
                                         <select v-model="planForm.currency" :class="inputClass">
                                             <option value="BRL">BRL</option>
