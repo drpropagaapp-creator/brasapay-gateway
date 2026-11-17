@@ -19,6 +19,6 @@ defineProps({
     </span>
     <div class="min-w-0 flex-1">
         <span class="block font-medium text-gray-900">{{ method.label || 'PayPal' }}</span>
-        <span class="block text-xs text-gray-500">Carteira digital</span>
+        <span class="block text-xs text-gray-500">Pague com sua conta PayPal</span>
     </div>
 </template>

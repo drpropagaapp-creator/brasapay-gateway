@@ -10,6 +10,9 @@ const props = defineProps({
     getCsrfToken: { type: Function, required: true },
     fillHint: { type: String, default: 'Preencha seus dados acima para pagar com PayPal.' },
     loadingHint: { type: String, default: 'Carregando PayPal…' },
+    /** 'paypal' = só o botão da conta PayPal; 'card' = só o botão de cartão de crédito/débito. */
+    fundingSource: { type: String, default: 'paypal' },
+    unavailableHint: { type: String, default: 'Esta forma de pagamento não está disponível agora. Escolha outra.' },
 });
 
 const emit = defineEmits(['approved', 'error']);
@@ -36,7 +39,9 @@ function sdkUrl(clientId) {
         // Conta recebedora no Brasil só aceita BRL. A PayPal converte para o comprador.
         currency: 'BRL',
         intent: 'capture',
-        'disable-funding': 'card,credit,paylater,venmo',
+        // 'card' liberado: botão 'Cartão de débito ou crédito' (comprador sem conta PayPal).
+        // O PayPal só mostra esse botão quando a conta recebedora é elegível.
+        'disable-funding': 'credit,paylater,venmo',
         locale: paypalLocale(props.locale),
     });
     return `https://www.paypal.com/sdk/js?${params.toString()}`;
@@ -84,8 +89,12 @@ async function renderButtons() {
             try { buttonsInstance.close(); } catch (_) {}
         }
         hostRef.value.innerHTML = '';
+        const isCard = props.fundingSource === 'card';
         buttonsInstance = paypal.Buttons({
-            style: { layout: 'vertical', color: 'gold', shape: 'rect', label: 'paypal' },
+            fundingSource: isCard ? paypal.FUNDING.CARD : paypal.FUNDING.PAYPAL,
+            style: isCard
+                ? { layout: 'vertical', color: 'black', shape: 'rect' }
+                : { layout: 'vertical', color: 'gold', shape: 'rect', label: 'paypal' },
             createOrder: async () => {
                 const payload = props.buildPayload();
                 const { data } = await axios.post('/checkout/paypal/create-order', payload, {
@@ -135,6 +144,11 @@ async function renderButtons() {
                 errorMessage.value = '';
             },
         });
+        if (typeof buttonsInstance.isEligible === 'function' && !buttonsInstance.isEligible()) {
+            buttonsInstance = null;
+            errorMessage.value = props.unavailableHint;
+            return;
+        }
         await buttonsInstance.render(hostRef.value);
     } catch (err) {
         const msg = err?.response?.data?.message || err?.message || 'PayPal indisponível.';
@@ -146,7 +160,7 @@ async function renderButtons() {
 }
 
 watch(
-    () => [props.clientId, props.locale, props.disabled],
+    () => [props.clientId, props.locale, props.disabled, props.fundingSource],
     () => { void renderButtons(); }
 );
 

@@ -488,7 +488,7 @@ const paymentMethodMeta = {
     boleto: { label: 'Boleto', hint: 'Compensação bancária', visual: 'boleto' },
     pix_auto: { label: 'PIX automático', hint: 'Débito recorrente na assinatura', visual: 'pix_auto' },
     open_finance: { label: 'Open Finance', hint: 'Pagamento autorizado no app do banco', visual: 'open_finance' },
-    paypal: { label: 'PayPal', hint: 'Carteira PayPal (não substitui PIX/cartão)', visual: 'paypal' },
+    paypal: { label: 'PayPal', hint: 'Conta PayPal. Sem outra adquirente de cartão, também libera a opção "Cartão" pelo PayPal', visual: 'paypal' },
 };
 
 /** Somente métodos com gateway ativo na plataforma (configuração admin + credencial conectada). */
