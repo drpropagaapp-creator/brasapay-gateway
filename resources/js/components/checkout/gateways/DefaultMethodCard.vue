@@ -26,7 +26,7 @@ defineProps({
             class="h-7 w-7 shrink-0 object-contain self-center"
         />
         <img
-            v-else-if="method.id === 'card'"
+            v-else-if="method.id === 'card' || method.id === 'paypal_card'"
             src="/images/gateways/card-method.png"
             alt="Cartão"
             class="h-7 w-7 shrink-0 object-contain self-center"

@@ -756,6 +756,8 @@ class PaymentService
             }
         }
 
+        $methods = $this->withPaypalCardRow($methods, $productOnly['payment_methods_enabled'] ?? []);
+
         $walletSlug = $this->getFirstAvailableWalletGateway($tenantId, $product);
         if ($walletSlug !== null) {
             $walletName = $walletSlug === 'stripe' ? 'Stripe' : 'CajuPay';
@@ -778,6 +780,42 @@ class PaymentService
                 ];
             }
         }
+
+        return $methods;
+    }
+
+    /**
+     * Sem adquirente de cartão direto, o botão de cartão do PayPal vira a opção "Cartão" do checkout,
+     * logo antes do PayPal. A cobrança segue o fluxo PayPal (pedido com payment_method 'paypal');
+     * 'paypal_card' existe só na tela. Exige o PayPal liberado (plataforma e produto) e o cartão
+     * não desligado pelo seller no produto. O interruptor de cartão da plataforma não conta aqui:
+     * ele desliga as adquirentes de cartão diretas (ex.: Stripe bloqueada), não o PayPal.
+     *
+     * @param  list<array<string, mixed>>  $methods
+     * @param  array<string, mixed>  $productEnabled
+     * @return list<array<string, mixed>>
+     */
+    private function withPaypalCardRow(array $methods, array $productEnabled): array
+    {
+        $paypalIndex = null;
+        foreach ($methods as $i => $m) {
+            if (($m['id'] ?? '') === 'card') {
+                return $methods;
+            }
+            if (($m['id'] ?? '') === 'paypal' && ($m['gateway_slug'] ?? '') === 'paypal') {
+                $paypalIndex = $i;
+            }
+        }
+        if ($paypalIndex === null || ($productEnabled['card'] ?? true) === false) {
+            return $methods;
+        }
+
+        array_splice($methods, $paypalIndex, 0, [[
+            'id' => 'paypal_card',
+            'label' => 'Cartão',
+            'gateway_slug' => 'paypal',
+            'gateway_name' => 'PayPal',
+        ]]);
 
         return $methods;
     }
