@@ -130,6 +130,9 @@ class GatewaysController extends Controller
         } elseif ($slug === 'pagarme') {
             $webhookUrl = GatewayWebhookUrl::forGateway('pagarme');
             $webhookHelp = 'Cadastre esta URL HTTPS no painel Pagar.me (Configurações → Webhooks), método POST. Eventos de cobrança (charge.paid, charge.payment_failed, charge.refunded) e pedido (order.paid). A URL não é enviada em cada cobrança: o cadastro no painel é obrigatório. Precisa ser pública (não localhost) e HTTPS. Após o evento, o sistema confirma o status em GET /charges/{id}.';
+        } elseif ($slug === 'cakto') {
+            $webhookUrl = GatewayWebhookUrl::forGateway('cakto');
+            $webhookHelp = 'Cadastre esta URL HTTPS no painel Cakto (Integrações → Webhooks) com os eventos purchase_approved, purchase_refused, refund e chargeback, e cole o secret do webhook no campo abaixo. Pagamento e reembolso são sempre reconferidos na API da Cakto. Na Cakto, crie um produto só para as vendas do BrasaPay e cole o ID dele: o sistema cria uma oferta por valor nesse produto. A chave de API precisa dos escopos de leitura, escrita, pagamentos e tokenização de cartão. Apple Pay e Google Pay não existem na API da Cakto.';
         } elseif ($slug === 'linaopenx') {
             $webhookUrl = GatewayWebhookUrl::forGateway('linaopenx');
             $webhookHelp = 'Cadastre esta URL HTTPS no painel Lina (Embedded Payment / webhooks) para eventos de pagamento Open Finance (PAYMENT, consent, status). Método POST. Opcionais: assinatura HMAC nos headers X-Lina-Signature, X-Webhook-Signature ou X-Signature — cole o mesmo segredo no campo “Segredo do webhook” abaixo. Se não configurar segredo, o webhook ainda é aceito, mas a confirmação do pedido sempre reconsulta a API Lina.';

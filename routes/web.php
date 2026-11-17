@@ -193,6 +193,7 @@ Route::middleware(['throttle:60,1', \App\Http\Middleware\LogInboundGatewayWebhoo
     Route::post('/webhooks/gateways/bspay', [\App\Http\Controllers\Webhooks\BspayWebhookController::class, 'handle'])->name('webhooks.bspay');
     Route::post('/webhooks/gateways/assetpay', [\App\Http\Controllers\Webhooks\AssetPayWebhookController::class, 'handle'])->name('webhooks.assetpay');
     Route::post('/webhooks/gateways/reven', [\App\Http\Controllers\Webhooks\RevenWebhookController::class, 'handle'])->name('webhooks.reven');
+    Route::post('/webhooks/gateways/cakto', [\App\Http\Controllers\Webhooks\CaktoWebhookController::class, 'handle'])->name('webhooks.cakto');
     Route::post('/webhooks/gateways/okto', [\App\Http\Controllers\Webhooks\OktoWebhookController::class, 'handle'])->name('webhooks.okto');
     Route::post('/webhooks/gateways/xpag', [\App\Http\Controllers\Webhooks\XpagWebhookController::class, 'handle'])->name('webhooks.xpag');
     Route::post('/webhooks/gateways/stripe', [\App\Http\Controllers\Webhooks\StripeWebhookController::class, 'handle'])->name('webhooks.stripe');
