@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\ApiWebhookDelivery;
 use App\Models\Order;
 use App\Services\Api\ApiAuthContext;
+use App\Services\Api\ApiCardService;
 use App\Services\ApiPixAccess;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -87,6 +88,14 @@ class PaymentStatusController extends Controller
             $data['copy_paste'] = $meta['pix_copy_paste'] ?? $meta['copy_paste'] ?? null;
             $data['qrcode'] = $meta['pix_qrcode'] ?? $meta['qrcode'] ?? null;
             $data['transaction_id'] = $orderModel->gateway_id;
+        }
+
+        if ($orderModel->payment_method === 'card') {
+            $data['payment_method'] = 'card';
+            $saved = app(ApiCardService::class)->forOrder($orderModel);
+            if ($saved !== null) {
+                $data['saved_card'] = app(ApiCardService::class)->serialize($saved);
+            }
         }
 
         return $data;

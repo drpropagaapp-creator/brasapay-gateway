@@ -28,6 +28,23 @@ Route::middleware(['api.application', 'api.request-id', 'throttle:api', 'api.req
         ->middleware('api.scope:payments:write')
         ->name('api.v1.payments.boleto');
 
+    // Checkout hospedado (página da BrasaPay) e cartão salvo para cobranças recorrentes do sistema do seller.
+    Route::post('checkout/sessions', [\App\Http\Controllers\Api\V1\CheckoutSessionsController::class, 'store'])
+        ->middleware('api.scope:payments:write')
+        ->name('api.v1.checkout.sessions.store');
+    Route::get('payment-methods', [\App\Http\Controllers\Api\V1\SavedCardsController::class, 'capabilities'])
+        ->middleware('api.scope:payments:read')
+        ->name('api.v1.payment-methods');
+    Route::post('payments/card/saved', [\App\Http\Controllers\Api\V1\SavedCardsController::class, 'charge'])
+        ->middleware('api.scope:payments:write')
+        ->name('api.v1.payments.card.saved');
+    Route::get('saved-cards/{savedCard}', [\App\Http\Controllers\Api\V1\SavedCardsController::class, 'show'])
+        ->middleware('api.scope:payments:read')
+        ->name('api.v1.saved-cards.show');
+    Route::delete('saved-cards/{savedCard}', [\App\Http\Controllers\Api\V1\SavedCardsController::class, 'destroy'])
+        ->middleware('api.scope:payments:write')
+        ->name('api.v1.saved-cards.destroy');
+
     Route::get('payments/{order}', [\App\Http\Controllers\Api\V1\PaymentStatusController::class, 'show'])
         ->middleware('api.scope:payments:read')
         ->name('api.v1.payments.show');

@@ -3,6 +3,7 @@
 namespace App\Gateways\Stripe;
 
 use App\Gateways\Contracts\GatewayDriver;
+use App\Gateways\Contracts\SavesCards;
 use Illuminate\Support\Facades\Log;
 use Stripe\Exception\ApiErrorException;
 use Stripe\StripeClient;
@@ -13,9 +14,12 @@ use Stripe\StripeClient;
  * Boleto: https://docs.stripe.com/payments/boleto/accept-a-payment
  * Cartão: https://docs.stripe.com/api
  * Parcelamento não utilizado neste gateway; cartão sempre à vista (1x).
+ * Cartão salvo (SavesCards): primeira cobrança com Customer + setup_future_usage; as seguintes off_session.
  */
-class StripeDriver implements GatewayDriver
+class StripeDriver implements GatewayDriver, SavesCards
 {
+    public const OFF_SESSION_AUTH_MESSAGE = 'O banco do cliente pediu confirmação desta cobrança. O cliente precisa pagar pelo link.';
+
     /** Zero-decimal currencies (amount = integer units, no * 100). */
     private const ZERO_DECIMAL_CURRENCIES = [
         'bif', 'clp', 'djf', 'gnf', 'jpy', 'kmf', 'krw', 'mga', 'pyg', 'rwf',
@@ -345,7 +349,16 @@ class StripeDriver implements GatewayDriver
             $returnUrl = null;
         }
 
-        $stripe = new StripeClient($secret);
+        // Cartão salvo: a Stripe só deixa reusar um cartão que foi vinculado a um cliente
+        // (Customer) na primeira cobrança. Sem isso, a segunda cobrança é recusada.
+        $save = ! empty($card['save']);
+        $offSession = ! empty($card['off_session']);
+        $customerId = trim((string) ($card['customer_id'] ?? ''));
+        if ($offSession && ! str_starts_with($customerId, 'cus_')) {
+            throw new \RuntimeException('Stripe: cartão salvo sem cliente vinculado. Peça ao cliente para cadastrar o cartão de novo.');
+        }
+
+        $stripe = $this->client($secret);
         $params = [
             'amount' => $amountInSmallestUnit,
             'currency' => $currency,
@@ -354,39 +367,65 @@ class StripeDriver implements GatewayDriver
             'metadata' => ['order_id' => $externalId],
             'receipt_email' => $consumer['email'] ?? null,
         ];
-        if ($returnUrl !== null) {
+        if ($returnUrl !== null && ! $offSession) {
             $params['return_url'] = $returnUrl;
         }
 
         try {
+            if ($save && $customerId === '') {
+                $customer = $stripe->customers->create(array_filter([
+                    'email' => $consumer['email'] ?? null,
+                    'name' => $consumer['name'] ?? null,
+                    'metadata' => ['order_id' => $externalId],
+                ]));
+                $customerId = (string) ($customer->id ?? '');
+            }
+            if ($customerId !== '') {
+                $params['customer'] = $customerId;
+            }
+            if ($save) {
+                $params['setup_future_usage'] = 'off_session';
+            }
+            if ($offSession) {
+                $params['off_session'] = true;
+            }
+
             $paymentIntent = $stripe->paymentIntents->create($params);
 
             $status = $paymentIntent->status ?? null;
             $transactionId = $paymentIntent->id ?? '';
+            $savedCard = $save ? $this->savedCardDetails($stripe, $paymentMethodId, $customerId) : null;
 
             if ($status === 'succeeded') {
-                return [
+                return array_filter([
                     'transaction_id' => $transactionId,
                     'status' => 'paid',
-                ];
+                    'saved_card' => $savedCard,
+                ]);
             }
 
             if ($status === 'requires_action' && ! empty($paymentIntent->client_secret)) {
-                return [
+                if ($offSession) {
+                    throw new \RuntimeException(self::OFF_SESSION_AUTH_MESSAGE);
+                }
+
+                return array_filter([
                     'transaction_id' => $transactionId,
                     'status' => 'requires_action',
                     'client_secret' => $paymentIntent->client_secret,
-                ];
+                    'saved_card' => $savedCard,
+                ]);
             }
 
             if ($status === 'requires_payment_method') {
                 throw new \RuntimeException('Pagamento recusado. Verifique os dados do cartão ou tente outro cartão.');
             }
 
-            return [
+            return array_filter([
                 'transaction_id' => $transactionId,
                 'status' => $status ?? 'pending',
-            ];
+                'saved_card' => $savedCard,
+            ]);
         } catch (ApiErrorException $e) {
             $code = $e->getStripeCode() ?? '';
             $message = $e->getMessage();
@@ -395,6 +434,9 @@ class StripeDriver implements GatewayDriver
                 'code' => $code,
                 'message' => $message,
             ]);
+            if ($code === 'authentication_required') {
+                throw new \RuntimeException(self::OFF_SESSION_AUTH_MESSAGE);
+            }
             if (str_contains(strtolower($message), 'card_declined') || $code === 'card_declined') {
                 throw new \RuntimeException('Cartão recusado. Verifique os dados ou tente outro cartão.');
             }
@@ -405,6 +447,8 @@ class StripeDriver implements GatewayDriver
                 throw new \RuntimeException('Cartão expirado.');
             }
             throw new \RuntimeException('Não foi possível processar o pagamento. Tente novamente.');
+        } catch (\RuntimeException $e) {
+            throw $e;
         } catch (\Throwable $e) {
             Log::warning('StripeDriver createCardPayment error', [
                 'order_id' => $externalId,
@@ -412,6 +456,58 @@ class StripeDriver implements GatewayDriver
             ]);
             throw new \RuntimeException('Não foi possível processar o pagamento. Tente novamente.');
         }
+    }
+
+    /**
+     * Bandeira, final e validade do cartão guardado (para o sistema do seller mostrar "Visa final 4242").
+     * Falha aqui não derruba a cobrança: o cartão continua salvo, só sem os detalhes.
+     *
+     * @return array{payment_method_id: string, customer_id: string, brand: ?string, last_four: ?string, exp_month: ?int, exp_year: ?int}
+     */
+    private function savedCardDetails(StripeClient $stripe, string $paymentMethodId, string $customerId): array
+    {
+        $details = [
+            'payment_method_id' => $paymentMethodId,
+            'customer_id' => $customerId,
+            'brand' => null,
+            'last_four' => null,
+            'exp_month' => null,
+            'exp_year' => null,
+        ];
+        try {
+            $pm = $stripe->paymentMethods->retrieve($paymentMethodId);
+            $c = $pm->card ?? null;
+            if ($c) {
+                $details['brand'] = isset($c->brand) ? (string) $c->brand : null;
+                $details['last_four'] = isset($c->last4) ? (string) $c->last4 : null;
+                $details['exp_month'] = isset($c->exp_month) ? (int) $c->exp_month : null;
+                $details['exp_year'] = isset($c->exp_year) ? (int) $c->exp_year : null;
+            }
+        } catch (\Throwable $e) {
+            Log::info('StripeDriver: detalhes do cartão salvo indisponíveis.', ['message' => $e->getMessage()]);
+        }
+
+        return $details;
+    }
+
+    public function forgetSavedCard(array $credentials, string $paymentMethodId): void
+    {
+        $secret = trim($credentials['secret_key'] ?? '');
+        if ($secret === '' || ! str_starts_with($paymentMethodId, 'pm_')) {
+            return;
+        }
+        try {
+            $this->client($secret)->paymentMethods->detach($paymentMethodId);
+        } catch (ApiErrorException $e) {
+            // Já desvinculado ou inexistente na Stripe: o resultado é o mesmo.
+            Log::info('StripeDriver forgetSavedCard', ['code' => $e->getStripeCode(), 'message' => $e->getMessage()]);
+        }
+    }
+
+    /** Ponto único de criação do cliente Stripe (os testes trocam por um falso). */
+    protected function client(string $secret): StripeClient
+    {
+        return new StripeClient($secret);
     }
 
     /**

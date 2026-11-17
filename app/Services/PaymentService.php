@@ -251,6 +251,9 @@ class PaymentService
                 if (isset($result['charged_amount'])) {
                     $return['charged_amount'] = $result['charged_amount'];
                 }
+                if (isset($result['saved_card']) && is_array($result['saved_card'])) {
+                    $return['saved_card'] = $result['saved_card'];
+                }
                 AcquirerAttemptRecorder::record($gatewaySlug, 'card', $tenantId, $order->id, AcquirerAttemptRecorder::classifyCardStatus($result['status'] ?? null), $startedAt, $position, $strategy);
 
                 return $return;

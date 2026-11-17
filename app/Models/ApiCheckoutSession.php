@@ -21,11 +21,15 @@ class ApiCheckoutSession extends Model
         'return_url',
         'expires_at',
         'order_id',
+        'save_card',
+        'payment_methods',
     ];
 
     protected function casts(): array
     {
         return [
+            'save_card' => 'boolean',
+            'payment_methods' => 'array',
             'customer' => 'array',
             'amount' => 'decimal:2',
             'metadata' => 'array',
@@ -54,6 +58,14 @@ class ApiCheckoutSession extends Model
             return $query->whereNull('tenant_id');
         }
         return $query->where('tenant_id', $tenantId);
+    }
+
+    /** Métodos que o sistema do seller pediu para mostrar (vazio = todos os configurados). */
+    public function allowsMethod(string $method): bool
+    {
+        $list = $this->payment_methods;
+
+        return ! is_array($list) || $list === [] || in_array($method, $list, true);
     }
 
     public function isExpired(): bool

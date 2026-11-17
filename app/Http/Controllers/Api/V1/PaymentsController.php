@@ -170,7 +170,8 @@ class PaymentsController extends Controller
 
         $order = $ctxData['order'];
         $paymentService = app(PaymentService::class);
-        $card = ['payment_token' => $validated['card']['payment_token'], 'card_mask' => $validated['card']['card_mask'] ?? null];
+        // O valor do pedido já está em reais (createOrderForApi converte); sem a moeda a Stripe cobrava em dólar.
+        $card = ['payment_token' => $validated['card']['payment_token'], 'card_mask' => $validated['card']['card_mask'] ?? null, 'currency' => 'brl'];
 
         try {
             event(new OrderPending($order));

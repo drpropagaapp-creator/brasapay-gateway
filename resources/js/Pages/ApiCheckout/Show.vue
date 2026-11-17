@@ -33,6 +33,8 @@ const props = defineProps({
     available_methods: { type: Array, default: () => [] },
     return_url: { type: String, default: null },
     card_gateway_slug: { type: String, default: null },
+    /** A sessão pediu para guardar o cartão (cobranças seguintes sem digitar de novo). */
+    save_card: { type: Boolean, default: false },
     card_stripe_publishable_key: { type: String, default: '' },
     card_stripe_sandbox: { type: Boolean, default: false },
     card_stripe_link_enabled: { type: Boolean, default: true },
@@ -917,6 +919,9 @@ async function submitCard(ev) {
                                         <div ref="stripeCardRef" class="rounded-lg border-2 border-zinc-200 bg-white px-4 py-3 min-h-[3.25rem]" />
                                     </div>
                                 </template>
+                                <p v-if="save_card" class="text-xs text-zinc-600">
+                                    Seu cartão fica guardado com segurança na operadora para as próximas cobranças de {{ app_name || "quem está cobrando" }}. Você pode pedir para remover quando quiser.
+                                </p>
                                 <div class="flex gap-2">
                                     <button
                                         type="button"
