@@ -8,6 +8,9 @@ use App\Http\Controllers\Platform\MedDisputesController;
 use App\Http\Controllers\Platform\PlatformProductsController;
 use App\Http\Controllers\Platform\TransactionsController;
 use App\Http\Controllers\Platform\UsersController;
+use App\Jobs\ImportMcpProductPackageJob;
+use App\Models\McpPlatformKey;
+use App\Models\McpProductImport;
 use App\Models\MedDispute;
 use App\Models\OpsAlert;
 use App\Models\Order;
@@ -24,6 +27,7 @@ use App\Services\Platform\PlatformAdminAlertCounts;
 use App\Services\Platform\PlatformDashboardAnalytics;
 use App\Services\Platform\PlatformTotpService;
 use App\Services\PlatformAuditService;
+use App\Services\ProductApprovalService;
 use App\Services\Withdrawal\WithdrawalPolicyService;
 use App\Services\WithdrawalPixReceiptService;
 use App\Support\MoneyDecimal;
@@ -32,8 +36,11 @@ use App\Support\PlatformDashboardPeriod;
 use App\Support\PlatformTransactionsListing;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
+use App\Support\NormalizedEmail;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Password;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Str;
 
 /**
  * MCP do administrador da plataforma: leitura de toda a operação e ações do painel
@@ -57,12 +64,98 @@ class McpPlatformService
 
     private const MAX_LIMIT = 50;
 
+    /** Fora do alcance da chave de agência: ações de dinheiro, KYC, MED e dados de saque. */
+    private const AGENCY_BLOCKED = [
+        'platform.preview_action',
+        'platform.confirm_action',
+        'platform.list_withdrawals',
+        'platform.list_med_disputes',
+    ];
+
+    private const SELLER_PREFIX = 'seller.';
+
+    /** Chave de integração (agência) em uso nesta requisição; null = admin logado por OAuth. */
+    private ?McpPlatformKey $key = null;
+
     public function __construct(
         private readonly McpPreviewStore $previews,
         private readonly McpPanelActionRunner $runner,
+        private readonly McpCatalogService $catalog,
+        private readonly McpMembersService $members,
+        private readonly ProductApprovalService $approval,
     ) {}
 
+    public function useKey(?McpPlatformKey $key): void
+    {
+        $this->key = $key;
+    }
+
+    /**
+     * Lista entregue ao cliente MCP. Com chave de agência: sem ações de dinheiro/KYC/MED e
+     * nomes só com [a-z0-9_] (a API da Anthropic não aceita ponto em nome de ferramenta).
+     *
+     * @return list<array<string, mixed>>
+     */
+    public function toolDefinitions(): array
+    {
+        $defs = array_merge($this->allDefinitions(), $this->agencyDefinitions());
+        if ($this->key === null) {
+            return $defs;
+        }
+
+        $out = [];
+        foreach ($defs as $def) {
+            if (in_array($def['name'], self::AGENCY_BLOCKED, true)) {
+                continue;
+            }
+            $def['name'] = $this->safeName($def['name']);
+            $out[] = $def;
+        }
+
+        return $out;
+    }
+
+    private function safeName(string $name): string
+    {
+        return str_replace('.', '_', $name);
+    }
+
+    /** Nome recebido (com "_" na chave de agência) → nome interno. */
+    private function resolveName(string $name): string
+    {
+        if ($this->key === null) {
+            return $name;
+        }
+        foreach (array_merge($this->allDefinitions(), $this->agencyDefinitions()) as $def) {
+            if ($this->safeName($def['name']) === $name || $def['name'] === $name) {
+                return $def['name'];
+            }
+        }
+
+        return $name;
+    }
+
+    public function agencyInstructions(): string
+    {
+        return ' Agência: platform.create_seller cria a conta do cliente (infoprodutor) e manda o e-mail para ele criar a senha; '
+            .'platform.import_product_package importa um zip com manifesto (produtos, preços, ofertas, order bumps, capas, PDFs e vídeos) '
+            .'para a conta e devolve import_id; acompanhe com platform.import_status. As ferramentas seller.* (catálogo e área de membros) '
+            .'agem dentro da conta indicada em tenant_id; produto criado por aqui já nasce aprovado.';
+    }
+
     public function instructions(): string
+    {
+        if ($this->key !== null) {
+            return 'Servidor MCP da plataforma BrasaPay, acesso de agência (somente leitura e criação; sem saque, reembolso, KYC ou MED). '
+                .'Leitura: platform_overview, platform_kpis, platform_list_orders, platform_get_order, platform_list_sellers, platform_get_seller, '
+                .'platform_list_pending_approvals, platform_payment_health.'
+                .str_replace('.', '_', $this->agencyInstructions());
+        }
+
+        return $this->adminInstructions().$this->agencyInstructions();
+    }
+
+    private function adminInstructions(): string
     {
         return 'Servidor MCP do administrador da plataforma BrasaPay. Leitura: platform.overview (pendências e números de hoje), '
             .'platform.kpis (GMV, taxas, líquido, meios de pagamento, top sellers por período), platform.list_orders e platform.get_order (vendas de todas as contas), '
@@ -76,7 +169,7 @@ class McpPlatformService
     /**
      * @return list<array<string, mixed>>
      */
-    public function toolDefinitions(): array
+    private function allDefinitions(): array
     {
         $period = [
             'type' => 'string',
@@ -205,7 +298,19 @@ class McpPlatformService
      */
     public function call(string $name, array $arguments, User $admin): array
     {
+        $name = $this->resolveName($name);
+        if ($this->key !== null && in_array($name, self::AGENCY_BLOCKED, true)) {
+            throw new McpCatalogException('A chave de agência não tem acesso a esta ferramenta.', 'forbidden');
+        }
+
+        if (str_starts_with($name, self::SELLER_PREFIX)) {
+            return $this->callSellerTool(substr($name, strlen(self::SELLER_PREFIX)), $arguments, $admin);
+        }
+
         return match ($name) {
+            'platform.create_seller' => $this->createSeller($arguments, $admin),
+            'platform.import_product_package' => $this->queueImport($arguments, $admin),
+            'platform.import_status' => $this->importStatus($arguments),
             'platform.overview' => $this->overview(),
             'platform.kpis' => $this->kpis($arguments),
             'platform.list_orders' => $this->listOrders($arguments),
@@ -220,6 +325,255 @@ class McpPlatformService
             'platform.confirm_action' => $this->confirmAction($arguments, $admin),
             default => throw new McpCatalogException('Ferramenta indisponível no MCP da plataforma.', 'unknown_tool'),
         };
+    }
+
+    // ---------------------------------------------------------------- agência
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    private function agencyDefinitions(): array
+    {
+        $defs = [
+            $this->tool('platform.create_seller', 'Cria a conta de um cliente (infoprodutor) e envia a ele o e-mail para criar a senha. A conta já sai liberada para vender; saque continua exigindo KYC, que o cliente faz no painel. Se o e-mail já for de um infoprodutor, devolve a conta existente.', [
+                'type' => 'object',
+                'properties' => [
+                    'name' => ['type' => 'string', 'description' => 'Nome do cliente.'],
+                    'email' => ['type' => 'string', 'description' => 'E-mail de login do cliente.'],
+                    'send_password_email' => ['type' => 'boolean', 'description' => 'Padrão: true.'],
+                ],
+                'required' => ['name', 'email'],
+                'additionalProperties' => false,
+            ]),
+            $this->tool('platform.import_product_package', 'Importa um pacote (zip) de produtos para a conta do cliente: cria produtos já aprovados, preços, ofertas, order bumps, capas e área de membros com PDFs e vídeos do zip. Roda em segundo plano e devolve import_id. '
+                .'package_url: link https do zip (ex.: link assinado do storage). manifest: opcional; sem ele, o zip precisa ter produto.json. '
+                .'Formato: {"produtos":[{"nome","preco","descricao","categoria","capa":"capa.jpg","ofertas":[{"nome","preco"}],"order_bumps":[{"produto":"nome de outro produto","titulo","chamada","descricao","preco"}],'
+                .'"area_membros":{"secoes":[{"titulo","modulos":[{"titulo","aulas":[{"titulo","arquivo":"modulo1/aula1.mp4"}|{"titulo","url","tipo":"video|link|pdf"}|{"titulo","texto"}]} ou {"titulo","pasta":"modulo1"}]}]}}]}.', [
+                    'type' => 'object',
+                    'properties' => [
+                        'tenant_id' => ['type' => 'integer', 'description' => 'Conta do cliente (user_id do infoprodutor).'],
+                        'package_url' => ['type' => 'string'],
+                        'manifest' => ['type' => 'object'],
+                    ],
+                    'required' => ['tenant_id', 'package_url'],
+                    'additionalProperties' => false,
+                ]),
+            $this->tool('platform.import_status', 'Situação de uma importação de pacote: etapa atual, produtos criados (ids e links de checkout), avisos e erro.', [
+                'type' => 'object',
+                'properties' => [
+                    'import_id' => ['type' => 'string'],
+                ],
+                'required' => ['import_id'],
+                'additionalProperties' => false,
+            ]),
+        ];
+
+        foreach (array_merge($this->catalog->toolDefinitions(), $this->members->toolDefinitions()) as $def) {
+            if (($def['name'] ?? '') === 'catalog.ping') {
+                continue;
+            }
+            $schema = is_array($def['inputSchema'] ?? null) ? $def['inputSchema'] : ['type' => 'object'];
+            $props = $schema['properties'] ?? [];
+            $props = $props instanceof \stdClass ? (array) $props : (is_array($props) ? $props : []);
+            $schema['properties'] = ['tenant_id' => ['type' => 'integer', 'description' => 'Conta do cliente (user_id do infoprodutor).']] + $props;
+            $schema['required'] = array_values(array_unique(array_merge(['tenant_id'], (array) ($schema['required'] ?? []))));
+
+            $defs[] = [
+                'name' => self::SELLER_PREFIX.$def['name'],
+                'description' => '[Conta do cliente] '.(string) ($def['description'] ?? ''),
+                'inputSchema' => $schema,
+            ];
+        }
+
+        return $defs;
+    }
+
+    /**
+     * Ferramenta de catálogo/membros executada dentro da conta do cliente. Produto que essa
+     * chamada deixar pendente de aprovação é aprovado pela plataforma (o admin dono do acesso).
+     *
+     * @param  array<string, mixed>  $arguments
+     * @return array<string, mixed>
+     */
+    private function callSellerTool(string $tool, array $arguments, User $admin): array
+    {
+        $tenantId = (int) ($arguments['tenant_id'] ?? 0);
+        $seller = $this->findSeller($tenantId);
+        $tenantId = (int) ($seller->tenant_id ?? $seller->id);
+        unset($arguments['tenant_id']);
+
+        $isCatalog = str_starts_with($tool, 'catalog.');
+        $pendingBefore = $isCatalog ? $this->pendingProductIds($tenantId) : [];
+
+        $result = $isCatalog
+            ? $this->catalog->call($tool, $arguments, $tenantId)
+            : $this->members->call($tool, $arguments, $tenantId);
+
+        if ($isCatalog) {
+            $approved = [];
+            foreach (array_diff($this->pendingProductIds($tenantId), $pendingBefore) as $productId) {
+                $product = Product::query()->find($productId);
+                if ($product === null) {
+                    continue;
+                }
+                try {
+                    $this->approval->approve($product, $admin, $this->auditRequest($admin));
+                    $approved[] = $product->id;
+                } catch (\InvalidArgumentException) {
+                    // já aprovado ou recusado: segue o estado atual
+                }
+            }
+            if ($approved !== []) {
+                $result['aprovados_pela_plataforma'] = $approved;
+            }
+        }
+
+        PlatformAuditService::log('platform.mcp.seller_tool', [
+            'tool' => $tool,
+            'tenant_id' => $tenantId,
+            'key_id' => $this->key?->id,
+        ], $this->auditRequest($admin));
+
+        return $result;
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function pendingProductIds(int $tenantId): array
+    {
+        return Product::query()->where('tenant_id', $tenantId)
+            ->where('approval_status', Product::APPROVAL_PENDING)
+            ->pluck('id')->map(fn ($id) => (string) $id)->all();
+    }
+
+    /**
+     * @param  array<string, mixed>  $arguments
+     * @return array<string, mixed>
+     */
+    private function createSeller(array $arguments, User $admin): array
+    {
+        $name = $this->str($arguments, 'name');
+        $email = NormalizedEmail::normalize((string) ($arguments['email'] ?? ''));
+        if ($name === null || ! filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            throw new McpCatalogException('Informe name e um email válido.', 'invalid_params');
+        }
+
+        $existing = User::query()->where('email', $email)->first();
+        if ($existing !== null) {
+            if ($existing->role !== User::ROLE_INFOPRODUTOR) {
+                throw new McpCatalogException('Este e-mail já pertence a outro tipo de conta.', 'email_in_use');
+            }
+
+            return $this->sellerCreatedPayload($existing, alreadyExisted: true, emailSent: false);
+        }
+
+        $password = Str::password(24);
+        $created = $this->runner->run($admin, '/plataforma/usuarios', [
+            'name' => $name,
+            'email' => $email,
+            'password' => $password,
+            'password_confirmation' => $password,
+        ], fn (Request $r) => app()->call([app(UsersController::class), 'store'], ['request' => $r]));
+        if (! $created['ok']) {
+            throw new McpCatalogException($created['message'], 'create_failed');
+        }
+
+        $user = User::query()->where('email', $email)->firstOrFail();
+
+        // Criada pela plataforma: já pode vender. Saque segue exigindo KYC.
+        if ((string) ($user->account_status ?? '') === 'pending') {
+            $approved = $this->runner->run($admin, '/plataforma/usuarios/'.$user->id.'/aprovacao-basica', [],
+                fn (Request $r) => app()->call([app(UsersController::class), 'approveBasic'], ['request' => $r, 'user' => $user]));
+            if (! $approved['ok']) {
+                throw new McpCatalogException('Conta criada, mas não foi aprovada para vender: '.$approved['message'], 'approve_failed');
+            }
+        }
+
+        $emailSent = false;
+        if (($arguments['send_password_email'] ?? true) !== false) {
+            try {
+                $emailSent = Password::sendResetLink(['email' => $email]) === Password::RESET_LINK_SENT;
+            } catch (\Throwable $e) {
+                // A conta já existe; falha de e-mail não desfaz o cadastro. O cliente pode usar "Esqueci a senha".
+                report($e);
+            }
+        }
+
+        PlatformAuditService::log('platform.mcp.seller_created', [
+            'user_id' => $user->id,
+            'key_id' => $this->key?->id,
+            'email_sent' => $emailSent,
+        ], $this->auditRequest($admin));
+
+        return $this->sellerCreatedPayload($user->fresh(), alreadyExisted: false, emailSent: $emailSent);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function sellerCreatedPayload(User $user, bool $alreadyExisted, bool $emailSent): array
+    {
+        return [
+            'user_id' => $user->id,
+            'tenant_id' => (int) ($user->tenant_id ?? $user->id),
+            'name' => $user->name,
+            'email' => $user->email,
+            'account_status' => $user->account_status,
+            'kyc_status' => $user->kyc_status,
+            'ja_existia' => $alreadyExisted,
+            'email_de_senha_enviado' => $emailSent,
+            'login_url' => url('/login'),
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $arguments
+     * @return array<string, mixed>
+     */
+    private function queueImport(array $arguments, User $admin): array
+    {
+        $seller = $this->findSeller((int) ($arguments['tenant_id'] ?? 0));
+        $url = $this->str($arguments, 'package_url') ?? '';
+        McpProductPackageImporter::assertPublicHttpsUrl($url);
+        $manifest = is_array($arguments['manifest'] ?? null) ? $arguments['manifest'] : null;
+
+        $import = McpProductImport::query()->create([
+            'uuid' => (string) Str::uuid(),
+            'tenant_id' => (int) ($seller->tenant_id ?? $seller->id),
+            'platform_key_id' => $this->key?->id,
+            'actor_user_id' => $admin->id,
+            'source_url' => $url,
+            'manifest' => $manifest,
+            'status' => McpProductImport::STATUS_QUEUED,
+            'progress' => ['etapa' => 'na fila'],
+        ]);
+
+        PlatformAuditService::log('platform.mcp.import_queued', [
+            'import_id' => $import->uuid,
+            'tenant_id' => $import->tenant_id,
+            'key_id' => $this->key?->id,
+        ], $this->auditRequest($admin));
+
+        ImportMcpProductPackageJob::dispatch($import->id);
+
+        return $import->fresh()->toPublicArray() + [
+            'proximo_passo' => 'Acompanhe com '.($this->key !== null ? 'platform_import_status' : 'platform.import_status').' usando o import_id.',
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $arguments
+     * @return array<string, mixed>
+     */
+    private function importStatus(array $arguments): array
+    {
+        $import = McpProductImport::query()->where('uuid', $this->str($arguments, 'import_id') ?? '')->first();
+        if ($import === null) {
+            throw new McpCatalogException('Importação não encontrada.', 'not_found');
+        }
+
+        return $import->toPublicArray();
     }
 
     // ---------------------------------------------------------------- leitura
