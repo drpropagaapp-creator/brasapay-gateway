@@ -456,6 +456,12 @@ const paginationLinks = computed(() => props.withdrawals?.links ?? []);
                                             Falta {{ formatBRL(w.funding.missing) }} na conta de saque
                                         </span>
                                         <span
+                                            v-else-if="w.status === 'pending' && w.funding && w.funding.status === 'sent'"
+                                            class="text-[10px] font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400"
+                                        >
+                                            Valor já saiu do saldo da adquirente
+                                        </span>
+                                        <span
                                             v-if="withdrawalAwaitingGateway(w)"
                                             class="text-[10px] font-medium uppercase tracking-wide text-sky-600 dark:text-sky-400"
                                         >

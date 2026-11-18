@@ -19,6 +19,14 @@ use Illuminate\Support\Facades\Schema;
 final class PayoutFundingNeed
 {
     /**
+     * Adquirentes que tiram o valor (líquido + taxa) do saldo assim que aceitam o saque,
+     * antes de o PIX ser liquidado.
+     *
+     * @var list<string>
+     */
+    private const DEBITED_ON_ACCEPT = ['assetpay'];
+
+    /**
      * @param  list<array<string, mixed>>  $acquirerWallets  linhas de AcquirerWalletBalanceService::list()
      * @return array{
      *     pending_count: int,
@@ -74,6 +82,15 @@ final class PayoutFundingNeed
                 $slug = $activeSlug;
             }
             if ($slug === '') {
+                continue;
+            }
+
+            // Já aceito pela adquirente que debita o saldo na hora do pedido (AssetPay: o valor
+            // sai do saldo já em PENDING). Não precisa de mais saldo: contar de novo geraria
+            // um "falta" fantasma e travaria a cobertura dos próximos saques.
+            if (in_array($slug, self::DEBITED_ON_ACCEPT, true) && trim((string) $w->payout_external_id) !== '') {
+                $items[(int) $w->id] = ['required' => 0.0, 'status' => 'sent', 'missing' => 0.0];
+
                 continue;
             }
 
