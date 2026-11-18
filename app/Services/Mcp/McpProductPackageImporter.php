@@ -22,7 +22,7 @@ use ZipArchive;
  * catálogo/membros (mesmas validações). Arquivos do zip (PDF, vídeo, imagem) vão para o
  * storage da plataforma; o produto nasce aprovado (criado pela própria plataforma).
  *
- * Formato do manifesto: docs/mcp-agencia-importacao.md.
+ * Formato do manifesto: docs/llm/mcp-agencia-importacao.md.
  */
 class McpProductPackageImporter
 {
