@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Mcp;
 use App\Http\Controllers\Controller;
 use App\Models\McpCredential;
 use App\Models\McpOauthAccessToken;
+use App\Models\McpPlatformKey;
 use App\Models\User;
 use App\Services\Mcp\McpCatalogException;
 use App\Services\Mcp\McpCatalogService;
@@ -71,9 +72,17 @@ class McpServerController extends Controller
             ], HttpResponse::HTTP_METHOD_NOT_ALLOWED));
         }
 
-        $platformToken = $this->resolvePlatformToken($plain);
-        if ($platformToken !== null) {
-            $admin = $this->oauth->platformUserForToken($platformToken);
+        $platformKey = str_starts_with($plain, McpPlatformKey::TOKEN_PREFIX) ? McpPlatformKey::findActiveByPlain($plain) : null;
+        $platformToken = $platformKey === null ? $this->resolvePlatformToken($plain) : null;
+
+        if (str_starts_with($plain, McpPlatformKey::TOKEN_PREFIX) && $platformKey === null) {
+            return $this->unauthorized('Chave de integração inválida ou revogada.');
+        }
+
+        if ($platformKey !== null || $platformToken !== null) {
+            $admin = $platformKey !== null
+                ? $this->platformKeyAdmin($platformKey)
+                : $this->oauth->platformUserForToken($platformToken);
             if ($admin === null) {
                 return $this->unauthorized('Acesso de plataforma revogado.');
             }
@@ -82,8 +91,10 @@ class McpServerController extends Controller
             if (! $license->isDisabled() && ! $license->isLicenseValid()) {
                 return $this->withCors(response()->json(['error' => 'Painel da plataforma indisponível.'], HttpResponse::HTTP_NOT_FOUND));
             }
-            $platformToken->touchLastUsed();
+            $platformKey?->touchLastUsed();
+            $platformToken?->touchLastUsed();
             $this->platformAdmin = $admin;
+            $this->platform->useKey($platformKey);
         } else {
             $tenantId = $this->resolveTenantId($plain);
             if ($tenantId === null) {
@@ -351,6 +362,14 @@ class McpServerController extends Controller
         $oauthToken->touchLastUsed();
 
         return (int) $oauthToken->tenant_id;
+    }
+
+    /** A chave age em nome do admin que a criou, enquanto ele continuar admin da plataforma. */
+    private function platformKeyAdmin(McpPlatformKey $key): ?User
+    {
+        $user = User::query()->find((int) $key->created_by_user_id);
+
+        return $user instanceof User && $user->isPlatformAdmin() ? $user : null;
     }
 
     private function resolvePlatformToken(string $plain): ?McpOauthAccessToken
