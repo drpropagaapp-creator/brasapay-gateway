@@ -4,14 +4,19 @@ namespace App\Http\Controllers\Mcp;
 
 use App\Http\Controllers\Controller;
 use App\Models\McpCredential;
+use App\Models\McpOauthAccessToken;
+use App\Models\User;
 use App\Services\Mcp\McpCatalogException;
 use App\Services\Mcp\McpCatalogService;
 use App\Services\Mcp\McpCredentialService;
 use App\Services\Mcp\McpFinanceService;
 use App\Services\Mcp\McpMembersService;
 use App\Services\Mcp\McpOauthService;
+use App\Services\Mcp\McpPlatformService;
 use App\Services\Mcp\McpSalesService;
+use App\Services\Mcp\McpSellerMoneyService;
 use App\Services\SellerIntegrationVisibility;
+use App\Services\Stacker\LicenseService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
@@ -31,6 +36,13 @@ class McpServerController extends Controller
 
     private ?int $tenantId = null;
 
+    /** Preenchido quando o token é de admin da plataforma (OAuth audience "platform"). */
+    private ?User $platformAdmin = null;
+
+    private bool $oauthTokenResolved = false;
+
+    private ?McpOauthAccessToken $resolvedOauthToken = null;
+
     public function __construct(
         private readonly McpCredentialService $credentials,
         private readonly McpOauthService $oauth,
@@ -38,6 +50,8 @@ class McpServerController extends Controller
         private readonly McpSalesService $sales,
         private readonly McpMembersService $members,
         private readonly McpFinanceService $finance,
+        private readonly McpPlatformService $platform,
+        private readonly McpSellerMoneyService $sellerMoney,
     ) {}
 
     public function handle(Request $request): JsonResponse|Response
@@ -57,18 +71,33 @@ class McpServerController extends Controller
             ], HttpResponse::HTTP_METHOD_NOT_ALLOWED));
         }
 
-        $tenantId = $this->resolveTenantId($plain);
-        if ($tenantId === null) {
-            return $this->unauthorized('Token MCP inválido ou revogado.');
-        }
+        $platformToken = $this->resolvePlatformToken($plain);
+        if ($platformToken !== null) {
+            $admin = $this->oauth->platformUserForToken($platformToken);
+            if ($admin === null) {
+                return $this->unauthorized('Acesso de plataforma revogado.');
+            }
+            // Mesma trava do painel /plataforma (middleware stacker.license).
+            $license = app(LicenseService::class);
+            if (! $license->isDisabled() && ! $license->isLicenseValid()) {
+                return $this->withCors(response()->json(['error' => 'Painel da plataforma indisponível.'], HttpResponse::HTTP_NOT_FOUND));
+            }
+            $platformToken->touchLastUsed();
+            $this->platformAdmin = $admin;
+        } else {
+            $tenantId = $this->resolveTenantId($plain);
+            if ($tenantId === null) {
+                return $this->unauthorized('Token MCP inválido ou revogado.');
+            }
 
-        if (! SellerIntegrationVisibility::effectiveForTenant(SellerIntegrationVisibility::MCP, $tenantId)) {
-            return $this->withCors(response()->json([
-                'error' => 'MCP não está habilitado para esta conta.',
-            ], HttpResponse::HTTP_FORBIDDEN));
-        }
+            if (! SellerIntegrationVisibility::effectiveForTenant(SellerIntegrationVisibility::MCP, $tenantId)) {
+                return $this->withCors(response()->json([
+                    'error' => 'MCP não está habilitado para esta conta.',
+                ], HttpResponse::HTTP_FORBIDDEN));
+            }
 
-        $this->tenantId = $tenantId;
+            $this->tenantId = $tenantId;
+        }
 
         $payload = $request->json()->all();
         if ($payload === []) {
@@ -149,6 +178,20 @@ class McpServerController extends Controller
         $requested = is_string($params['protocolVersion'] ?? null) ? $params['protocolVersion'] : self::PROTOCOL_VERSION;
         $version = in_array($requested, self::SUPPORTED_PROTOCOLS, true) ? $requested : self::PROTOCOL_VERSION;
 
+        if ($this->platformAdmin !== null) {
+            return [
+                'protocolVersion' => $version,
+                'capabilities' => [
+                    'tools' => new \stdClass,
+                ],
+                'serverInfo' => [
+                    'name' => 'brasapay-plataforma',
+                    'version' => '1.0.0',
+                ],
+                'instructions' => $this->platform->instructions(),
+            ];
+        }
+
         return [
             'protocolVersion' => $version,
             'capabilities' => [
@@ -158,7 +201,7 @@ class McpServerController extends Controller
                 'name' => 'getfy-catalog',
                 'version' => '0.4.0',
             ],
-            'instructions' => 'Servidor MCP deste tenant. Catálogo: catalog.list_products e catalog.get_product; escritas de catálogo passam por catalog.preview_plan + catalog.apply_plan. Área de membros: members.get_structure, CRUD de seções/módulos/aulas, turmas, comentários e config (sem domínio/senha/VAPID); exclusões e revogação usam members.apply_plan. Alunos: students.list, students.grant, students.revoke, students.get_progress. Vendas: sales.summary, sales.list_orders e sales.get_order (somente leitura, sem CPF/telefone/e-mail/IP). Saldo: finance.get_balance (somente leitura). Não há tools de reembolso, cobrança, saque, pixel, importação em massa, push ou checkout_config bruto.',
+            'instructions' => 'Servidor MCP deste tenant. Catálogo: catalog.list_products e catalog.get_product; escritas de catálogo passam por catalog.preview_plan + catalog.apply_plan. Área de membros: members.get_structure, CRUD de seções/módulos/aulas, turmas, comentários e config (sem domínio/senha/VAPID); exclusões e revogação usam members.apply_plan. Alunos: students.list, students.grant, students.revoke, students.get_progress. Vendas: sales.summary, sales.list_orders e sales.get_order (somente leitura, sem CPF/telefone/e-mail/IP). Saldo: finance.get_balance e finance.list_withdrawals. MED: med.list_disputes. Saque e reembolso são em duas etapas: finance.preview_withdrawal / sales.preview_refund devolvem um resumo e um preview_id; mostre o resumo ao dono da conta e só chame finance.confirm_withdrawal / sales.confirm_refund depois que ele confirmar e informar o código 2FA. Nunca confirme por conta própria. Não há tools de cobrança, pixel, importação em massa, push ou checkout_config bruto.',
         ];
     }
 
@@ -167,11 +210,16 @@ class McpServerController extends Controller
      */
     private function tools(): array
     {
+        if ($this->platformAdmin !== null) {
+            return $this->platform->toolDefinitions();
+        }
+
         return array_merge(
             $this->catalog->toolDefinitions(),
             $this->sales->toolDefinitions(),
             $this->members->toolDefinitions(),
             $this->finance->toolDefinitions(),
+            $this->sellerMoney->toolDefinitions(),
         );
     }
 
@@ -183,6 +231,11 @@ class McpServerController extends Controller
     {
         $name = is_string($params['name'] ?? null) ? $params['name'] : '';
         $arguments = is_array($params['arguments'] ?? null) ? $params['arguments'] : [];
+
+        if ($this->platformAdmin !== null) {
+            return $this->callPlatformTool($id, $name, $arguments, $this->platformAdmin);
+        }
+
         $tenantId = (int) ($this->tenantId ?? 0);
         if ($tenantId < 1 || $name === '') {
             return $this->toolResult($id, [
@@ -194,11 +247,43 @@ class McpServerController extends Controller
 
         try {
             $payload = match (true) {
+                $this->sellerMoney->handles($name) => $this->sellerMoney->call($name, $arguments, $tenantId),
                 str_starts_with($name, 'sales.') => $this->sales->call($name, $arguments, $tenantId),
                 str_starts_with($name, 'members.') || str_starts_with($name, 'students.') => $this->members->call($name, $arguments, $tenantId),
                 str_starts_with($name, 'finance.') => $this->finance->call($name, $arguments, $tenantId),
                 default => $this->catalog->call($name, $arguments, $tenantId),
             };
+        } catch (McpCatalogException $e) {
+            return $this->toolResult($id, $e->toPayload(), isError: true);
+        } catch (\Throwable $e) {
+            report($e);
+
+            return $this->toolResult($id, [
+                'error' => true,
+                'code' => 'internal',
+                'message' => 'Falha ao executar a ferramenta MCP.',
+            ], isError: true);
+        }
+
+        return $this->toolResult($id, $payload);
+    }
+
+    /**
+     * @param  array<string, mixed>  $arguments
+     * @return array<string, mixed>
+     */
+    private function callPlatformTool(mixed $id, string $name, array $arguments, User $admin): array
+    {
+        if ($name === '') {
+            return $this->toolResult($id, [
+                'error' => true,
+                'code' => 'invalid_request',
+                'message' => 'Chamada de ferramenta inválida.',
+            ], isError: true);
+        }
+
+        try {
+            $payload = $this->platform->call($name, $arguments, $admin);
         } catch (McpCatalogException $e) {
             return $this->toolResult($id, $e->toPayload(), isError: true);
         } catch (\Throwable $e) {
@@ -259,13 +344,36 @@ class McpServerController extends Controller
             return (int) $credential->tenant_id;
         }
 
-        $oauthToken = $this->oauth->findActiveAccessToken($plain);
-        if ($oauthToken === null) {
+        $oauthToken = $this->oauthToken($plain);
+        if ($oauthToken === null || $oauthToken->isPlatform()) {
             return null;
         }
         $oauthToken->touchLastUsed();
 
         return (int) $oauthToken->tenant_id;
+    }
+
+    private function resolvePlatformToken(string $plain): ?McpOauthAccessToken
+    {
+        if (str_starts_with($plain, McpCredential::TOKEN_PREFIX)) {
+            return null;
+        }
+
+        $token = $this->oauthToken($plain);
+
+        return $token !== null && $token->isPlatform() ? $token : null;
+    }
+
+    /** Uma busca só por requisição: a verificação do hash é cara. */
+    private function oauthToken(string $plain): ?McpOauthAccessToken
+    {
+        if ($this->oauthTokenResolved) {
+            return $this->resolvedOauthToken;
+        }
+        $this->oauthTokenResolved = true;
+        $this->resolvedOauthToken = $this->oauth->findActiveAccessToken($plain);
+
+        return $this->resolvedOauthToken;
     }
 
     private function unauthorized(string $message): JsonResponse

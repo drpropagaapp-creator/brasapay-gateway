@@ -25,7 +25,13 @@ class LoginController extends Controller
 
     public function showLoginForm(Request $request): Response
     {
-        $request->session()->forget('url.intended');
+        // Só sobrevive o retorno ao consentimento MCP (/oauth/authorize); qualquer outro intended é descartado.
+        $oauthIntended = $this->mcpOauthIntendedPath($request);
+        if ($oauthIntended === null) {
+            $request->session()->forget('url.intended');
+        } else {
+            $request->session()->put('url.intended', $oauthIntended);
+        }
 
         return Inertia::render('Platform/Auth/Login', [
             'login_turnstile' => LoginTurnstileSettings::publicConfig(),
@@ -56,6 +62,8 @@ class LoginController extends Controller
                 ])->onlyInput('email');
             }
 
+            $target = $this->mcpOauthIntendedPath($request) ?? route('plataforma.dashboard');
+
             if (PlatformTotpService::requiresLoginChallenge($user)) {
                 return $this->redirectToLoginTotpChallenge(
                     $request,
@@ -63,7 +71,7 @@ class LoginController extends Controller
                     (bool) $request->boolean('remember'),
                     'platform',
                     'plataforma.login.two-factor',
-                    route('plataforma.dashboard'),
+                    $target,
                 );
             }
 
@@ -73,7 +81,7 @@ class LoginController extends Controller
                 'email' => $user->email,
             ], $request);
 
-            return $this->inertiaOrRedirectAfterLogin($request, route('plataforma.dashboard'));
+            return $this->inertiaOrRedirectAfterLogin($request, $target);
         }
 
         return back()->withErrors([
@@ -92,5 +100,32 @@ class LoginController extends Controller
         $this->clearAuthSessionCookies();
 
         return redirect()->to('/plataforma/login');
+    }
+
+    /**
+     * Caminho relativo de /oauth/authorize guardado no url.intended (conexão MCP), ou null.
+     * Devolve só path+query: nunca redireciona para outro host.
+     */
+    private function mcpOauthIntendedPath(Request $request): ?string
+    {
+        $intended = $request->session()->get('url.intended');
+        if (! is_string($intended) || $intended === '') {
+            return null;
+        }
+
+        $path = $intended;
+        if (str_starts_with($intended, 'http://') || str_starts_with($intended, 'https://')) {
+            $parts = parse_url($intended);
+            if (! is_array($parts)) {
+                return null;
+            }
+            $path = ($parts['path'] ?? '').(isset($parts['query']) ? '?'.$parts['query'] : '');
+        }
+
+        if ($path === '' || str_starts_with($path, '//') || str_contains($path, '..')) {
+            return null;
+        }
+
+        return str_starts_with($path, '/oauth/authorize') ? $path : null;
     }
 }

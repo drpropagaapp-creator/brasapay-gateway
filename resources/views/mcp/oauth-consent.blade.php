@@ -21,8 +21,13 @@
     <div class="wrap">
         <div class="card">
             <h1>Conectar MCP</h1>
-            <p><strong>{{ $clientName }}</strong> quer acessar o catálogo, a área de membros e o saldo disponível desta conta.</p>
-            <p>Isso não troca o token do Claude. O ChatGPT recebe um token próprio. Não inclui cobrança, saque, estorno nem chaves de pagamento.</p>
+            @if (! empty($platform))
+            <p><strong>{{ $clientName }}</strong> quer acesso de <strong>administrador da plataforma</strong>: indicadores, vendas e vendedores de todas as contas, saques, aprovações, KYC e disputas MED.</p>
+            <p>Ações que mexem em dinheiro ou em contas (aprovar ou recusar saque, aprovar produto ou KYC) só acontecem em duas etapas: o assistente mostra a prévia e só executa com a sua confirmação. Tudo fica na auditoria da plataforma. O acesso expira se ficar 7 dias sem uso.</p>
+            @else
+            <p><strong>{{ $clientName }}</strong> quer acessar o catálogo, a área de membros, as vendas e o saldo desta conta.</p>
+            <p>Isso não troca o token do Claude. O ChatGPT recebe um token próprio. Não inclui chaves de pagamento.</p>
+            @endif
             <p>Servidor: <code>{{ $resource }}</code></p>
             <form method="post" action="{{ url('/oauth/authorize') }}">
                 @csrf
