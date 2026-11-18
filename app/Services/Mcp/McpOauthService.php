@@ -20,6 +20,8 @@ class McpOauthService
 
     private const REFRESH_TTL_DAYS = 30;
 
+    private const PLATFORM_REFRESH_TTL_DAYS = 7;
+
     public function issuer(): string
     {
         return rtrim((string) config('app.url'), '/');
@@ -201,14 +203,47 @@ class McpOauthService
     }
 
     /**
+     * Quem está logado decide o tipo de acesso: admin da plataforma (sem tenant e sem
+     * credencial de Integrações) ou infoprodutor (regras antigas).
+     *
+     * @return array{audience: string, blocked: ?string}
+     */
+    public function audienceFor(User $user): array
+    {
+        if ($user->isPlatformAdmin()) {
+            return ['audience' => McpOauthAccessToken::AUDIENCE_PLATFORM, 'blocked' => null];
+        }
+
+        return [
+            'audience' => McpOauthAccessToken::AUDIENCE_SELLER,
+            'blocked' => $this->sellerCanAuthorize($user),
+        ];
+    }
+
+    /**
+     * Token de plataforma só vale enquanto o usuário continuar admin da plataforma.
+     */
+    public function platformUserForToken(McpOauthAccessToken $token): ?User
+    {
+        if (! $token->isPlatform() || $token->user_id === null) {
+            return null;
+        }
+
+        $user = User::query()->find((int) $token->user_id);
+
+        return $user instanceof User && $user->isPlatformAdmin() ? $user : null;
+    }
+
+    /**
      * @param  array<string, string>  $params
      */
-    public function issueAuthorizationCode(int $tenantId, int $userId, array $params): string
+    public function issueAuthorizationCode(int $tenantId, int $userId, array $params, string $audience = McpOauthAccessToken::AUDIENCE_SELLER): string
     {
         $code = Str::random(48);
         Cache::put($this->codeCacheKey($code), [
             'tenant_id' => $tenantId,
             'user_id' => $userId,
+            'audience' => $audience,
             'client_id' => $params['client_id'],
             'redirect_uri' => $params['redirect_uri'],
             'code_challenge' => $params['code_challenge'],
@@ -253,7 +288,16 @@ class McpOauthService
             throw new McpOauthException('invalid_grant', 'resource não corresponde ao código.');
         }
 
-        return $this->issueTokens((int) $payload['tenant_id'], $clientId);
+        $audience = ($payload['audience'] ?? '') === McpOauthAccessToken::AUDIENCE_PLATFORM
+            ? McpOauthAccessToken::AUDIENCE_PLATFORM
+            : McpOauthAccessToken::AUDIENCE_SELLER;
+
+        return $this->issueTokens(
+            (int) $payload['tenant_id'],
+            $clientId,
+            isset($payload['user_id']) ? (int) $payload['user_id'] : null,
+            $audience,
+        );
     }
 
     /**
@@ -273,6 +317,12 @@ class McpOauthService
 
         if ($row === null || $row->isRefreshExpired() || ! $row->verifyRefresh($refreshPlain)) {
             throw new McpOauthException('invalid_grant', 'refresh_token inválido ou expirado.');
+        }
+
+        if ($row->isPlatform() && $this->platformUserForToken($row) === null) {
+            $row->delete();
+
+            throw new McpOauthException('invalid_grant', 'Acesso de plataforma revogado.');
         }
 
         return $this->rotateTokens($row);
@@ -301,13 +351,15 @@ class McpOauthService
     /**
      * @return array<string, mixed>
      */
-    private function issueTokens(int $tenantId, string $clientId): array
+    private function issueTokens(int $tenantId, string $clientId, ?int $userId = null, string $audience = McpOauthAccessToken::AUDIENCE_SELLER): array
     {
         $access = McpOauthAccessToken::issueAccessParts();
         $refresh = McpOauthAccessToken::issueRefreshParts();
 
         McpOauthAccessToken::query()->create([
             'tenant_id' => $tenantId,
+            'user_id' => $userId,
+            'audience' => $audience,
             'client_id' => $clientId,
             'public_id' => $access['public_id'],
             'token_hash' => McpOauthAccessToken::hashToken($access['plain']),
@@ -315,7 +367,7 @@ class McpOauthService
             'refresh_public_id' => $refresh['public_id'],
             'refresh_hash' => McpOauthAccessToken::hashToken($refresh['plain']),
             'expires_at' => now()->addHours(self::ACCESS_TTL_HOURS),
-            'refresh_expires_at' => now()->addDays(self::REFRESH_TTL_DAYS),
+            'refresh_expires_at' => now()->addDays($this->refreshTtlDays($audience)),
         ]);
 
         return $this->tokenResponse($access['plain'], $refresh['plain']);
@@ -336,11 +388,19 @@ class McpOauthService
             'refresh_public_id' => $refresh['public_id'],
             'refresh_hash' => McpOauthAccessToken::hashToken($refresh['plain']),
             'expires_at' => now()->addHours(self::ACCESS_TTL_HOURS),
-            'refresh_expires_at' => now()->addDays(self::REFRESH_TTL_DAYS),
+            'refresh_expires_at' => now()->addDays($this->refreshTtlDays((string) $row->audience)),
             'last_used_at' => null,
         ])->save();
 
         return $this->tokenResponse($access['plain'], $refresh['plain']);
+    }
+
+    /** Admin da plataforma: refresh curto, para o acesso total não ficar aberto por um mês. */
+    private function refreshTtlDays(string $audience): int
+    {
+        return $audience === McpOauthAccessToken::AUDIENCE_PLATFORM
+            ? self::PLATFORM_REFRESH_TTL_DAYS
+            : self::REFRESH_TTL_DAYS;
     }
 
     /**

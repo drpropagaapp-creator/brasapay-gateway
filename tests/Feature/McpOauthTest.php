@@ -189,7 +189,7 @@ class McpOauthTest extends TestCase
             'state' => 'after-login',
         ]);
 
-        $this->get('/oauth/authorize?'.$qs)->assertRedirect('/login');
+        $this->get('/oauth/authorize?'.$qs)->assertOk()->assertSee('Sou infoprodutor')->assertSee('/plataforma/login');
         $this->get('/login')->assertOk();
         $login = $this->post('/login', [
             'email' => $seller->email,

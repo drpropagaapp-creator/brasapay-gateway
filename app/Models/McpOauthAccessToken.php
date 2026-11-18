@@ -11,8 +11,14 @@ class McpOauthAccessToken extends Model
 
     public const REFRESH_PREFIX = 'mcp_rt_';
 
+    public const AUDIENCE_SELLER = 'seller';
+
+    public const AUDIENCE_PLATFORM = 'platform';
+
     protected $fillable = [
         'tenant_id',
+        'user_id',
+        'audience',
         'client_id',
         'public_id',
         'token_hash',
@@ -117,6 +123,11 @@ class McpOauthAccessToken extends Model
         return is_string($this->refresh_hash)
             && $this->refresh_hash !== ''
             && password_verify($plain, $this->refresh_hash);
+    }
+
+    public function isPlatform(): bool
+    {
+        return $this->audience === self::AUDIENCE_PLATFORM;
     }
 
     public function touchLastUsed(): void

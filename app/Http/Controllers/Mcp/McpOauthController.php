@@ -3,9 +3,11 @@
 namespace App\Http\Controllers\Mcp;
 
 use App\Http\Controllers\Controller;
+use App\Models\McpOauthAccessToken;
 use App\Models\User;
 use App\Services\Mcp\McpOauthException;
 use App\Services\Mcp\McpOauthService;
+use App\Services\PlatformAuditService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -75,19 +77,26 @@ class McpOauthController extends Controller
 
         $user = $request->user();
         if (! $user instanceof User) {
-            return redirect()->guest(url('/login'));
+            // Infoprodutor entra em /login; admin da plataforma em /plataforma/login (com 2FA).
+            // Os dois logins devolvem para cá pelo url.intended.
+            $request->session()->put('url.intended', $request->fullUrl());
+
+            return view('mcp.oauth-login', [
+                'clientName' => $params['client_name'],
+            ]);
         }
 
-        $blocked = $this->oauth->sellerCanAuthorize($user);
-        if ($blocked !== null) {
+        $access = $this->oauth->audienceFor($user);
+        if ($access['blocked'] !== null) {
             return response()->view('mcp.oauth-error', [
-                'message' => $blocked,
+                'message' => $access['blocked'],
             ], HttpResponse::HTTP_FORBIDDEN);
         }
 
         return view('mcp.oauth-consent', [
             'clientName' => $params['client_name'],
             'resource' => $this->oauth->resourceUrl(),
+            'platform' => $access['audience'] === McpOauthAccessToken::AUDIENCE_PLATFORM,
         ]);
     }
 
@@ -105,12 +114,13 @@ class McpOauthController extends Controller
             return redirect()->guest(url('/login'));
         }
 
-        $blocked = $this->oauth->sellerCanAuthorize($user);
-        if ($blocked !== null) {
+        $access = $this->oauth->audienceFor($user);
+        if ($access['blocked'] !== null) {
             return response()->view('mcp.oauth-error', [
-                'message' => $blocked,
+                'message' => $access['blocked'],
             ], HttpResponse::HTTP_FORBIDDEN);
         }
+        $platform = $access['audience'] === McpOauthAccessToken::AUDIENCE_PLATFORM;
 
         $decision = (string) $request->input('decision', '');
         $state = is_string($pending['state'] ?? null) ? $pending['state'] : '';
@@ -123,11 +133,19 @@ class McpOauthController extends Controller
         }
 
         $code = $this->oauth->issueAuthorizationCode(
-            (int) $user->tenant_id,
+            $platform ? 0 : (int) $user->tenant_id,
             (int) $user->id,
             $pending,
+            $access['audience'],
         );
         $request->session()->forget('mcp_oauth.pending');
+
+        if ($platform) {
+            PlatformAuditService::log('platform.mcp.authorized', [
+                'client_id' => (string) $pending['client_id'],
+                'client_name' => (string) ($pending['client_name'] ?? ''),
+            ], $request);
+        }
 
         return redirect()->away($this->appendQuery($redirectUri, [
             'code' => $code,
