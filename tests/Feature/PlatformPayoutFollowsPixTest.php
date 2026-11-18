@@ -14,8 +14,19 @@ class PlatformPayoutFollowsPixTest extends TestCase
         parent::setUp();
         GatewayCredential::query()->delete();
         $this->connect('cajupay');
-        $this->connect('assetpay', ['secret_key' => 'sk', 'public_key' => 'pk']);
+        $this->connect('assetpay', [
+            'secret_key' => 'sk', 'public_key' => 'pk',
+            'cashout_secret_key' => 'sk-out', 'cashout_public_key' => 'pk-out',
+        ]);
         Setting::set('platform_payout_gateway', null, null);
+    }
+
+    public function test_assetpay_without_cash_out_credential_does_not_pay_withdrawals(): void
+    {
+        $this->connect('assetpay', ['secret_key' => 'sk', 'public_key' => 'pk']);
+        $this->pixOrder(['assetpay', 'cajupay']);
+
+        $this->assertSame('cajupay', PlatformPayoutGateway::activeSlug());
     }
 
     public function test_auto_follows_first_pix_acquirer_with_cashout(): void

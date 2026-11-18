@@ -33,9 +33,10 @@ class ReconcileAssetPayWithdrawalJob implements ShouldQueue
             return;
         }
 
+        // txId da AssetPay; sem ele, a API também aceita o externalId enviado ("saque-{id}").
         $tx = trim((string) $withdrawal->payout_external_id);
         if ($tx === '') {
-            return;
+            $tx = AssetPayDriver::TRANSFER_EXTERNAL_PREFIX.$withdrawal->id;
         }
 
         $cred = GatewayCredential::resolveForPayment(null, 'assetpay');

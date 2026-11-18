@@ -2,7 +2,10 @@
 
 namespace App\Http\Controllers\Webhooks;
 
+use App\Gateways\AssetPay\AssetPayDriver;
 use App\Http\Controllers\Controller;
+use App\Jobs\ReconcileAssetPayWithdrawalJob;
+use App\Models\GatewayCredential;
 use App\Models\Order;
 use App\Models\Withdrawal;
 use App\Services\AssetPay\AssetPayMedService;
@@ -14,38 +17,45 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Webhooks AssetPay (postbackUrl e webhooks do painel).
+ * Webhooks AssetPay (API api.assetpay.cash — plataforma Oceanfy).
  *
- * Cash In:  transaction.created/paid/failed/refunded/cancelled/expired
- *           + MED: transaction.infraction / transaction.blocked / transaction.infraction.closed
- * Cash Out: withdrawal.created/processing/completed/failed/cancelled
+ * Evento no header X-Oceanfy-Event (ou X-Webhook-Event):
+ *  - recebimento            → corpo = cobrança (status CONCLUIDA)
+ *  - fila_saida_pagamentos  → { type: TRANSFER_QUEUE, data: transferência }
+ *  - transferencia          → { type: TRANSFER, data: transferência }
+ *  - estorno                → cobrança DEVOLVIDA, ou { type: TRANSFER_REFUND, data }
+ *  - infracoes              → { type: INFRACTION, data: infração }
  *
- * Postbacks (via postbackUrl) não são assinados; a confirmação de pagamento é
- * sempre reconferida na API (GET /transactions/{id}) pelo ProcessPaymentWebhook.
- * Webhooks cadastrados no painel AssetPay trazem X-Webhook-Signature (HMAC-SHA256).
+ * Postbacks (postbackUrl) não são assinados e webhooks do painel são (X-Oceanfy-Signature).
+ * Em todos os casos o estado é RECONFERIDO NA API antes de mudar pedido, saque ou MED.
  */
 class AssetPayWebhookController extends Controller
 {
-    private const MED_EVENTS = [
-        'transaction.infraction',
-        'transaction.blocked',
-        'transaction.infraction.closed',
-    ];
-
     public function handle(Request $request): JsonResponse
     {
         $event = $this->eventName($request);
+        $type = strtoupper(trim((string) $request->input('type', '')));
 
-        if (str_starts_with($event, 'withdrawal.')) {
-            return $this->handleCashout($request, $event);
+        if (in_array($type, ['TRANSFER', 'TRANSFER_QUEUE', 'TRANSFER_REFUND'], true)
+            || in_array($event, ['transferencia', 'fila_saida_pagamentos'], true)) {
+            return $this->handleTransfer($request, $type);
         }
 
-        $transactionId = $this->transactionField($request, 'id');
-        if ($transactionId === null) {
-            return response()->json(['message' => 'transaction.id required'], 400);
+        if ($type === 'INFRACTION' || $event === 'infracoes') {
+            return $this->handleInfraction($request);
         }
 
-        $order = $this->findOrder($request, $transactionId);
+        return $this->handleCharge($request, $event);
+    }
+
+    private function handleCharge(Request $request, string $event): JsonResponse
+    {
+        $chargeId = $this->str($request->input('id'));
+        if ($chargeId === null) {
+            return response()->json(['message' => 'id required'], 400);
+        }
+
+        $order = $this->findOrder($chargeId, $this->str($request->input('externalRef')));
         if ($order === null) {
             return response()->json(['message' => 'Order not found'], 404);
         }
@@ -54,17 +64,13 @@ class AssetPayWebhookController extends Controller
             return response()->json(['message' => 'Unauthorized'], 401);
         }
 
-        if (in_array($event, self::MED_EVENTS, true)
-            || ($event === 'transaction.refunded' && is_array($request->input('infraction')))) {
-            return $this->handleMed($request, $event, $order);
-        }
-
-        $isPaid = $event === 'transaction.paid'
-            || strtolower((string) $this->transactionField($request, 'status')) === 'paid';
-        if (! $isPaid) {
+        $status = strtoupper((string) $request->input('status', ''));
+        if ($status !== 'CONCLUIDA' && $event !== 'recebimento') {
+            // DEVOLVIDA (estorno) e demais estados não liberam nada; MED chega por `infracoes`.
             return response()->json(['received' => true, 'ignored' => true]);
         }
 
+        // ProcessPaymentWebhook reconsulta GET /v1/cob/{id} antes de liberar o pedido.
         PaymentWebhookDispatcher::dispatch(
             'assetpay',
             (string) $order->gateway_id,
@@ -76,13 +82,98 @@ class AssetPayWebhookController extends Controller
         return response()->json(['received' => true]);
     }
 
-    private function handleMed(Request $request, string $event, Order $order): JsonResponse
+    private function handleTransfer(Request $request, string $type): JsonResponse
     {
+        $txId = $this->str($request->input('data.txId'));
+        $externalId = $this->str($request->input('data.externalId'));
+        $withdrawal = $this->findWithdrawal($txId, $externalId);
+        if ($withdrawal === null) {
+            Log::warning('AssetPay webhook: saque não encontrado', ['tx_id' => $txId, 'external_id' => $externalId, 'type' => $type]);
+
+            return response()->json(['message' => 'Withdrawal not found'], 404);
+        }
+
+        if (! GatewayInboundWebhookAuth::verifyAssetPay($request, $withdrawal->tenant_id)) {
+            return response()->json(['message' => 'Unauthorized'], 401);
+        }
+
+        if ($type === 'TRANSFER_REFUND') {
+            // O recebedor devolveu um PIX já pago: o valor volta ao saldo da AssetPay. Não mexe no saque.
+            Log::warning('AssetPay webhook: transferência devolvida pelo recebedor', [
+                'withdrawal_id' => $withdrawal->id,
+                'status' => $request->input('data.status'),
+            ]);
+
+            return response()->json(['received' => true]);
+        }
+
+        if (! in_array($withdrawal->status, ['pending', 'processing'], true)) {
+            return response()->json(['received' => true, 'ignored' => true]);
+        }
+
+        $credentials = $this->credentials();
+        $lookup = trim((string) ($withdrawal->payout_external_id ?: $txId ?: ''));
+        $transfer = $credentials !== null && $lookup !== ''
+            ? (new AssetPayDriver)->getTransfer($lookup, $credentials)
+            : null;
+        if ($transfer === null) {
+            // API indisponível: a reconciliação tenta de novo sem confiar no corpo do webhook.
+            ReconcileAssetPayWithdrawalJob::dispatch($withdrawal->id)->delay(now()->addSeconds(30));
+
+            return response()->json(['received' => true, 'queued' => true]);
+        }
+
+        $apiStatus = AssetPayDriver::mapTransferStatus((string) ($transfer['status'] ?? ''));
+        if ($apiStatus === 'paid') {
+            MerchantWithdrawalService::markPaid($withdrawal->fresh());
+        } elseif (in_array($apiStatus, ['failed', 'cancelled'], true)) {
+            $reason = trim((string) ($transfer['errorMessage'] ?? ''));
+            MerchantWithdrawalService::markFailed(
+                $withdrawal->fresh(),
+                'Payout AssetPay '.($apiStatus === 'failed' ? 'falhou' : 'cancelado').($reason !== '' ? ': '.$reason : '.')
+            );
+        }
+
+        return response()->json(['received' => true]);
+    }
+
+    private function handleInfraction(Request $request): JsonResponse
+    {
+        $infractionId = $this->str($request->input('data.id'));
+        if ($infractionId === null) {
+            return response()->json(['message' => 'data.id required'], 400);
+        }
+
+        $order = $this->findOrder(
+            $this->str($request->input('data.transaction.id')),
+            $this->str($request->input('data.transaction.externalRef'))
+        );
+        if ($order === null) {
+            Log::info('AssetPay webhook: infração sem pedido conhecido', ['infraction_id' => $infractionId]);
+
+            return response()->json(['received' => true, 'ignored' => true]);
+        }
+
+        if (! GatewayInboundWebhookAuth::verifyAssetPay($request, $order->tenant_id)) {
+            return response()->json(['message' => 'Unauthorized'], 401);
+        }
+
+        $credentials = $this->credentials();
+        $infraction = $credentials !== null ? (new AssetPayDriver)->getInfraction($infractionId, $credentials) : null;
+        if ($infraction === null) {
+            // 5xx: a AssetPay reenvia; o estado só muda com a infração conferida na API.
+            return response()->json(['message' => 'Infraction not confirmed'], 503);
+        }
+
+        $chargeId = trim((string) ($infraction['transaction']['id'] ?? ''));
+        if ($chargeId !== '' && $chargeId !== (string) $order->gateway_id) {
+            return response()->json(['received' => true, 'ignored' => true]);
+        }
+
         try {
-            app(AssetPayMedService::class)->handleWebhookEvent($event, $request->all(), $order);
+            app(AssetPayMedService::class)->syncInfraction($order, $infraction);
         } catch (\Throwable $e) {
             Log::warning('AssetPay webhook: falha ao processar MED', [
-                'event' => $event,
                 'order_id' => $order->id,
                 'error' => mb_substr($e->getMessage(), 0, 300),
             ]);
@@ -93,125 +184,87 @@ class AssetPayWebhookController extends Controller
         return response()->json(['received' => true]);
     }
 
-    private function handleCashout(Request $request, string $event): JsonResponse
+    private function findOrder(?string $chargeId, ?string $externalRef): ?Order
     {
-        $withdrawal = $this->findWithdrawal($request);
-        if ($withdrawal === null) {
-            Log::warning('AssetPay webhook: withdrawal not found', [
-                'event' => $event,
-                'external_id' => $this->withdrawalField($request, 'external_id'),
-                'client_reference_id' => $this->withdrawalField($request, 'client_reference_id'),
-            ]);
-
-            return response()->json(['message' => 'Withdrawal not found'], 404);
+        if ($chargeId !== null) {
+            $byTx = Order::query()->where('gateway', 'assetpay')->where('gateway_id', $chargeId)->first();
+            if ($byTx !== null) {
+                return $byTx;
+            }
         }
 
-        if (! GatewayInboundWebhookAuth::verifyAssetPay($request, $withdrawal->tenant_id)) {
-            return response()->json(['message' => 'Unauthorized'], 401);
-        }
-
-        if ($event === 'withdrawal.completed' && in_array($withdrawal->status, ['pending', 'processing'], true)) {
-            MerchantWithdrawalService::markPaid($withdrawal->fresh());
-        } elseif (in_array($event, ['withdrawal.failed', 'withdrawal.cancelled'], true)
-            && in_array($withdrawal->status, ['pending', 'processing'], true)) {
-            MerchantWithdrawalService::markFailed(
-                $withdrawal->fresh(),
-                'Payout AssetPay falhou (webhook '.$event.').'
-            );
-        }
-
-        return response()->json(['received' => true]);
-    }
-
-    private function findOrder(Request $request, string $transactionId): ?Order
-    {
-        $byTx = Order::query()
-            ->where('gateway', 'assetpay')
-            ->where('gateway_id', $transactionId)
-            ->first();
-        if ($byTx !== null) {
-            return $byTx;
-        }
-
-        $externalRef = $this->transactionField($request, 'external_ref')
-            ?? $this->transactionField($request, 'externalRef')
-            ?? $this->scalar($request, 'external_ref');
         if ($externalRef !== null && ctype_digit($externalRef)) {
-            return Order::query()
-                ->where('gateway', 'assetpay')
-                ->where('id', (int) $externalRef)
-                ->first();
+            $order = Order::query()->where('gateway', 'assetpay')->where('id', (int) $externalRef)->first();
+            // Só aceita pelo externalRef se a cobrança bater (ou o pedido ainda não tiver id da AssetPay).
+            if ($order !== null && ($chargeId === null || trim((string) $order->gateway_id) === '' || $order->gateway_id === $chargeId)) {
+                return $order;
+            }
         }
 
         return null;
     }
 
-    private function findWithdrawal(Request $request): ?Withdrawal
+    private function findWithdrawal(?string $txId, ?string $externalId): ?Withdrawal
     {
-        $externalId = $this->withdrawalField($request, 'external_id');
-        if ($externalId !== null) {
+        if ($txId !== null) {
             $byTx = Withdrawal::query()
                 ->where('payout_provider', 'assetpay')
-                ->where('payout_external_id', $externalId)
+                ->where('payout_external_id', $txId)
                 ->first();
             if ($byTx !== null) {
                 return $byTx;
             }
         }
 
-        $reference = $this->withdrawalField($request, 'client_reference_id');
-        if ($reference !== null && ctype_digit($reference)) {
-            return Withdrawal::query()
-                ->where('payout_provider', 'assetpay')
-                ->where('id', (int) $reference)
-                ->first();
+        if ($externalId !== null && str_starts_with($externalId, AssetPayDriver::TRANSFER_EXTERNAL_PREFIX)) {
+            $id = substr($externalId, strlen(AssetPayDriver::TRANSFER_EXTERNAL_PREFIX));
+            if (ctype_digit($id)) {
+                return Withdrawal::query()
+                    ->where('payout_provider', 'assetpay')
+                    ->where('id', (int) $id)
+                    ->first();
+            }
         }
 
         return null;
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function credentials(): ?array
+    {
+        $cred = GatewayCredential::resolveForPayment(null, 'assetpay');
+        if ($cred === null || ! $cred->is_connected) {
+            return null;
+        }
+        $credentials = $cred->getDecryptedCredentials();
+
+        return $credentials !== [] ? $credentials : null;
     }
 
     private function eventName(Request $request): string
     {
-        $header = $request->header('X-Webhook-Event');
-        if (is_string($header) && trim($header) !== '') {
-            return strtolower(trim($header));
+        foreach (['X-Oceanfy-Event', 'X-Webhook-Event'] as $header) {
+            $value = $request->header($header);
+            if (is_string($value) && trim($value) !== '') {
+                return strtolower(trim($value));
+            }
         }
 
-        $event = $this->scalar($request, 'event');
-
-        return $event !== null ? strtolower($event) : '';
+        return '';
     }
 
-    private function transactionField(Request $request, string $key): ?string
+    private function str(mixed $value): ?string
     {
-        return $this->scalarAt($request, 'transaction.'.$key) ?? $this->scalar($request, $key);
-    }
-
-    private function withdrawalField(Request $request, string $key): ?string
-    {
-        return $this->scalarAt($request, 'withdrawal.'.$key) ?? $this->scalar($request, $key);
-    }
-
-    private function scalar(Request $request, string $key): ?string
-    {
-        return $this->scalarAt($request, $key) ?? $this->scalarAt($request, 'data.'.$key);
-    }
-
-    private function scalarAt(Request $request, string $path): ?string
-    {
-        if (! $request->has($path)) {
-            return null;
-        }
-        $value = $request->input($path);
-        if (is_string($value)) {
-            $trim = trim($value);
-
-            return $trim !== '' ? $trim : null;
-        }
         if (is_int($value) || is_float($value)) {
             return (string) $value;
         }
+        if (! is_string($value)) {
+            return null;
+        }
+        $trim = trim($value);
 
-        return null;
+        return $trim !== '' ? $trim : null;
     }
 }

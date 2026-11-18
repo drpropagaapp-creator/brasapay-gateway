@@ -14,7 +14,7 @@ use App\Services\Withdrawal\WithdrawalMinimumService;
 use App\Support\GatewayWebhookUrl;
 
 /**
- * Payout (saque PIX) via AssetPay. Valores da API em REAIS.
+ * Payout (saque PIX) via AssetPay (POST /v1/transfers com a credencial Cash Out).
  */
 class AssetPayPayoutService
 {
@@ -35,8 +35,9 @@ class AssetPayPayoutService
             return ['ok' => false, 'error' => 'Saque automático não configurado pela plataforma (AssetPay).'];
         }
         $credentials = $credential->getDecryptedCredentials();
-        if (trim((string) ($credentials['secret_key'] ?? '')) === '' || trim((string) ($credentials['public_key'] ?? '')) === '') {
-            return ['ok' => false, 'error' => 'Configure Secret Key e Public Key da AssetPay nas adquirentes da plataforma.'];
+        [$cashOutId, $cashOutSecret] = AssetPayDriver::clientCredentials($credentials, AssetPayDriver::SCOPE_CASH_OUT);
+        if ($cashOutId === '' || $cashOutSecret === '') {
+            return ['ok' => false, 'error' => 'Configure a credencial Cash Out (chave pública e secreta) da AssetPay nas adquirentes da plataforma.'];
         }
 
         $net = (float) $withdrawal->net_amount;
@@ -47,7 +48,9 @@ class AssetPayPayoutService
         $economics = GatewayPayoutEconomics::fromCredentialsArray('assetpay', $credentials);
         $requiredNet = WithdrawalMinimumService::effectiveRequiredMinNet($economics);
         $minCents = (int) max(1, (int) round($requiredNet * 100));
-        $apiAmount = GatewayPayoutEconomics::transferAmountBrlForApi($net, $economics['admin_fee_payout_brl']);
+        // A AssetPay debita a tarifa do saldo à parte: envia o líquido exato do seller.
+        // A taxa cadastrada (assetpay_admin_fee_payout_brl) serve só para os relatórios de custo.
+        $apiAmount = round($net, 2);
         $amountCents = (int) round($net * 100);
         if ($amountCents < $minCents) {
             $tenantId = (int) $withdrawal->tenant_id;

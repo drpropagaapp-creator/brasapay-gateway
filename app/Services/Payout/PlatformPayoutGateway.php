@@ -143,6 +143,16 @@ class PlatformPayoutGateway
             if ($cred === null || ! $cred->is_connected) {
                 continue;
             }
+            if ($slug === 'assetpay') {
+                // Saque exige a credencial Cash Out (separada da Cash In que recebe o PIX).
+                [$outId, $outSecret] = \App\Gateways\AssetPay\AssetPayDriver::clientCredentials(
+                    $cred->getDecryptedCredentials(),
+                    \App\Gateways\AssetPay\AssetPayDriver::SCOPE_CASH_OUT
+                );
+                if ($outId === '' || $outSecret === '') {
+                    continue;
+                }
+            }
             if ($slug === 'versell') {
                 $creds = $cred->getDecryptedCredentials();
                 if (! \App\Gateways\Versell\VersellCredentials::isCashOutReady($creds)) {

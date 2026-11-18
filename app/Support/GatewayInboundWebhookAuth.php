@@ -131,21 +131,28 @@ final class GatewayInboundWebhookAuth
     }
 
     /**
-     * AssetPay: postbacks (postbackUrl) não são assinados — a confirmação de pagamento
-     * sempre reconsulta a API. Webhooks cadastrados no painel trazem X-Webhook-Signature
-     * (HMAC-SHA256 do body); valida quando houver secret configurado E header presente.
+     * AssetPay (Oceanfy): webhooks do painel trazem X-Oceanfy-Signature = "sha256=" +
+     * HMAC-SHA256("{X-Oceanfy-Timestamp}.{corpo bruto}") com a chave de assinatura do webhook.
+     * Postbacks por postbackUrl não são assinados: são aceitos, e o controller SEMPRE
+     * reconsulta a API (cobrança, transferência ou infração) antes de mudar qualquer coisa.
+     * Com chave configurada e assinatura presente, falha fechada se inválida ou velha.
      */
     public static function verifyAssetPay(Request $request, ?int $tenantId): bool
     {
         $secret = self::webhookSecret('assetpay', $tenantId);
-        $signature = $request->header('X-Webhook-Signature');
+        $signature = $request->header('X-Oceanfy-Signature');
         $hasSignature = is_string($signature) && $signature !== '';
 
         if ($secret === null || ! $hasSignature) {
             return true;
         }
 
-        $expected = hash_hmac('sha256', $request->getContent(), $secret);
+        $timestamp = trim((string) $request->header('X-Oceanfy-Timestamp', ''));
+        if (! ctype_digit($timestamp) || abs(time() - (int) $timestamp) > 900) {
+            return false;
+        }
+
+        $expected = hash_hmac('sha256', $timestamp.'.'.$request->getContent(), $secret);
         $given = strtolower(trim($signature));
         if (str_starts_with($given, 'sha256=')) {
             $given = substr($given, 7);
