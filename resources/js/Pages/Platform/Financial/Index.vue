@@ -1548,14 +1548,10 @@ function submitSettlement() {
                                         Saque automático (cashout PIX)
                                     </h2>
                                     <p class="mt-1 max-w-2xl text-sm leading-relaxed text-zinc-600 dark:text-zinc-400">
-                                        <strong class="font-medium text-zinc-800 dark:text-zinc-200">CajuPay</strong>,
-                                        <strong class="font-medium text-zinc-800 dark:text-zinc-200">Woovi</strong>,
-                                        <strong class="font-medium text-zinc-800 dark:text-zinc-200">Versell</strong>,
-                                        <strong class="font-medium text-zinc-800 dark:text-zinc-200">Xflow</strong>,
-                                        <strong class="font-medium text-zinc-800 dark:text-zinc-200">Okto</strong> e
-                                        <strong class="font-medium text-zinc-800 dark:text-zinc-200">XPag</strong> podem ser
-                                        usados para saque automático PIX. Em modo automático a ordem é CajuPay →
-                                        Woovi → Versell → Xflow → Okto → XPag (o primeiro conectado vence).
+                                        Em modo <strong class="font-medium text-zinc-800 dark:text-zinc-200">automático</strong>,
+                                        o saque sai pela mesma adquirente que recebe o PIX: a primeira da ordem do PIX que
+                                        sabe pagar saque. Trocou a adquirente do PIX, o saque troca junto. Se nenhuma delas
+                                        paga saque, vale a ordem CajuPay → Woovi → AssetPay → Versell → Xflow → Okto → XPag.
                                     </p>
                                 </div>
                             </div>
@@ -1581,7 +1577,7 @@ function submitSettlement() {
                                 v-model="payoutPref"
                                 class="w-full cursor-pointer rounded-xl border border-zinc-200 bg-white px-3.5 py-2.5 text-sm font-medium text-zinc-900 shadow-sm outline-none transition focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-100"
                             >
-                                <option value="auto">Automático (CajuPay → Woovi → Versell → Xflow → Okto → XPag)</option>
+                                <option value="auto">Automático (segue a adquirente do PIX)</option>
                                 <option value="cajupay">Forçar CajuPay</option>
                                 <!-- <option value="spacepag">Forçar Spacepag</option> -->
                                 <option value="woovi">Forçar Woovi</option>

@@ -6,6 +6,7 @@ use App\Gateways\GatewayRegistry;
 use App\Models\GatewayCredential;
 use App\Models\Setting;
 use App\Services\CajuPay\CajuPayAccountResolver;
+use App\Services\PaymentService;
 
 /**
  * Provedor de payout da plataforma (saque automático PIX).
@@ -13,7 +14,8 @@ use App\Services\CajuPay\CajuPayAccountResolver;
  * Gateways com API de cashout: CajuPay, Woovi, Versell, Xflow, Okto, XPag e OnlyUp (plugin).
  * Preferência configurável em {@see Setting} `platform_payout_gateway`
  * (`auto`, `cajupay`, `woovi`, `versell`, `xflow`, `okto`, `xpag`, `onlyup`).
- * Em `auto`, a ordem fixa é CajuPay → Woovi → Versell → Xflow → Okto → XPag → OnlyUp — o primeiro globalmente conectado vence.
+ * Em `auto`, o saque segue a adquirente do PIX: vence a primeira da ordem do PIX com cash-out conectado.
+ * Se nenhuma delas paga saque, cai na ordem fixa CajuPay → Woovi → AssetPay → Versell → Xflow → Okto → XPag → OnlyUp.
  * Spacepag e BSPay permanecem no código de payout legado, mas estão fora da UI e da ordem automática.
  */
 class PlatformPayoutGateway
@@ -47,6 +49,15 @@ class PlatformPayoutGateway
 
         if ($pref !== 'auto' && isset($connected[$pref])) {
             return $pref;
+        }
+
+        // Automático: o saque segue a adquirente do PIX. A primeira da ordem do PIX
+        // (Financeiro > Adquirentes) que tem cash-out conectado paga o saque — assim,
+        // trocar a adquirente do PIX troca também quem paga os saques.
+        foreach (self::pixOrder() as $slug) {
+            if (isset($connected[$slug])) {
+                return $slug;
+            }
         }
 
         foreach (self::PAYOUT_ORDER as $slug) {
@@ -94,6 +105,25 @@ class PlatformPayoutGateway
     public static function isEnabled(): bool
     {
         return self::activeSlug() !== null;
+    }
+
+    /**
+     * Ordem do PIX da plataforma, só com adquirentes que sabem pagar saque.
+     *
+     * @return list<string>
+     */
+    public static function pixOrder(): array
+    {
+        try {
+            $pix = app(PaymentService::class)->normalizedGatewayOrder(null)['pix'] ?? [];
+        } catch (\Throwable) {
+            return [];
+        }
+
+        return array_values(array_filter(
+            is_array($pix) ? $pix : [],
+            fn ($slug) => is_string($slug) && in_array($slug, self::PAYOUT_ORDER, true)
+        ));
     }
 
     /**
