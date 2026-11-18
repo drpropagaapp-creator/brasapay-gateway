@@ -2,6 +2,7 @@
 
 namespace App\Services\Platform;
 
+use App\Gateways\AssetPay\AssetPayDriver;
 use App\Gateways\Bspay\BspayDriver;
 use App\Gateways\CajuPay\CajuPayDriver;
 use App\Gateways\Efi\EfiDriver;
@@ -29,7 +30,7 @@ class AcquirerWalletBalanceService
     private const CACHE_TTL_SECONDS = 45;
 
     /** @var list<string> */
-    private const BALANCE_SLUGS = ['cajupay', 'efi', 'woovi', 'mercadopago', 'stripe', 'versell', 'xflow', 'okto', 'xpag'];
+    private const BALANCE_SLUGS = ['cajupay', 'assetpay', 'efi', 'woovi', 'mercadopago', 'stripe', 'versell', 'xflow', 'okto', 'xpag'];
 
     /**
      * @return list<array{
@@ -280,6 +281,8 @@ class AcquirerWalletBalanceService
             'xflow' => trim((string) ($credentials['public_key'] ?? '')) !== ''
                 && trim((string) ($credentials['secret_key'] ?? '')) !== '',
             'okto' => trim((string) ($credentials['access_token'] ?? '')) !== '',
+            'assetpay' => trim((string) ($credentials['public_key'] ?? '')) !== ''
+                && trim((string) ($credentials['secret_key'] ?? '')) !== '',
             'xpag' => trim((string) ($credentials['client_id'] ?? '')) !== ''
                 && trim((string) ($credentials['client_secret'] ?? '')) !== '',
             default => true,
@@ -311,6 +314,7 @@ class AcquirerWalletBalanceService
             'xflow' => $this->fetchXflow($credentials),
             'okto' => $this->fetchOkto($credentials),
             'xpag' => $this->fetchXpag($credentials),
+            'assetpay' => $this->fetchAssetPay($credentials),
             default => throw new \RuntimeException('Adquirente sem consulta de saldo.'),
         };
     }
@@ -436,6 +440,19 @@ class AcquirerWalletBalanceService
         $payload = app(OktoDriver::class)->fetchAccountBalance($credentials);
 
         return $this->parseOktoAvailable($payload);
+    }
+
+    /**
+     * @param  array<string, mixed>  $credentials
+     */
+    private function fetchAssetPay(array $credentials): float
+    {
+        $available = app(AssetPayDriver::class)->availableBalanceBrl($credentials);
+        if ($available === null) {
+            throw new \RuntimeException('AssetPay: saldo indisponível.');
+        }
+
+        return $available;
     }
 
     /**

@@ -36,7 +36,8 @@ class WithdrawalsController extends Controller
         }
 
         // Cobertura de saldo na conta de saque para cada saque pendente (aviso de abastecimento).
-        $payoutFunding = PayoutFundingNeed::compute(app(AcquirerWalletBalanceService::class)->list());
+        $acquirerWallets = app(AcquirerWalletBalanceService::class)->list();
+        $payoutFunding = PayoutFundingNeed::compute($acquirerWallets);
 
         $withdrawalsPaginator = new LengthAwarePaginator([], 0, 40, 1, [
             'path' => $request->url(),
@@ -71,11 +72,54 @@ class WithdrawalsController extends Controller
             ],
             'payout_gateway_active' => PlatformPayoutGateway::activeSlug() ?? '',
             'payout_funding' => $payoutFunding,
-            'cashout_acquirers' => PlatformPayoutGateway::connectedOptions(),
+            'cashout_acquirers' => self::withBalances(PlatformPayoutGateway::connectedOptions(), $acquirerWallets),
             'require_manual_approval_pin' => $request->user() !== null
                 && WithdrawalPolicyService::requiresOperationPinFor($request->user()),
             'has_manual_approval_pin' => WithdrawalPolicyService::hasManualApprovalPin(),
             'manual_payout_acquirers' => $this->receiptService->manualPayoutSourceOptions(),
         ]);
+    }
+
+    /**
+     * Junta o saldo disponível de cada adquirente às opções de "Quem envia o PIX?".
+     * CajuPay com várias contas soma as contas que responderam.
+     *
+     * @param  list<array{slug: string, name: string}>  $options
+     * @param  list<array<string, mixed>>  $wallets  linhas de AcquirerWalletBalanceService::list()
+     * @return list<array{slug: string, name: string, available: float|null, balance_status: string}>
+     */
+    public static function withBalances(array $options, array $wallets): array
+    {
+        $bySlug = [];
+        foreach ($wallets as $row) {
+            $slug = (string) ($row['slug'] ?? '');
+            if ($slug === '') {
+                continue;
+            }
+            $entry = $bySlug[$slug] ?? ['sum' => 0.0, 'ok' => 0, 'error' => 0];
+            if (($row['status'] ?? '') === 'ok' && is_numeric($row['available'] ?? null)) {
+                $entry['sum'] += (float) $row['available'];
+                $entry['ok']++;
+            } elseif (($row['status'] ?? '') === 'error') {
+                $entry['error']++;
+            }
+            $bySlug[$slug] = $entry;
+        }
+
+        return array_map(function (array $option) use ($bySlug): array {
+            $entry = $bySlug[$option['slug']] ?? null;
+            $status = match (true) {
+                $entry === null => 'unsupported',
+                $entry['ok'] > 0 && $entry['error'] === 0 => 'ok',
+                $entry['ok'] > 0 => 'partial',
+                $entry['error'] > 0 => 'error',
+                default => 'unsupported',
+            };
+
+            return $option + [
+                'available' => $entry !== null && $entry['ok'] > 0 ? round($entry['sum'], 2) : null,
+                'balance_status' => $status,
+            ];
+        }, $options);
     }
 }

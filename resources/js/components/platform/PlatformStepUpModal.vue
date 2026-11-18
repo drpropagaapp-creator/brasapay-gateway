@@ -67,6 +67,18 @@ function submit() {
     });
 }
 
+const brl = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
+
+function acquirerBalanceLabel(acquirer) {
+    const value = acquirer?.available;
+    if (value !== null && value !== undefined && Number.isFinite(Number(value))) {
+        const text = `Saldo: ${brl.format(Number(value))}`;
+        return acquirer.balance_status === 'partial' ? `${text} (parcial)` : text;
+    }
+    if (acquirer?.balance_status === 'unsupported') return 'Saldo não disponível';
+    return 'Saldo indisponível agora';
+}
+
 function chooseAcquirer(slug) {
     selectedAcquirer.value = String(slug ?? '');
     if (props.acquirerLayout !== 'list') {
@@ -195,7 +207,16 @@ function chooseAcquirer(slug) {
                             ]"
                             @click="chooseAcquirer(acquirer.slug)"
                         >
-                            {{ acquirer.name }}
+                            <span>{{ acquirer.name }}</span>
+                            <span
+                                v-if="acquirer.balance_status"
+                                class="ml-3 shrink-0 text-xs font-normal"
+                                :class="acquirer.available !== null && acquirer.available !== undefined
+                                    ? 'text-zinc-600 dark:text-zinc-300'
+                                    : 'text-amber-700 dark:text-amber-300'"
+                            >
+                                {{ acquirerBalanceLabel(acquirer) }}
+                            </span>
                         </button>
                     </div>
                     <p v-if="!acquirers.length" class="mt-1 text-xs text-red-600 dark:text-red-400">
