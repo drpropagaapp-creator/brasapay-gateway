@@ -13,12 +13,12 @@ use Illuminate\Support\Facades\Log;
 /**
  * Infrações PIX (MED) da AssetPay → MedDispute + pedido/carteira.
  *
- * Fluxo de webhooks (doc AssetPay):
- *  1. transaction.infraction + transaction.blocked — infração aberta, saldo bloqueado
- *  2. transaction.infraction.closed — infração encerrada favoravelmente ou cancelada
- *  3. transaction.refunded — MED perdido, valor devolvido ao pagador
- *
- * A defesa é feita no painel da AssetPay (não há endpoint de reply na API).
+ * Objeto de infração da API nova (GET /v1/infractions/{id} e webhook `infracoes`):
+ *  - status OPEN / UNDER_ANALYSIS → disputa aberta, valor bloqueado;
+ *  - status CLOSED + analysisResult AGREED (outcome FUNDS_RETURNED) → MED perdido;
+ *  - status CLOSED + analysisResult DISAGREED (outcome FUNDS_RELEASED) → MED ganho;
+ *  - status CANCELED → cancelada, valor liberado.
+ * Valores em centavos.
  */
 class AssetPayMedService
 {
@@ -43,39 +43,53 @@ class AssetPayMedService
     }
 
     /**
-     * @param  array<string, mixed>  $payload  corpo completo do webhook
+     * @param  array<string, mixed>  $infraction  objeto de infração conferido na API
      */
-    public function handleWebhookEvent(string $event, array $payload, Order $order): ?MedDispute
+    public function syncInfraction(Order $order, array $infraction): ?MedDispute
     {
-        $infraction = is_array($payload['infraction'] ?? null) ? $payload['infraction'] : [];
+        $status = strtoupper(trim((string) ($infraction['status'] ?? '')));
 
-        return match ($event) {
-            'transaction.infraction', 'transaction.blocked' => $this->syncOpened($order, $infraction, $payload),
-            'transaction.infraction.closed' => $this->syncClosed($order, $infraction, $payload),
-            'transaction.refunded' => $this->syncRefundedAsLostIfOpen($order, $infraction, $payload),
-            default => null,
-        };
+        if (in_array($status, ['OPEN', 'UNDER_ANALYSIS'], true)) {
+            return $this->syncOpened($order, $infraction);
+        }
+
+        $dispute = $this->findDispute($order, $infraction) ?? $this->syncOpened($order, $infraction);
+        if ($dispute === null) {
+            return null;
+        }
+
+        if ($status === 'CANCELED' || $status === 'CANCELLED') {
+            return $this->resolve($dispute, 'cancelled', $infraction);
+        }
+
+        if ($status === 'CLOSED') {
+            $analysis = strtoupper(trim((string) ($infraction['analysisResult'] ?? '')));
+            $outcome = strtoupper(trim((string) ($infraction['outcome'] ?? '')));
+            if ($analysis === 'AGREED' || $outcome === 'FUNDS_RETURNED') {
+                return $this->resolve($dispute, 'lost', $infraction);
+            }
+            if ($analysis === 'DISAGREED' || $outcome === 'FUNDS_RELEASED') {
+                return $this->resolve($dispute, 'won', $infraction);
+            }
+        }
+
+        Log::info('AssetPayMed: status de infração sem ação', [
+            'order_id' => $order->id,
+            'status' => $status,
+            'infraction_id' => $infraction['id'] ?? null,
+        ]);
+
+        return $dispute;
     }
 
     /**
      * @param  array<string, mixed>  $infraction
-     * @param  array<string, mixed>  $raw
      */
-    public function syncOpened(Order $order, array $infraction, array $raw = []): ?MedDispute
+    public function syncOpened(Order $order, array $infraction): ?MedDispute
     {
         $infractionId = trim((string) ($infraction['id'] ?? ''));
         if ($infractionId === '') {
-            // transaction.blocked pode chegar sem objeto infraction; usa a disputa aberta se existir.
-            $open = $this->openDisputeForOrder($order);
-            if ($open !== null) {
-                return $open;
-            }
-            Log::info('AssetPayMed: webhook sem infraction.id', [
-                'order_id' => $order->id,
-                'event' => $raw['event'] ?? null,
-            ]);
-
-            return null;
+            return $this->openDisputeForOrder($order);
         }
 
         $remoteKey = self::REMOTE_ID_PREFIX.$infractionId;
@@ -89,26 +103,25 @@ class AssetPayMedService
         }
 
         $created = $existing === null;
-        $responsibleParty = $this->policy->responsiblePartyForOrder($order);
-        $status = $existing?->status === MedDispute::STATUS_DEFENSE_SUBMITTED
+        $remoteStatus = strtoupper(trim((string) ($infraction['status'] ?? 'OPEN')));
+        $status = $existing?->status === MedDispute::STATUS_DEFENSE_SUBMITTED || $remoteStatus === 'UNDER_ANALYSIS'
             ? MedDispute::STATUS_DEFENSE_SUBMITTED
             : MedDispute::STATUS_OPEN;
 
-        $amountCents = $this->amountCents($infraction, $order);
-        $type = strtoupper(trim((string) ($infraction['type'] ?? 'MED')));
-        $reason = trim((string) ($infraction['report_details'] ?? $infraction['reported_by'] ?? ''));
-        $e2e = trim((string) ($infraction['end_to_end_id'] ?? ''));
+        $type = strtoupper(trim((string) ($infraction['infractionType'] ?? 'MED')));
+        $reason = trim((string) ($infraction['reportDetails'] ?? $infraction['reportedBy'] ?? ''));
+        $e2e = trim((string) ($infraction['endToEndId'] ?? $infraction['transaction']['endToEndId'] ?? ''));
 
         $dispute = MedDispute::query()->updateOrCreate(
             ['cajupay_dispute_id' => $remoteKey],
             [
                 'order_id' => $order->id,
                 'tenant_id' => (int) $order->tenant_id,
-                'responsible_party' => $responsibleParty,
+                'responsible_party' => $this->policy->responsiblePartyForOrder($order),
                 'cajupay_payment_id' => trim((string) ($order->gateway_id ?? '')),
                 'status' => $status,
                 'outcome' => null,
-                'amount_cents' => $amountCents,
+                'amount_cents' => $this->amountCents($infraction, $order),
                 'currency' => strtoupper(trim((string) ($infraction['currency'] ?? 'BRL'))) ?: 'BRL',
                 'txid' => $e2e !== '' ? $e2e : null,
                 'reason' => $reason !== '' ? $reason : null,
@@ -117,10 +130,9 @@ class AssetPayMedService
                 'metadata' => [
                     'provider' => 'assetpay',
                     'assetpay_infraction_id' => $infractionId,
-                    'assetpay_status' => (string) ($infraction['status'] ?? 'OPEN'),
-                    'assetpay_provider' => (string) ($infraction['provider'] ?? ''),
+                    'assetpay_status' => $remoteStatus,
                     'defense_note' => 'Defesa desta infração é feita no painel da AssetPay.',
-                    'webhook' => $raw !== [] ? $raw : $infraction,
+                    'infraction' => $infraction,
                 ],
             ]
         );
@@ -141,60 +153,13 @@ class AssetPayMedService
     }
 
     /**
-     * transaction.infraction.closed: encerrada favoravelmente (won) ou cancelada.
-     * analysis_result AGREED = acatada em favor do pagador (perda vem via transaction.refunded).
-     *
      * @param  array<string, mixed>  $infraction
-     * @param  array<string, mixed>  $raw
      */
-    public function syncClosed(Order $order, array $infraction, array $raw = []): ?MedDispute
-    {
-        $dispute = $this->findDispute($order, $infraction);
-        if ($dispute === null) {
-            return null;
-        }
-
-        $analysis = strtoupper(trim((string) ($infraction['analysis_result'] ?? '')));
-        $remoteStatus = strtoupper(trim((string) ($infraction['status'] ?? '')));
-
-        if ($analysis === 'AGREED') {
-            // Pagador ganhou — o estorno (transaction.refunded) consolida a perda.
-            return $this->resolve($dispute, 'lost', $infraction, $raw);
-        }
-
-        $outcome = $remoteStatus === 'CANCELLED' ? 'cancelled' : 'won';
-
-        return $this->resolve($dispute, $outcome, $infraction, $raw);
-    }
-
-    /**
-     * transaction.refunded: só vira MED perdido quando há disputa AssetPay aberta para o pedido.
-     *
-     * @param  array<string, mixed>  $infraction
-     * @param  array<string, mixed>  $raw
-     */
-    public function syncRefundedAsLostIfOpen(Order $order, array $infraction, array $raw = []): ?MedDispute
-    {
-        $dispute = $this->findDispute($order, $infraction);
-        if ($dispute === null) {
-            return null;
-        }
-        if (! $dispute->isOpen() && $dispute->status !== MedDispute::STATUS_DEFENSE_SUBMITTED) {
-            return $dispute;
-        }
-
-        return $this->resolve($dispute, 'lost', $infraction, $raw);
-    }
-
-    /**
-     * @param  array<string, mixed>  $infraction
-     * @param  array<string, mixed>  $raw
-     */
-    private function resolve(MedDispute $dispute, string $outcome, array $infraction, array $raw): MedDispute
+    private function resolve(MedDispute $dispute, string $outcome, array $infraction): MedDispute
     {
         if (! $dispute->isOpen() && $dispute->status !== MedDispute::STATUS_DEFENSE_SUBMITTED) {
             $meta = is_array($dispute->metadata) ? $dispute->metadata : [];
-            $meta['webhook_resolved'] = $raw !== [] ? $raw : $infraction;
+            $meta['last_sync'] = $infraction;
             $dispute->update(['metadata' => $meta]);
 
             return $dispute->fresh();
@@ -208,7 +173,8 @@ class AssetPayMedService
 
         $meta = is_array($dispute->metadata) ? $dispute->metadata : [];
         $meta['assetpay_status'] = strtoupper((string) ($infraction['status'] ?? $outcome));
-        $meta['webhook_resolved'] = $raw !== [] ? $raw : $infraction;
+        $meta['assetpay_outcome'] = (string) ($infraction['outcome'] ?? '');
+        $meta['infraction_resolved'] = $infraction;
 
         $dispute->update([
             'status' => $mappedStatus,
@@ -253,12 +219,12 @@ class AssetPayMedService
     }
 
     /**
-     * @param  array<string, mixed>  $infraction  amount em REAIS (float) no objeto infraction
+     * @param  array<string, mixed>  $infraction  amount em CENTAVOS
      */
     private function amountCents(array $infraction, Order $order): int
     {
         if (isset($infraction['amount']) && is_numeric($infraction['amount'])) {
-            return (int) round(((float) $infraction['amount']) * 100);
+            return (int) $infraction['amount'];
         }
 
         return (int) round(((float) $order->amount) * 100);
