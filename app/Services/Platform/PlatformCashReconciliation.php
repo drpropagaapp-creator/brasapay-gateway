@@ -148,6 +148,13 @@ final class PlatformCashReconciliation
 
         $row = Withdrawal::query()
             ->whereIn('status', [MerchantWithdrawalService::STATUS_PENDING, MerchantWithdrawalService::STATUS_PROCESSING])
+            // Saque já aceito pela AssetPay: o valor já saiu do saldo dela, não é mais dívida a pagar do caixa.
+            ->where(function ($q) {
+                $q->where('payout_provider', '!=', 'assetpay')
+                    ->orWhereNull('payout_provider')
+                    ->orWhereNull('payout_external_id')
+                    ->orWhere('payout_external_id', '');
+            })
             ->selectRaw('COALESCE(SUM(amount), 0) as total, COUNT(*) as quantidade, MIN(created_at) as mais_antigo')
             ->first();
 
